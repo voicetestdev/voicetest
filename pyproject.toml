@@ -1,0 +1,63 @@
+[project]
+name = "voicetest"
+version = "0.1.0"
+description = "A generic test harness for voice agent workflows"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "pld", email = "50706+pld@users.noreply.github.com" }
+]
+keywords = ["voice", "agent", "testing", "livekit", "retell", "vapi"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
+]
+requires-python = ">=3.12"
+dependencies = [
+    "livekit-agents>=1.0,<2.0",
+    "livekit-plugins-openai>=1.0,<2.0",
+    "livekit-plugins-silero>=1.0,<2.0",
+    "dspy>=2.6",
+    "pydantic>=2.0",
+    "click>=8.0",
+    "rich>=13.0",
+    "textual>=7.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/pld/voicetest"
+Repository = "https://github.com/pld/voicetest"
+Issues = "https://github.com/pld/voicetest/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+[project.scripts]
+voicetest = "voicetest.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

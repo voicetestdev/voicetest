@@ -1,0 +1,78 @@
+{
+  "conversation_flow_id": "test-flow-001",
+  "version": 1,
+  "start_node_id": "greeting",
+  "nodes": [
+    {
+      "id": "greeting",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Greet the customer warmly. Ask how you can help them today."
+      },
+      "edges": [
+        {
+          "id": "edge-1",
+          "destination_node_id": "billing",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Customer wants help with billing or payment"
+          }
+        },
+        {
+          "id": "edge-2",
+          "destination_node_id": "support",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Customer has a technical issue or question"
+          }
+        }
+      ]
+    },
+    {
+      "id": "billing",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Help the customer with their billing inquiry. Be patient and thorough."
+      },
+      "edges": [
+        {
+          "id": "edge-3",
+          "destination_node_id": "end_call",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Customer's billing issue is resolved"
+          }
+        }
+      ]
+    },
+    {
+      "id": "support",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Provide technical support to the customer. Troubleshoot their issue step by step."
+      },
+      "edges": [
+        {
+          "id": "edge-4",
+          "destination_node_id": "end_call",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Customer's technical issue is resolved"
+          }
+        }
+      ]
+    },
+    {
+      "id": "end_call",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Thank the customer for calling and ask if there's anything else you can help with. End the call professionally."
+      },
+      "edges": []
+    }
+  ]
+}

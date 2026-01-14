@@ -1,0 +1,26 @@
+[
+  {
+    "id": "billing-inquiry",
+    "name": "Customer billing inquiry",
+    "user_prompt": "## Identity\nYour name is Jane. Your account number is 12345.\n\n## Goal\nGet help understanding a charge on your recent bill.\n\n## Personality\nPolite but confused about the charge.",
+    "metrics": [
+      "Agent greeted the customer",
+      "Agent addressed the billing concern",
+      "Agent was helpful and professional"
+    ],
+    "required_nodes": ["greeting", "billing"],
+    "max_turns": 10
+  },
+  {
+    "id": "technical-support",
+    "name": "Technical support request",
+    "user_prompt": "## Identity\nYour name is Bob. Your device is a Model X smartphone.\n\n## Goal\nGet help because your phone won't turn on.\n\n## Personality\nFrustrated but reasonable.",
+    "metrics": [
+      "Agent acknowledged the technical issue",
+      "Agent attempted to troubleshoot",
+      "Agent remained calm despite user frustration"
+    ],
+    "required_nodes": ["greeting", "support"],
+    "max_turns": 10
+  }
+]
