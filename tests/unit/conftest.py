@@ -36,3 +36,16 @@ def sample_test_cases(retell_fixtures_dir: Path) -> list[dict]:
     """Load sample test cases."""
     tests_path = retell_fixtures_dir / "sample_tests.json"
     return json.loads(tests_path.read_text())
+
+
+@pytest.fixture
+def sample_retell_llm_config(retell_fixtures_dir: Path) -> dict:
+    """Load sample Retell LLM configuration."""
+    config_path = retell_fixtures_dir / "sample_llm_config.json"
+    return json.loads(config_path.read_text())
+
+
+@pytest.fixture
+def sample_retell_llm_config_path(retell_fixtures_dir: Path) -> Path:
+    """Return path to sample Retell LLM configuration file."""
+    return retell_fixtures_dir / "sample_llm_config.json"

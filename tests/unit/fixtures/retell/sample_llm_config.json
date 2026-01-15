@@ -1,0 +1,159 @@
+{
+  "llm_id": "llm_abc123def456",
+  "model": "gpt-4o",
+  "model_temperature": 0,
+  "begin_message": "Hello! Thank you for calling Acme Healthcare. How can I help you today?",
+  "general_prompt": "You are a helpful medical receptionist at Acme Healthcare. Be professional, empathetic, and concise. Always verify patient identity before discussing medical information.",
+  "general_tools": [
+    {
+      "type": "end_call",
+      "name": "end_call",
+      "description": "End the call when the conversation is complete or the patient requests to hang up."
+    },
+    {
+      "type": "transfer_call",
+      "name": "transfer_to_nurse",
+      "description": "Transfer the call to a nurse for medical questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Reason for the transfer"
+          }
+        },
+        "required": ["reason"]
+      }
+    }
+  ],
+  "states": [
+    {
+      "name": "greeting",
+      "state_prompt": "Greet the patient warmly and ask how you can assist them today. Listen for whether they want to schedule an appointment, check existing appointments, or have a general inquiry.",
+      "edges": [
+        {
+          "destination_state_name": "verify_identity",
+          "description": "Patient wants to schedule, cancel, or check an appointment"
+        },
+        {
+          "destination_state_name": "general_inquiry",
+          "description": "Patient has a general question not requiring identity verification"
+        }
+      ],
+      "tools": []
+    },
+    {
+      "name": "verify_identity",
+      "state_prompt": "Verify the patient's identity by asking for their full name and date of birth. Confirm the information before proceeding.",
+      "edges": [
+        {
+          "destination_state_name": "appointment_management",
+          "description": "Patient identity has been verified"
+        }
+      ],
+      "tools": [
+        {
+          "type": "custom",
+          "name": "lookup_patient",
+          "description": "Look up patient in the system by name and date of birth.",
+          "url": "https://api.acme.com/patients/lookup",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "full_name": {
+                "type": "string",
+                "description": "Patient's full name"
+              },
+              "date_of_birth": {
+                "type": "string",
+                "description": "Patient's date of birth in YYYY-MM-DD format"
+              }
+            },
+            "required": ["full_name", "date_of_birth"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "appointment_management",
+      "state_prompt": "Help the patient with their appointment needs. You can schedule new appointments, check existing ones, or cancel appointments. Confirm all details before making changes.",
+      "edges": [
+        {
+          "destination_state_name": "closing",
+          "description": "Appointment task is complete"
+        }
+      ],
+      "tools": [
+        {
+          "type": "custom",
+          "name": "get_available_slots",
+          "description": "Get available appointment slots for a given date range.",
+          "url": "https://api.acme.com/appointments/slots",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "start_date": {
+                "type": "string",
+                "description": "Start date in YYYY-MM-DD format"
+              },
+              "end_date": {
+                "type": "string",
+                "description": "End date in YYYY-MM-DD format"
+              },
+              "doctor_id": {
+                "type": "string",
+                "description": "Optional doctor ID to filter by"
+              }
+            },
+            "required": ["start_date", "end_date"]
+          }
+        },
+        {
+          "type": "custom",
+          "name": "book_appointment",
+          "description": "Book an appointment for the patient.",
+          "url": "https://api.acme.com/appointments/book",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "patient_id": {
+                "type": "string",
+                "description": "Patient ID from lookup"
+              },
+              "slot_id": {
+                "type": "string",
+                "description": "Available slot ID to book"
+              },
+              "reason": {
+                "type": "string",
+                "description": "Reason for the appointment"
+              }
+            },
+            "required": ["patient_id", "slot_id", "reason"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "general_inquiry",
+      "state_prompt": "Answer the patient's general questions about office hours, location, accepted insurance, or other non-sensitive information.",
+      "edges": [
+        {
+          "destination_state_name": "closing",
+          "description": "Question has been answered"
+        },
+        {
+          "destination_state_name": "verify_identity",
+          "description": "Patient now wants to do something requiring identity verification"
+        }
+      ],
+      "tools": []
+    },
+    {
+      "name": "closing",
+      "state_prompt": "Thank the patient for calling. Ask if there's anything else you can help with. If not, wish them a good day and end the call.",
+      "edges": [],
+      "tools": []
+    }
+  ]
+}

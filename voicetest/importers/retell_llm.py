@@ -1,0 +1,170 @@
+"""Retell LLM (single/multi-prompt) JSON importer."""
+
+import json
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
+
+from voicetest.importers.base import ImporterInfo
+from voicetest.models.agent import (
+    AgentGraph,
+    AgentNode,
+    ToolDefinition,
+    Transition,
+    TransitionCondition,
+)
+
+
+class RetellLLMTool(BaseModel):
+    """Retell LLM tool definition."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: str
+    name: str
+    description: str = ""
+    url: str | None = None
+    parameters: dict[str, Any] | None = None
+
+
+class RetellLLMEdge(BaseModel):
+    """Retell LLM state edge definition."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    destination_state_name: str
+    description: str = ""
+    parameters: dict[str, Any] | None = None
+
+
+class RetellLLMState(BaseModel):
+    """Retell LLM state definition."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    state_prompt: str = ""
+    edges: list[RetellLLMEdge] = []
+    tools: list[RetellLLMTool] = []
+
+
+class RetellLLMConfig(BaseModel):
+    """Retell LLM configuration."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    llm_id: str | None = None
+    model: str = "gpt-4o"
+    general_prompt: str = ""
+    begin_message: str | None = None
+    general_tools: list[RetellLLMTool] = []
+    states: list[RetellLLMState] = []
+
+
+class RetellLLMImporter:
+    """Import Retell LLM (single/multi-prompt) JSON."""
+
+    @property
+    def source_type(self) -> str:
+        return "retell-llm"
+
+    def get_info(self) -> ImporterInfo:
+        return ImporterInfo(
+            source_type="retell-llm",
+            description="Import Retell LLM (single/multi-prompt) JSON exports",
+            file_patterns=["*.json"],
+        )
+
+    def can_import(self, path_or_config: str | Path | dict) -> bool:
+        """Detect Retell LLM format by checking for characteristic fields."""
+        try:
+            config = self._load_config(path_or_config)
+            has_general_prompt = "general_prompt" in config
+            has_llm_id = "llm_id" in config
+            has_states = "states" in config
+            # Distinguish from Conversation Flow (which has start_node_id and nodes)
+            is_not_flow = "start_node_id" not in config and "nodes" not in config
+            return (has_general_prompt or has_llm_id or has_states) and is_not_flow
+        except Exception:
+            return False
+
+    def import_agent(self, path_or_config: str | Path | dict) -> AgentGraph:
+        """Convert Retell LLM JSON to AgentGraph."""
+        raw_config = self._load_config(path_or_config)
+        llm_config = RetellLLMConfig.model_validate(raw_config)
+
+        nodes: dict[str, AgentNode] = {}
+
+        if llm_config.states:
+            # Multi-state: each state becomes a node
+            for i, state in enumerate(llm_config.states):
+                transitions = [self._convert_edge(edge) for edge in state.edges]
+                tools = [self._convert_tool(t) for t in state.tools]
+                # Add general tools to each state
+                tools.extend([self._convert_tool(t) for t in llm_config.general_tools])
+
+                # Combine general_prompt with state_prompt
+                instructions = llm_config.general_prompt
+                if state.state_prompt:
+                    if instructions:
+                        instructions = f"{instructions}\n\n{state.state_prompt}"
+                    else:
+                        instructions = state.state_prompt
+
+                nodes[state.name] = AgentNode(
+                    id=state.name,
+                    instructions=instructions,
+                    transitions=transitions,
+                    tools=tools if tools else None,
+                    metadata={"state_index": i},
+                )
+
+            entry_node_id = llm_config.states[0].name
+        else:
+            # Single-prompt: create one node
+            tools = [self._convert_tool(t) for t in llm_config.general_tools]
+            nodes["main"] = AgentNode(
+                id="main",
+                instructions=llm_config.general_prompt,
+                tools=tools if tools else None,
+                transitions=[],
+            )
+            entry_node_id = "main"
+
+        return AgentGraph(
+            nodes=nodes,
+            entry_node_id=entry_node_id,
+            source_type="retell-llm",
+            source_metadata={
+                "llm_id": llm_config.llm_id,
+                "model": llm_config.model,
+                "begin_message": llm_config.begin_message,
+            },
+        )
+
+    def _load_config(self, path_or_config: str | Path | dict) -> dict[str, Any]:
+        """Load config from path or return dict directly."""
+        if isinstance(path_or_config, dict):
+            return path_or_config
+        path = Path(path_or_config)
+        return json.loads(path.read_text())
+
+    def _convert_edge(self, edge: RetellLLMEdge) -> Transition:
+        """Convert Retell LLM edge to Transition."""
+        return Transition(
+            target_node_id=edge.destination_state_name,
+            condition=TransitionCondition(
+                type="llm_prompt",
+                value=edge.description,
+            ),
+            description=edge.description,
+        )
+
+    def _convert_tool(self, tool: RetellLLMTool) -> ToolDefinition:
+        """Convert Retell LLM tool to ToolDefinition."""
+        return ToolDefinition(
+            name=tool.name,
+            description=tool.description,
+            parameters=tool.parameters or {},
+        )

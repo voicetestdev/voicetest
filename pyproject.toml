@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "1"
+version = "2"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "MIT"
