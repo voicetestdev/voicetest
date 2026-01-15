@@ -1,26 +1,32 @@
 [
   {
-    "id": "billing-inquiry",
     "name": "Customer billing inquiry",
-    "user_prompt": "## Identity\nYour name is Jane. Your account number is 12345.\n\n## Goal\nGet help understanding a charge on your recent bill.\n\n## Personality\nPolite but confused about the charge.",
+    "user_prompt": "When asked for name, provide or confirm you are Jane Smith. When asked for account number, say 12345. Say you're confused about a charge on your recent bill and ask for help understanding it.",
     "metrics": [
-      "Agent greeted the customer",
-      "Agent addressed the billing concern",
-      "Agent was helpful and professional"
+      "Agent greeted the customer, addressed the billing concern, and was helpful and professional."
     ],
-    "required_nodes": ["greeting", "billing"],
-    "max_turns": 10
+    "dynamic_variables": {
+      "account_number": "12345"
+    },
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini",
+    "creation_timestamp": 1761074675536,
+    "user_modified_timestamp": 1761074796123
   },
   {
-    "id": "technical-support",
     "name": "Technical support request",
-    "user_prompt": "## Identity\nYour name is Bob. Your device is a Model X smartphone.\n\n## Goal\nGet help because your phone won't turn on.\n\n## Personality\nFrustrated but reasonable.",
+    "user_prompt": "When asked for name, say Bob Johnson. When asked about the issue, say your Model X smartphone won't turn on. You've tried charging it overnight. Show frustration if the conversation goes too long without resolution.",
     "metrics": [
-      "Agent acknowledged the technical issue",
-      "Agent attempted to troubleshoot",
-      "Agent remained calm despite user frustration"
+      "Agent acknowledged the technical issue, attempted to troubleshoot, and remained calm despite user frustration."
     ],
-    "required_nodes": ["greeting", "support"],
-    "max_turns": 10
+    "dynamic_variables": {
+      "device_model": "Model X"
+    },
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini",
+    "creation_timestamp": 1761074675536,
+    "user_modified_timestamp": 1761074796123
   }
 ]

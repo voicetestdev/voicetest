@@ -148,7 +148,7 @@ async def run_test(
         )
 
         # Check flow constraints
-        violations = flow_judge.validate(state.nodes_visited, test_case)
+        violations = flow_judge.validate(state.nodes_visited)
 
         # Determine overall status
         metrics_passed = all(r.passed for r in metric_results)
@@ -158,7 +158,7 @@ async def run_test(
         duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
 
         return TestResult(
-            test_id=test_case.id,
+            test_id=test_case.name,
             test_name=test_case.name,
             status=status,
             transcript=state.transcript,
@@ -174,7 +174,7 @@ async def run_test(
     except Exception as e:
         duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
         return TestResult(
-            test_id=test_case.id,
+            test_id=test_case.name,
             test_name=test_case.name,
             status="error",
             duration_ms=duration_ms,

@@ -148,13 +148,11 @@ class TestRunEndpoints:
         )
         graph = import_response.json()
 
-        # Create test case
+        # Create test case (Retell format)
         test_case = {
-            "id": "test-1",
             "name": "API test",
-            "user_prompt": "## Identity\nTest\n\n## Goal\nTest\n\n## Personality\nBrief",
-            "metrics": ["Agent responded"],
-            "max_turns": 2
+            "user_prompt": "When asked, say Test. Say hello.",
+            "metrics": ["Agent responded."],
         }
 
         # Run test (will use mock mode internally due to test environment)
@@ -166,7 +164,7 @@ class TestRunEndpoints:
         # Should succeed even if test itself fails (it returns a result)
         assert response.status_code == 200
         result = response.json()
-        assert result["test_id"] == "test-1"
+        assert result["test_id"] == "API test"
         assert result["status"] in ("pass", "fail", "error")
 
     def test_run_multiple_tests(self, client, sample_retell_config):
@@ -178,18 +176,14 @@ class TestRunEndpoints:
 
         test_cases = [
             {
-                "id": "test-1",
                 "name": "Test 1",
-                "user_prompt": "## Identity\nA\n\n## Goal\nHello\n\n## Personality\nBrief",
+                "user_prompt": "When asked, say A. Say hello.",
                 "metrics": [],
-                "max_turns": 1
             },
             {
-                "id": "test-2",
                 "name": "Test 2",
-                "user_prompt": "## Identity\nB\n\n## Goal\nBye\n\n## Personality\nPolite",
+                "user_prompt": "When asked, say B. Say bye.",
                 "metrics": [],
-                "max_turns": 1
             }
         ]
 

@@ -53,21 +53,9 @@ def simple_agent_graph() -> AgentGraph:
 def simple_test_case() -> TestCase:
     """Create a simple test case."""
     return TestCase(
-        id="greeting-test",
         name="Greeting test",
-        user_prompt="""
-## Identity
-Your name is Test User.
-
-## Goal
-Say hello and see how the agent responds.
-
-## Personality
-Brief and polite.
-""",
-        metrics=["Agent greeted the user"],
-        required_nodes=["greeting"],
-        max_turns=3
+        user_prompt="When asked for name, say Test User. Say hello and see how the agent responds.",
+        metrics=["Agent greeted the user."],
     )
 
 
@@ -89,7 +77,6 @@ class TestEndToEndFlow:
         from voicetest import api
         from voicetest.models.results import TestResult
 
-        # Use mock options for testing
         options = RunOptions(max_turns=2)
 
         result = await api.run_test(
@@ -100,7 +87,7 @@ class TestEndToEndFlow:
         )
 
         assert isinstance(result, TestResult)
-        assert result.test_id == "greeting-test"
+        assert result.test_id == "Greeting test"
         assert result.status in ("pass", "fail", "error")
 
     @pytest.mark.asyncio
@@ -110,22 +97,19 @@ class TestEndToEndFlow:
 
         test_cases = [
             TestCase(
-                id="t1",
                 name="Test 1",
-                user_prompt="## Identity\nJohn\n\n## Goal\nHello\n\n## Personality\nBrief",
-                max_turns=2
+                user_prompt="When asked, say John. Say hello.",
             ),
             TestCase(
-                id="t2",
                 name="Test 2",
-                user_prompt="## Identity\nJane\n\n## Goal\nBye\n\n## Personality\nPolite",
-                max_turns=2
+                user_prompt="When asked, say Jane. Say goodbye.",
             )
         ]
 
         result = await api.run_tests(
             simple_agent_graph,
             test_cases,
+            options=RunOptions(max_turns=2),
             _mock_mode=True
         )
 
@@ -162,10 +146,10 @@ class TestRunTestBehavior:
         result = await api.run_test(
             simple_agent_graph,
             simple_test_case,
+            options=RunOptions(max_turns=3),
             _mock_mode=True
         )
 
-        # Should have visited at least the entry node
         assert "greeting" in result.nodes_visited
 
     @pytest.mark.asyncio
@@ -175,33 +159,11 @@ class TestRunTestBehavior:
         result = await api.run_test(
             simple_agent_graph,
             simple_test_case,
+            options=RunOptions(max_turns=3),
             _mock_mode=True
         )
 
-        # Should have evaluated the metrics
         assert len(result.metric_results) == len(simple_test_case.metrics)
-
-    @pytest.mark.asyncio
-    async def test_run_test_checks_flow_constraints(self, simple_agent_graph):
-        from voicetest import api
-
-        test_case = TestCase(
-            id="flow-test",
-            name="Flow test",
-            user_prompt="## Identity\nTest\n\n## Goal\nTest\n\n## Personality\nTest",
-            required_nodes=["greeting", "nonexistent"],
-            max_turns=2
-        )
-
-        result = await api.run_test(
-            simple_agent_graph,
-            test_case,
-            _mock_mode=True
-        )
-
-        # Should detect the missing required node
-        assert len(result.constraint_violations) > 0
-        assert any("nonexistent" in v for v in result.constraint_violations)
 
 
 class TestExportAgent:

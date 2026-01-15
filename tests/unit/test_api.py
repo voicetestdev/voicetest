@@ -100,20 +100,20 @@ class TestRunTest:
     async def test_run_test_returns_result(self, sample_retell_config):
         from voicetest import api
         from voicetest.models.results import TestResult
-        from voicetest.models.test_case import TestCase
+        from voicetest.models.test_case import RunOptions, TestCase
 
         graph = await api.import_agent(sample_retell_config)
         test_case = TestCase(
-            id="test-1",
             name="Test",
-            user_prompt="## Identity\nJohn\n\n## Goal\nSay hi\n\n## Personality\nBrief",
-            max_turns=2
+            user_prompt="When asked, say John. Say hi.",
         )
 
-        result = await api.run_test(graph, test_case, _mock_mode=True)
+        result = await api.run_test(
+            graph, test_case, options=RunOptions(max_turns=2), _mock_mode=True
+        )
 
         assert isinstance(result, TestResult)
-        assert result.test_id == "test-1"
+        assert result.test_id == "Test"
 
 
 class TestRunTests:
@@ -123,18 +123,19 @@ class TestRunTests:
     async def test_run_tests_returns_run(self, sample_retell_config):
         from voicetest import api
         from voicetest.models.results import TestRun
-        from voicetest.models.test_case import TestCase
+        from voicetest.models.test_case import RunOptions, TestCase
 
         graph = await api.import_agent(sample_retell_config)
         test_cases = [
             TestCase(
-                id="t1", name="T1",
-                user_prompt="## Identity\nA\n\n## Goal\nX\n\n## Personality\nY",
-                max_turns=2
+                name="T1",
+                user_prompt="When asked, say A. Do X.",
             ),
         ]
 
-        result = await api.run_tests(graph, test_cases, _mock_mode=True)
+        result = await api.run_tests(
+            graph, test_cases, options=RunOptions(max_turns=2), _mock_mode=True
+        )
 
         assert isinstance(result, TestRun)
         assert len(result.results) == 1

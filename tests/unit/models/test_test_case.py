@@ -35,57 +35,81 @@ class TestRunOptions:
 
 
 class TestTestCase:
-    """Tests for TestCase model."""
+    """Tests for TestCase model matching Retell export format."""
 
     def test_create_basic_test_case(self):
         from voicetest.models.test_case import TestCase
 
         test = TestCase(
-            id="test-001",
             name="Basic greeting test",
-            user_prompt="## Identity\nYou are John.\n\n## Goal\nSay hello."
+            user_prompt="When asked for name, say John. Your goal is to say hello."
         )
-        assert test.id == "test-001"
         assert test.name == "Basic greeting test"
         assert "John" in test.user_prompt
         assert test.metrics == []
-        assert test.required_nodes is None
-        assert test.forbidden_nodes is None
-        assert test.max_turns == 20
+        assert test.dynamic_variables == {}
+        assert test.tool_mocks == []
+        assert test.type == "simulation"
+        assert test.llm_model is None
 
     def test_create_full_test_case(self):
         from voicetest.models.test_case import TestCase
 
         test = TestCase(
-            id="billing-test",
             name="Billing inquiry test",
-            user_prompt="## Identity\nJane\n\n## Goal\nAsk about bill",
-            metrics=[
-                "Agent greeted customer",
-                "Agent addressed billing concern"
-            ],
-            required_nodes=["greeting", "billing"],
-            forbidden_nodes=["escalation"],
-            function_mocks={"get_balance": 100.00},
-            max_turns=15
+            user_prompt="When asked for name, say Jane. Ask about your bill.",
+            metrics=["Agent greeted customer and addressed billing concern."],
+            dynamic_variables={"account_id": "12345"},
+            tool_mocks=[],
+            type="simulation",
+            llm_model="gpt-4o-mini",
+            creation_timestamp=1761074675536,
+            user_modified_timestamp=1761074796123,
         )
-        assert len(test.metrics) == 2
-        assert test.required_nodes == ["greeting", "billing"]
-        assert test.forbidden_nodes == ["escalation"]
-        assert test.function_mocks["get_balance"] == 100.00
-        assert test.max_turns == 15
+        assert len(test.metrics) == 1
+        assert test.metrics[0] == "Agent greeted customer and addressed billing concern."
+        assert test.dynamic_variables == {"account_id": "12345"}
+        assert test.tool_mocks == []
+        assert test.llm_model == "gpt-4o-mini"
+        assert test.creation_timestamp == 1761074675536
 
     def test_test_case_json_serialization(self):
         from voicetest.models.test_case import TestCase
 
         test = TestCase(
-            id="test-1",
             name="Test",
             user_prompt="Prompt",
-            metrics=["metric1", "metric2"]
+            metrics=["Criteria for success."]
         )
 
         json_str = test.model_dump_json()
         restored = TestCase.model_validate_json(json_str)
-        assert restored.id == "test-1"
-        assert restored.metrics == ["metric1", "metric2"]
+        assert restored.name == "Test"
+        assert restored.metrics == ["Criteria for success."]
+
+    def test_retell_export_format_compatibility(self):
+        """Verify compatibility with actual Retell export format."""
+        from voicetest.models.test_case import TestCase
+
+        retell_export = {
+            "name": "Refill Declined wants 6 week callback",
+            "dynamic_variables": {"customer_id": "cust_123"},
+            "metrics": [
+                "Confirms identity and DOB, acknowledges refill decline, "
+                "asks why they declined, asks if they want callback in a month, "
+                "confirms will do callback in 6 weeks, thanks caller, ends call."
+            ],
+            "user_prompt": "When asked for name or to confirm, provide or confirm "
+                "you are Robert Wilson. When asked for DOB, provide September 17th 1983.",
+            "creation_timestamp": 1761074675536,
+            "user_modified_timestamp": 1761074796123,
+            "type": "simulation",
+            "tool_mocks": [],
+            "llm_model": "gpt-4o-mini"
+        }
+
+        test = TestCase.model_validate(retell_export)
+        assert test.name == "Refill Declined wants 6 week callback"
+        assert test.dynamic_variables == {"customer_id": "cust_123"}
+        assert len(test.metrics) == 1
+        assert test.type == "simulation"

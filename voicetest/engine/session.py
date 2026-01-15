@@ -83,7 +83,7 @@ class ConversationRunner:
         node_tracker.record(self.graph.entry_node_id)
         current_agent = self.agent_classes[self.graph.entry_node_id]()
 
-        for _turn in range(test_case.max_turns):
+        for _turn in range(self.options.max_turns):
             # Get simulated user input
             sim_response = await user_simulator.generate(state.transcript)
 

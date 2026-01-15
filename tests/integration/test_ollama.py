@@ -93,19 +93,9 @@ def simple_graph() -> AgentGraph:
 def simple_test_case() -> TestCase:
     """A simple test case for greeting behavior."""
     return TestCase(
-        id="greeting-test",
         name="Basic greeting test",
-        user_prompt="""## Identity
-Your name is Alex.
-
-## Goal
-Say hello and ask a simple question about store hours.
-
-## Personality
-Friendly and brief.""",
-        metrics=["Agent greeted the user"],
-        required_nodes=["greeting"],
-        max_turns=4
+        user_prompt="When asked for name, say Alex. Say hello and ask about store hours.",
+        metrics=["Agent greeted the user."],
     )
 
 
@@ -123,16 +113,11 @@ class TestOllamaExecution:
             options=ollama_options,
         )
 
-        # Basic structure checks
-        assert result.test_id == "greeting-test"
+        assert result.test_id == "Basic greeting test"
         assert result.status in ("pass", "fail", "error")
         assert result.turn_count > 0
         assert len(result.transcript) > 0
-
-        # Should have visited at least the greeting node
         assert "greeting" in result.nodes_visited
-
-        # Should have evaluated metrics
         assert len(result.metric_results) > 0
 
     @pytest.mark.asyncio
@@ -146,7 +131,6 @@ class TestOllamaExecution:
             options=ollama_options,
         )
 
-        # Transcript should have actual content
         for msg in result.transcript:
             assert msg.content, f"Empty message from {msg.role}"
             assert len(msg.content) > 0
@@ -164,7 +148,6 @@ class TestOllamaExecution:
             options=ollama_options,
         )
 
-        # Should have at least one user message and one assistant message
         user_messages = [m for m in result.transcript if m.role == "user"]
         assistant_messages = [m for m in result.transcript if m.role == "assistant"]
 
@@ -199,25 +182,19 @@ class TestOllamaMultipleTests:
 
         test_cases = [
             TestCase(
-                id="test-1",
                 name="Greeting test",
-                user_prompt="## Identity\nBob\n\n## Goal\nSay hello\n\n## Personality\nBrief",
-                metrics=["Agent greeted the user"],
-                max_turns=3
+                user_prompt="When asked for name, say Bob. Say hello.",
+                metrics=["Agent greeted the user."],
             ),
             TestCase(
-                id="test-2",
                 name="Question test",
-                user_prompt=(
-                    "## Identity\nAlice\n\n## Goal\nAsk about hours\n\n## Personality\nPolite"
-                ),
-                metrics=["Agent responded to question"],
-                max_turns=3
+                user_prompt="When asked for name, say Alice. Ask about store hours.",
+                metrics=["Agent responded to question."],
             ),
         ]
 
         run = await api.run_tests(simple_graph, test_cases, options=ollama_options)
 
         assert len(run.results) == 2
-        assert run.results[0].test_id == "test-1"
-        assert run.results[1].test_id == "test-2"
+        assert run.results[0].test_id == "Greeting test"
+        assert run.results[1].test_id == "Question test"
