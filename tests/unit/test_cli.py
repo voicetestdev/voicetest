@@ -13,11 +13,11 @@ def cli_runner():
 
 
 @pytest.fixture
-def temp_config_file(tmp_path, sample_retell_config):
-    """Create a temporary config file."""
-    config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps(sample_retell_config))
-    return config_path
+def temp_agent_file(tmp_path, sample_retell_config):
+    """Create a temporary agent definition file."""
+    agent_path = tmp_path / "agent.json"
+    agent_path.write_text(json.dumps(sample_retell_config))
+    return agent_path
 
 
 @pytest.fixture
@@ -56,38 +56,38 @@ class TestCLIImporters:
 class TestCLIExport:
     """Tests for the export command."""
 
-    def test_export_mermaid(self, cli_runner, temp_config_file):
+    def test_export_mermaid(self, cli_runner, temp_agent_file):
         from voicetest.cli import main
 
         result = cli_runner.invoke(main, [
             "export",
-            "--config", str(temp_config_file),
+            "--agent", str(temp_agent_file),
             "--format", "mermaid"
         ])
 
         assert result.exit_code == 0
         assert "flowchart" in result.output.lower()
 
-    def test_export_livekit(self, cli_runner, temp_config_file):
+    def test_export_livekit(self, cli_runner, temp_agent_file):
         from voicetest.cli import main
 
         result = cli_runner.invoke(main, [
             "export",
-            "--config", str(temp_config_file),
+            "--agent", str(temp_agent_file),
             "--format", "livekit"
         ])
 
         assert result.exit_code == 0
         assert "class Agent_greeting" in result.output
 
-    def test_export_to_file(self, cli_runner, temp_config_file, tmp_path):
+    def test_export_to_file(self, cli_runner, temp_agent_file, tmp_path):
         from voicetest.cli import main
 
         output_path = tmp_path / "output.md"
 
         result = cli_runner.invoke(main, [
             "export",
-            "--config", str(temp_config_file),
+            "--agent", str(temp_agent_file),
             "--format", "mermaid",
             "--output", str(output_path)
         ])
@@ -106,26 +106,26 @@ class TestCLIRun:
         result = cli_runner.invoke(main, ["run", "--help"])
 
         assert result.exit_code == 0
-        assert "--config" in result.output
+        assert "--agent" in result.output
         assert "--tests" in result.output
 
-    def test_run_missing_config(self, cli_runner, temp_tests_file):
+    def test_run_missing_agent(self, cli_runner, temp_tests_file):
         from voicetest.cli import main
 
         result = cli_runner.invoke(main, [
             "run",
-            "--config", "/nonexistent/config.json",
+            "--agent", "/nonexistent/agent.json",
             "--tests", str(temp_tests_file)
         ])
 
         assert result.exit_code != 0
 
-    def test_run_missing_tests(self, cli_runner, temp_config_file):
+    def test_run_missing_tests(self, cli_runner, temp_agent_file):
         from voicetest.cli import main
 
         result = cli_runner.invoke(main, [
             "run",
-            "--config", str(temp_config_file),
+            "--agent", str(temp_agent_file),
             "--tests", "/nonexistent/tests.json"
         ])
 

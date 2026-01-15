@@ -208,7 +208,9 @@ class TestOllamaMultipleTests:
             TestCase(
                 id="test-2",
                 name="Question test",
-                user_prompt="## Identity\nAlice\n\n## Goal\nAsk about hours\n\n## Personality\nPolite",
+                user_prompt=(
+                    "## Identity\nAlice\n\n## Goal\nAsk about hours\n\n## Personality\nPolite"
+                ),
                 metrics=["Agent responded to question"],
                 max_turns=3
             ),

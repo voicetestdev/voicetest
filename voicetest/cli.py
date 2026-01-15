@@ -34,10 +34,10 @@ def main(ctx):
 
 @main.command()
 @click.option(
-    "--config", "-c",
+    "--agent", "-a",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Agent config file"
+    help="Agent definition file"
 )
 @click.option(
     "--tests", "-t",
@@ -67,32 +67,40 @@ def main(ctx):
     help="Launch interactive TUI"
 )
 def run(
-    config: Path,
+    agent: Path,
     tests: Path,
     source: str | None,
     output: Path | None,
     verbose: bool,
     interactive: bool,
 ):
-    """Run tests against an agent config."""
+    """Run tests against an agent definition."""
     if interactive:
-        _run_tui(config, tests, source, verbose)
+        _run_tui(agent, tests, source, verbose)
     else:
-        asyncio.run(_run_cli(config, tests, source, output, verbose))
+        asyncio.run(_run_cli(agent, tests, source, output, verbose))
 
 
 def _run_tui(
-    config: Path,
+    agent: Path,
     tests: Path,
     source: str | None,
     verbose: bool,
 ) -> None:
     """Launch interactive TUI."""
+    from voicetest.settings import load_settings
     from voicetest.tui import VoicetestApp
 
-    options = RunOptions(verbose=verbose)
+    settings = load_settings()
+    options = RunOptions(
+        agent_model=settings.models.agent,
+        simulator_model=settings.models.simulator,
+        judge_model=settings.models.judge,
+        max_turns=settings.run.max_turns,
+        verbose=verbose or settings.run.verbose,
+    )
     app = VoicetestApp(
-        config_path=config,
+        agent_path=agent,
         tests_path=tests,
         source=source,
         options=options,
@@ -102,16 +110,25 @@ def _run_tui(
 
 
 async def _run_cli(
-    config: Path,
+    agent: Path,
     tests: Path,
     source: str | None,
     output: Path | None,
     verbose: bool,
 ) -> None:
     """Run tests in CLI mode."""
-    options = RunOptions(verbose=verbose)
+    from voicetest.settings import load_settings
+
+    settings = load_settings()
+    options = RunOptions(
+        agent_model=settings.models.agent,
+        simulator_model=settings.models.simulator,
+        judge_model=settings.models.judge,
+        max_turns=settings.run.max_turns,
+        verbose=verbose or settings.run.verbose,
+    )
     ctx = TestRunContext(
-        config_path=config,
+        agent_path=agent,
         tests_path=tests,
         source=source,
         options=options,
@@ -119,7 +136,7 @@ async def _run_cli(
     )
 
     # Load
-    console.print("[bold]Importing agent config...[/bold]")
+    console.print("[bold]Importing agent definition...[/bold]")
     await ctx.load()
     console.print(f"  Source: {ctx.graph.source_type}")
     console.print(f"  Nodes: {len(ctx.graph.nodes)}")
@@ -151,10 +168,10 @@ def _display_results(run_result) -> None:
 
 @main.command()
 @click.option(
-    "--config", "-c",
+    "--agent", "-a",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Agent config file"
+    help="Agent definition file"
 )
 @click.option(
     "--tests", "-t",
@@ -167,17 +184,17 @@ def _display_results(run_result) -> None:
     default=None,
     help="Source type (auto-detect if not specified)"
 )
-def tui(config: Path, tests: Path, source: str | None):
+def tui(agent: Path, tests: Path, source: str | None):
     """Launch interactive TUI for test execution."""
-    _run_tui(config, tests, source, verbose=False)
+    _run_tui(agent, tests, source, verbose=False)
 
 
 @main.command()
 @click.option(
-    "--config", "-c",
+    "--agent", "-a",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Agent config file"
+    help="Agent definition file"
 )
 @click.option(
     "--format", "-f",
@@ -191,14 +208,14 @@ def tui(config: Path, tests: Path, source: str | None):
     type=click.Path(path_type=Path),
     help="Output file"
 )
-def export(config: Path, format: str, output: Path | None):
+def export(agent: Path, format: str, output: Path | None):
     """Export agent to different formats."""
-    asyncio.run(_export(config, format, output))
+    asyncio.run(_export(agent, format, output))
 
 
-async def _export(config: Path, format: str, output: Path | None) -> None:
+async def _export(agent: Path, format: str, output: Path | None) -> None:
     """Async implementation of export command."""
-    graph = await api.import_agent(config)
+    graph = await api.import_agent(agent)
     result = await api.export_agent(graph, format=format, output=output)
 
     if not output:
@@ -225,6 +242,45 @@ def importers():
         )
 
     console.print(table)
+
+
+@main.command()
+@click.option(
+    "--host", "-h",
+    default="127.0.0.1",
+    help="Host to bind to"
+)
+@click.option(
+    "--port", "-p",
+    default=8000,
+    type=int,
+    help="Port to bind to"
+)
+@click.option(
+    "--reload",
+    is_flag=True,
+    help="Enable auto-reload for development"
+)
+def serve(host: str, port: int, reload: bool):
+    """Start the REST API server."""
+    try:
+        import uvicorn
+    except ImportError:
+        console.print("[red]Error: uvicorn not installed.[/red]")
+        console.print("Install with: uv add 'voicetest[api]'")
+        raise SystemExit(1) from None
+
+    console.print("[bold]Starting voicetest API server...[/bold]")
+    console.print(f"  URL: http://{host}:{port}")
+    console.print(f"  Docs: http://{host}:{port}/docs")
+    console.print()
+
+    uvicorn.run(
+        "voicetest.rest:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
 
 
 if __name__ == "__main__":

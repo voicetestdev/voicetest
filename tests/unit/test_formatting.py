@@ -173,8 +173,12 @@ class TestFormatRun:
             run_id="run-1",
             started_at=datetime.now(),
             results=[
-                TestResult(test_id="1", test_name="Test A", status="pass", turn_count=1, duration_ms=10),
-                TestResult(test_id="2", test_name="Test B", status="fail", turn_count=2, duration_ms=20),
+                TestResult(
+                    test_id="1", test_name="Test A", status="pass", turn_count=1, duration_ms=10
+                ),
+                TestResult(
+                    test_id="2", test_name="Test B", status="fail", turn_count=2, duration_ms=20
+                ),
             ],
         )
         lines = format_run(run)

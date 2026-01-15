@@ -61,7 +61,7 @@ class VoicetestApp(App):
 
     def __init__(
         self,
-        config_path: Path,
+        agent_path: Path,
         tests_path: Path,
         source: str | None = None,
         options: RunOptions | None = None,
@@ -69,7 +69,7 @@ class VoicetestApp(App):
     ):
         super().__init__()
         self.context = TestRunContext(
-            config_path=config_path,
+            agent_path=agent_path,
             tests_path=tests_path,
             source=source,
             options=options,
@@ -92,7 +92,7 @@ class VoicetestApp(App):
     async def on_mount(self) -> None:
         """Initialize when app starts."""
         self.title = "voicetest"
-        self.sub_title = str(self.context.config_path.name)
+        self.sub_title = str(self.context.agent_path.name)
 
         # Load test cases
         await self.context.load()

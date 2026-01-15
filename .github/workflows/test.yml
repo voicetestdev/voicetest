@@ -26,7 +26,7 @@ jobs:
         run: uv sync --frozen --all-extras
 
       - name: Run linting
-        run: uv run ruff check src/ tests/
+        run: uv run ruff check voicetest/ tests/
 
       - name: Run tests
         run: uv run pytest tests/ -v --tb=short

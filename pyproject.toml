@@ -29,6 +29,8 @@ dependencies = [
     "click>=8.0",
     "rich>=13.0",
     "textual>=7.2.0",
+    "duckdb>=1.4.3",
+    "pyarrow>=22.0.0",
 ]
 
 [project.urls]
@@ -37,10 +39,15 @@ Repository = "https://github.com/pld/voicetest"
 Issues = "https://github.com/pld/voicetest/issues"
 
 [project.optional-dependencies]
+api = [
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
+    "httpx>=0.28",
 ]
 
 [project.scripts]

@@ -23,7 +23,7 @@ uv add voicetest
 uv run voicetest
 
 # In the shell:
-> config tests/fixtures/retell/sample_config.json
+> agent tests/fixtures/retell/sample_agent.json
 > tests tests/fixtures/retell/sample_tests.json
 > set agent_model ollama_chat/qwen2.5:0.5b
 > run
@@ -35,14 +35,14 @@ uv run voicetest
 # List available importers
 voicetest importers
 
-# Run tests against an agent config
-voicetest run --config agent.json --tests tests.json
+# Run tests against an agent definition
+voicetest run --agent agent.json --tests tests.json
 
 # Export agent as Mermaid diagram
-voicetest export --config agent.json --format mermaid
+voicetest export --agent agent.json --format mermaid
 
 # Launch full TUI
-voicetest tui --config agent.json --tests tests.json
+voicetest tui --agent agent.json --tests tests.json
 ```
 
 ## Test Case Format
@@ -71,15 +71,15 @@ voicetest tui --config agent.json --tests tests.json
 
 ## LLM Configuration
 
-Configure different models for each role:
+Configure different models for each role using [LiteLLM format](https://docs.litellm.ai/docs/providers):
 
 ```python
 from voicetest.models.test_case import RunOptions
 
 options = RunOptions(
-    agent_model="openai/gpt-4o-mini",      # Agent responses
-    simulator_model="openai/gpt-4o-mini",  # User simulation
-    judge_model="openai/gpt-4o-mini",      # Metric evaluation
+    agent_model="openai/gpt-4o-mini",
+    simulator_model="gemini/gemini-1.5-flash",
+    judge_model="anthropic/claude-3-haiku-20240307",
     max_turns=20,
 )
 ```
@@ -92,6 +92,12 @@ options = RunOptions(
     simulator_model="ollama_chat/qwen2.5:0.5b",
     judge_model="ollama_chat/qwen2.5:0.5b",
 )
+```
+
+In the shell:
+```
+> set agent_model gemini/gemini-1.5-flash
+> set simulator_model ollama_chat/qwen2.5:0.5b
 ```
 
 ## Development
@@ -119,6 +125,7 @@ voicetest/
 ├── voicetest/           # Package
 │   ├── api.py           # Core API
 │   ├── cli.py           # CLI
+│   ├── rest.py          # REST API server
 │   ├── models/          # Pydantic models
 │   ├── importers/       # Source importers (retell, custom)
 │   ├── exporters/       # Graph export (mermaid, livekit)
@@ -127,11 +134,10 @@ voicetest/
 │   ├── judges/          # Evaluation judges
 │   └── tui/             # TUI and shell
 ├── tests/
-│   ├── unit/            # Unit tests (164 tests)
+│   ├── unit/            # Unit tests
 │   └── integration/     # Integration tests (Ollama)
 └── docs/
-    ├── M1_SPEC.md       # M1 specification
-    └── M2_SPEC.md       # M2 specification
+    └── M2_SPEC.md       # Future roadmap
 ```
 
 ## License

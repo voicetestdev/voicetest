@@ -15,19 +15,19 @@ from voicetest.models.test_case import RunOptions, TestCase
 
 
 async def load_agent(
-    config_path: Path,
+    agent_path: Path,
     source: str | None = None,
 ) -> AgentGraph:
-    """Load an agent from a config file.
+    """Load an agent from a definition file.
 
     Args:
-        config_path: Path to agent config file.
+        agent_path: Path to agent definition file.
         source: Source type override (auto-detect if None).
 
     Returns:
         Loaded AgentGraph.
     """
-    return await api.import_agent(config_path, source=source)
+    return await api.import_agent(agent_path, source=source)
 
 
 def load_test_cases(tests_path: Path) -> list[TestCase]:
@@ -92,13 +92,13 @@ class TestRunContext:
 
     def __init__(
         self,
-        config_path: Path,
+        agent_path: Path,
         tests_path: Path,
         source: str | None = None,
         options: RunOptions | None = None,
         mock_mode: bool = False,
     ):
-        self.config_path = config_path
+        self.agent_path = agent_path
         self.tests_path = tests_path
         self.source = source
         self.options = options or RunOptions()
@@ -110,7 +110,7 @@ class TestRunContext:
 
     async def load(self) -> None:
         """Load agent and test cases."""
-        self.graph = await load_agent(self.config_path, self.source)
+        self.graph = await load_agent(self.agent_path, self.source)
         self.test_cases = load_test_cases(self.tests_path)
 
     async def run_all(self) -> TestRun:

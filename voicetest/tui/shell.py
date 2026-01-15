@@ -1,5 +1,6 @@
 """Interactive shell TUI for voicetest."""
 
+import difflib
 from pathlib import Path
 
 from textual.app import App, ComposeResult
@@ -8,6 +9,9 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
 from voicetest.models.test_case import RunOptions
+from voicetest.settings import Settings, load_settings, save_settings
+
+COMMANDS = ["agent", "tests", "set", "run", "export", "importers", "clear", "quit", "exit", "help"]
 
 
 class ConfigPanel(Static):
@@ -15,13 +19,24 @@ class ConfigPanel(Static):
 
     def __init__(self, **kwargs):
         super().__init__("", **kwargs)
-        self._config: Path | None = None
+        self._agent: Path | None = None
         self._tests: Path | None = None
-        self._options = RunOptions()
+        self._settings = load_settings()
+        self._options = self._options_from_settings(self._settings)
         self._update_display()
 
-    def set_config(self, path: Path) -> None:
-        self._config = path
+    def _options_from_settings(self, settings: Settings) -> RunOptions:
+        """Create RunOptions from Settings."""
+        return RunOptions(
+            agent_model=settings.models.agent,
+            simulator_model=settings.models.simulator,
+            judge_model=settings.models.judge,
+            max_turns=settings.run.max_turns,
+            verbose=settings.run.verbose,
+        )
+
+    def set_agent(self, path: Path) -> None:
+        self._agent = path
         self._update_display()
 
     def set_tests(self, path: Path) -> None:
@@ -29,25 +44,32 @@ class ConfigPanel(Static):
         self._update_display()
 
     def set_option(self, key: str, value: str) -> bool:
-        """Set a run option. Returns True if valid."""
+        """Set a run option and persist to .voicetest.toml. Returns True if valid."""
         if key == "agent_model":
             self._options.agent_model = value
+            self._settings.models.agent = value
         elif key == "simulator_model":
             self._options.simulator_model = value
+            self._settings.models.simulator = value
         elif key == "judge_model":
             self._options.judge_model = value
+            self._settings.models.judge = value
         elif key == "max_turns":
             self._options.max_turns = int(value)
+            self._settings.run.max_turns = int(value)
         elif key == "verbose":
-            self._options.verbose = value.lower() in ("true", "1", "yes")
+            val = value.lower() in ("true", "1", "yes")
+            self._options.verbose = val
+            self._settings.run.verbose = val
         else:
             return False
+        save_settings(self._settings)
         self._update_display()
         return True
 
     @property
-    def config_path(self) -> Path | None:
-        return self._config
+    def agent_path(self) -> Path | None:
+        return self._agent
 
     @property
     def tests_path(self) -> Path | None:
@@ -58,13 +80,13 @@ class ConfigPanel(Static):
         return self._options
 
     def _update_display(self) -> None:
-        config_str = str(self._config) if self._config else "[dim]not set[/dim]"
+        agent_str = str(self._agent) if self._agent else "[dim]not set[/dim]"
         tests_str = str(self._tests) if self._tests else "[dim]not set[/dim]"
 
         self.update(
-            f"[bold]Configuration[/bold]\n"
-            f"  config: {config_str}\n"
-            f"  tests:  {tests_str}\n"
+            f"[bold]Paths[/bold]\n"
+            f"  agent: {agent_str}\n"
+            f"  tests: {tests_str}\n"
             f"\n"
             f"[bold]Models[/bold]\n"
             f"  agent:     {self._options.agent_model}\n"
@@ -136,7 +158,7 @@ class VoicetestShell(App):
                 yield ConfigPanel(id="config-panel")
                 yield Static(
                     "\n[bold]Commands[/bold]\n"
-                    "  config <path>    Set agent config\n"
+                    "  agent <path>     Set agent definition\n"
                     "  tests <path>     Set tests file\n"
                     "  set <key> <val>  Set option\n"
                     "  run              Run tests\n"
@@ -154,9 +176,12 @@ class VoicetestShell(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        from voicetest.settings import SETTINGS_FILE
         self.title = "voicetest"
         self.sub_title = "interactive shell"
         self._log("[bold green]voicetest[/bold green] interactive shell")
+        if Path(SETTINGS_FILE).exists():
+            self._log(f"[dim]Loaded settings from {SETTINGS_FILE}[/dim]")
         self._log("Type 'help' for commands, 'quit' to exit\n")
         self.query_one("#command-input", Input).focus()
 
@@ -187,7 +212,7 @@ class VoicetestShell(App):
         elif cmd == "help":
             self._log(
                 "[bold]Available commands:[/bold]\n"
-                "  config <path>       Set agent config file\n"
+                "  agent <path>        Set agent definition file\n"
                 "  tests <path>        Set tests file\n"
                 "  set <key> <value>   Set option (agent_model, simulator_model,\n"
                 "                      judge_model, max_turns, verbose)\n"
@@ -198,16 +223,16 @@ class VoicetestShell(App):
                 "  quit                Exit shell"
             )
 
-        elif cmd == "config":
+        elif cmd == "agent":
             if not args:
-                self._log("[red]Usage: config <path>[/red]")
+                self._log("[red]Usage: agent <path>[/red]")
                 return
             path = Path(args).expanduser()
             if not path.exists():
                 self._log(f"[red]File not found: {path}[/red]")
                 return
-            config_panel.set_config(path)
-            self._log(f"[green]Config set to {path}[/green]")
+            config_panel.set_agent(path)
+            self._log(f"[green]Agent set to {path}[/green]")
 
         elif cmd == "tests":
             if not args:
@@ -227,7 +252,9 @@ class VoicetestShell(App):
                 return
             key, value = parts
             if config_panel.set_option(key, value):
-                self._log(f"[green]Set {key} = {value}[/green]")
+                self._log(
+                    f"[green]Set {key} = {value}[/green] [dim](saved to .voicetest.toml)[/dim]"
+                )
             else:
                 self._log(f"[red]Unknown option: {key}[/red]")
 
@@ -244,12 +271,22 @@ class VoicetestShell(App):
             self.query_one("#output", RichLog).clear()
 
         else:
-            self._log(f"[red]Unknown command: {cmd}[/red]")
+            # Try to find a similar command
+            matches = difflib.get_close_matches(cmd, COMMANDS, n=1, cutoff=0.6)
+            if matches:
+                self._log(
+                    f"[red]Unknown command: {cmd}[/red]. "
+                    f"Did you mean '[cyan]{matches[0]}[/cyan]'?"
+                )
+            else:
+                self._log(
+                    f"[red]Unknown command: {cmd}[/red]. Type 'help' for available commands."
+                )
 
     async def _run_tests(self, config_panel: ConfigPanel) -> None:
         """Run tests with current configuration."""
-        if not config_panel.config_path:
-            self._log("[red]No config set. Use 'config <path>' first.[/red]")
+        if not config_panel.agent_path:
+            self._log("[red]No agent set. Use 'agent <path>' first.[/red]")
             return
         if not config_panel.tests_path:
             self._log("[red]No tests set. Use 'tests <path>' first.[/red]")
@@ -261,7 +298,7 @@ class VoicetestShell(App):
         self._log("[bold]Running tests...[/bold]")
 
         try:
-            graph = await api.import_agent(config_panel.config_path)
+            graph = await api.import_agent(config_panel.agent_path)
             self._log(f"  Loaded agent: {graph.source_type}, {len(graph.nodes)} nodes")
 
             test_cases = load_test_cases(config_panel.tests_path)
@@ -282,8 +319,8 @@ class VoicetestShell(App):
 
     async def _export(self, config_panel: ConfigPanel, format: str) -> None:
         """Export agent to format."""
-        if not config_panel.config_path:
-            self._log("[red]No config set. Use 'config <path>' first.[/red]")
+        if not config_panel.agent_path:
+            self._log("[red]No agent set. Use 'agent <path>' first.[/red]")
             return
 
         if not format:
@@ -293,7 +330,7 @@ class VoicetestShell(App):
         from voicetest import api
 
         try:
-            graph = await api.import_agent(config_panel.config_path)
+            graph = await api.import_agent(config_panel.agent_path)
             result = await api.export_agent(graph, format=format)
             self._log(f"[bold]Exported ({format}):[/bold]\n{result}")
         except Exception as e:
