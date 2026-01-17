@@ -92,9 +92,7 @@ class ConversationRunner:
                 break
 
             # Record user message
-            state.transcript.append(
-                Message(role="user", content=sim_response.message)
-            )
+            state.transcript.append(Message(role="user", content=sim_response.message))
 
             # Process with current agent
             response, new_agent = await self._process_turn(
@@ -105,9 +103,7 @@ class ConversationRunner:
             )
 
             if response:
-                state.transcript.append(
-                    Message(role="assistant", content=response)
-                )
+                state.transcript.append(Message(role="assistant", content=response))
 
             # Handle node transition
             if new_agent is not None:
@@ -151,22 +147,14 @@ class ConversationRunner:
         class AgentResponseSignature(dspy.Signature):
             """Generate agent response in a voice conversation."""
 
-            agent_instructions: str = dspy.InputField(
-                desc="System instructions for the agent"
-            )
+            agent_instructions: str = dspy.InputField(desc="System instructions for the agent")
             available_transitions: str = dspy.InputField(
                 desc="Available transitions to other agents/nodes"
             )
-            conversation_history: str = dspy.InputField(
-                desc="Conversation so far"
-            )
-            user_message: str = dspy.InputField(
-                desc="Latest user message to respond to"
-            )
+            conversation_history: str = dspy.InputField(desc="Conversation so far")
+            user_message: str = dspy.InputField(desc="Latest user message to respond to")
 
-            response: str = dspy.OutputField(
-                desc="Agent's spoken response to the user"
-            )
+            response: str = dspy.OutputField(desc="Agent's spoken response to the user")
             transition_to: str = dspy.OutputField(
                 desc="Node ID to transition to, or 'none' to stay"
             )

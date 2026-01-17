@@ -36,6 +36,23 @@ class MetricResult(BaseModel):
     confidence: float | None = None
 
 
+class ModelsUsed(BaseModel):
+    """Models used during test execution."""
+
+    agent: str
+    simulator: str
+    judge: str
+
+
+class ModelOverride(BaseModel):
+    """Record of a model override."""
+
+    role: str  # "agent", "simulator", or "judge"
+    requested: str  # what was originally requested
+    actual: str  # what actually ran
+    reason: str  # why override happened
+
+
 class TestResult(BaseModel):
     """Result of running a single test case."""
 
@@ -51,6 +68,8 @@ class TestResult(BaseModel):
     duration_ms: int = 0
     end_reason: str = ""
     error_message: str | None = None
+    models_used: ModelsUsed | None = None
+    model_overrides: list[ModelOverride] = Field(default_factory=list)
 
 
 class TestRun(BaseModel):

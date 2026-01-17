@@ -1,6 +1,5 @@
 """Tests for settings module."""
 
-
 from voicetest.settings import Settings, load_settings, save_settings
 
 
@@ -65,10 +64,10 @@ class TestSettingsPersistence:
 
         content = settings_file.read_text()
 
-        assert '[models]' in content
+        assert "[models]" in content
         assert 'agent = "test/model"' in content
-        assert '[run]' in content
-        assert 'verbose = true' in content
+        assert "[run]" in content
+        assert "verbose = true" in content
 
     def test_partial_toml_uses_defaults(self, tmp_path):
         settings_file = tmp_path / ".voicetest.toml"

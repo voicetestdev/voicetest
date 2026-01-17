@@ -2,20 +2,23 @@
 
 Background research informing design decisions. See M1_SPEC.md for architecture and implementation.
 
----
+______________________________________________________________________
 
 ## OSS Voice Agent Testing Landscape
 
 ### voice-lab (saharmor/voice-lab)
+
 Apache 2.0 licensed testing framework. 159 stars.
 
 **What it does:**
+
 - Text-only testing of LLM + prompt combinations
 - Custom metrics via JSON + LLM-as-judge
 - Model comparison (e.g., GPT-4 vs GPT-4-mini)
 - Persona-based simulation
 
 **What it lacks:**
+
 - No workflow/conversation flow support
 - No Retell/Vapi/LiveKit format compatibility
 - No node traversal validation
@@ -24,9 +27,11 @@ Apache 2.0 licensed testing framework. 159 stars.
 **Conclusion:** Good for prompt iteration, not for workflow testing.
 
 ### LiveKit Agents Test Framework
+
 Built into livekit-agents SDK.
 
 **What it does:**
+
 ```python
 async with AgentSession(llm=llm) as sess:
     await sess.start(MyAgent())
@@ -36,6 +41,7 @@ async with AgentSession(llm=llm) as sess:
 ```
 
 **Characteristics:**
+
 - Turn-by-turn (not autonomous simulation)
 - Per-turn assertions and LLM judging
 - Requires LiveKit Agent implementation
@@ -43,30 +49,33 @@ async with AgentSession(llm=llm) as sess:
 
 **Conclusion:** Good for LiveKit-native agents, not for cross-platform testing.
 
----
+______________________________________________________________________
 
 ## Commercial Voice Agent Testing Tools
 
-| Tool | Approach | Platforms | Pricing |
-|------|----------|-----------|---------|
-| **Hamming AI** | Auto-generates tests, two-step LLM evaluation | Vapi, Retell, 11Labs | $400+/mo |
-| **Coval** | Langfuse integration, simulation | Custom | Enterprise |
-| **Maxim AI** | Full platform (simulation + eval + observability) | Custom | Enterprise |
-| **Cekura** | Auto-generates scenarios from agent description | Custom | Unknown |
-| **Roark** | Voice-specific latency + ASR quality testing | Custom | Enterprise |
+| Tool           | Approach                                          | Platforms            | Pricing    |
+| -------------- | ------------------------------------------------- | -------------------- | ---------- |
+| **Hamming AI** | Auto-generates tests, two-step LLM evaluation     | Vapi, Retell, 11Labs | $400+/mo   |
+| **Coval**      | Langfuse integration, simulation                  | Custom               | Enterprise |
+| **Maxim AI**   | Full platform (simulation + eval + observability) | Custom               | Enterprise |
+| **Cekura**     | Auto-generates scenarios from agent description   | Custom               | Unknown    |
+| **Roark**      | Voice-specific latency + ASR quality testing      | Custom               | Enterprise |
 
 **Key insight from Hamming:** 95-96% agreement with human evaluators using two-step pipeline:
-1. Extract facts from transcript
-2. Judge against criteria using extracted facts
 
----
+1. Extract facts from transcript
+1. Judge against criteria using extracted facts
+
+______________________________________________________________________
 
 ## Platform Testing Approaches
 
 ### Retell Simulation Testing
+
 Built-in dashboard feature.
 
 **Test case format:**
+
 ```markdown
 ## Identity
 Your name is Mike.
@@ -83,26 +92,31 @@ or complicated, you will show signs of impatience.
 
 **Metrics:** Numbered criteria evaluated by LLM after conversation completes.
 
-**Limitations:** 
+**Limitations:**
+
 - Dashboard-only (no API)
 - No CI/CD integration
 - No cross-platform testing
 
 ### Vapi Evals
+
 API-based testing framework.
 
 **Judge types:**
+
 - `exact` — String match
 - `regex` — Pattern match
 - `ai` — LLM judge with custom prompt
 
 **Features:**
+
 - Mock conversations via API
 - Tool call validation
 - `continuePlan` for flow control (exit on failure, override responses)
 - Squad handoff testing
 
 **Test structure:**
+
 ```json
 {
   "messages": [
@@ -114,23 +128,26 @@ API-based testing framework.
 
 **Limitation:** Turn-by-turn scripting, not autonomous simulation.
 
----
+______________________________________________________________________
 
 ## DSPy vs BAML Analysis
 
 ### BAML Strengths
+
 - Schema-aligned parsing (SAP) — recovers from minor formatting errors
 - ~300 fewer prompt tokens than JSON schema
 - 2-4x faster than OpenAI function calling
 - Type-safe structured outputs
 
 ### DSPy Strengths
+
 - Prompt optimization (GEPA, MIPROv2)
 - LiteLLM integration for provider flexibility
 - Composable signatures
 - Assertions and metrics built-in
 
 ### DSPy + BAML Together
+
 ```python
 from dspy.adapters.baml_adapter import BAMLAdapter
 
@@ -142,11 +159,12 @@ BAML adapter uses BAML's prompting format inside DSPy, getting benefits of both.
 
 **Decision:** Use DSPy with BAMLAdapter for judges. Enables prompt optimization while getting efficient structured outputs.
 
----
+______________________________________________________________________
 
 ## LiveKit Plugin Architecture (Background)
 
 ### Core Plugin Model
+
 Abstract base classes for STT, TTS, LLM, VAD:
 
 ```python
@@ -156,59 +174,62 @@ class CustomTTS(tts.TTS):
 ```
 
 ### Available Plugins (48+)
+
 - **LLM:** OpenAI, Anthropic, Google, Mistral, Groq, Cerebras, Azure
 - **STT:** Deepgram, AssemblyAI, Google, OpenAI Whisper, Azure
 - **TTS:** Cartesia, ElevenLabs, Rime, OpenAI, Google, Azure
 - **VAD:** Silero (default)
 
 ### AgentSession
-Orchestrates STT → LLM → TTS pipeline with turn detection. 
+
+Orchestrates STT → LLM → TTS pipeline with turn detection.
 
 Key for voicetest: AgentSession works in **text-only mode** — no audio pipeline required for testing. Pass `user_input` string directly.
 
----
+______________________________________________________________________
 
 ## Platform Transition Model Equivalence
 
 All three platforms use LLM-based transition evaluation:
 
-| Platform | Transition Mechanism |
-|----------|---------------------|
-| **Retell** | LLM evaluates edge condition prompts |
-| **Vapi** | LLM decides tool calls / squad transfers |
+| Platform    | Transition Mechanism                                      |
+| ----------- | --------------------------------------------------------- |
+| **Retell**  | LLM evaluates edge condition prompts                      |
+| **Vapi**    | LLM decides tool calls / squad transfers                  |
 | **LiveKit** | LLM calls tools that return `(Agent, str)` handoff tuples |
 
 **Implication:** Can model all as "LLM decides when to call transition tool" → unified execution via LiveKit AgentSession with generated tools per transition.
 
----
+______________________________________________________________________
 
 ## Fidelity Considerations
 
 Execution engine **approximates** source platform behavior. Expected differences:
 
 1. **LLM routing** — Each platform has proprietary logic for when/how transitions are evaluated
-2. **Timing** — When transition conditions are checked relative to response generation
-3. **Prompt wrapping** — Undocumented system prompts added by platforms
-4. **Tool call formatting** — Subtle differences in how tools are presented to LLM
+1. **Timing** — When transition conditions are checked relative to response generation
+1. **Prompt wrapping** — Undocumented system prompts added by platforms
+1. **Tool call formatting** — Subtle differences in how tools are presented to LLM
 
 **Mitigation strategy:**
+
 - Test against known transcripts from production
 - Allow tuning tool descriptions in test config
 - Document behavioral differences per importer
 - Accept "close enough for useful testing" not "bit-for-bit identical"
 
----
+______________________________________________________________________
 
 ## Key Research Conclusions
 
 1. **No good OSS option exists** for testing voice agent workflows across platforms
 
-2. **Retell's Identity/Goal/Personality format** is a good simulation prompt structure — widely understood, easy to author
+1. **Retell's Identity/Goal/Personality format** is a good simulation prompt structure — widely understood, easy to author
 
-3. **DSPy with BAMLAdapter** is optimal for judges — combines optimization with efficient structured outputs
+1. **DSPy with BAMLAdapter** is optimal for judges — combines optimization with efficient structured outputs
 
-4. **LiveKit AgentSession** can serve as execution engine even for non-LiveKit agents — text-only mode, no infrastructure dependency
+1. **LiveKit AgentSession** can serve as execution engine even for non-LiveKit agents — text-only mode, no infrastructure dependency
 
-5. **Autonomous simulation** (not turn-by-turn scripting) is the key differentiator — matches how Retell does it, more realistic testing
+1. **Autonomous simulation** (not turn-by-turn scripting) is the key differentiator — matches how Retell does it, more realistic testing
 
-6. **Platform transition models are functionally equivalent** — all reducible to "LLM calls tools to trigger transitions"
+1. **Platform transition models are functionally equivalent** — all reducible to "LLM calls tools to trigger transitions"

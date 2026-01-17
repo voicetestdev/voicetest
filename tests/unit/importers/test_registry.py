@@ -28,7 +28,7 @@ class TestImporterRegistry:
                 return AgentGraph(
                     nodes={"n": AgentNode(id="n", instructions="test")},
                     entry_node_id="n",
-                    source_type="mock"
+                    source_type="mock",
                 )
 
         importer = MockImporter()
@@ -59,7 +59,7 @@ class TestImporterRegistry:
                 return AgentGraph(
                     nodes={"n": AgentNode(id="n", instructions="t1")},
                     entry_node_id="n",
-                    source_type="type1"
+                    source_type="type1",
                 )
 
         class Importer2:
@@ -77,7 +77,7 @@ class TestImporterRegistry:
                 return AgentGraph(
                     nodes={"n": AgentNode(id="n", instructions="t2")},
                     entry_node_id="n",
-                    source_type="type2"
+                    source_type="type2",
                 )
 
         registry.register(Importer1())
@@ -118,7 +118,7 @@ class TestImporterRegistry:
                 return AgentGraph(
                     nodes={"n": AgentNode(id="n", instructions="imported")},
                     entry_node_id="n",
-                    source_type="test"
+                    source_type="test",
                 )
 
         registry.register(TestImporter())
@@ -148,7 +148,7 @@ class TestImporterRegistry:
                 return AgentGraph(
                     nodes={"n": AgentNode(id="n", instructions="auto")},
                     entry_node_id="n",
-                    source_type="auto"
+                    source_type="auto",
                 )
 
         registry.register(AutoImporter())
@@ -194,7 +194,7 @@ class TestImporterRegistry:
                 return AgentGraph(
                     nodes={"n": AgentNode(id="n", instructions="")},
                     entry_node_id="n",
-                    source_type="imp1"
+                    source_type="imp1",
                 )
 
         class Imp2:
@@ -212,7 +212,7 @@ class TestImporterRegistry:
                 return AgentGraph(
                     nodes={"n": AgentNode(id="n", instructions="")},
                     entry_node_id="n",
-                    source_type="imp2"
+                    source_type="imp2",
                 )
 
         registry.register(Imp1())

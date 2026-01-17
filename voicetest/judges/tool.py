@@ -30,8 +30,6 @@ class ToolJudge:
             called_names = {tc.name for tc in tools_called}
             for required in required_tools:
                 if required not in called_names:
-                    violations.append(
-                        f"Required tool '{required}' was not called"
-                    )
+                    violations.append(f"Required tool '{required}' was not called")
 
         return violations

@@ -180,9 +180,7 @@ class TestEvaluateTranscript:
         ]
 
         results = await api.evaluate_transcript(
-            transcript,
-            metrics=["Greeted user"],
-            _mock_mode=True
+            transcript, metrics=["Greeted user"], _mock_mode=True
         )
 
         assert len(results) == 1

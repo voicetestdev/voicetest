@@ -166,7 +166,7 @@ class VoicetestShell(App):
                     "  importers        List importers\n"
                     "  clear            Clear output\n"
                     "  quit             Exit",
-                    id="help-panel"
+                    id="help-panel",
                 )
             with Vertical(id="right-panel"):
                 yield RichLog(id="output", highlight=True, markup=True)
@@ -177,6 +177,7 @@ class VoicetestShell(App):
 
     def on_mount(self) -> None:
         from voicetest.settings import SETTINGS_FILE
+
         self.title = "voicetest"
         self.sub_title = "interactive shell"
         self._log("[bold green]voicetest[/bold green] interactive shell")
@@ -279,9 +280,7 @@ class VoicetestShell(App):
                     f"Did you mean '[cyan]{matches[0]}[/cyan]'?"
                 )
             else:
-                self._log(
-                    f"[red]Unknown command: {cmd}[/red]. Type 'help' for available commands."
-                )
+                self._log(f"[red]Unknown command: {cmd}[/red]. Type 'help' for available commands.")
 
     async def _run_tests(self, config_panel: ConfigPanel) -> None:
         """Run tests with current configuration."""

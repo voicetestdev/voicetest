@@ -25,12 +25,14 @@ def export_livekit_code(graph: AgentGraph) -> str:
         lines.append("")
 
     # Generate entry point
-    lines.extend([
-        "",
-        f"# Entry point: {graph.entry_node_id}",
-        "def get_entry_agent():",
-        f"    return Agent_{graph.entry_node_id}()",
-    ])
+    lines.extend(
+        [
+            "",
+            f"# Entry point: {graph.entry_node_id}",
+            "def get_entry_agent():",
+            f"    return Agent_{graph.entry_node_id}()",
+        ]
+    )
 
     return "\n".join(lines)
 
@@ -53,12 +55,14 @@ def _generate_agent_class(node: AgentNode, graph: AgentGraph) -> list[str]:
     # Generate transition tools
     for transition in node.transitions:
         condition = transition.condition.value.replace('"""', '\\"\\"\\"')
-        lines.extend([
-            "",
-            "    @function_tool",
-            f"    async def route_to_{transition.target_node_id}(self, ctx: RunContext):",
-            f'        """{condition}"""',
-            f"        return Agent_{transition.target_node_id}(), ''",
-        ])
+        lines.extend(
+            [
+                "",
+                "    @function_tool",
+                f"    async def route_to_{transition.target_node_id}(self, ctx: RunContext):",
+                f'        """{condition}"""',
+                f"        return Agent_{transition.target_node_id}(), ''",
+            ]
+        )
 
     return lines

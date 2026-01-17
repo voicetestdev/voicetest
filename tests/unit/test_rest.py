@@ -16,7 +16,7 @@ class TestHealthEndpoint:
     """Tests for health check endpoint."""
 
     def test_health_returns_ok(self, client):
-        response = client.get("/health")
+        response = client.get("/api/health")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
@@ -25,7 +25,7 @@ class TestImportersEndpoint:
     """Tests for importers endpoint."""
 
     def test_list_importers(self, client):
-        response = client.get("/importers")
+        response = client.get("/api/importers")
         assert response.status_code == 200
 
         importers = response.json()
@@ -37,7 +37,7 @@ class TestImportersEndpoint:
         assert "custom" in source_types
 
     def test_importer_has_required_fields(self, client):
-        response = client.get("/importers")
+        response = client.get("/api/importers")
         importers = response.json()
 
         for imp in importers:
@@ -46,14 +46,38 @@ class TestImportersEndpoint:
             assert "file_patterns" in imp
 
 
+class TestExportersEndpoint:
+    """Tests for exporters endpoint."""
+
+    def test_list_exporters(self, client):
+        response = client.get("/api/exporters")
+        assert response.status_code == 200
+
+        exporters = response.json()
+        assert isinstance(exporters, list)
+        assert len(exporters) >= 4
+
+        format_ids = [exp["id"] for exp in exporters]
+        assert "mermaid" in format_ids
+        assert "livekit" in format_ids
+        assert "retell-llm" in format_ids
+        assert "retell-cf" in format_ids
+
+    def test_exporter_has_required_fields(self, client):
+        response = client.get("/api/exporters")
+        exporters = response.json()
+
+        for exp in exporters:
+            assert "id" in exp
+            assert "name" in exp
+            assert "description" in exp
+
+
 class TestImportEndpoint:
     """Tests for agent import endpoint."""
 
     def test_import_retell_config(self, client, sample_retell_config):
-        response = client.post(
-            "/agents/import",
-            json={"config": sample_retell_config}
-        )
+        response = client.post("/api/agents/import", json={"config": sample_retell_config})
         assert response.status_code == 200
 
         graph = response.json()
@@ -63,24 +87,17 @@ class TestImportEndpoint:
 
     def test_import_with_explicit_source(self, client, sample_retell_config):
         response = client.post(
-            "/agents/import",
-            json={"config": sample_retell_config, "source": "retell"}
+            "/api/agents/import", json={"config": sample_retell_config, "source": "retell"}
         )
         assert response.status_code == 200
         assert response.json()["source_type"] == "retell"
 
     def test_import_unknown_source_returns_400(self, client):
-        response = client.post(
-            "/agents/import",
-            json={"config": {}, "source": "nonexistent"}
-        )
+        response = client.post("/api/agents/import", json={"config": {}, "source": "nonexistent"})
         assert response.status_code == 400
 
     def test_import_undetectable_config_returns_400(self, client):
-        response = client.post(
-            "/agents/import",
-            json={"config": {"random": "data"}}
-        )
+        response = client.post("/api/agents/import", json={"config": {"random": "data"}})
         assert response.status_code == 400
 
 
@@ -89,17 +106,11 @@ class TestExportEndpoint:
 
     def test_export_mermaid(self, client, sample_retell_config):
         # First import
-        import_response = client.post(
-            "/agents/import",
-            json={"config": sample_retell_config}
-        )
+        import_response = client.post("/api/agents/import", json={"config": sample_retell_config})
         graph = import_response.json()
 
         # Then export
-        response = client.post(
-            "/agents/export",
-            json={"graph": graph, "format": "mermaid"}
-        )
+        response = client.post("/api/agents/export", json={"graph": graph, "format": "mermaid"})
         assert response.status_code == 200
 
         result = response.json()
@@ -108,33 +119,51 @@ class TestExportEndpoint:
         assert "greeting" in result["content"]
 
     def test_export_livekit(self, client, sample_retell_config):
-        import_response = client.post(
-            "/agents/import",
-            json={"config": sample_retell_config}
-        )
+        import_response = client.post("/api/agents/import", json={"config": sample_retell_config})
         graph = import_response.json()
 
-        response = client.post(
-            "/agents/export",
-            json={"graph": graph, "format": "livekit"}
-        )
+        response = client.post("/api/agents/export", json={"graph": graph, "format": "livekit"})
         assert response.status_code == 200
 
         result = response.json()
         assert "class Agent_greeting" in result["content"]
 
     def test_export_unknown_format_returns_400(self, client, sample_retell_config):
-        import_response = client.post(
-            "/agents/import",
-            json={"config": sample_retell_config}
-        )
+        import_response = client.post("/api/agents/import", json={"config": sample_retell_config})
         graph = import_response.json()
 
-        response = client.post(
-            "/agents/export",
-            json={"graph": graph, "format": "unknown"}
-        )
+        response = client.post("/api/agents/export", json={"graph": graph, "format": "unknown"})
         assert response.status_code == 400
+
+    def test_export_retell_llm(self, client, sample_retell_config):
+        import_response = client.post("/api/agents/import", json={"config": sample_retell_config})
+        graph = import_response.json()
+
+        response = client.post("/api/agents/export", json={"graph": graph, "format": "retell-llm"})
+        assert response.status_code == 200
+
+        result = response.json()
+        assert result["format"] == "retell-llm"
+        import json
+
+        content = json.loads(result["content"])
+        assert "states" in content
+        assert "general_prompt" in content
+
+    def test_export_retell_cf(self, client, sample_retell_config):
+        import_response = client.post("/api/agents/import", json={"config": sample_retell_config})
+        graph = import_response.json()
+
+        response = client.post("/api/agents/export", json={"graph": graph, "format": "retell-cf"})
+        assert response.status_code == 200
+
+        result = response.json()
+        assert result["format"] == "retell-cf"
+        import json
+
+        content = json.loads(result["content"])
+        assert "nodes" in content
+        assert "start_node_id" in content
 
 
 class TestRunEndpoints:
@@ -142,10 +171,7 @@ class TestRunEndpoints:
 
     def test_run_single_test(self, client, sample_retell_config):
         # Import agent
-        import_response = client.post(
-            "/agents/import",
-            json={"config": sample_retell_config}
-        )
+        import_response = client.post("/api/agents/import", json={"config": sample_retell_config})
         graph = import_response.json()
 
         # Create test case (Retell format)
@@ -156,10 +182,7 @@ class TestRunEndpoints:
         }
 
         # Run test (will use mock mode internally due to test environment)
-        response = client.post(
-            "/runs/single",
-            json={"graph": graph, "test_case": test_case}
-        )
+        response = client.post("/api/runs/single", json={"graph": graph, "test_case": test_case})
 
         # Should succeed even if test itself fails (it returns a result)
         assert response.status_code == 200
@@ -168,10 +191,7 @@ class TestRunEndpoints:
         assert result["status"] in ("pass", "fail", "error")
 
     def test_run_multiple_tests(self, client, sample_retell_config):
-        import_response = client.post(
-            "/agents/import",
-            json={"config": sample_retell_config}
-        )
+        import_response = client.post("/api/agents/import", json={"config": sample_retell_config})
         graph = import_response.json()
 
         test_cases = [
@@ -184,13 +204,10 @@ class TestRunEndpoints:
                 "name": "Test 2",
                 "user_prompt": "When asked, say B. Say bye.",
                 "metrics": [],
-            }
+            },
         ]
 
-        response = client.post(
-            "/runs",
-            json={"graph": graph, "test_cases": test_cases}
-        )
+        response = client.post("/api/runs", json={"graph": graph, "test_cases": test_cases})
         assert response.status_code == 200
 
         run = response.json()
@@ -224,11 +241,11 @@ class TestEvaluateEndpoint:
             mock_evaluate_with_llm,
         ):
             response = client.post(
-                "/evaluate",
+                "/api/evaluate",
                 json={
                     "transcript": transcript,
-                    "metrics": ["Agent greeted user", "Agent offered help"]
-                }
+                    "metrics": ["Agent greeted user", "Agent offered help"],
+                },
             )
 
         assert response.status_code == 200
@@ -245,7 +262,7 @@ class TestSettingsEndpoint:
         # Use temp directory so we don't pollute the real settings
         monkeypatch.chdir(tmp_path)
 
-        response = client.get("/settings")
+        response = client.get("/api/settings")
 
         assert response.status_code == 200
         settings = response.json()
@@ -265,10 +282,10 @@ class TestSettingsEndpoint:
             "run": {
                 "max_turns": 10,
                 "verbose": True,
-            }
+            },
         }
 
-        response = client.put("/settings", json=new_settings)
+        response = client.put("/api/settings", json=new_settings)
 
         assert response.status_code == 200
         result = response.json()
@@ -276,5 +293,5 @@ class TestSettingsEndpoint:
         assert result["run"]["max_turns"] == 10
 
         # Verify it persisted
-        get_response = client.get("/settings")
+        get_response = client.get("/api/settings")
         assert get_response.json()["models"]["agent"] == "anthropic/claude-3-haiku"

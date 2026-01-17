@@ -23,10 +23,7 @@ class TestToolJudge:
             ToolCall(name="get_balance", arguments={}),
         ]
 
-        violations = judge.validate(
-            tools_called=tools_called,
-            required_tools=["lookup_account"]
-        )
+        violations = judge.validate(tools_called=tools_called, required_tools=["lookup_account"])
 
         assert violations == []
 
@@ -40,8 +37,7 @@ class TestToolJudge:
         ]
 
         violations = judge.validate(
-            tools_called=tools_called,
-            required_tools=["lookup_account", "process_refund"]
+            tools_called=tools_called, required_tools=["lookup_account", "process_refund"]
         )
 
         assert len(violations) == 1

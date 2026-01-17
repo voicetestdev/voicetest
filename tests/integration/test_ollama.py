@@ -18,20 +18,14 @@ from voicetest.models.test_case import RunOptions, TestCase
 def ollama_available() -> bool:
     """Check if Ollama is running and has the required model."""
     try:
-        result = subprocess.run(
-            ["ollama", "list"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
         return "qwen2.5:0.5b" in result.stdout
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
 
 
 pytestmark = pytest.mark.skipif(
-    not ollama_available(),
-    reason="Ollama not available or qwen2.5:0.5b not installed"
+    not ollama_available(), reason="Ollama not available or qwen2.5:0.5b not installed"
 )
 
 
@@ -59,11 +53,10 @@ def simple_graph() -> AgentGraph:
                     Transition(
                         target_node_id="help",
                         condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="Customer states what they need help with"
-                        )
+                            type="llm_prompt", value="Customer states what they need help with"
+                        ),
                     )
-                ]
+                ],
             ),
             "help": AgentNode(
                 id="help",
@@ -72,20 +65,19 @@ def simple_graph() -> AgentGraph:
                     Transition(
                         target_node_id="end",
                         condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="Customer seems satisfied or says goodbye"
-                        )
+                            type="llm_prompt", value="Customer seems satisfied or says goodbye"
+                        ),
                     )
-                ]
+                ],
             ),
             "end": AgentNode(
                 id="end",
                 instructions="Thank the customer and end the conversation politely.",
-                transitions=[]
-            )
+                transitions=[],
+            ),
         },
         entry_node_id="greeting",
-        source_type="custom"
+        source_type="custom",
     )
 
 

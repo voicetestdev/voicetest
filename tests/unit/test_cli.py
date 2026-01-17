@@ -59,11 +59,9 @@ class TestCLIExport:
     def test_export_mermaid(self, cli_runner, temp_agent_file):
         from voicetest.cli import main
 
-        result = cli_runner.invoke(main, [
-            "export",
-            "--agent", str(temp_agent_file),
-            "--format", "mermaid"
-        ])
+        result = cli_runner.invoke(
+            main, ["export", "--agent", str(temp_agent_file), "--format", "mermaid"]
+        )
 
         assert result.exit_code == 0
         assert "flowchart" in result.output.lower()
@@ -71,11 +69,9 @@ class TestCLIExport:
     def test_export_livekit(self, cli_runner, temp_agent_file):
         from voicetest.cli import main
 
-        result = cli_runner.invoke(main, [
-            "export",
-            "--agent", str(temp_agent_file),
-            "--format", "livekit"
-        ])
+        result = cli_runner.invoke(
+            main, ["export", "--agent", str(temp_agent_file), "--format", "livekit"]
+        )
 
         assert result.exit_code == 0
         assert "class Agent_greeting" in result.output
@@ -85,12 +81,18 @@ class TestCLIExport:
 
         output_path = tmp_path / "output.md"
 
-        result = cli_runner.invoke(main, [
-            "export",
-            "--agent", str(temp_agent_file),
-            "--format", "mermaid",
-            "--output", str(output_path)
-        ])
+        result = cli_runner.invoke(
+            main,
+            [
+                "export",
+                "--agent",
+                str(temp_agent_file),
+                "--format",
+                "mermaid",
+                "--output",
+                str(output_path),
+            ],
+        )
 
         assert result.exit_code == 0
         assert output_path.exists()
@@ -112,22 +114,18 @@ class TestCLIRun:
     def test_run_missing_agent(self, cli_runner, temp_tests_file):
         from voicetest.cli import main
 
-        result = cli_runner.invoke(main, [
-            "run",
-            "--agent", "/nonexistent/agent.json",
-            "--tests", str(temp_tests_file)
-        ])
+        result = cli_runner.invoke(
+            main, ["run", "--agent", "/nonexistent/agent.json", "--tests", str(temp_tests_file)]
+        )
 
         assert result.exit_code != 0
 
     def test_run_missing_tests(self, cli_runner, temp_agent_file):
         from voicetest.cli import main
 
-        result = cli_runner.invoke(main, [
-            "run",
-            "--agent", str(temp_agent_file),
-            "--tests", "/nonexistent/tests.json"
-        ])
+        result = cli_runner.invoke(
+            main, ["run", "--agent", str(temp_agent_file), "--tests", "/nonexistent/tests.json"]
+        )
 
         assert result.exit_code != 0
 

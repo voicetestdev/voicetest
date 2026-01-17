@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "2"
+version = "3"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "MIT"
@@ -48,6 +48,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
     "httpx>=0.28",
+    "pre-commit>=4.0",
 ]
 
 [project.scripts]
@@ -56,6 +57,20 @@ voicetest = "voicetest.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["voicetest"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"web/dist" = "web/dist"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "voicetest/**",
+    "web/dist/**",
+    "pyproject.toml",
+    "README.md",
+]
 
 [tool.ruff]
 line-length = 100

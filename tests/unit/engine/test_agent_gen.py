@@ -22,20 +22,17 @@ def simple_graph() -> AgentGraph:
                     Transition(
                         target_node_id="farewell",
                         condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User wants to end the conversation"
-                        )
+                            type="llm_prompt", value="User wants to end the conversation"
+                        ),
                     )
-                ]
+                ],
             ),
             "farewell": AgentNode(
-                id="farewell",
-                instructions="Say goodbye politely.",
-                transitions=[]
-            )
+                id="farewell", instructions="Say goodbye politely.", transitions=[]
+            ),
         },
         entry_node_id="greeting",
-        source_type="custom"
+        source_type="custom",
     )
 
 
@@ -51,25 +48,20 @@ def multi_branch_graph() -> AgentGraph:
                     Transition(
                         target_node_id="billing",
                         condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User has billing questions"
-                        )
+                            type="llm_prompt", value="User has billing questions"
+                        ),
                     ),
                     Transition(
                         target_node_id="support",
                         condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User has technical issues"
-                        )
+                            type="llm_prompt", value="User has technical issues"
+                        ),
                     ),
                     Transition(
                         target_node_id="end",
-                        condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User is done"
-                        )
-                    )
-                ]
+                        condition=TransitionCondition(type="llm_prompt", value="User is done"),
+                    ),
+                ],
             ),
             "billing": AgentNode(
                 id="billing",
@@ -77,12 +69,9 @@ def multi_branch_graph() -> AgentGraph:
                 transitions=[
                     Transition(
                         target_node_id="end",
-                        condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="Issue resolved"
-                        )
+                        condition=TransitionCondition(type="llm_prompt", value="Issue resolved"),
                     )
-                ]
+                ],
             ),
             "support": AgentNode(
                 id="support",
@@ -90,21 +79,16 @@ def multi_branch_graph() -> AgentGraph:
                 transitions=[
                     Transition(
                         target_node_id="end",
-                        condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="Issue resolved"
-                        )
+                        condition=TransitionCondition(type="llm_prompt", value="Issue resolved"),
                     )
-                ]
+                ],
             ),
             "end": AgentNode(
-                id="end",
-                instructions="Thank the user and end the call.",
-                transitions=[]
-            )
+                id="end", instructions="Thank the user and end the call.", transitions=[]
+            ),
         },
         entry_node_id="start",
-        source_type="custom"
+        source_type="custom",
     )
 
 

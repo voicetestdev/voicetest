@@ -19,11 +19,10 @@ def simple_agent_graph() -> AgentGraph:
                     Transition(
                         target_node_id="help",
                         condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="Customer states their problem"
-                        )
+                            type="llm_prompt", value="Customer states their problem"
+                        ),
                     )
-                ]
+                ],
             ),
             "help": AgentNode(
                 id="help",
@@ -32,20 +31,19 @@ def simple_agent_graph() -> AgentGraph:
                     Transition(
                         target_node_id="end",
                         condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="Customer is satisfied"
-                        )
+                            type="llm_prompt", value="Customer is satisfied"
+                        ),
                     )
-                ]
+                ],
             ),
             "end": AgentNode(
                 id="end",
                 instructions="Thank the customer and end the call politely.",
-                transitions=[]
-            )
+                transitions=[],
+            ),
         },
         entry_node_id="greeting",
-        source_type="custom"
+        source_type="custom",
     )
 
 
@@ -80,10 +78,7 @@ class TestEndToEndFlow:
         options = RunOptions(max_turns=2)
 
         result = await api.run_test(
-            simple_agent_graph,
-            simple_test_case,
-            options=options,
-            _mock_mode=True
+            simple_agent_graph, simple_test_case, options=options, _mock_mode=True
         )
 
         assert isinstance(result, TestResult)
@@ -103,14 +98,11 @@ class TestEndToEndFlow:
             TestCase(
                 name="Test 2",
                 user_prompt="When asked, say Jane. Say goodbye.",
-            )
+            ),
         ]
 
         result = await api.run_tests(
-            simple_agent_graph,
-            test_cases,
-            options=RunOptions(max_turns=2),
-            _mock_mode=True
+            simple_agent_graph, test_cases, options=RunOptions(max_turns=2), _mock_mode=True
         )
 
         assert isinstance(result, TestRun)
@@ -129,7 +121,7 @@ class TestEndToEndFlow:
         results = await api.evaluate_transcript(
             transcript,
             metrics=["Agent greeted the user", "Agent acknowledged the request"],
-            _mock_mode=True
+            _mock_mode=True,
         )
 
         assert len(results) == 2
@@ -144,10 +136,7 @@ class TestRunTestBehavior:
         from voicetest import api
 
         result = await api.run_test(
-            simple_agent_graph,
-            simple_test_case,
-            options=RunOptions(max_turns=3),
-            _mock_mode=True
+            simple_agent_graph, simple_test_case, options=RunOptions(max_turns=3), _mock_mode=True
         )
 
         assert "greeting" in result.nodes_visited
@@ -157,10 +146,7 @@ class TestRunTestBehavior:
         from voicetest import api
 
         result = await api.run_test(
-            simple_agent_graph,
-            simple_test_case,
-            options=RunOptions(max_turns=3),
-            _mock_mode=True
+            simple_agent_graph, simple_test_case, options=RunOptions(max_turns=3), _mock_mode=True
         )
 
         assert len(result.metric_results) == len(simple_test_case.metrics)

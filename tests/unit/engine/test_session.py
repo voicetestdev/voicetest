@@ -22,20 +22,17 @@ def simple_graph() -> AgentGraph:
                     Transition(
                         target_node_id="farewell",
                         condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User wants to end the conversation"
-                        )
+                            type="llm_prompt", value="User wants to end the conversation"
+                        ),
                     )
-                ]
+                ],
             ),
             "farewell": AgentNode(
-                id="farewell",
-                instructions="Say goodbye politely.",
-                transitions=[]
-            )
+                id="farewell", instructions="Say goodbye politely.", transitions=[]
+            ),
         },
         entry_node_id="greeting",
-        source_type="custom"
+        source_type="custom",
     )
 
 

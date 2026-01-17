@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Node
+node_modules/
+
+# wt copy
+.voicetest.toml

@@ -87,9 +87,7 @@ class TestRetellImporter:
         graph = importer.import_agent(sample_retell_config)
 
         greeting = graph.nodes["greeting"]
-        billing_transition = next(
-            t for t in greeting.transitions if t.target_node_id == "billing"
-        )
+        billing_transition = next(t for t in greeting.transitions if t.target_node_id == "billing")
         assert billing_transition.condition.type == "llm_prompt"
         assert "billing" in billing_transition.condition.value.lower()
 
@@ -119,3 +117,111 @@ class TestRetellImporter:
         assert info.source_type == "retell"
         assert "Retell" in info.description
         assert "*.json" in info.file_patterns
+
+
+class TestRetellImporterComplex:
+    """Tests for Retell importer with complex configuration including tools."""
+
+    def test_import_complex_config(self, sample_retell_config_complex):
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+
+        assert graph.source_type == "retell"
+        assert graph.entry_node_id == "greeting"
+        assert len(graph.nodes) == 11
+
+    def test_tools_imported(self, sample_retell_config_complex):
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+
+        greeting = graph.nodes["greeting"]
+        assert greeting.tools is not None
+        assert len(greeting.tools) == 6
+
+        tool_names = [t.name for t in greeting.tools]
+        assert "lookup_patient" in tool_names
+        assert "get_available_slots" in tool_names
+        assert "book_appointment" in tool_names
+        assert "cancel_appointment" in tool_names
+        assert "end_call" in tool_names
+        assert "transfer_to_nurse" in tool_names
+
+    def test_tool_parameters_imported(self, sample_retell_config_complex):
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+
+        greeting = graph.nodes["greeting"]
+        lookup_tool = next(t for t in greeting.tools if t.name == "lookup_patient")
+        assert lookup_tool.parameters is not None
+        assert "properties" in lookup_tool.parameters
+        assert "full_name" in lookup_tool.parameters["properties"]
+        assert "date_of_birth" in lookup_tool.parameters["properties"]
+
+    def test_global_prompt_combined_with_node_instruction(self, sample_retell_config_complex):
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+
+        greeting = graph.nodes["greeting"]
+        assert "professional medical receptionist" in greeting.instructions
+        assert "Greet the caller warmly" in greeting.instructions
+
+    def test_source_metadata_includes_model_settings(self, sample_retell_config_complex):
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+
+        assert graph.source_metadata["conversation_flow_id"] == "cf_healthcare_001"
+        assert graph.source_metadata["version"] == 2
+        assert graph.source_metadata["model_temperature"] == 0.7
+        assert graph.source_metadata["tool_call_strict_mode"] is True
+        assert graph.source_metadata["start_speaker"] == "agent"
+
+    def test_source_metadata_includes_model_choice(self, sample_retell_config_complex):
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+
+        model_choice = graph.source_metadata["model_choice"]
+        assert model_choice["type"] == "cascading"
+        assert model_choice["model"] == "gpt-4.1"
+        assert model_choice["high_priority"] is True
+
+    def test_source_metadata_includes_knowledge_bases(self, sample_retell_config_complex):
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+
+        kb_ids = graph.source_metadata["knowledge_base_ids"]
+        assert "kb_office_policies" in kb_ids
+        assert "kb_insurance_info" in kb_ids
+
+    def test_source_metadata_includes_dynamic_variables(self, sample_retell_config_complex):
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+
+        vars = graph.source_metadata["default_dynamic_variables"]
+        assert vars["office_name"] == "Acme Healthcare"
+        assert vars["office_hours"] == "Monday-Friday 8am-6pm"
+        assert vars["office_phone"] == "555-123-4567"
+
+    def test_all_nodes_have_same_tools(self, sample_retell_config_complex):
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+
+        for node in graph.nodes.values():
+            assert len(node.tools) == 6

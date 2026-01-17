@@ -14,7 +14,7 @@ class TestSimulatorResponse:
         response = SimulatorResponse(
             message="I need help with my bill",
             should_end=False,
-            reasoning="User is asking for help"
+            reasoning="User is asking for help",
         )
 
         assert response.message == "I need help with my bill"
@@ -25,9 +25,7 @@ class TestSimulatorResponse:
         from voicetest.simulator.user_sim import SimulatorResponse
 
         response = SimulatorResponse(
-            message="",
-            should_end=True,
-            reasoning="User's goal has been achieved"
+            message="", should_end=True, reasoning="User's goal has been achieved"
         )
 
         assert response.message == ""
@@ -155,7 +153,7 @@ class TestUserSimulatorGenerate:
             SimulatorResponse(
                 message="Hello, I need some help",
                 should_end=False,
-                reasoning="Initiating conversation"
+                reasoning="Initiating conversation",
             )
         ]
 
@@ -184,7 +182,7 @@ class TestUserSimulatorGenerate:
             SimulatorResponse(
                 message="I'd like a refund for my order",
                 should_end=False,
-                reasoning="Working towards goal"
+                reasoning="Working towards goal",
             )
         ]
 
@@ -196,16 +194,12 @@ class TestUserSimulatorGenerate:
     async def test_generate_can_signal_end(self):
         from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
 
-        simulator = UserSimulator(
-            "## Identity\nJohn\n\n## Goal\nSay bye\n\n## Personality\nBrief"
-        )
+        simulator = UserSimulator("## Identity\nJohn\n\n## Goal\nSay bye\n\n## Personality\nBrief")
 
         simulator._mock_mode = True
         simulator._mock_responses = [
             SimulatorResponse(
-                message="",
-                should_end=True,
-                reasoning="Goal achieved, ending conversation"
+                message="", should_end=True, reasoning="Goal achieved, ending conversation"
             )
         ]
 

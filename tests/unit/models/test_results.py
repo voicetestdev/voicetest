@@ -19,11 +19,7 @@ class TestMessage:
         from voicetest.models.results import Message
 
         now = datetime.now()
-        msg = Message(
-            role="assistant",
-            content="How can I help?",
-            timestamp=now
-        )
+        msg = Message(role="assistant", content="How can I help?", timestamp=now)
         assert msg.role == "assistant"
         assert msg.timestamp == now
 
@@ -33,7 +29,7 @@ class TestMessage:
         msg = Message(
             role="tool",
             content="Account balance: $100",
-            metadata={"tool_name": "get_balance", "duration_ms": 150}
+            metadata={"tool_name": "get_balance", "duration_ms": 150},
         )
         assert msg.role == "tool"
         assert msg.metadata["tool_name"] == "get_balance"
@@ -48,7 +44,7 @@ class TestToolCall:
         call = ToolCall(
             name="lookup_account",
             arguments={"account_id": "12345"},
-            result="Account found: John Doe"
+            result="Account found: John Doe",
         )
         assert call.name == "lookup_account"
         assert call.arguments["account_id"] == "12345"
@@ -57,10 +53,7 @@ class TestToolCall:
     def test_create_tool_call_without_result(self):
         from voicetest.models.results import ToolCall
 
-        call = ToolCall(
-            name="send_notification",
-            arguments={"message": "Hello"}
-        )
+        call = ToolCall(name="send_notification", arguments={"message": "Hello"})
         assert call.result is None
 
 
@@ -74,7 +67,7 @@ class TestMetricResult:
             metric="Agent greeted the customer",
             passed=True,
             reasoning="The agent said 'Hello, how can I help you today?'",
-            confidence=0.95
+            confidence=0.95,
         )
         assert result.metric == "Agent greeted the customer"
         assert result.passed is True
@@ -87,7 +80,7 @@ class TestMetricResult:
         result = MetricResult(
             metric="Agent resolved the issue",
             passed=False,
-            reasoning="The conversation ended without resolution"
+            reasoning="The conversation ended without resolution",
         )
         assert result.passed is False
         assert result.confidence is None
@@ -105,19 +98,15 @@ class TestTestResult:
             status="pass",
             transcript=[
                 Message(role="user", content="Hi"),
-                Message(role="assistant", content="Hello!")
+                Message(role="assistant", content="Hello!"),
             ],
             metric_results=[
-                MetricResult(
-                    metric="Greeted user",
-                    passed=True,
-                    reasoning="Said hello"
-                )
+                MetricResult(metric="Greeted user", passed=True, reasoning="Said hello")
             ],
             nodes_visited=["greeting", "end"],
             turn_count=1,
             duration_ms=1500,
-            end_reason="agent_ended"
+            end_reason="agent_ended",
         )
         assert result.status == "pass"
         assert len(result.transcript) == 2
@@ -133,7 +122,7 @@ class TestTestResult:
             test_name="Failed test",
             status="error",
             duration_ms=100,
-            error_message="Connection timeout"
+            error_message="Connection timeout",
         )
         assert result.status == "error"
         assert result.error_message == "Connection timeout"
@@ -149,7 +138,7 @@ class TestTestResult:
             transcript=[Message(role="user", content="Hi")],
             turn_count=1,
             duration_ms=100,
-            end_reason="complete"
+            end_reason="complete",
         )
 
         json_str = result.model_dump_json()
@@ -175,7 +164,7 @@ class TestTestRun:
                     status="pass",
                     turn_count=1,
                     duration_ms=100,
-                    end_reason="done"
+                    end_reason="done",
                 ),
                 TestResult(
                     test_id="t2",
@@ -183,7 +172,7 @@ class TestTestRun:
                     status="fail",
                     turn_count=2,
                     duration_ms=200,
-                    end_reason="done"
+                    end_reason="done",
                 ),
                 TestResult(
                     test_id="t3",
@@ -191,9 +180,9 @@ class TestTestRun:
                     status="pass",
                     turn_count=1,
                     duration_ms=150,
-                    end_reason="done"
-                )
-            ]
+                    end_reason="done",
+                ),
+            ],
         )
         assert run.run_id == "run-001"
         assert len(run.results) == 3
@@ -206,18 +195,30 @@ class TestTestRun:
             started_at=datetime.now(),
             results=[
                 TestResult(
-                    test_id="t1", test_name="T1", status="pass",
-                    turn_count=1, duration_ms=100, end_reason="done"
+                    test_id="t1",
+                    test_name="T1",
+                    status="pass",
+                    turn_count=1,
+                    duration_ms=100,
+                    end_reason="done",
                 ),
                 TestResult(
-                    test_id="t2", test_name="T2", status="fail",
-                    turn_count=1, duration_ms=100, end_reason="done"
+                    test_id="t2",
+                    test_name="T2",
+                    status="fail",
+                    turn_count=1,
+                    duration_ms=100,
+                    end_reason="done",
                 ),
                 TestResult(
-                    test_id="t3", test_name="T3", status="pass",
-                    turn_count=1, duration_ms=100, end_reason="done"
-                )
-            ]
+                    test_id="t3",
+                    test_name="T3",
+                    status="pass",
+                    turn_count=1,
+                    duration_ms=100,
+                    end_reason="done",
+                ),
+            ],
         )
         assert run.passed_count == 2
 
@@ -229,18 +230,30 @@ class TestTestRun:
             started_at=datetime.now(),
             results=[
                 TestResult(
-                    test_id="t1", test_name="T1", status="pass",
-                    turn_count=1, duration_ms=100, end_reason="done"
+                    test_id="t1",
+                    test_name="T1",
+                    status="pass",
+                    turn_count=1,
+                    duration_ms=100,
+                    end_reason="done",
                 ),
                 TestResult(
-                    test_id="t2", test_name="T2", status="fail",
-                    turn_count=1, duration_ms=100, end_reason="done"
+                    test_id="t2",
+                    test_name="T2",
+                    status="fail",
+                    turn_count=1,
+                    duration_ms=100,
+                    end_reason="done",
                 ),
                 TestResult(
-                    test_id="t3", test_name="T3", status="error",
-                    turn_count=1, duration_ms=100, end_reason="done"
-                )
-            ]
+                    test_id="t3",
+                    test_name="T3",
+                    status="error",
+                    turn_count=1,
+                    duration_ms=100,
+                    end_reason="done",
+                ),
+            ],
         )
         assert run.failed_count == 1  # only "fail", not "error"
 

@@ -42,7 +42,7 @@ class TestMetricJudge:
                 metric="Agent greeted the customer",
                 passed=True,
                 reasoning="Agent said 'Hello! How can I help you today?'",
-                confidence=0.95
+                confidence=0.95,
             )
         ]
 
@@ -68,13 +68,12 @@ class TestMetricJudge:
         metrics = [
             "Agent greeted the customer",
             "Agent was professional",
-            "Agent resolved the issue"
+            "Agent resolved the issue",
         ]
 
         judge._mock_mode = True
         judge._mock_results = [
-            MetricResult(metric=m, passed=True, reasoning="Test")
-            for m in metrics
+            MetricResult(metric=m, passed=True, reasoning="Test") for m in metrics
         ]
 
         results = await judge.evaluate_all(transcript, metrics)

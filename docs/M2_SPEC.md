@@ -7,19 +7,19 @@
 ## Goals
 
 1. **Web UI**: Next.js + shadcn dashboard
-2. **Persistence**: Store agents, test cases, and runs (SQLite/PostgreSQL)
+1. **Persistence**: Store agents, test cases, and runs (SQLite/PostgreSQL)
 
 ## Web UI Pages
 
-| Route | Description |
-|-------|-------------|
-| `/` | Dashboard: recent runs, quick stats |
-| `/agents` | Agent list with import |
+| Route          | Description                             |
+| -------------- | --------------------------------------- |
+| `/`            | Dashboard: recent runs, quick stats     |
+| `/agents`      | Agent list with import                  |
 | `/agents/[id]` | Agent detail: graph visualization, runs |
-| `/tests` | Test case management |
-| `/runs` | Run history with filters |
-| `/runs/[id]` | Run detail: results, transcript viewer |
-| `/compare` | Side-by-side run comparison |
+| `/tests`       | Test case management                    |
+| `/runs`        | Run history with filters                |
+| `/runs/[id]`   | Run detail: results, transcript viewer  |
+| `/compare`     | Side-by-side run comparison             |
 
 ## API Extensions
 

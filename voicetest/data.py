@@ -61,8 +61,7 @@ class DataStore:
             return None
 
         result = self._conn.execute(
-            f"SELECT graph_json FROM '{path}' WHERE id = ?",
-            [agent_id]
+            f"SELECT graph_json FROM '{path}' WHERE id = ?", [agent_id]
         ).fetchone()
 
         if result:
@@ -126,10 +125,7 @@ class DataStore:
         if not path.exists():
             return None
 
-        result = self._conn.execute(
-            f"SELECT * FROM '{path}' WHERE id = ?",
-            [run_id]
-        )
+        result = self._conn.execute(f"SELECT * FROM '{path}' WHERE id = ?", [run_id])
         rows = self._to_dicts(result)
         return rows[0] if rows else None
 
@@ -139,10 +135,7 @@ class DataStore:
         if not path.exists():
             return []
 
-        result = self._conn.execute(
-            f"SELECT * FROM '{path}' WHERE run_id = ?",
-            [run_id]
-        )
+        result = self._conn.execute(f"SELECT * FROM '{path}' WHERE run_id = ?", [run_id])
         return self._to_dicts(result)
 
     def list_runs(self, limit: int = 50) -> list[dict]:
@@ -152,8 +145,7 @@ class DataStore:
             return []
 
         result = self._conn.execute(
-            f"SELECT * FROM '{path}' ORDER BY started_at DESC LIMIT ?",
-            [limit]
+            f"SELECT * FROM '{path}' ORDER BY started_at DESC LIMIT ?", [limit]
         )
         return self._to_dicts(result)
 

@@ -155,13 +155,9 @@ class TestRetellLLMImporter:
             "general_prompt": "You are a helpful assistant. Answer questions concisely.",
             "begin_message": "Hello! How can I help you?",
             "general_tools": [
-                {
-                    "type": "end_call",
-                    "name": "end_call",
-                    "description": "End the call."
-                }
+                {"type": "end_call", "name": "end_call", "description": "End the call."}
             ],
-            "states": []
+            "states": [],
         }
 
         importer = RetellLLMImporter()

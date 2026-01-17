@@ -20,7 +20,7 @@ class TestImporterInfo:
         info = ImporterInfo(
             source_type="retell",
             description="Import Retell Conversation Flow JSON",
-            file_patterns=["*.json"]
+            file_patterns=["*.json"],
         )
         assert info.source_type == "retell"
         assert info.description == "Import Retell Conversation Flow JSON"

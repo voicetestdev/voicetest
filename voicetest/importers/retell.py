@@ -10,6 +10,7 @@ from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import (
     AgentGraph,
     AgentNode,
+    ToolDefinition,
     Transition,
     TransitionCondition,
 )
@@ -44,6 +45,30 @@ class RetellInstruction(BaseModel):
     text: str
 
 
+class RetellTool(BaseModel):
+    """Retell Conversation Flow tool definition."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: str
+    name: str
+    description: str = ""
+    tool_id: str | None = None
+    url: str | None = None
+    method: str | None = None
+    parameters: dict[str, Any] | None = None
+
+
+class RetellModelChoice(BaseModel):
+    """Retell model choice configuration."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    type: str | None = None
+    model: str | None = None
+    high_priority: bool | None = None
+
+
 class RetellNode(BaseModel):
     """Retell conversation node."""
 
@@ -61,8 +86,17 @@ class RetellConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     conversation_flow_id: str | None = None
+    version: int | None = None
     start_node_id: str
     nodes: list[RetellNode]
+    tools: list[RetellTool] = []
+    global_prompt: str | None = None
+    model_choice: RetellModelChoice | None = None
+    model_temperature: float | None = None
+    tool_call_strict_mode: bool | None = None
+    start_speaker: str | None = None
+    knowledge_base_ids: list[str] = []
+    default_dynamic_variables: dict[str, str] = {}
 
 
 class RetellImporter:
@@ -92,21 +126,47 @@ class RetellImporter:
         raw_config = self._load_config(path_or_config)
         retell = RetellConfig.model_validate(raw_config)
 
+        global_tools = [self._convert_tool(t) for t in retell.tools]
+
         nodes: dict[str, AgentNode] = {}
         for retell_node in retell.nodes:
             transitions = [self._convert_edge(edge) for edge in retell_node.edges]
+
+            instructions = retell_node.instruction.text
+            if retell.global_prompt:
+                instructions = f"{retell.global_prompt}\n\n{instructions}"
+
             nodes[retell_node.id] = AgentNode(
                 id=retell_node.id,
-                instructions=retell_node.instruction.text,
+                instructions=instructions,
+                tools=global_tools if global_tools else [],
                 transitions=transitions,
                 metadata={"retell_type": retell_node.type},
             )
+
+        source_metadata: dict[str, Any] = {
+            "conversation_flow_id": retell.conversation_flow_id,
+        }
+        if retell.version is not None:
+            source_metadata["version"] = retell.version
+        if retell.model_choice:
+            source_metadata["model_choice"] = retell.model_choice.model_dump(exclude_none=True)
+        if retell.model_temperature is not None:
+            source_metadata["model_temperature"] = retell.model_temperature
+        if retell.tool_call_strict_mode is not None:
+            source_metadata["tool_call_strict_mode"] = retell.tool_call_strict_mode
+        if retell.start_speaker:
+            source_metadata["start_speaker"] = retell.start_speaker
+        if retell.knowledge_base_ids:
+            source_metadata["knowledge_base_ids"] = retell.knowledge_base_ids
+        if retell.default_dynamic_variables:
+            source_metadata["default_dynamic_variables"] = retell.default_dynamic_variables
 
         return AgentGraph(
             nodes=nodes,
             entry_node_id=retell.start_node_id,
             source_type="retell",
-            source_metadata={"conversation_flow_id": retell.conversation_flow_id},
+            source_metadata=source_metadata,
         )
 
     def _load_config(self, path_or_config: str | Path | dict) -> dict[str, Any]:
@@ -131,4 +191,12 @@ class RetellImporter:
                 type=condition_type,
                 value=condition_value,
             ),
+        )
+
+    def _convert_tool(self, tool: RetellTool) -> ToolDefinition:
+        """Convert Retell tool to ToolDefinition."""
+        return ToolDefinition(
+            name=tool.name,
+            description=tool.description,
+            parameters=tool.parameters or {},
         )

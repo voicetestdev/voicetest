@@ -11,8 +11,7 @@ class TestTransitionCondition:
         from voicetest.models.agent import TransitionCondition
 
         condition = TransitionCondition(
-            type="llm_prompt",
-            value="Customer wants to check their balance"
+            type="llm_prompt", value="Customer wants to check their balance"
         )
         assert condition.type == "llm_prompt"
         assert condition.value == "Customer wants to check their balance"
@@ -20,20 +19,14 @@ class TestTransitionCondition:
     def test_create_equation_condition(self):
         from voicetest.models.agent import TransitionCondition
 
-        condition = TransitionCondition(
-            type="equation",
-            value="{{user_age}} > 18"
-        )
+        condition = TransitionCondition(type="equation", value="{{user_age}} > 18")
         assert condition.type == "equation"
         assert condition.value == "{{user_age}} > 18"
 
     def test_create_tool_call_condition(self):
         from voicetest.models.agent import TransitionCondition
 
-        condition = TransitionCondition(
-            type="tool_call",
-            value="transfer_to_agent"
-        )
+        condition = TransitionCondition(type="tool_call", value="transfer_to_agent")
         assert condition.type == "tool_call"
 
     def test_create_always_condition(self):
@@ -57,11 +50,8 @@ class TestTransition:
 
         transition = Transition(
             target_node_id="billing",
-            condition=TransitionCondition(
-                type="llm_prompt",
-                value="Customer needs billing help"
-            ),
-            description="Route to billing department"
+            condition=TransitionCondition(type="llm_prompt", value="Customer needs billing help"),
+            description="Route to billing department",
         )
         assert transition.target_node_id == "billing"
         assert transition.condition.type == "llm_prompt"
@@ -71,8 +61,7 @@ class TestTransition:
         from voicetest.models.agent import Transition, TransitionCondition
 
         transition = Transition(
-            target_node_id="support",
-            condition=TransitionCondition(type="always", value="")
+            target_node_id="support", condition=TransitionCondition(type="always", value="")
         )
         assert transition.description is None
 
@@ -88,11 +77,9 @@ class TestToolDefinition:
             description="Look up customer account by ID",
             parameters={
                 "type": "object",
-                "properties": {
-                    "account_id": {"type": "string"}
-                },
-                "required": ["account_id"]
-            }
+                "properties": {"account_id": {"type": "string"}},
+                "required": ["account_id"],
+            },
         )
         assert tool.name == "lookup_account"
         assert tool.description == "Look up customer account by ID"
@@ -105,10 +92,7 @@ class TestAgentNode:
     def test_create_basic_node(self):
         from voicetest.models.agent import AgentNode
 
-        node = AgentNode(
-            id="greeting",
-            instructions="Greet the customer warmly."
-        )
+        node = AgentNode(id="greeting", instructions="Greet the customer warmly.")
         assert node.id == "greeting"
         assert node.instructions == "Greet the customer warmly."
         assert node.tools == []
@@ -125,18 +109,16 @@ class TestAgentNode:
                 Transition(
                     target_node_id="billing",
                     condition=TransitionCondition(
-                        type="llm_prompt",
-                        value="Customer needs billing"
-                    )
+                        type="llm_prompt", value="Customer needs billing"
+                    ),
                 ),
                 Transition(
                     target_node_id="support",
                     condition=TransitionCondition(
-                        type="llm_prompt",
-                        value="Customer needs support"
-                    )
-                )
-            ]
+                        type="llm_prompt", value="Customer needs support"
+                    ),
+                ),
+            ],
         )
         assert len(node.transitions) == 2
         assert node.transitions[0].target_node_id == "billing"
@@ -152,9 +134,9 @@ class TestAgentNode:
                 ToolDefinition(
                     name="get_account",
                     description="Get account details",
-                    parameters={"type": "object", "properties": {}}
+                    parameters={"type": "object", "properties": {}},
                 )
-            ]
+            ],
         )
         assert len(node.tools) == 1
         assert node.tools[0].name == "get_account"
@@ -165,7 +147,7 @@ class TestAgentNode:
         node = AgentNode(
             id="greeting",
             instructions="Greet",
-            metadata={"retell_type": "conversation", "custom_field": 123}
+            metadata={"retell_type": "conversation", "custom_field": 123},
         )
         assert node.metadata["retell_type"] == "conversation"
         assert node.metadata["custom_field"] == 123
@@ -179,13 +161,9 @@ class TestAgentGraph:
 
         nodes = {
             "greeting": AgentNode(id="greeting", instructions="Hello!"),
-            "end": AgentNode(id="end", instructions="Goodbye!")
+            "end": AgentNode(id="end", instructions="Goodbye!"),
         }
-        graph = AgentGraph(
-            nodes=nodes,
-            entry_node_id="greeting",
-            source_type="custom"
-        )
+        graph = AgentGraph(nodes=nodes, entry_node_id="greeting", source_type="custom")
         assert len(graph.nodes) == 2
         assert graph.entry_node_id == "greeting"
         assert graph.source_type == "custom"
@@ -196,13 +174,9 @@ class TestAgentGraph:
 
         nodes = {
             "start": AgentNode(id="start", instructions="Start here"),
-            "end": AgentNode(id="end", instructions="End here")
+            "end": AgentNode(id="end", instructions="End here"),
         }
-        graph = AgentGraph(
-            nodes=nodes,
-            entry_node_id="start",
-            source_type="retell"
-        )
+        graph = AgentGraph(nodes=nodes, entry_node_id="start", source_type="retell")
         entry = graph.get_entry_node()
         assert entry.id == "start"
         assert entry.instructions == "Start here"
@@ -212,7 +186,7 @@ class TestAgentGraph:
 
         nodes = {
             "a": AgentNode(id="a", instructions="Node A"),
-            "b": AgentNode(id="b", instructions="Node B")
+            "b": AgentNode(id="b", instructions="Node B"),
         }
         graph = AgentGraph(nodes=nodes, entry_node_id="a", source_type="custom")
 
@@ -227,7 +201,7 @@ class TestAgentGraph:
             nodes={"n": AgentNode(id="n", instructions="Test")},
             entry_node_id="n",
             source_type="retell",
-            source_metadata={"conversation_flow_id": "flow-123", "version": 2}
+            source_metadata={"conversation_flow_id": "flow-123", "version": 2},
         )
         assert graph.source_metadata["conversation_flow_id"] == "flow-123"
         assert graph.source_metadata["version"] == 2
@@ -248,17 +222,14 @@ class TestAgentGraph:
                     transitions=[
                         Transition(
                             target_node_id="end",
-                            condition=TransitionCondition(
-                                type="llm_prompt",
-                                value="User is done"
-                            )
+                            condition=TransitionCondition(type="llm_prompt", value="User is done"),
                         )
-                    ]
+                    ],
                 ),
-                "end": AgentNode(id="end", instructions="Bye")
+                "end": AgentNode(id="end", instructions="Bye"),
             },
             entry_node_id="start",
-            source_type="custom"
+            source_type="custom",
         )
 
         json_str = graph.model_dump_json()

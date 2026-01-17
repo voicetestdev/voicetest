@@ -28,44 +28,32 @@ def main(ctx):
     if ctx.invoked_subcommand is None:
         # No subcommand - launch interactive shell
         from voicetest.tui import VoicetestShell
+
         app = VoicetestShell()
         app.run()
 
 
 @main.command()
 @click.option(
-    "--agent", "-a",
+    "--agent",
+    "-a",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Agent definition file"
+    help="Agent definition file",
 )
 @click.option(
-    "--tests", "-t",
+    "--tests",
+    "-t",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Test cases JSON file"
+    help="Test cases JSON file",
 )
+@click.option("--source", "-s", default=None, help="Source type (auto-detect if not specified)")
 @click.option(
-    "--source", "-s",
-    default=None,
-    help="Source type (auto-detect if not specified)"
+    "--output", "-o", default=None, type=click.Path(path_type=Path), help="Output file (JSON)"
 )
-@click.option(
-    "--output", "-o",
-    default=None,
-    type=click.Path(path_type=Path),
-    help="Output file (JSON)"
-)
-@click.option(
-    "--verbose", "-v",
-    is_flag=True,
-    help="Verbose output"
-)
-@click.option(
-    "--interactive", "-i",
-    is_flag=True,
-    help="Launch interactive TUI"
-)
+@click.option("--verbose", "-v", is_flag=True, help="Verbose output")
+@click.option("--interactive", "-i", is_flag=True, help="Launch interactive TUI")
 def run(
     agent: Path,
     tests: Path,
@@ -168,22 +156,20 @@ def _display_results(run_result) -> None:
 
 @main.command()
 @click.option(
-    "--agent", "-a",
+    "--agent",
+    "-a",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Agent definition file"
+    help="Agent definition file",
 )
 @click.option(
-    "--tests", "-t",
+    "--tests",
+    "-t",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Test cases JSON file"
+    help="Test cases JSON file",
 )
-@click.option(
-    "--source", "-s",
-    default=None,
-    help="Source type (auto-detect if not specified)"
-)
+@click.option("--source", "-s", default=None, help="Source type (auto-detect if not specified)")
 def tui(agent: Path, tests: Path, source: str | None):
     """Launch interactive TUI for test execution."""
     _run_tui(agent, tests, source, verbose=False)
@@ -191,23 +177,16 @@ def tui(agent: Path, tests: Path, source: str | None):
 
 @main.command()
 @click.option(
-    "--agent", "-a",
+    "--agent",
+    "-a",
     required=True,
     type=click.Path(exists=True, path_type=Path),
-    help="Agent definition file"
+    help="Agent definition file",
 )
 @click.option(
-    "--format", "-f",
-    required=True,
-    type=click.Choice(["livekit", "mermaid"]),
-    help="Export format"
+    "--format", "-f", required=True, type=click.Choice(["livekit", "mermaid"]), help="Export format"
 )
-@click.option(
-    "--output", "-o",
-    default=None,
-    type=click.Path(path_type=Path),
-    help="Output file"
-)
+@click.option("--output", "-o", default=None, type=click.Path(path_type=Path), help="Output file")
 def export(agent: Path, format: str, output: Path | None):
     """Export agent to different formats."""
     asyncio.run(_export(agent, format, output))
@@ -238,29 +217,16 @@ def importers():
         table.add_row(
             imp.source_type,
             imp.description,
-            ", ".join(imp.file_patterns) if imp.file_patterns else "-"
+            ", ".join(imp.file_patterns) if imp.file_patterns else "-",
         )
 
     console.print(table)
 
 
 @main.command()
-@click.option(
-    "--host", "-h",
-    default="127.0.0.1",
-    help="Host to bind to"
-)
-@click.option(
-    "--port", "-p",
-    default=8000,
-    type=int,
-    help="Port to bind to"
-)
-@click.option(
-    "--reload",
-    is_flag=True,
-    help="Enable auto-reload for development"
-)
+@click.option("--host", "-h", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", "-p", default=8000, type=int, help="Port to bind to")
+@click.option("--reload", is_flag=True, help="Enable auto-reload for development")
 def serve(host: str, port: int, reload: bool):
     """Start the REST API server."""
     try:

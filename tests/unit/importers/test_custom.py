@@ -44,10 +44,10 @@ class TestCustomImporter:
             return AgentGraph(
                 nodes={
                     "start": AgentNode(id="start", instructions="Hello"),
-                    "end": AgentNode(id="end", instructions="Goodbye")
+                    "end": AgentNode(id="end", instructions="Goodbye"),
                 },
                 entry_node_id="start",
-                source_type="custom"
+                source_type="custom",
             )
 
         graph = importer.import_agent(create_agent)
@@ -66,7 +66,7 @@ class TestCustomImporter:
             lambda: AgentGraph(
                 nodes={"n": AgentNode(id="n", instructions="test")},
                 entry_node_id="n",
-                source_type="custom"
+                source_type="custom",
             )
         )
 

@@ -42,7 +42,7 @@ class TestTestCase:
 
         test = TestCase(
             name="Basic greeting test",
-            user_prompt="When asked for name, say John. Your goal is to say hello."
+            user_prompt="When asked for name, say John. Your goal is to say hello.",
         )
         assert test.name == "Basic greeting test"
         assert "John" in test.user_prompt
@@ -76,11 +76,7 @@ class TestTestCase:
     def test_test_case_json_serialization(self):
         from voicetest.models.test_case import TestCase
 
-        test = TestCase(
-            name="Test",
-            user_prompt="Prompt",
-            metrics=["Criteria for success."]
-        )
+        test = TestCase(name="Test", user_prompt="Prompt", metrics=["Criteria for success."])
 
         json_str = test.model_dump_json()
         restored = TestCase.model_validate_json(json_str)
@@ -100,12 +96,12 @@ class TestTestCase:
                 "confirms will do callback in 6 weeks, thanks caller, ends call."
             ],
             "user_prompt": "When asked for name or to confirm, provide or confirm "
-                "you are Robert Wilson. When asked for DOB, provide September 17th 1983.",
+            "you are Robert Wilson. When asked for DOB, provide September 17th 1983.",
             "creation_timestamp": 1761074675536,
             "user_modified_timestamp": 1761074796123,
             "type": "simulation",
             "tool_mocks": [],
-            "llm_model": "gpt-4o-mini"
+            "llm_model": "gpt-4o-mini",
         }
 
         test = TestCase.model_validate(retell_export)

@@ -1,0 +1,50 @@
+exclude: |
+  (?x)^(
+    web/node_modules/.*|
+    \.venv/.*|
+    web/dist/.*
+  )$
+
+repos:
+  # Python - Ruff linting and formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # TypeScript/JavaScript - svelte-check
+  - repo: local
+    hooks:
+      - id: svelte-check
+        name: svelte-check
+        entry: bash -c 'cd web && npx svelte-check --tsconfig ./tsconfig.json'
+        language: system
+        files: ^web/src/.*\.(ts|svelte)$
+        pass_filenames: false
+
+  # Markdown - mdformat
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.21
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-frontmatter
+          - mdformat-footnote
+
+  # General file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.md$
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+        exclude: ^web/node_modules/
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+        exclude: ^web/node_modules/
+      - id: check-merge-conflict

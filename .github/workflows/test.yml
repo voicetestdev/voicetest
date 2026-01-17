@@ -16,11 +16,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
+
+      - name: Build frontend
+        run: |
+          cd web
+          mise exec -- bun install
+          mise exec -- bun run build
 
       - name: Install dependencies
         run: uv sync --frozen --all-extras
@@ -38,14 +47,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
       - name: Set up Python
         run: uv python install 3.12
 
+      - name: Build frontend
+        run: |
+          cd web
+          mise exec -- bun install
+          mise exec -- bun run build
+
       - name: Build package
-        run: uv build
+        run: uv build --wheel
 
       - name: Check dist contents
         run: |

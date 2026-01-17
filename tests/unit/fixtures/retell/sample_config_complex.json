@@ -1,0 +1,409 @@
+{
+  "conversation_flow_id": "cf_healthcare_001",
+  "version": 2,
+  "model_choice": {
+    "type": "cascading",
+    "model": "gpt-4.1",
+    "high_priority": true
+  },
+  "model_temperature": 0.7,
+  "tool_call_strict_mode": true,
+  "start_speaker": "agent",
+  "global_prompt": "You are a professional medical receptionist at Acme Healthcare. Be empathetic, HIPAA-compliant, and efficient.",
+  "start_node_id": "greeting",
+  "knowledge_base_ids": ["kb_office_policies", "kb_insurance_info"],
+  "default_dynamic_variables": {
+    "office_name": "Acme Healthcare",
+    "office_hours": "Monday-Friday 8am-6pm",
+    "office_phone": "555-123-4567"
+  },
+  "tools": [
+    {
+      "type": "custom",
+      "name": "lookup_patient",
+      "description": "Look up patient in the system by name and date of birth.",
+      "tool_id": "tool_lookup_001",
+      "url": "https://api.acme.com/patients/lookup",
+      "method": "POST",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "full_name": {
+            "type": "string",
+            "description": "Patient's full name"
+          },
+          "date_of_birth": {
+            "type": "string",
+            "description": "Patient's date of birth in YYYY-MM-DD format"
+          }
+        },
+        "required": ["full_name", "date_of_birth"]
+      }
+    },
+    {
+      "type": "custom",
+      "name": "get_available_slots",
+      "description": "Get available appointment slots for a given date range.",
+      "tool_id": "tool_slots_001",
+      "url": "https://api.acme.com/appointments/slots",
+      "method": "GET",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "description": "Start date in YYYY-MM-DD format"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date in YYYY-MM-DD format"
+          },
+          "doctor_id": {
+            "type": "string",
+            "description": "Optional doctor ID to filter slots"
+          }
+        },
+        "required": ["start_date", "end_date"]
+      }
+    },
+    {
+      "type": "custom",
+      "name": "book_appointment",
+      "description": "Book an appointment for the verified patient.",
+      "tool_id": "tool_book_001",
+      "url": "https://api.acme.com/appointments/book",
+      "method": "POST",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "patient_id": {
+            "type": "string",
+            "description": "Patient ID from lookup"
+          },
+          "slot_id": {
+            "type": "string",
+            "description": "Available slot ID to book"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the appointment"
+          }
+        },
+        "required": ["patient_id", "slot_id", "reason"]
+      }
+    },
+    {
+      "type": "custom",
+      "name": "cancel_appointment",
+      "description": "Cancel an existing appointment.",
+      "tool_id": "tool_cancel_001",
+      "url": "https://api.acme.com/appointments/cancel",
+      "method": "DELETE",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "description": "The appointment ID to cancel"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for cancellation"
+          }
+        },
+        "required": ["appointment_id"]
+      }
+    },
+    {
+      "type": "end_call",
+      "name": "end_call",
+      "description": "End the call when conversation is complete."
+    },
+    {
+      "type": "transfer_call",
+      "name": "transfer_to_nurse",
+      "description": "Transfer to a nurse for medical questions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Reason for the transfer"
+          }
+        },
+        "required": ["reason"]
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "greeting",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Greet the caller warmly. Say: 'Thank you for calling {{office_name}}. How may I assist you today?' Listen for whether they need to schedule an appointment, have a billing question, or have a general inquiry."
+      },
+      "edges": [
+        {
+          "id": "edge_greeting_to_verify",
+          "destination_node_id": "verify_identity",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Caller wants to schedule, reschedule, or cancel an appointment"
+          }
+        },
+        {
+          "id": "edge_greeting_to_billing",
+          "destination_node_id": "billing_inquiry",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Caller has a billing or payment question"
+          }
+        },
+        {
+          "id": "edge_greeting_to_general",
+          "destination_node_id": "general_inquiry",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Caller has a general question about office hours, location, or services"
+          }
+        }
+      ]
+    },
+    {
+      "id": "verify_identity",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Verify the patient's identity. Ask for their full name and date of birth. Use the lookup_patient tool to find them in the system. Confirm you found the right person before proceeding."
+      },
+      "edges": [
+        {
+          "id": "edge_verify_to_schedule",
+          "destination_node_id": "schedule_appointment",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient identity verified and they want to schedule a new appointment"
+          }
+        },
+        {
+          "id": "edge_verify_to_manage",
+          "destination_node_id": "manage_appointment",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient identity verified and they want to cancel or reschedule existing appointment"
+          }
+        },
+        {
+          "id": "edge_verify_failed",
+          "destination_node_id": "verification_failed",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Could not verify patient identity after multiple attempts"
+          }
+        }
+      ]
+    },
+    {
+      "id": "schedule_appointment",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Help the patient schedule a new appointment. Ask what type of appointment they need and their preferred dates. Use get_available_slots to find options, then book_appointment to confirm their selection. Always confirm the final details."
+      },
+      "edges": [
+        {
+          "id": "edge_schedule_to_closing",
+          "destination_node_id": "closing",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Appointment successfully scheduled"
+          }
+        },
+        {
+          "id": "edge_schedule_no_slots",
+          "destination_node_id": "no_availability",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "No available slots match the patient's requirements"
+          }
+        }
+      ]
+    },
+    {
+      "id": "manage_appointment",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Help the patient manage their existing appointment. If they want to cancel, use cancel_appointment. If they want to reschedule, cancel the existing one and help them book a new one. Always confirm changes."
+      },
+      "edges": [
+        {
+          "id": "edge_manage_to_closing",
+          "destination_node_id": "closing",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Appointment successfully cancelled or rescheduled"
+          }
+        }
+      ]
+    },
+    {
+      "id": "billing_inquiry",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Help the patient with their billing question. For simple balance inquiries, provide information. For complex billing disputes or payment plans, transfer to the billing department."
+      },
+      "edges": [
+        {
+          "id": "edge_billing_to_closing",
+          "destination_node_id": "closing",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Billing question answered satisfactorily"
+          }
+        },
+        {
+          "id": "edge_billing_to_transfer",
+          "destination_node_id": "transfer_billing",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient needs to speak with billing department directly"
+          }
+        }
+      ]
+    },
+    {
+      "id": "general_inquiry",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Answer the patient's general questions. Office hours are {{office_hours}}. Use knowledge base information for policies and insurance questions. If they decide they need an appointment, route them appropriately."
+      },
+      "edges": [
+        {
+          "id": "edge_general_to_closing",
+          "destination_node_id": "closing",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Question answered and patient is satisfied"
+          }
+        },
+        {
+          "id": "edge_general_to_verify",
+          "destination_node_id": "verify_identity",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient now wants to schedule or manage an appointment"
+          }
+        }
+      ]
+    },
+    {
+      "id": "no_availability",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Apologize that no slots match their preferences. Offer to put them on a waitlist or suggest alternative dates. If they want to try different dates, help them search again."
+      },
+      "edges": [
+        {
+          "id": "edge_no_avail_to_schedule",
+          "destination_node_id": "schedule_appointment",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient wants to try different dates"
+          }
+        },
+        {
+          "id": "edge_no_avail_to_closing",
+          "destination_node_id": "closing",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient will call back later or added to waitlist"
+          }
+        }
+      ]
+    },
+    {
+      "id": "verification_failed",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Explain that you couldn't verify their identity. Suggest they may need to visit in person with ID, or verify their information is up to date in the system. Offer to help with general questions instead."
+      },
+      "edges": [
+        {
+          "id": "edge_failed_to_general",
+          "destination_node_id": "general_inquiry",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient has a general question they can ask instead"
+          }
+        },
+        {
+          "id": "edge_failed_to_closing",
+          "destination_node_id": "closing",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient will try again later or visit in person"
+          }
+        }
+      ]
+    },
+    {
+      "id": "transfer_billing",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Let the patient know you'll transfer them to the billing department. Ask them to hold briefly while you connect them."
+      },
+      "edges": [
+        {
+          "id": "edge_transfer_complete",
+          "destination_node_id": "end_call_node",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Ready to transfer the call"
+          }
+        }
+      ]
+    },
+    {
+      "id": "closing",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Thank the patient for calling {{office_name}}. Ask if there's anything else you can help with today. If not, wish them a good day and end the call professionally."
+      },
+      "edges": [
+        {
+          "id": "edge_closing_more_help",
+          "destination_node_id": "greeting",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient has another question or request"
+          }
+        },
+        {
+          "id": "edge_closing_to_end",
+          "destination_node_id": "end_call_node",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient is satisfied and ready to end the call"
+          }
+        }
+      ]
+    },
+    {
+      "id": "end_call_node",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Say goodbye warmly and use the end_call tool to terminate the call."
+      },
+      "edges": []
+    }
+  ]
+}
