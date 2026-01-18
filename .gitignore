@@ -12,5 +12,8 @@ wheels/
 # Node
 node_modules/
 
+# voicetest db
+.voicetest/
+
 # wt copy
 .voicetest.toml

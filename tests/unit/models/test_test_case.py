@@ -49,8 +49,11 @@ class TestTestCase:
         assert test.metrics == []
         assert test.dynamic_variables == {}
         assert test.tool_mocks == []
-        assert test.type == "simulation"
+        assert test.type == "llm"
         assert test.llm_model is None
+        assert test.includes == []
+        assert test.excludes == []
+        assert test.patterns == []
 
     def test_create_full_test_case(self):
         from voicetest.models.test_case import TestCase
@@ -109,3 +112,38 @@ class TestTestCase:
         assert test.dynamic_variables == {"customer_id": "cust_123"}
         assert len(test.metrics) == 1
         assert test.type == "simulation"
+        assert test.effective_type == "llm"
+
+    def test_create_rule_test_case(self):
+        """Test creating a rule-based test case."""
+        from voicetest.models.test_case import TestCase
+
+        test = TestCase(
+            name="Greeting check",
+            user_prompt="Say hello",
+            type="rule",
+            includes=["welcome", "help"],
+            excludes=["goodbye"],
+            patterns=["REF-[A-Z0-9]+"],
+        )
+        assert test.type == "rule"
+        assert test.effective_type == "rule"
+        assert test.includes == ["welcome", "help"]
+        assert test.excludes == ["goodbye"]
+        assert test.patterns == ["REF-[A-Z0-9]+"]
+
+    def test_effective_type_normalizes_legacy_values(self):
+        """Test that effective_type normalizes legacy type values."""
+        from voicetest.models.test_case import TestCase
+
+        simulation_test = TestCase(name="Test", user_prompt="Prompt", type="simulation")
+        assert simulation_test.effective_type == "llm"
+
+        unit_test = TestCase(name="Test", user_prompt="Prompt", type="unit")
+        assert unit_test.effective_type == "rule"
+
+        llm_test = TestCase(name="Test", user_prompt="Prompt", type="llm")
+        assert llm_test.effective_type == "llm"
+
+        rule_test = TestCase(name="Test", user_prompt="Prompt", type="rule")
+        assert rule_test.effective_type == "rule"

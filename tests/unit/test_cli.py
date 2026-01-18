@@ -143,3 +143,33 @@ class TestCLIMain:
         assert "run" in result.output
         assert "export" in result.output
         assert "importers" in result.output
+
+
+class TestCLIServe:
+    """Tests for the serve command."""
+
+    def test_serve_help(self, cli_runner):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["serve", "--help"])
+
+        assert result.exit_code == 0
+        assert "--agent" in result.output
+        assert "--host" in result.output
+        assert "--port" in result.output
+
+    def test_serve_agent_flag_accepts_path(self, cli_runner, temp_agent_file):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["serve", "--help"])
+
+        assert result.exit_code == 0
+        # Multiple flag should be documented
+        assert "-a" in result.output
+
+    def test_serve_agent_nonexistent_file_fails(self, cli_runner):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["serve", "--agent", "/nonexistent/agent.json"])
+
+        assert result.exit_code != 0

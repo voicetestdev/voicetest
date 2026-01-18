@@ -3,6 +3,7 @@
 Wraps the execution of conversations using generated agents.
 """
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 import dspy
@@ -11,6 +12,9 @@ from voicetest.engine.agent_gen import GeneratedAgent, generate_agent_classes
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message, ToolCall
 from voicetest.models.test_case import RunOptions
+
+# Callback type for turn updates: receives transcript after each turn
+OnTurnCallback = Callable[[list[Message]], Awaitable[None] | None]
 
 
 @dataclass
@@ -61,6 +65,7 @@ class ConversationRunner:
         self,
         test_case: "TestCase",  # noqa: F821 - Forward reference
         user_simulator: "UserSimulator",  # noqa: F821 - Forward reference
+        on_turn: OnTurnCallback | None = None,
     ) -> ConversationState:
         """Run a complete conversation.
 
@@ -72,6 +77,7 @@ class ConversationRunner:
         Args:
             test_case: The test case defining constraints.
             user_simulator: The user persona simulator.
+            on_turn: Optional callback invoked after each turn with current transcript.
 
         Returns:
             ConversationState with transcript and tracking data.
@@ -110,6 +116,12 @@ class ConversationRunner:
                 current_agent = new_agent
 
             state.turn_count += 1
+
+            # Notify callback of turn completion
+            if on_turn:
+                result = on_turn(state.transcript)
+                if result is not None:
+                    await result
 
             # Check for agent-initiated end
             if self._should_end_conversation(current_agent, state):

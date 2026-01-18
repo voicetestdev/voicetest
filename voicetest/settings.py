@@ -4,6 +4,7 @@ Settings are stored in .voicetest.toml in the current directory.
 Both CLI and web UI read/write the same file.
 """
 
+import os
 import tomllib
 from pathlib import Path
 
@@ -25,6 +26,7 @@ class RunSettings(BaseModel):
 
     max_turns: int = Field(default=20, description="Maximum conversation turns")
     verbose: bool = Field(default=False, description="Verbose output")
+    flow_judge: bool = Field(default=False, description="Run flow judge to validate transitions")
 
 
 class Settings(BaseModel):
@@ -32,6 +34,20 @@ class Settings(BaseModel):
 
     models: ModelSettings = Field(default_factory=ModelSettings)
     run: RunSettings = Field(default_factory=RunSettings)
+    env: dict[str, str] = Field(
+        default_factory=dict,
+        description="Environment variables to set (e.g., API keys for LLM providers)",
+    )
+
+    def apply_env(self) -> None:
+        """Apply configured environment variables.
+
+        Sets environment variables from settings. Useful for API keys.
+        Only sets variables that are configured - does not clear existing env vars.
+        """
+        for key, value in self.env.items():
+            if value:
+                os.environ[key] = value
 
     def save(self, path: Path | None = None) -> None:
         """Save settings to TOML file."""
@@ -65,7 +81,14 @@ def _to_toml(settings: Settings) -> str:
     lines.append("[run]")
     lines.append(f"max_turns = {settings.run.max_turns}")
     lines.append(f"verbose = {str(settings.run.verbose).lower()}")
+    lines.append(f"flow_judge = {str(settings.run.flow_judge).lower()}")
     lines.append("")
+
+    if settings.env:
+        lines.append("[env]")
+        for key, value in sorted(settings.env.items()):
+            lines.append(f'{key} = "{value}"')
+        lines.append("")
 
     return "\n".join(lines)
 

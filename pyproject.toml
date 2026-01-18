@@ -3,7 +3,7 @@ name = "voicetest"
 version = "3"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
 authors = [
     { name = "pld", email = "50706+pld@users.noreply.github.com" }
 ]
@@ -11,7 +11,7 @@ keywords = ["voice", "agent", "testing", "livekit", "retell", "vapi"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",

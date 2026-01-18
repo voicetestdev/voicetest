@@ -12,12 +12,16 @@
     run: {
       max_turns: 20,
       verbose: false,
+      flow_judge: false,
     },
+    env: {},
   });
   let loading = $state(false);
   let saving = $state(false);
   let error = $state("");
-  let success = $state("");
+  let newEnvKey = $state("");
+  let newEnvValue = $state("");
+  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
   $effect(() => {
     loadSettings();
@@ -39,14 +43,10 @@
   async function saveSettings() {
     saving = true;
     error = "";
-    success = "";
 
     try {
       const updated = await api.updateSettings(localSettings);
       settings.set(updated);
-      localSettings = structuredClone(updated);
-      success = "Settings saved";
-      setTimeout(() => (success = ""), 3000);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -54,23 +54,42 @@
     saving = false;
   }
 
-  function resetToDefaults() {
-    localSettings = {
-      models: {
-        agent: "openai/gpt-4o-mini",
-        simulator: "openai/gpt-4o-mini",
-        judge: "openai/gpt-4o-mini",
-      },
-      run: {
-        max_turns: 20,
-        verbose: false,
-      },
-    };
+  function debouncedSave() {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => saveSettings(), 500);
+  }
+
+  async function addEnvVar() {
+    if (newEnvKey.trim() && newEnvValue.trim()) {
+      localSettings.env = {
+        ...localSettings.env,
+        [newEnvKey.trim()]: newEnvValue.trim(),
+      };
+      newEnvKey = "";
+      newEnvValue = "";
+      await saveSettings();
+    }
+  }
+
+  async function removeEnvVar(key: string) {
+    const { [key]: _, ...rest } = localSettings.env;
+    localSettings.env = rest;
+    await saveSettings();
+  }
+
+  function maskValue(value: string): string {
+    if (value.length <= 8) return "****";
+    return value.substring(0, 4) + "****" + value.substring(value.length - 4);
   }
 </script>
 
 <div class="settings-view">
-  <h2>Settings</h2>
+  <div class="header">
+    <h2>Settings</h2>
+    {#if saving}
+      <span class="save-indicator">Saving...</span>
+    {/if}
+  </div>
 
   {#if loading}
     <p>Loading settings...</p>
@@ -88,6 +107,7 @@
           id="agent-model"
           type="text"
           bind:value={localSettings.models.agent}
+          oninput={debouncedSave}
           placeholder="openai/gpt-4o-mini"
         />
         <span class="hint">Model used to generate agent responses</span>
@@ -99,6 +119,7 @@
           id="simulator-model"
           type="text"
           bind:value={localSettings.models.simulator}
+          oninput={debouncedSave}
           placeholder="openai/gpt-4o-mini"
         />
         <span class="hint">Model used to simulate user behavior</span>
@@ -110,6 +131,7 @@
           id="judge-model"
           type="text"
           bind:value={localSettings.models.judge}
+          oninput={debouncedSave}
           placeholder="openai/gpt-4o-mini"
         />
         <span class="hint">Model used to evaluate test metrics</span>
@@ -125,6 +147,7 @@
           id="max-turns"
           type="number"
           bind:value={localSettings.run.max_turns}
+          oninput={debouncedSave}
           min={1}
           max={100}
         />
@@ -132,52 +155,94 @@
       </div>
 
       <div class="form-group checkbox">
-        <input id="verbose" type="checkbox" bind:checked={localSettings.run.verbose} />
+        <input
+          id="verbose"
+          type="checkbox"
+          bind:checked={localSettings.run.verbose}
+          onchange={saveSettings}
+        />
         <label for="verbose">Verbose output</label>
       </div>
-    </section>
 
-    <div class="button-row">
-      <button onclick={saveSettings} disabled={saving}>
-        {saving ? "Saving..." : "Save Settings"}
-      </button>
-      <button class="secondary" onclick={resetToDefaults}>
-        Reset to Defaults
-      </button>
-      <button class="secondary" onclick={loadSettings}>
-        Reload
-      </button>
-    </div>
+      <div class="form-group checkbox">
+        <input
+          id="flow-judge"
+          type="checkbox"
+          bind:checked={localSettings.run.flow_judge}
+          onchange={saveSettings}
+        />
+        <label for="flow-judge">Flow judge</label>
+        <span class="hint checkbox-hint">LLM evaluates if node transitions were logical</span>
+      </div>
+    </section>
 
     {#if error}
       <p class="error-message">{error}</p>
     {/if}
 
-    {#if success}
-      <p class="success-message">{success}</p>
-    {/if}
-
-    <section class="info-section">
+    <section class="settings-form">
       <h3>Environment Variables</h3>
       <p class="hint">
-        API keys are set via environment variables:
+        Set API keys for LLM providers. These are applied when running tests, overriding system env vars.
+        Stored in .voicetest.toml (add to .gitignore).
       </p>
-      <ul class="env-list">
-        <li><code>OPENAI_API_KEY</code> - OpenAI API key</li>
-        <li><code>ANTHROPIC_API_KEY</code> - Anthropic API key</li>
-        <li><code>GEMINI_API_KEY</code> - Google Gemini API key</li>
-      </ul>
+      <p class="hint">
+        Common keys: OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, AZURE_API_KEY, COHERE_API_KEY
+      </p>
+
+      {#if Object.keys(localSettings.env).length > 0}
+        <div class="env-list">
+          {#each Object.entries(localSettings.env) as [key, value]}
+            <div class="env-item">
+              <code class="env-key">{key}</code>
+              <span class="env-value">{maskValue(value)}</span>
+              <button class="small danger" onclick={() => removeEnvVar(key)}>Remove</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <div class="env-add">
+        <input
+          type="text"
+          bind:value={newEnvKey}
+          placeholder="Variable name (e.g., OPENAI_API_KEY)"
+          class="env-input"
+        />
+        <input
+          type="password"
+          bind:value={newEnvValue}
+          placeholder="Value"
+          class="env-input"
+        />
+        <button class="secondary" onclick={addEnvVar} disabled={!newEnvKey.trim() || !newEnvValue.trim()}>
+          Add
+        </button>
+      </div>
     </section>
   {/if}
 </div>
 
 <style>
   .settings-view {
-    max-width: 600px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
   }
 
   h2 {
-    margin-top: 0;
+    margin: 0;
+  }
+
+  .save-indicator {
+    font-size: 0.85rem;
+    color: #9ca3af;
   }
 
   h3 {
@@ -195,6 +260,10 @@
 
   .form-group {
     margin-bottom: 1.25rem;
+  }
+
+  .form-group:last-child {
+    margin-bottom: 0;
   }
 
   .form-group label {
@@ -219,6 +288,11 @@
     margin: 0;
   }
 
+  .checkbox-hint {
+    margin: 0;
+    margin-left: auto;
+  }
+
   .hint {
     display: block;
     margin-top: 0.25rem;
@@ -228,12 +302,6 @@
 
   .hint a {
     color: #3b82f6;
-  }
-
-  .button-row {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
   }
 
   .secondary {
@@ -249,31 +317,57 @@
     margin: 0 0 1rem 0;
   }
 
-  .success-message {
-    color: #4ade80;
-    margin: 0 0 1rem 0;
-  }
-
-  .info-section {
-    background: #16213e;
-    padding: 1rem;
-    border-radius: 8px;
-  }
-
   .env-list {
-    list-style: none;
-    padding: 0;
-    margin: 0.5rem 0 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
   }
 
-  .env-list li {
-    margin-bottom: 0.25rem;
-  }
-
-  .env-list code {
+  .env-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
     background: #1a1a2e;
-    padding: 0.1rem 0.3rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+  }
+
+  .env-key {
+    background: #374151;
+    padding: 0.2rem 0.5rem;
     border-radius: 3px;
     font-size: 0.85rem;
+    min-width: 180px;
+  }
+
+  .env-value {
+    flex: 1;
+    color: #6b7280;
+    font-family: monospace;
+    font-size: 0.85rem;
+  }
+
+  .env-add {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .env-input {
+    flex: 1;
+  }
+
+  .small {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .danger {
+    background: #7f1d1d;
+  }
+
+  .danger:hover {
+    background: #991b1b;
   }
 </style>

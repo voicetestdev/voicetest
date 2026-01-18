@@ -1,12 +1,18 @@
 import type {
   AgentGraph,
+  AgentRecord,
   ExporterInfo,
+  GalleryItem,
   ImporterInfo,
   MetricResult,
   Message,
   RunOptions,
+  RunRecord,
+  RunWithResults,
   Settings,
+  StartRunResponse,
   TestCase,
+  TestCaseRecord,
   TestResult,
   TestRun,
 } from "./types";
@@ -48,6 +54,17 @@ async function put<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+async function del<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || res.statusText);
+  }
+  return res.json();
+}
+
 export const api = {
   health: () => get<{ status: string }>("/health"),
 
@@ -81,5 +98,43 @@ export const api = {
 
   getSettings: () => get<Settings>("/settings"),
 
+  getDefaultSettings: () => get<Settings>("/settings/defaults"),
+
   updateSettings: (settings: Settings) => put<Settings>("/settings", settings),
+
+  listAgents: () => get<AgentRecord[]>("/agents"),
+
+  getAgent: (id: string) => get<AgentRecord>(`/agents/${id}`),
+
+  getAgentGraph: (id: string) => get<AgentGraph>(`/agents/${id}/graph`),
+
+  createAgent: (name: string, config: unknown, source?: string) =>
+    post<AgentRecord>("/agents", { name, config, source }),
+
+  updateAgent: (id: string, name: string) =>
+    put<AgentRecord>(`/agents/${id}`, { name }),
+
+  deleteAgent: (id: string) => del<{ status: string; id: string }>(`/agents/${id}`),
+
+  listTestsForAgent: (agentId: string) =>
+    get<TestCaseRecord[]>(`/agents/${agentId}/tests`),
+
+  createTestCase: (agentId: string, testCase: Partial<TestCase>) =>
+    post<TestCaseRecord>(`/agents/${agentId}/tests`, testCase),
+
+  updateTestCase: (testId: string, testCase: Partial<TestCase>) =>
+    put<TestCaseRecord>(`/tests/${testId}`, testCase),
+
+  deleteTestCase: (testId: string) =>
+    del<{ status: string; id: string }>(`/tests/${testId}`),
+
+  listGallery: () => get<GalleryItem[]>("/gallery"),
+
+  listRunsForAgent: (agentId: string, limit = 50) =>
+    get<RunRecord[]>(`/agents/${agentId}/runs?limit=${limit}`),
+
+  getRun: (runId: string) => get<RunWithResults>(`/runs/${runId}`),
+
+  startRun: (agentId: string, testIds?: string[], options?: Partial<RunOptions>) =>
+    post<StartRunResponse>(`/agents/${agentId}/runs`, { test_ids: testIds, options }),
 };

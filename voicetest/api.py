@@ -4,7 +4,7 @@ This is the single interface for all consumers. CLI and Web UI are thin wrappers
 """
 
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +20,9 @@ from voicetest.models.results import (
     TestRun,
 )
 from voicetest.models.test_case import RunOptions, TestCase
+
+# Callback type for turn updates
+OnTurnCallback = Callable[[list[Message]], Awaitable[None] | None]
 
 
 async def import_agent(
@@ -113,6 +116,7 @@ async def run_test(
     test_case: TestCase,
     options: RunOptions | None = None,
     _mock_mode: bool = False,
+    on_turn: OnTurnCallback | None = None,
 ) -> TestResult:
     """Run a single test case against an agent.
 
@@ -121,6 +125,7 @@ async def run_test(
         test_case: Test case definition.
         options: Optional run options.
         _mock_mode: If True, use mock responses (for testing).
+        on_turn: Optional callback invoked after each turn with current transcript.
 
     Returns:
         TestResult with pass/fail status, transcript, and metrics.
@@ -128,6 +133,7 @@ async def run_test(
     from voicetest.engine.session import ConversationRunner
     from voicetest.judges.flow import FlowJudge
     from voicetest.judges.metric import MetricJudge
+    from voicetest.judges.rule import RuleJudge
     from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
 
     options = options or RunOptions()
@@ -169,7 +175,8 @@ async def run_test(
         runner = ConversationRunner(graph, options, mock_mode=_mock_mode)
         simulator = UserSimulator(test_case.user_prompt, options.simulator_model)
         metric_judge = MetricJudge(options.judge_model)
-        flow_judge = FlowJudge()
+        rule_judge = RuleJudge()
+        flow_judge = FlowJudge(options.judge_model)
 
         # Enable mock mode for testing
         if _mock_mode:
@@ -192,20 +199,41 @@ async def run_test(
                 MetricResult(metric=m, passed=True, reasoning="Mock evaluation", confidence=0.9)
                 for m in test_case.metrics
             ]
+            flow_judge._mock_mode = True
+            from voicetest.judges.flow import FlowResult
+
+            flow_judge._mock_result = FlowResult(
+                valid=True, issues=[], reasoning="Mock flow validation"
+            )
 
         # Run conversation
-        state = await runner.run(test_case, simulator)
+        state = await runner.run(test_case, simulator, on_turn=on_turn)
 
-        # Evaluate metrics
-        metric_results = await metric_judge.evaluate_all(state.transcript, test_case.metrics)
+        # Evaluate based on test type
+        test_type = test_case.effective_type
+        if test_type == "rule":
+            # Rule-based evaluation (deterministic pattern matching)
+            metric_results = await rule_judge.evaluate(
+                state.transcript,
+                test_case.includes,
+                test_case.excludes,
+                test_case.patterns,
+            )
+        else:
+            # LLM-based evaluation (semantic metrics)
+            metric_results = await metric_judge.evaluate_all(state.transcript, test_case.metrics)
 
-        # Check flow constraints
-        violations = flow_judge.validate(state.nodes_visited)
+        # Check flow constraints (optional, informational only)
+        flow_issues: list[str] = []
+        if options.flow_judge:
+            flow_result = await flow_judge.evaluate(
+                graph.nodes, state.transcript, state.nodes_visited
+            )
+            flow_issues = flow_result.issues
 
-        # Determine overall status
+        # Determine overall status (based on metrics only)
         metrics_passed = all(r.passed for r in metric_results)
-        flow_passed = len(violations) == 0
-        status = "pass" if (metrics_passed and flow_passed) else "fail"
+        status = "pass" if metrics_passed else "fail"
 
         duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
 
@@ -217,7 +245,7 @@ async def run_test(
             metric_results=metric_results,
             nodes_visited=state.nodes_visited,
             tools_called=state.tools_called,
-            constraint_violations=violations,
+            constraint_violations=flow_issues,
             turn_count=state.turn_count,
             duration_ms=duration_ms,
             end_reason=state.end_reason,

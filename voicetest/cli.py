@@ -80,6 +80,7 @@ def _run_tui(
     from voicetest.tui import VoicetestApp
 
     settings = load_settings()
+    settings.apply_env()
     options = RunOptions(
         agent_model=settings.models.agent,
         simulator_model=settings.models.simulator,
@@ -108,6 +109,7 @@ async def _run_cli(
     from voicetest.settings import load_settings
 
     settings = load_settings()
+    settings.apply_env()
     options = RunOptions(
         agent_model=settings.models.agent,
         simulator_model=settings.models.simulator,
@@ -227,7 +229,14 @@ def importers():
 @click.option("--host", "-h", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", "-p", default=8000, type=int, help="Port to bind to")
 @click.option("--reload", is_flag=True, help="Enable auto-reload for development")
-def serve(host: str, port: int, reload: bool):
+@click.option(
+    "--agent",
+    "-a",
+    multiple=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Agent definition file(s) to link",
+)
+def serve(host: str, port: int, reload: bool, agent: tuple[Path, ...]):
     """Start the REST API server."""
     try:
         import uvicorn
@@ -236,9 +245,17 @@ def serve(host: str, port: int, reload: bool):
         console.print("Install with: uv add 'voicetest[api]'")
         raise SystemExit(1) from None
 
+    import os
+
+    os.environ["VOICETEST_LINKED_AGENTS"] = ",".join(str(p) for p in agent)
+
     console.print("[bold]Starting voicetest API server...[/bold]")
     console.print(f"  URL: http://{host}:{port}")
     console.print(f"  Docs: http://{host}:{port}/docs")
+    if agent:
+        console.print(f"  Linked agents: {len(agent)}")
+        for a in agent:
+            console.print(f"    - {a}")
     console.print()
 
     uvicorn.run(

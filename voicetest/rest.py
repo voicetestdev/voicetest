@@ -7,10 +7,15 @@ Run with: voicetest serve
 Or: uvicorn voicetest.rest:app --reload
 """
 
+import asyncio
+import json
+import os
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, FastAPI, HTTPException
+import duckdb
+from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, WebSocket
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -20,6 +25,74 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message, MetricResult, TestResult, TestRun
 from voicetest.models.test_case import RunOptions, TestCase
 from voicetest.settings import Settings, load_settings, save_settings
+from voicetest.storage.db import get_connection, init_schema
+from voicetest.storage.repositories import (
+    AgentRepository,
+    RunRepository,
+    TestCaseRepository,
+)
+
+# Active runs: run_id -> {"cancel": Event, "websockets": set[WebSocket], "message_queue": list}
+_active_runs: dict[str, dict[str, Any]] = {}
+
+_db_conn: duckdb.DuckDBPyConnection | None = None
+_agent_repo: AgentRepository | None = None
+_test_case_repo: TestCaseRepository | None = None
+_run_repo: RunRepository | None = None
+
+
+def init_storage() -> None:
+    """Initialize storage and register linked agents."""
+    global _db_conn, _agent_repo, _test_case_repo, _run_repo
+
+    _db_conn = get_connection()
+    init_schema(_db_conn)
+
+    _agent_repo = AgentRepository(_db_conn)
+    _test_case_repo = TestCaseRepository(_db_conn)
+    _run_repo = RunRepository(_db_conn)
+
+    linked_agents = os.environ.get("VOICETEST_LINKED_AGENTS", "")
+    if linked_agents:
+        for agent_path in linked_agents.split(","):
+            if agent_path.strip():
+                _register_linked_agent(Path(agent_path.strip()))
+
+
+def _register_linked_agent(path: Path) -> None:
+    """Register a linked agent from filesystem if not already registered."""
+    existing = _agent_repo.list_all()
+    for agent in existing:
+        if agent.get("source_path") == str(path):
+            return
+
+    name = path.stem
+    _agent_repo.create(
+        name=name,
+        source_type="linked",
+        source_path=str(path),
+    )
+
+
+def get_agent_repo() -> AgentRepository:
+    """Get the agent repository, initializing if needed."""
+    if _agent_repo is None:
+        init_storage()
+    return _agent_repo
+
+
+def get_test_case_repo() -> TestCaseRepository:
+    """Get the test case repository, initializing if needed."""
+    if _test_case_repo is None:
+        init_storage()
+    return _test_case_repo
+
+
+def get_run_repo() -> RunRepository:
+    """Get the run repository, initializing if needed."""
+    if _run_repo is None:
+        init_storage()
+    return _run_repo
 
 
 def _find_web_dist() -> Path | None:
@@ -88,6 +161,39 @@ class EvaluateRequest(BaseModel):
     metrics: list[str]
 
 
+class CreateAgentRequest(BaseModel):
+    """Request to create an agent from config."""
+
+    name: str
+    config: dict[str, Any]
+    source: str | None = None
+
+
+class UpdateAgentRequest(BaseModel):
+    """Request to update an agent."""
+
+    name: str | None = None
+
+
+class CreateTestCaseRequest(BaseModel):
+    """Request to create a test case."""
+
+    name: str
+    user_prompt: str
+    metrics: list[str] = []
+    dynamic_variables: dict[str, Any] = {}
+    tool_mocks: list[Any] = []
+    type: str = "simulation"
+    llm_model: str | None = None
+
+
+class StartRunRequest(BaseModel):
+    """Request to start a test run."""
+
+    test_ids: list[str] | None = None
+    options: RunOptions | None = None
+
+
 class ImporterInfo(BaseModel):
     """Importer information for API response."""
 
@@ -153,23 +259,48 @@ async def export_agent(request: ExportRequest) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
 
+def _build_run_options(settings: Settings, request_options: RunOptions | None) -> RunOptions:
+    """Build RunOptions from settings, with request options for run params only.
+
+    Models always come from settings. Run parameters (max_turns, timeout, verbose, flow_judge)
+    come from request if provided, otherwise from settings.
+    """
+    return RunOptions(
+        agent_model=settings.models.agent,
+        simulator_model=settings.models.simulator,
+        judge_model=settings.models.judge,
+        max_turns=request_options.max_turns if request_options else settings.run.max_turns,
+        timeout_seconds=request_options.timeout_seconds if request_options else 60.0,
+        verbose=(request_options.verbose if request_options else False) or settings.run.verbose,
+        flow_judge=(
+            (request_options.flow_judge if request_options else False) or settings.run.flow_judge
+        ),
+    )
+
+
 @router.post("/runs/single", response_model=TestResult)
 async def run_test(request: RunTestRequest) -> TestResult:
     """Run a single test case."""
+    settings = load_settings()
+    settings.apply_env()
+    options = _build_run_options(settings, request.options)
     return await api.run_test(
         request.graph,
         request.test_case,
-        options=request.options,
+        options=options,
     )
 
 
 @router.post("/runs", response_model=TestRun)
 async def run_tests(request: RunTestsRequest) -> TestRun:
     """Run multiple test cases."""
+    settings = load_settings()
+    settings.apply_env()
+    options = _build_run_options(settings, request.options)
     return await api.run_tests(
         request.graph,
         request.test_cases,
-        options=request.options,
+        options=options,
     )
 
 
@@ -188,11 +319,428 @@ async def get_settings() -> Settings:
     return load_settings()
 
 
+@router.get("/settings/defaults", response_model=Settings)
+async def get_default_settings() -> Settings:
+    """Get default settings (not from file)."""
+    return Settings()
+
+
 @router.put("/settings", response_model=Settings)
 async def update_settings(settings: Settings) -> Settings:
     """Update settings in .voicetest.toml."""
     save_settings(settings)
     return settings
+
+
+@router.get("/agents")
+async def list_agents() -> list[dict]:
+    """List all agents."""
+    return get_agent_repo().list_all()
+
+
+@router.get("/agents/{agent_id}")
+async def get_agent(agent_id: str) -> dict:
+    """Get agent by ID."""
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return agent
+
+
+@router.get("/agents/{agent_id}/graph", response_model=AgentGraph)
+async def get_agent_graph(agent_id: str) -> AgentGraph:
+    """Get the AgentGraph for an agent."""
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    try:
+        return repo.load_graph(agent)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+
+
+@router.post("/agents")
+async def create_agent(request: CreateAgentRequest) -> dict:
+    """Create an agent from config."""
+    try:
+        graph = await api.import_agent(request.config, source=request.source)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+    repo = get_agent_repo()
+    return repo.create(
+        name=request.name,
+        source_type=graph.source_type,
+        graph_json=graph.model_dump_json(),
+    )
+
+
+@router.put("/agents/{agent_id}")
+async def update_agent(agent_id: str, request: UpdateAgentRequest) -> dict:
+    """Update an agent."""
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    return repo.update(agent_id, name=request.name)
+
+
+@router.delete("/agents/{agent_id}")
+async def delete_agent(agent_id: str) -> dict:
+    """Delete an agent."""
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    repo.delete(agent_id)
+    return {"status": "deleted", "id": agent_id}
+
+
+@router.get("/agents/{agent_id}/tests")
+async def list_tests_for_agent(agent_id: str) -> list[dict]:
+    """List all test cases for an agent."""
+    return get_test_case_repo().list_for_agent(agent_id)
+
+
+@router.post("/agents/{agent_id}/tests")
+async def create_test_case(agent_id: str, request: CreateTestCaseRequest) -> dict:
+    """Create a test case for an agent."""
+    test_case = TestCase(
+        name=request.name,
+        user_prompt=request.user_prompt,
+        metrics=request.metrics,
+        dynamic_variables=request.dynamic_variables,
+        tool_mocks=request.tool_mocks,
+        type=request.type,
+        llm_model=request.llm_model,
+    )
+    return get_test_case_repo().create(agent_id, test_case)
+
+
+@router.put("/tests/{test_id}")
+async def update_test_case(test_id: str, request: CreateTestCaseRequest) -> dict:
+    """Update a test case."""
+    repo = get_test_case_repo()
+    test = repo.get(test_id)
+    if not test:
+        raise HTTPException(status_code=404, detail="Test case not found")
+
+    test_case = TestCase(
+        name=request.name,
+        user_prompt=request.user_prompt,
+        metrics=request.metrics,
+        dynamic_variables=request.dynamic_variables,
+        tool_mocks=request.tool_mocks,
+        type=request.type,
+        llm_model=request.llm_model,
+    )
+    return repo.update(test_id, test_case)
+
+
+@router.delete("/tests/{test_id}")
+async def delete_test_case(test_id: str) -> dict:
+    """Delete a test case."""
+    repo = get_test_case_repo()
+    test = repo.get(test_id)
+    if not test:
+        raise HTTPException(status_code=404, detail="Test case not found")
+
+    repo.delete(test_id)
+    return {"status": "deleted", "id": test_id}
+
+
+@router.get("/gallery")
+async def list_gallery() -> list[dict]:
+    """List available test gallery fixtures."""
+    gallery_dir = Path(__file__).parent / "fixtures" / "test_gallery"
+    if not gallery_dir.exists():
+        return []
+
+    fixtures = []
+    for file in gallery_dir.glob("*.json"):
+        try:
+            data = json.loads(file.read_text())
+            fixtures.append(
+                {
+                    "id": file.stem,
+                    "name": data.get("name", file.stem),
+                    "description": data.get("description", ""),
+                    "tests": data.get("tests", []),
+                }
+            )
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+    return fixtures
+
+
+@router.get("/agents/{agent_id}/runs")
+async def list_runs_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
+    """List all runs for an agent."""
+    return get_run_repo().list_for_agent(agent_id, limit)
+
+
+@router.get("/runs/{run_id}")
+async def get_run(run_id: str) -> dict:
+    """Get a run with all results."""
+    run_repo = get_run_repo()
+    run = run_repo.get_with_results(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Detect orphaned run: not completed but not actively running
+    if run["completed_at"] is None and run_id not in _active_runs:
+        run_repo.complete(run_id)
+        run["completed_at"] = datetime.now(UTC).isoformat()
+
+    # Fix inconsistent state: run complete but results still "running"
+    if run["completed_at"] is not None:
+        for result in run["results"]:
+            if result["status"] == "running":
+                run_repo.mark_result_error(result["id"], "Run orphaned - backend stopped")
+                result["status"] = "error"
+                result["error_message"] = "Run orphaned - backend stopped"
+
+    return run
+
+
+async def _broadcast_run_update(run_id: str, data: dict) -> None:
+    """Broadcast update to all WebSocket clients watching this run."""
+    if run_id not in _active_runs:
+        return
+    message = json.dumps(data)
+    websockets = _active_runs[run_id]["websockets"]
+    if not websockets:
+        # Queue message for replay when WebSocket connects
+        _active_runs[run_id]["message_queue"].append(message)
+        return
+    dead_sockets = []
+    for ws in websockets:
+        try:
+            await ws.send_text(message)
+        except Exception:
+            dead_sockets.append(ws)
+    for ws in dead_sockets:
+        _active_runs[run_id]["websockets"].discard(ws)
+
+
+def _is_run_cancelled(run_id: str, result_id: str | None = None) -> bool:
+    """Check if run or specific test is cancelled."""
+    if run_id not in _active_runs:
+        return False
+    cancelled = _active_runs[run_id].get("cancelled_tests", set())
+    if result_id and result_id in cancelled:
+        return True
+    return _active_runs[run_id]["cancel"].is_set()
+
+
+async def _execute_run(
+    run_id: str,
+    agent_id: str,
+    test_records: list[dict],
+    options: RunOptions,
+) -> None:
+    """Execute tests for a run in the background."""
+    # _active_runs[run_id] is set up in start_run() before this task starts
+
+    agent_repo = get_agent_repo()
+    test_case_repo = get_test_case_repo()
+    run_repo = get_run_repo()
+
+    agent = agent_repo.get(agent_id)
+    if not agent:
+        return
+
+    try:
+        graph = agent_repo.load_graph(agent)
+    except (FileNotFoundError, ValueError):
+        return
+
+    try:
+        for test_record in test_records:
+            # Check if entire run is cancelled
+            if _is_run_cancelled(run_id):
+                break
+
+            test_case = test_case_repo.to_model(test_record)
+
+            # Create pending result for streaming transcript
+            result_id = run_repo.create_pending_result(run_id, test_record["id"], test_case.name)
+
+            # Broadcast that test started
+            await _broadcast_run_update(
+                run_id,
+                {
+                    "type": "test_started",
+                    "result_id": result_id,
+                    "test_case_id": test_record["id"],
+                    "test_name": test_case.name,
+                },
+            )
+
+            async def make_on_turn(rid: str):
+                async def on_turn(transcript: list) -> None:
+                    # Check for cancellation
+                    if _is_run_cancelled(run_id, rid):
+                        raise asyncio.CancelledError("Test cancelled by user")
+                    run_repo.update_transcript(rid, transcript)
+                    await _broadcast_run_update(
+                        run_id,
+                        {
+                            "type": "transcript_update",
+                            "result_id": rid,
+                            "transcript": [m.model_dump() for m in transcript],
+                        },
+                    )
+
+                return on_turn
+
+            try:
+                result = await api.run_test(
+                    graph, test_case, options=options, on_turn=await make_on_turn(result_id)
+                )
+                run_repo.complete_result(result_id, result)
+                await _broadcast_run_update(
+                    run_id,
+                    {
+                        "type": "test_completed",
+                        "result_id": result_id,
+                        "status": result.status,
+                    },
+                )
+            except asyncio.CancelledError:
+                from voicetest.models.results import TestResult
+
+                cancelled_result = TestResult(
+                    test_name=test_case.name,
+                    status="error",
+                    transcript=[],
+                    error_message="Cancelled by user",
+                )
+                run_repo.complete_result(result_id, cancelled_result)
+                await _broadcast_run_update(
+                    run_id,
+                    {
+                        "type": "test_cancelled",
+                        "result_id": result_id,
+                    },
+                )
+            except Exception as e:
+                from voicetest.models.results import TestResult
+
+                error_result = TestResult(
+                    test_name=test_case.name,
+                    status="error",
+                    transcript=[],
+                    error_message=str(e),
+                )
+                run_repo.complete_result(result_id, error_result)
+                await _broadcast_run_update(
+                    run_id,
+                    {
+                        "type": "test_error",
+                        "result_id": result_id,
+                        "error": str(e),
+                    },
+                )
+
+        run_repo.complete(run_id)
+        await _broadcast_run_update(run_id, {"type": "run_completed"})
+    finally:
+        # Clean up after a delay to allow final messages
+        await asyncio.sleep(1)
+        _active_runs.pop(run_id, None)
+
+
+@router.websocket("/runs/{run_id}/ws")
+async def run_websocket(websocket: WebSocket, run_id: str):
+    """WebSocket for streaming run updates and receiving cancel commands."""
+    await websocket.accept()
+
+    # Register this WebSocket and get any queued messages
+    queued_messages = []
+    if run_id in _active_runs:
+        _active_runs[run_id]["websockets"].add(websocket)
+        queued_messages = _active_runs[run_id]["message_queue"]
+        _active_runs[run_id]["message_queue"] = []
+
+    try:
+        # Send current state
+        run = get_run_repo().get_with_results(run_id)
+        if run:
+            await websocket.send_text(json.dumps({"type": "state", "run": run}))
+
+        # Replay any messages that were queued before connection
+        for msg in queued_messages:
+            await websocket.send_text(msg)
+
+        # Listen for commands
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "cancel_test" and run_id in _active_runs:
+                result_id = data.get("result_id")
+                if result_id:
+                    _active_runs[run_id]["cancelled_tests"].add(result_id)
+            elif data.get("type") == "cancel_run" and run_id in _active_runs:
+                _active_runs[run_id]["cancel"].set()
+    except Exception:
+        pass
+    finally:
+        if run_id in _active_runs:
+            _active_runs[run_id]["websockets"].discard(websocket)
+
+
+@router.post("/agents/{agent_id}/runs")
+async def start_run(
+    agent_id: str,
+    request: StartRunRequest,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """Start a new test run. Tests execute in background, poll GET /runs/{id} for results."""
+    agent_repo = get_agent_repo()
+    agent = agent_repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    test_case_repo = get_test_case_repo()
+    if request.test_ids:
+        test_records = [
+            test_case_repo.get(tid) for tid in request.test_ids if test_case_repo.get(tid)
+        ]
+    else:
+        test_records = test_case_repo.list_for_agent(agent_id)
+
+    if not test_records:
+        raise HTTPException(status_code=400, detail="No test cases to run")
+
+    run_repo = get_run_repo()
+    run = run_repo.create(agent_id)
+
+    settings = load_settings()
+    settings.apply_env()
+    options = _build_run_options(settings, request.options)
+
+    # Set up active run tracking BEFORE background task starts
+    # so WebSocket connections can register immediately
+    _active_runs[run["id"]] = {
+        "cancel": asyncio.Event(),
+        "websockets": set(),
+        "cancelled_tests": set(),
+        "message_queue": [],
+    }
+
+    background_tasks.add_task(_execute_run, run["id"], agent_id, test_records, options)
+
+    return {
+        "id": run["id"],
+        "agent_id": agent_id,
+        "started_at": run["started_at"],
+        "test_count": len(test_records),
+    }
 
 
 def create_app() -> FastAPI:

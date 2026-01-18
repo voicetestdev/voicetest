@@ -10,9 +10,7 @@
     },
     "tool_mocks": [],
     "type": "simulation",
-    "llm_model": "gpt-4o-mini",
-    "creation_timestamp": 1761074675536,
-    "user_modified_timestamp": 1761074796123
+    "llm_model": "gpt-4o-mini"
   },
   {
     "name": "Technical support request",
@@ -25,8 +23,202 @@
     },
     "tool_mocks": [],
     "type": "simulation",
-    "llm_model": "gpt-4o-mini",
-    "creation_timestamp": 1761074675536,
-    "user_modified_timestamp": 1761074796123
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Appointment scheduling",
+    "user_prompt": "Say you are Maria Garcia. You want to schedule an appointment for next Tuesday at 2pm. If that's not available, ask for Wednesday morning instead.",
+    "metrics": [
+      "Agent confirmed the appointment details including date, time, and customer name.",
+      "Agent provided a confirmation number or next steps."
+    ],
+    "dynamic_variables": {},
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Product return request",
+    "user_prompt": "Identify yourself as Tom Wilson with order number ORD-789. You want to return a defective blender that stopped working after 2 weeks. Express disappointment but remain polite.",
+    "metrics": [
+      "Agent empathized with the customer's situation.",
+      "Agent explained the return process clearly.",
+      "Agent offered a resolution such as refund or replacement."
+    ],
+    "dynamic_variables": {
+      "order_number": "ORD-789"
+    },
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Account password reset",
+    "user_prompt": "Say you are Sarah Lee and you forgot your password. When asked for verification, provide email sarah.lee@example.com and last 4 digits of phone 5678.",
+    "metrics": [
+      "Agent verified the customer's identity before proceeding.",
+      "Agent guided the customer through the password reset process.",
+      "Agent maintained security protocols throughout the conversation."
+    ],
+    "dynamic_variables": {
+      "email": "sarah.lee@example.com"
+    },
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Subscription cancellation",
+    "user_prompt": "You are Mike Chen with account MC-2024. You want to cancel your premium subscription because it's too expensive. Politely decline any retention offers.",
+    "metrics": [
+      "Agent acknowledged the cancellation request professionally.",
+      "Agent offered alternatives or retention incentives.",
+      "Agent processed the cancellation when the customer insisted."
+    ],
+    "dynamic_variables": {
+      "account_id": "MC-2024"
+    },
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Shipping status inquiry",
+    "user_prompt": "Ask about order TRK-456789. Say you placed the order a week ago and it still shows processing. Express concern about receiving it before the weekend.",
+    "metrics": [
+      "Agent looked up or acknowledged the order details.",
+      "Agent provided clear information about the shipping status.",
+      "Agent addressed the customer's urgency appropriately."
+    ],
+    "dynamic_variables": {
+      "tracking_number": "TRK-456789"
+    },
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Payment plan setup",
+    "user_prompt": "You are Lisa Park with account LP-5555. You received a large bill and want to set up a payment plan. You can afford $50 per month.",
+    "metrics": [
+      "Agent understood the customer's financial constraints.",
+      "Agent explained available payment plan options.",
+      "Agent set up a plan that accommodates the customer's budget."
+    ],
+    "dynamic_variables": {
+      "account_id": "LP-5555",
+      "monthly_budget": "50"
+    },
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Service upgrade inquiry",
+    "user_prompt": "Say you are David Kim with account DK-1234. Ask about upgrading from basic to premium tier. Ask about pricing and what additional features you'd get.",
+    "metrics": [
+      "Agent explained the differences between tiers.",
+      "Agent provided accurate pricing information.",
+      "Agent answered questions about premium features."
+    ],
+    "dynamic_variables": {
+      "current_tier": "basic"
+    },
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Complaint escalation",
+    "user_prompt": "You are Karen White. You've called three times about the same issue and it's still not resolved. Start calm but become increasingly frustrated. Ask to speak to a supervisor if the agent can't resolve it.",
+    "metrics": [
+      "Agent acknowledged the customer's repeated contacts and frustration.",
+      "Agent attempted to resolve the issue or offered escalation.",
+      "Agent remained professional despite the customer's frustration."
+    ],
+    "dynamic_variables": {},
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Greeting includes company name",
+    "user_prompt": "Say hello and ask about business hours.",
+    "includes": ["Acme", "welcome", "help"],
+    "excludes": ["goodbye", "transfer"],
+    "patterns": [],
+    "type": "unit"
+  },
+  {
+    "name": "Confirmation number format",
+    "user_prompt": "You are John Doe. Book an appointment for tomorrow at 3pm.",
+    "includes": ["confirmed", "appointment"],
+    "excludes": ["error", "unable"],
+    "patterns": ["[A-Z]{2,4}-[0-9]{4,8}"],
+    "type": "unit"
+  },
+  {
+    "name": "Phone number formatting",
+    "user_prompt": "Ask to update your phone number to 5551234567.",
+    "includes": ["updated", "phone"],
+    "excludes": ["invalid"],
+    "patterns": ["\\(?[0-9]{3}\\)?[-. ]?[0-9]{3}[-. ]?[0-9]{4}"],
+    "type": "unit"
+  },
+  {
+    "name": "Email validation response",
+    "user_prompt": "Say your email is test@example.com and ask to verify it.",
+    "includes": ["email", "verified"],
+    "excludes": ["invalid email", "not found"],
+    "patterns": ["[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"],
+    "type": "unit"
+  },
+  {
+    "name": "Prohibited language check",
+    "user_prompt": "Complain angrily and use profanity. See if agent responds appropriately.",
+    "includes": ["understand", "help"],
+    "excludes": ["damn", "hell", "stupid", "idiot"],
+    "patterns": [],
+    "type": "unit"
+  },
+  {
+    "name": "Required disclosure present",
+    "user_prompt": "Ask about pricing for the premium plan.",
+    "includes": ["$", "per month", "terms"],
+    "excludes": [],
+    "patterns": ["\\$[0-9]+\\.?[0-9]*"],
+    "type": "unit"
+  },
+  {
+    "name": "Date format consistency",
+    "user_prompt": "When is the next available appointment?",
+    "includes": ["available"],
+    "excludes": ["no availability"],
+    "patterns": ["(January|February|March|April|May|June|July|August|September|October|November|December) [0-9]{1,2}(st|nd|rd|th)?,? [0-9]{4}", "[0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}"],
+    "type": "unit"
+  },
+  {
+    "name": "Reference ID in response",
+    "user_prompt": "File a complaint about slow service.",
+    "includes": ["reference", "complaint"],
+    "excludes": ["cannot", "unable"],
+    "patterns": ["(REF|CASE|TKT|ID)[:-]?[A-Z0-9]{6,12}"],
+    "type": "unit"
+  },
+  {
+    "name": "Time format validation",
+    "user_prompt": "What time does the store close today?",
+    "includes": ["close", "pm", "am"],
+    "excludes": ["don't know", "not sure"],
+    "patterns": ["[0-9]{1,2}:[0-9]{2}\\s?(AM|PM|am|pm)?", "[0-9]{1,2}\\s?(AM|PM|am|pm)"],
+    "type": "unit"
+  },
+  {
+    "name": "No PII in transcript",
+    "user_prompt": "You are Jane with SSN 123-45-6789. Verify your identity.",
+    "includes": ["verified", "identity"],
+    "excludes": ["123-45-6789", "123456789"],
+    "patterns": [],
+    "type": "unit"
   }
 ]

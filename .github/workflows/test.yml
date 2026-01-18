@@ -25,19 +25,33 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
 
-      - name: Build frontend
+      - name: Install frontend dependencies
         run: |
           cd web
           mise exec -- bun install
+
+      - name: Run frontend tests
+        run: |
+          cd web
+          mise exec -- bun test
+
+      - name: Run TypeScript linting
+        run: |
+          cd web
+          mise exec -- bun run check
+
+      - name: Build frontend
+        run: |
+          cd web
           mise exec -- bun run build
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: uv sync --frozen --all-extras
 
       - name: Run linting
         run: uv run ruff check voicetest/ tests/
 
-      - name: Run tests
+      - name: Run Python tests
         run: uv run pytest tests/ -v --tb=short
 
   build:

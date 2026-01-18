@@ -295,3 +295,430 @@ class TestSettingsEndpoint:
         # Verify it persisted
         get_response = client.get("/api/settings")
         assert get_response.json()["models"]["agent"] == "anthropic/claude-3-haiku"
+
+
+class TestAgentsCRUD:
+    """Tests for agent CRUD endpoints."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app, init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    def test_list_agents_empty(self, db_client):
+        response = db_client.get("/api/agents")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_create_agent_from_import(self, db_client, sample_retell_config):
+        response = db_client.post(
+            "/api/agents",
+            json={
+                "name": "Test Agent",
+                "config": sample_retell_config,
+            },
+        )
+        assert response.status_code == 200
+
+        agent = response.json()
+        assert agent["id"] is not None
+        assert agent["name"] == "Test Agent"
+        assert agent["source_type"] == "retell"
+
+    def test_get_agent(self, db_client, sample_retell_config):
+        create_response = db_client.post(
+            "/api/agents",
+            json={"name": "Find Me", "config": sample_retell_config},
+        )
+        agent_id = create_response.json()["id"]
+
+        response = db_client.get(f"/api/agents/{agent_id}")
+        assert response.status_code == 200
+        assert response.json()["name"] == "Find Me"
+
+    def test_get_agent_graph(self, db_client, sample_retell_config):
+        create_response = db_client.post(
+            "/api/agents",
+            json={"name": "Graph Test", "config": sample_retell_config},
+        )
+        agent_id = create_response.json()["id"]
+
+        response = db_client.get(f"/api/agents/{agent_id}/graph")
+        assert response.status_code == 200
+
+        graph = response.json()
+        assert graph["source_type"] == "retell"
+        assert graph["entry_node_id"] == "greeting"
+
+    def test_get_nonexistent_agent(self, db_client):
+        response = db_client.get("/api/agents/nonexistent-id")
+        assert response.status_code == 404
+
+    def test_update_agent(self, db_client, sample_retell_config):
+        create_response = db_client.post(
+            "/api/agents",
+            json={"name": "Original", "config": sample_retell_config},
+        )
+        agent_id = create_response.json()["id"]
+
+        response = db_client.put(
+            f"/api/agents/{agent_id}",
+            json={"name": "Updated Name"},
+        )
+        assert response.status_code == 200
+        assert response.json()["name"] == "Updated Name"
+
+    def test_delete_agent(self, db_client, sample_retell_config):
+        create_response = db_client.post(
+            "/api/agents",
+            json={"name": "To Delete", "config": sample_retell_config},
+        )
+        agent_id = create_response.json()["id"]
+
+        response = db_client.delete(f"/api/agents/{agent_id}")
+        assert response.status_code == 200
+
+        get_response = db_client.get(f"/api/agents/{agent_id}")
+        assert get_response.status_code == 404
+
+
+class TestTestCasesCRUD:
+    """Tests for test case CRUD endpoints."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app, init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    @pytest.fixture
+    def agent_id(self, db_client, sample_retell_config):
+        """Create an agent and return its ID."""
+        response = db_client.post(
+            "/api/agents",
+            json={"name": "Test Agent", "config": sample_retell_config},
+        )
+        return response.json()["id"]
+
+    def test_list_tests_empty(self, db_client, agent_id):
+        response = db_client.get(f"/api/agents/{agent_id}/tests")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_create_test(self, db_client, agent_id):
+        response = db_client.post(
+            f"/api/agents/{agent_id}/tests",
+            json={
+                "name": "Basic Test",
+                "user_prompt": "Say hello",
+                "metrics": ["Greets user"],
+            },
+        )
+        assert response.status_code == 200
+
+        test = response.json()
+        assert test["id"] is not None
+        assert test["name"] == "Basic Test"
+        assert test["agent_id"] == agent_id
+
+    def test_update_test(self, db_client, agent_id):
+        create_response = db_client.post(
+            f"/api/agents/{agent_id}/tests",
+            json={"name": "Original", "user_prompt": "Hello"},
+        )
+        test_id = create_response.json()["id"]
+
+        response = db_client.put(
+            f"/api/tests/{test_id}",
+            json={"name": "Updated", "user_prompt": "New prompt"},
+        )
+        assert response.status_code == 200
+        assert response.json()["name"] == "Updated"
+
+    def test_delete_test(self, db_client, agent_id):
+        create_response = db_client.post(
+            f"/api/agents/{agent_id}/tests",
+            json={"name": "To Delete", "user_prompt": "Bye"},
+        )
+        test_id = create_response.json()["id"]
+
+        response = db_client.delete(f"/api/tests/{test_id}")
+        assert response.status_code == 200
+
+        list_response = db_client.get(f"/api/agents/{agent_id}/tests")
+        assert len(list_response.json()) == 0
+
+
+class TestGalleryEndpoint:
+    """Tests for test gallery endpoint."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app, init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    def test_list_gallery(self, db_client):
+        response = db_client.get("/api/gallery")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+
+class TestRunWebSocket:
+    """Tests for run WebSocket endpoint and message formats."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app, init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    @pytest.fixture
+    def agent_with_test(self, db_client, sample_retell_config):
+        """Create an agent with a test case."""
+        agent_response = db_client.post(
+            "/api/agents",
+            json={"name": "WS Test Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_response.json()["id"]
+
+        test_response = db_client.post(
+            f"/api/agents/{agent_id}/tests",
+            json={
+                "name": "WebSocket Test",
+                "user_prompt": "Say hello",
+                "metrics": [],
+            },
+        )
+        test_id = test_response.json()["id"]
+
+        return {"agent_id": agent_id, "test_id": test_id}
+
+    def test_broadcast_test_started_includes_test_case_id(self):
+        """Verify _broadcast_run_update sends test_case_id in test_started messages."""
+        import asyncio
+
+        from voicetest.rest import _active_runs
+
+        run_id = "test-run-123"
+        test_case_id = "test-case-456"
+        result_id = "result-789"
+
+        _active_runs[run_id] = {
+            "cancel": asyncio.Event(),
+            "websockets": set(),
+            "cancelled_tests": set(),
+        }
+
+        message = {
+            "type": "test_started",
+            "result_id": result_id,
+            "test_case_id": test_case_id,
+            "test_name": "My Test",
+        }
+
+        assert "test_case_id" in message
+        assert message["test_case_id"] == test_case_id
+
+        del _active_runs[run_id]
+
+    def test_execute_run_sends_test_case_id_in_test_started(
+        self, db_client, agent_with_test, monkeypatch
+    ):
+        """Verify _execute_run includes test_case_id when broadcasting test_started."""
+        from unittest.mock import patch
+
+        agent_id = agent_with_test["agent_id"]
+        test_id = agent_with_test["test_id"]
+
+        broadcast_calls = []
+
+        async def mock_broadcast(run_id, data):
+            broadcast_calls.append(data)
+
+        with (
+            patch("voicetest.rest._broadcast_run_update", mock_broadcast),
+            patch("voicetest.rest.api.run_test") as mock_run_test,
+        ):
+            from voicetest.models.results import TestResult
+
+            mock_run_test.return_value = TestResult(
+                test_id="test",
+                test_name="WebSocket Test",
+                status="pass",
+                transcript=[],
+            )
+
+            response = db_client.post(
+                f"/api/agents/{agent_id}/runs",
+                json={"test_ids": [test_id]},
+            )
+            assert response.status_code == 200
+
+            import time
+
+            time.sleep(0.5)
+
+        test_started_msgs = [c for c in broadcast_calls if c.get("type") == "test_started"]
+        assert len(test_started_msgs) >= 1, "Should have at least one test_started message"
+
+        for msg in test_started_msgs:
+            assert "test_case_id" in msg, "test_started must include test_case_id"
+            assert msg["test_case_id"] == test_id, "test_case_id should match the test ID"
+
+
+class TestTranscriptUpdate:
+    """Tests for transcript streaming functionality."""
+
+    def test_transcript_update_message_format(self):
+        """Verify transcript_update message has correct structure."""
+        from voicetest.models.results import Message
+
+        transcript = [
+            Message(role="assistant", content="Hello!"),
+            Message(role="user", content="Hi there"),
+        ]
+
+        message = {
+            "type": "transcript_update",
+            "result_id": "result-123",
+            "transcript": [m.model_dump() for m in transcript],
+        }
+
+        assert message["type"] == "transcript_update"
+        assert "result_id" in message
+        assert "transcript" in message
+        assert len(message["transcript"]) == 2
+        assert message["transcript"][0]["role"] == "assistant"
+        assert message["transcript"][0]["content"] == "Hello!"
+
+
+class TestOrphanedRunDetection:
+    """Tests for orphaned run cleanup."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app, init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    @pytest.fixture
+    def orphaned_run(self, db_client, sample_retell_config):
+        """Create an orphaned run (not in _active_runs, not completed)."""
+        from voicetest.rest import _active_runs, get_run_repo
+
+        # Create agent
+        agent_response = db_client.post(
+            "/api/agents",
+            json={"name": "Orphan Test Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_response.json()["id"]
+
+        # Create run directly in DB (simulating a crashed run)
+        run_repo = get_run_repo()
+        run = run_repo.create(agent_id)
+        run_id = run["id"]
+
+        # Add a "running" result
+        result_id = run_repo.create_pending_result(run_id, "test-case-1", "Test Case 1")
+
+        # Ensure run is NOT in _active_runs (simulating backend restart)
+        _active_runs.pop(run_id, None)
+
+        return {"run_id": run_id, "result_id": result_id, "agent_id": agent_id}
+
+    def test_get_orphaned_run_marks_as_complete(self, db_client, orphaned_run):
+        """GET /runs/{id} should mark orphaned runs as complete."""
+        run_id = orphaned_run["run_id"]
+
+        response = db_client.get(f"/api/runs/{run_id}")
+        assert response.status_code == 200
+
+        run = response.json()
+        assert run["completed_at"] is not None, "Orphaned run should be marked complete"
+
+    def test_get_orphaned_run_marks_running_results_as_error(self, db_client, orphaned_run):
+        """GET /runs/{id} should mark 'running' results as 'error'."""
+        run_id = orphaned_run["run_id"]
+
+        response = db_client.get(f"/api/runs/{run_id}")
+        assert response.status_code == 200
+
+        run = response.json()
+        running_results = [r for r in run["results"] if r["status"] == "running"]
+        assert len(running_results) == 0, "No results should still be 'running'"
+
+        error_results = [r for r in run["results"] if r["status"] == "error"]
+        assert len(error_results) >= 1, "Running results should be marked as error"
+        assert "orphaned" in error_results[0]["error_message"].lower()
+
+    def test_active_run_not_marked_orphaned(self, db_client, sample_retell_config):
+        """GET /runs/{id} should NOT mark active runs as orphaned."""
+        import asyncio
+
+        from voicetest.rest import _active_runs, get_run_repo
+
+        # Create agent
+        agent_response = db_client.post(
+            "/api/agents",
+            json={"name": "Active Test Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_response.json()["id"]
+
+        # Create run
+        run_repo = get_run_repo()
+        run = run_repo.create(agent_id)
+        run_id = run["id"]
+
+        # Add run to _active_runs (simulating active run)
+        _active_runs[run_id] = {
+            "cancel": asyncio.Event(),
+            "websockets": set(),
+            "cancelled_tests": set(),
+            "message_queue": [],
+        }
+
+        try:
+            response = db_client.get(f"/api/runs/{run_id}")
+            assert response.status_code == 200
+
+            run_data = response.json()
+            assert run_data["completed_at"] is None, "Active run should NOT be marked complete"
+        finally:
+            _active_runs.pop(run_id, None)

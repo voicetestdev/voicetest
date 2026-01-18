@@ -1,23 +1,113 @@
-"""Flow judge for validating node traversal."""
+"""Flow judge for validating conversation traversal through agent graph."""
+
+from voicetest.models.agent import AgentNode
+from voicetest.models.results import Message
+
+
+class FlowResult:
+    """Result of flow validation."""
+
+    def __init__(self, valid: bool, issues: list[str], reasoning: str):
+        self.valid = valid
+        self.issues = issues
+        self.reasoning = reasoning
 
 
 class FlowJudge:
-    """Validate node traversal.
+    """Evaluate if conversation flow through agent graph was logical.
 
-    Placeholder for future flow constraint validation.
-    Currently returns no violations.
+    Uses LLM to semantically validate that node transitions make sense
+    given the conversation content and graph structure.
     """
 
-    def validate(
-        self,
-        nodes_visited: list[str],
-    ) -> list[str]:
-        """Validate node traversal.
+    def __init__(self, model: str = "openai/gpt-4o-mini"):
+        """Initialize the judge.
 
         Args:
-            nodes_visited: List of node IDs visited during conversation.
+            model: LLM model to use for evaluation.
+        """
+        self.model = model
+
+        self._mock_mode = False
+        self._mock_result: FlowResult | None = None
+
+    async def evaluate(
+        self,
+        nodes: dict[str, AgentNode],
+        transcript: list[Message],
+        nodes_visited: list[str],
+    ) -> FlowResult:
+        """Evaluate if conversation flow was logical.
+
+        Args:
+            nodes: Agent graph nodes dict.
+            transcript: Conversation transcript.
+            nodes_visited: Sequence of node IDs visited.
 
         Returns:
-            List of violation messages (currently always empty).
+            FlowResult with validity, issues, and reasoning.
         """
-        return []
+        if self._mock_mode and self._mock_result:
+            return self._mock_result
+
+        if not nodes_visited:
+            return FlowResult(valid=True, issues=[], reasoning="No nodes visited")
+
+        return await self._evaluate_with_llm(nodes, transcript, nodes_visited)
+
+    async def _evaluate_with_llm(
+        self,
+        nodes: dict[str, AgentNode],
+        transcript: list[Message],
+        nodes_visited: list[str],
+    ) -> FlowResult:
+        """Evaluate using LLM."""
+        import dspy
+
+        lm = dspy.LM(self.model)
+
+        class FlowValidationSignature(dspy.Signature):
+            """Evaluate if conversation flow through an agent graph was logical.
+
+            Given an agent graph (nodes with instructions and transitions),
+            a conversation transcript, and the sequence of nodes visited,
+            determine if the transitions between nodes were appropriate
+            given what was said in the conversation.
+            """
+
+            nodes: dict[str, AgentNode] = dspy.InputField(
+                desc="Agent graph nodes with instructions and transitions"
+            )
+            transcript: str = dspy.InputField(desc="Conversation between user and agent")
+            nodes_visited: list[str] = dspy.InputField(
+                desc="Sequence of node IDs the agent traversed"
+            )
+
+            flow_valid: bool = dspy.OutputField(
+                desc="True if all transitions were logical given the conversation"
+            )
+            issues: list[str] = dspy.OutputField(
+                desc="Specific flow issues found, empty list if valid"
+            )
+            reasoning: str = dspy.OutputField(desc="Explanation of the evaluation")
+
+        with dspy.context(lm=lm):
+            predictor = dspy.Predict(FlowValidationSignature)
+            result = predictor(
+                nodes=nodes,
+                transcript=self._format_transcript(transcript),
+                nodes_visited=nodes_visited,
+            )
+
+        return FlowResult(
+            valid=result.flow_valid,
+            issues=result.issues if result.issues else [],
+            reasoning=result.reasoning,
+        )
+
+    def _format_transcript(self, transcript: list[Message]) -> str:
+        """Format transcript for LLM input."""
+        lines = []
+        for msg in transcript:
+            lines.append(f"{msg.role.upper()}: {msg.content}")
+        return "\n".join(lines)

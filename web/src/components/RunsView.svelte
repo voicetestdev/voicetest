@@ -1,286 +1,295 @@
 <script lang="ts">
-  import { api } from "../lib/api";
   import {
-    agentGraph,
-    testCases,
-    currentRun,
-    isRunning,
-    selectedTestId,
-    selectedResult,
-    runSummary,
+    currentRunWithResults,
+    cancelTest,
   } from "../lib/stores";
-  import type { RunOptions, TestResult } from "../lib/types";
+  import type { RunResultRecord, Message, MetricResult, ModelsUsed } from "../lib/types";
 
-  let options = $state<Partial<RunOptions>>({
-    max_turns: 10,
-    timeout_seconds: 60,
+  let selectedResultId = $state<string | null>(null);
+
+  // Auto-select the first running test so user can see streaming transcript
+  $effect(() => {
+    const results = $currentRunWithResults?.results ?? [];
+    const runningResult = results.find((r) => r.status === "running");
+    if (runningResult && selectedResultId !== runningResult.id) {
+      // Only auto-select if nothing is selected or current selection is completed
+      const currentSelection = results.find((r) => r.id === selectedResultId);
+      if (!currentSelection || currentSelection.status !== "running") {
+        selectedResultId = runningResult.id;
+      }
+    }
   });
-  let error = $state("");
 
-  async function runAllTests() {
-    if (!$agentGraph || $testCases.length === 0) return;
+  function formatDate(dateStr: string): string {
+    return new Date(dateStr).toLocaleString();
+  }
 
-    isRunning.set(true);
-    error = "";
-
+  function parseTranscript(json: string | null): Message[] {
+    if (!json) return [];
     try {
-      const run = await api.runTests($agentGraph, $testCases, options);
-      currentRun.set(run);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      return JSON.parse(json);
+    } catch {
+      return [];
     }
-
-    isRunning.set(false);
   }
 
-  async function runSingleTest() {
-    if (!$agentGraph || !$selectedTestId) return;
-
-    const test = $testCases.find((t) => t.name === $selectedTestId);
-    if (!test) return;
-
-    isRunning.set(true);
-    error = "";
-
+  function parseMetrics(json: string | null): MetricResult[] {
+    if (!json) return [];
     try {
-      const result = await api.runSingleTest($agentGraph, test, options);
-      currentRun.update((run) => {
-        if (!run) {
-          return {
-            run_id: crypto.randomUUID(),
-            started_at: new Date().toISOString(),
-            completed_at: new Date().toISOString(),
-            results: [result],
-            passed_count: result.status === "pass" ? 1 : 0,
-            failed_count: result.status !== "pass" ? 1 : 0,
-          };
-        }
-        const existingIdx = run.results.findIndex((r) => r.test_id === result.test_id);
-        const newResults =
-          existingIdx >= 0
-            ? run.results.map((r, i) => (i === existingIdx ? result : r))
-            : [...run.results, result];
-        return {
-          ...run,
-          results: newResults,
-          passed_count: newResults.filter((r) => r.status === "pass").length,
-          failed_count: newResults.filter((r) => r.status !== "pass").length,
-        };
-      });
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      return JSON.parse(json);
+    } catch {
+      return [];
     }
-
-    isRunning.set(false);
   }
 
-  function clearRun() {
-    currentRun.set(null);
-    selectedTestId.set(null);
+  function parseModelsUsed(json: string | null): ModelsUsed | null {
+    if (!json) return null;
+    try {
+      return JSON.parse(json);
+    } catch {
+      return null;
+    }
   }
 
-  function getStatusClass(result: TestResult): string {
-    if (result.status === "error") return "error";
-    return result.status === "pass" ? "pass" : "fail";
+  function getStatusClass(status: string): string {
+    if (status === "running") return "running";
+    if (status === "error") return "error";
+    return status === "pass" ? "pass" : "fail";
   }
+
+  function getRunSummary(results: RunResultRecord[]): { passed: number; failed: number; total: number } {
+    const passed = results.filter((r) => r.status === "pass").length;
+    const failed = results.filter((r) => r.status !== "pass").length;
+    return { passed, failed, total: results.length };
+  }
+
+  const selectedResult = $derived(
+    $currentRunWithResults?.results.find((r) => r.id === selectedResultId) ?? null
+  );
 </script>
 
 <div class="runs-view">
-  <h2>Test Runs</h2>
-
-  <div class="layout">
-    <section class="controls">
-      <h3>Run Options</h3>
-
-      <div class="form-group">
-        <label for="max-turns">Max Turns</label>
-        <input
-          id="max-turns"
-          type="number"
-          bind:value={options.max_turns}
-          min={1}
-          max={100}
-        />
-      </div>
-
-      <div class="form-group">
-        <label for="timeout">Timeout (seconds)</label>
-        <input
-          id="timeout"
-          type="number"
-          bind:value={options.timeout_seconds}
-          min={1}
-          max={300}
-        />
-      </div>
-
-      <div class="button-row">
-        <button
-          onclick={runAllTests}
-          disabled={$isRunning || !$agentGraph || $testCases.length === 0}
-        >
-          {$isRunning ? "Running..." : "Run All Tests"}
-        </button>
-        <button
-          class="secondary"
-          onclick={runSingleTest}
-          disabled={$isRunning || !$agentGraph || !$selectedTestId}
-        >
-          Run Selected
-        </button>
-      </div>
-
-      {#if !$agentGraph}
-        <p class="warning">Import an agent first</p>
-      {:else if $testCases.length === 0}
-        <p class="warning">Add test cases first</p>
-      {/if}
-
-      {#if error}
-        <p class="error-message">{error}</p>
-      {/if}
-    </section>
-
-    <section class="results">
-      <div class="results-header">
-        <h3>Results</h3>
-        {#if $runSummary}
-          <div class="summary">
-            <span class="pass">{$runSummary.passed} passed</span>
-            <span class="fail">{$runSummary.failed} failed</span>
-            <span>/ {$runSummary.total} total</span>
-          </div>
-        {/if}
-        {#if $currentRun}
-          <button class="small secondary" onclick={clearRun}>Clear</button>
-        {/if}
-      </div>
-
-      {#if !$currentRun}
-        <p class="empty">No results yet</p>
+  {#if !$currentRunWithResults}
+    <div class="empty-state">
+      <p>No run selected</p>
+      <p class="hint">Select a run from the sidebar or run tests from the Tests tab.</p>
+    </div>
+  {:else}
+    <div class="run-header">
+      <span class="run-date">{formatDate($currentRunWithResults.started_at)}</span>
+      {#if !$currentRunWithResults.completed_at}
+        <span class="status-badge running">
+          <span class="mini-spinner"></span>
+          Running
+        </span>
       {:else}
+        {@const summary = getRunSummary($currentRunWithResults.results)}
+        <span class="summary">
+          <span class="pass">{summary.passed} passed</span>
+          <span class="fail">{summary.failed} failed</span>
+        </span>
+      {/if}
+    </div>
+
+    <div class="layout">
+      <section class="results">
         <ul class="results-list">
-          {#each $currentRun.results as result}
-            <li class:selected={$selectedTestId === result.test_id}>
-              <button
-                type="button"
-                class="result-select-btn"
-                onclick={() => selectedTestId.set(result.test_id)}
-              >
-                <span class="status {getStatusClass(result)}">
-                  {result.status === "error" ? "ERR" : result.status === "pass" ? "PASS" : "FAIL"}
-                </span>
-                <span class="test-name">{result.test_id}</span>
-                <span class="turns">{result.transcript.length} turns</span>
-              </button>
+          {#each $currentRunWithResults.results as result}
+            <li class:selected={selectedResultId === result.id}>
+              <div class="result-row">
+                <button
+                  type="button"
+                  class="result-select-btn"
+                  onclick={() => (selectedResultId = result.id)}
+                >
+                  {#if result.status === "running"}
+                    <span class="mini-spinner"></span>
+                  {:else}
+                    <span class="status {getStatusClass(result.status)}">
+                      {result.status === "error" ? "ERR" : result.status === "pass" ? "PASS" : "FAIL"}
+                    </span>
+                  {/if}
+                  <span class="test-name">{result.test_name}</span>
+                  {#if result.duration_ms}
+                    <span class="duration">{result.duration_ms}ms</span>
+                  {/if}
+                </button>
+                {#if result.status === "running"}
+                  <button
+                    type="button"
+                    class="cancel-btn"
+                    onclick={() => cancelTest(result.id)}
+                    title="Cancel test"
+                  >×</button>
+                {/if}
+              </div>
             </li>
           {/each}
         </ul>
-      {/if}
-    </section>
+      </section>
 
-    <section class="detail">
-      <h3>Detail View</h3>
-      {#if !$selectedResult}
-        <p class="empty">Select a result to view details</p>
-      {:else}
-        <div class="result-detail">
-          <div class="info-row">
-            <span class="label">Test:</span>
-            <span>{$selectedResult.test_id}</span>
-          </div>
-          <div class="info-row">
-            <span class="label">Status:</span>
-            <span class={getStatusClass($selectedResult)}>
-              {$selectedResult.status === "error"
-                ? "Error"
-                : $selectedResult.status === "pass"
-                  ? "Passed"
-                  : "Failed"}
-            </span>
-          </div>
-          <div class="info-row">
-            <span class="label">Duration:</span>
-            <span>{$selectedResult.duration_ms}ms</span>
-          </div>
+        <section class="detail">
+          <h3>Detail View</h3>
+          {#if !selectedResult}
+            <p class="empty">Select a result to view details</p>
+          {:else}
+            {@const transcript = parseTranscript(selectedResult.transcript_json)}
+            {@const metrics = parseMetrics(selectedResult.metrics_json)}
+            {@const modelsUsed = parseModelsUsed(selectedResult.models_used)}
 
-          {#if $selectedResult.models_used}
-            <h4>Models Used</h4>
-            <div class="models-used">
-              <div class="model-row">
-                <span class="label">Agent:</span>
-                <code>{$selectedResult.models_used.agent}</code>
+            <div class="result-detail">
+              <div class="info-row">
+                <span class="label">Test:</span>
+                <span>{selectedResult.test_name}</span>
               </div>
-              <div class="model-row">
-                <span class="label">Simulator:</span>
-                <code>{$selectedResult.models_used.simulator}</code>
+              <div class="info-row">
+                <span class="label">Status:</span>
+                {#if selectedResult.status === "running"}
+                  <span class="running">
+                    <span class="mini-spinner"></span>
+                    Running
+                  </span>
+                {:else}
+                  <span class={getStatusClass(selectedResult.status)}>
+                    {selectedResult.status === "error"
+                      ? "Error"
+                      : selectedResult.status === "pass"
+                        ? "Passed"
+                        : "Failed"}
+                  </span>
+                {/if}
               </div>
-              <div class="model-row">
-                <span class="label">Judge:</span>
-                <code>{$selectedResult.models_used.judge}</code>
+              {#if selectedResult.duration_ms}
+                <div class="info-row">
+                  <span class="label">Duration:</span>
+                  <span>{selectedResult.duration_ms}ms</span>
+                </div>
+              {/if}
+              <div class="info-row">
+                <span class="label">End reason:</span>
+                <span>{selectedResult.end_reason || "N/A"}</span>
               </div>
-            </div>
 
-            {#if $selectedResult.model_overrides && $selectedResult.model_overrides.length > 0}
-              <div class="overrides">
-                {#each $selectedResult.model_overrides as override}
-                  <div class="override-item">
-                    <span class="override-icon">⚠</span>
-                    <span class="override-text">
-                      <strong>{override.role}:</strong>
-                      <code>{override.requested}</code> → <code>{override.actual}</code>
-                      <span class="override-reason">({override.reason})</span>
+              {#if modelsUsed}
+                <h4>Models Used</h4>
+                <div class="models-used">
+                  <div class="model-row">
+                    <span class="label">Agent:</span>
+                    <code>{modelsUsed.agent}</code>
+                  </div>
+                  <div class="model-row">
+                    <span class="label">Simulator:</span>
+                    <code>{modelsUsed.simulator}</code>
+                  </div>
+                  <div class="model-row">
+                    <span class="label">Judge:</span>
+                    <code>{modelsUsed.judge}</code>
+                  </div>
+                </div>
+              {/if}
+
+              {#if selectedResult.error_message}
+                <div class="error-box">
+                  <strong>Error:</strong>
+                  <pre>{selectedResult.error_message}</pre>
+                </div>
+              {/if}
+
+              <h4>Transcript</h4>
+              <div class="transcript">
+                {#each transcript as msg}
+                  <div class="message {msg.role}">
+                    <span class="role">{msg.role}</span>
+                    <span class="content">{msg.content}</span>
+                  </div>
+                {:else}
+                  {#if selectedResult.status !== "running"}
+                    <p class="empty">No transcript</p>
+                  {/if}
+                {/each}
+                {#if selectedResult.status === "running"}
+                  {@const nextRole = transcript.length % 2 === 0 ? "user" : "assistant"}
+                  <div class="message {nextRole} typing">
+                    <span class="role">{nextRole}</span>
+                    <span class="content typing-dots">
+                      <span>.</span><span>.</span><span>.</span>
                     </span>
                   </div>
-                {/each}
+                {/if}
               </div>
-            {/if}
-          {/if}
 
-          {#if $selectedResult.error_message}
-            <div class="error-box">
-              <strong>Error:</strong>
-              <pre>{$selectedResult.error_message}</pre>
+              {#if metrics.length > 0}
+                <h4>Metrics</h4>
+                <ul class="metrics">
+                  {#each metrics as metric}
+                    <li class={metric.passed ? "pass" : "fail"}>
+                      <span class="metric-status">{metric.passed ? "PASS" : "FAIL"}</span>
+                      <span class="metric-name">{metric.metric}</span>
+                      {#if metric.reasoning}
+                        <span class="metric-reason">{metric.reasoning}</span>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
             </div>
           {/if}
-
-          <h4>Transcript</h4>
-          <div class="transcript">
-            {#each $selectedResult.transcript as msg}
-              <div class="message {msg.role}">
-                <span class="role">{msg.role}</span>
-                <span class="content">{msg.content}</span>
-              </div>
-            {/each}
-          </div>
-
-          {#if $selectedResult.metric_results.length > 0}
-            <h4>Metrics</h4>
-            <ul class="metrics">
-              {#each $selectedResult.metric_results as metric}
-                <li class={metric.passed ? "pass" : "fail"}>
-                  <span class="metric-name">{metric.metric}</span>
-                  <span class="metric-passed">{metric.passed ? "Pass" : "Fail"}</span>
-                  {#if metric.reasoning}
-                    <span class="metric-reason">{metric.reasoning}</span>
-                  {/if}
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </div>
-      {/if}
-    </section>
-  </div>
+        </section>
+      </div>
+    {/if}
 </div>
 
 <style>
   .runs-view {
-    max-width: 1400px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
   }
 
-  h2 {
-    margin-top: 0;
+  .run-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .run-date {
+    font-size: 0.9rem;
+    color: #9ca3af;
+  }
+
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+
+  .status-badge.running {
+    background: #1e3a5f;
+    color: #60a5fa;
+  }
+
+  .mini-spinner {
+    width: 12px;
+    height: 12px;
+    border: 2px solid #374151;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .in-progress {
+    display: flex;
+    align-items: center;
   }
 
   h3 {
@@ -295,73 +304,43 @@
     margin: 1rem 0 0.5rem 0;
   }
 
+  .empty-state {
+    background: #16213e;
+    padding: 2rem;
+    border-radius: 8px;
+    text-align: center;
+  }
+
+  .empty-state p {
+    margin: 0;
+    color: #9ca3af;
+  }
+
+  .empty-state .hint {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: #6b7280;
+  }
+
   .layout {
     display: grid;
-    grid-template-columns: 250px 1fr 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 1.5rem;
-  }
-
-  .controls {
-    background: #16213e;
-    padding: 1rem;
-    border-radius: 8px;
-    height: fit-content;
-  }
-
-  .form-group {
-    margin-bottom: 1rem;
-  }
-
-  .form-group label {
-    display: block;
-    margin-bottom: 0.25rem;
-    color: #9ca3af;
-    font-size: 0.85rem;
-  }
-
-  .form-group input[type="number"] {
-    width: 100%;
-  }
-
-  .button-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .warning {
-    color: #fbbf24;
-    font-size: 0.85rem;
-    margin: 0.5rem 0 0 0;
-  }
-
-  .error-message {
-    color: #f87171;
-    font-size: 0.85rem;
-    margin: 0.5rem 0 0 0;
+    flex: 1;
+    min-height: 0;
   }
 
   .results {
     background: #16213e;
     padding: 1rem;
     border-radius: 8px;
-  }
-
-  .results-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-
-  .results-header h3 {
-    margin: 0;
+    overflow-y: auto;
   }
 
   .summary {
     display: flex;
     gap: 0.5rem;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
   }
 
   .results-list {
@@ -371,8 +350,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    max-height: 500px;
-    overflow-y: auto;
   }
 
   .results-list li {
@@ -406,6 +383,12 @@
     background: transparent;
   }
 
+  .result-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
   .status {
     font-size: 0.75rem;
     font-weight: 600;
@@ -414,26 +397,42 @@
     background: #374151;
   }
 
+  .status.pass {
+    background: #064e3b;
+    color: #10b981;
+  }
+
+  .status.fail {
+    background: #7f1d1d;
+    color: #f87171;
+  }
+
+  .status.error {
+    background: #78350f;
+    color: #fbbf24;
+  }
+
   .test-name {
     flex: 1;
   }
 
-  .turns {
+  .duration {
     color: #6b7280;
     font-size: 0.8rem;
   }
 
-  .small {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
+  .cancel-btn {
+    background: #7f1d1d !important;
+    color: #f87171 !important;
+    padding: 0.1rem 0.4rem !important;
+    font-size: 0.9rem !important;
+    line-height: 1;
+    min-width: auto;
+    border-radius: 3px;
   }
 
-  .secondary {
-    background: #374151;
-  }
-
-  .secondary:hover {
-    background: #4b5563;
+  .cancel-btn:hover {
+    background: #991b1b !important;
   }
 
   .empty {
@@ -445,7 +444,6 @@
     background: #16213e;
     padding: 1rem;
     border-radius: 8px;
-    max-height: 600px;
     overflow-y: auto;
   }
 
@@ -462,6 +460,25 @@
   .label {
     color: #9ca3af;
     min-width: 80px;
+  }
+
+  .pass {
+    color: #10b981;
+  }
+
+  .fail {
+    color: #f87171;
+  }
+
+  .error {
+    color: #fbbf24;
+  }
+
+  .running {
+    color: #60a5fa;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .error-box {
@@ -481,8 +498,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    max-height: 300px;
-    overflow-y: auto;
   }
 
   .message {
@@ -511,6 +526,24 @@
     white-space: pre-wrap;
   }
 
+  .typing-dots span {
+    animation: blink 1.4s infinite both;
+    font-weight: bold;
+  }
+
+  .typing-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+
+  .typing-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  @keyframes blink {
+    0%, 80%, 100% { opacity: 0.2; }
+    40% { opacity: 1; }
+  }
+
   .metrics {
     list-style: none;
     padding: 0;
@@ -527,14 +560,38 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+    align-items: flex-start;
+  }
+
+  .metrics li.pass {
+    border-left: 3px solid #10b981;
+  }
+
+  .metrics li.fail {
+    border-left: 3px solid #f87171;
+  }
+
+  .metric-status {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.3rem;
+    border-radius: 3px;
+    background: #374151;
+  }
+
+  .metrics li.pass .metric-status {
+    background: #064e3b;
+    color: #10b981;
+  }
+
+  .metrics li.fail .metric-status {
+    background: #7f1d1d;
+    color: #f87171;
   }
 
   .metric-name {
     font-weight: 500;
-  }
-
-  .metric-score {
-    color: #9ca3af;
+    flex: 1;
   }
 
   .metric-reason {
@@ -566,42 +623,5 @@
     padding: 0.1rem 0.4rem;
     border-radius: 3px;
     font-size: 0.8rem;
-  }
-
-  .overrides {
-    background: #78350f;
-    padding: 0.5rem;
-    border-radius: 4px;
-    margin-top: 0.5rem;
-  }
-
-  .override-item {
-    display: flex;
-    gap: 0.5rem;
-    align-items: flex-start;
-    margin-bottom: 0.25rem;
-  }
-
-  .override-item:last-child {
-    margin-bottom: 0;
-  }
-
-  .override-icon {
-    color: #fbbf24;
-  }
-
-  .override-text {
-    font-size: 0.8rem;
-  }
-
-  .override-text code {
-    background: #1a1a2e;
-    padding: 0.1rem 0.3rem;
-    border-radius: 3px;
-  }
-
-  .override-reason {
-    color: #d1d5db;
-    font-style: italic;
   }
 </style>

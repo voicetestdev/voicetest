@@ -1,58 +1,51 @@
 <script lang="ts">
   import { api } from "../lib/api";
-  import { agentGraph } from "../lib/stores";
-  import type { ExporterInfo, ImporterInfo } from "../lib/types";
+  import {
+    agentGraph,
+    currentAgentId,
+    currentAgent,
+    loadAgents,
+    currentView,
+  } from "../lib/stores";
+  import type { ExporterInfo } from "../lib/types";
 
-  let configText = $state("");
-  let importing = $state(false);
   let error = $state("");
   let mermaidSvg = $state("");
-  let importers = $state<ImporterInfo[]>([]);
   let exporters = $state<ExporterInfo[]>([]);
   let exporting = $state(false);
+  let lastGraphId = $state<string | null>(null);
+  let renderCounter = 0;
 
   $effect(() => {
-    api.listImporters().then((list) => {
-      importers = list;
-    });
     api.listExporters().then((list) => {
       exporters = list;
     });
   });
 
   $effect(() => {
-    if ($agentGraph) {
-      renderGraph();
+    const graph = $agentGraph;
+    const graphId = graph ? `${graph.entry_node_id}-${Object.keys(graph.nodes).length}` : null;
+
+    if (graphId && graphId !== lastGraphId) {
+      lastGraphId = graphId;
+      renderGraph(graph);
+    } else if (!graph) {
+      mermaidSvg = "";
+      lastGraphId = null;
     }
   });
 
-  async function importFromText() {
-    importing = true;
-    error = "";
+  async function renderGraph(graph: typeof $agentGraph) {
+    if (!graph) return;
+    const currentRender = ++renderCounter;
     try {
-      const config = JSON.parse(configText);
-      const graph = await api.importAgent(config);
-      agentGraph.set(graph);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    importing = false;
-  }
-
-  async function handleFile(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-    configText = await file.text();
-  }
-
-  async function renderGraph() {
-    if (!$agentGraph) return;
-    try {
-      const result = await api.exportAgent($agentGraph, "mermaid");
+      const result = await api.exportAgent(graph, "mermaid");
+      if (currentRender !== renderCounter) return; // Stale render
       const mermaid = await import("mermaid");
       mermaid.default.initialize({ startOnLoad: false, theme: "dark" });
-      const { svg } = await mermaid.default.render("agent-graph", result.content);
+      const renderId = `agent-graph-${currentRender}`;
+      const { svg } = await mermaid.default.render(renderId, result.content);
+      if (currentRender !== renderCounter) return; // Stale render
       mermaidSvg = svg;
     } catch (e) {
       console.error("Failed to render graph:", e);
@@ -69,7 +62,11 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const ext = format.includes("retell") ? "json" : format === "livekit" ? "py" : "md";
+      const ext = format.includes("retell")
+        ? "json"
+        : format === "livekit"
+          ? "py"
+          : "md";
       a.download = `agent-export.${ext}`;
       a.click();
       URL.revokeObjectURL(url);
@@ -78,44 +75,28 @@
     }
     exporting = false;
   }
+
+  async function deleteCurrentAgent() {
+    if (!$currentAgentId) return;
+    if (!confirm("Are you sure you want to delete this agent?")) return;
+    try {
+      await api.deleteAgent($currentAgentId);
+      await loadAgents();
+      agentGraph.set(null);
+      currentAgentId.set(null);
+      currentView.set("import");
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
 </script>
 
 <div class="agent-view">
-  <h2>Agent</h2>
-
-  {#if !$agentGraph}
-    <section class="import-section">
-      <h3>Import Agent</h3>
-
-      <div class="importers">
-        <span>Supported formats:</span>
-        {#each importers as imp}
-          <span class="tag">{imp.source_type}</span>
-        {/each}
-      </div>
-
-      <div class="import-options">
-        <label class="file-upload">
-          <input type="file" accept=".json" onchange={handleFile} />
-          Upload JSON
-        </label>
-      </div>
-
-      <textarea
-        bind:value={configText}
-        placeholder="Or paste agent config JSON here..."
-        rows={12}
-      ></textarea>
-
-      <button onclick={importFromText} disabled={importing || !configText}>
-        {importing ? "Importing..." : "Import Agent"}
-      </button>
-
-      {#if error}
-        <p class="error-message">{error}</p>
-      {/if}
-    </section>
+  {#if !$agentGraph || !$currentAgent}
+    <p class="placeholder">No agent selected.</p>
   {:else}
+    <h2>{$currentAgent.name}</h2>
+
     <section class="agent-info">
       <div class="info-row">
         <span class="label">Source:</span>
@@ -129,12 +110,12 @@
         <span class="label">Nodes:</span>
         <span>{Object.keys($agentGraph.nodes).length}</span>
       </div>
-
-      <div class="actions-row">
-        <button class="secondary" onclick={() => agentGraph.set(null)}>
-          Clear Agent
-        </button>
-      </div>
+      {#if $currentAgent.source_path}
+        <div class="info-row">
+          <span class="label">Linked File:</span>
+          <span class="mono">{$currentAgent.source_path}</span>
+        </div>
+      {/if}
     </section>
 
     <section class="export-section">
@@ -162,12 +143,21 @@
         {@html mermaidSvg}
       </div>
     </section>
+
+    <section class="danger-zone">
+      <h3>Danger Zone</h3>
+      <button class="danger" onclick={deleteCurrentAgent}>
+        Delete Agent
+      </button>
+    </section>
   {/if}
 </div>
 
 <style>
   .agent-view {
-    max-width: 900px;
+    width: 100%;
+    overflow-y: auto;
+    flex: 1;
   }
 
   h2 {
@@ -180,18 +170,9 @@
     color: #9ca3af;
   }
 
-  .import-section {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .importers {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.85rem;
+  .placeholder {
     color: #9ca3af;
+    font-style: italic;
   }
 
   .tag {
@@ -199,38 +180,6 @@
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
     font-size: 0.8rem;
-  }
-
-  .import-options {
-    display: flex;
-    gap: 1rem;
-  }
-
-  .file-upload {
-    display: inline-block;
-    padding: 0.5rem 1rem;
-    background: #374151;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
-  .file-upload:hover {
-    background: #4b5563;
-  }
-
-  .file-upload input {
-    display: none;
-  }
-
-  textarea {
-    width: 100%;
-    resize: vertical;
-    font-family: monospace;
-  }
-
-  .error-message {
-    color: #f87171;
-    margin: 0;
   }
 
   .agent-info {
@@ -251,18 +200,9 @@
     min-width: 100px;
   }
 
-  .actions-row {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-
-  .secondary {
-    background: #374151;
-  }
-
-  .secondary:hover {
-    background: #4b5563;
+  .mono {
+    font-family: monospace;
+    font-size: 0.85rem;
   }
 
   .export-section {
@@ -293,10 +233,16 @@
     cursor: not-allowed;
   }
 
+  .error-message {
+    color: #f87171;
+    margin: 0.5rem 0 0 0;
+  }
+
   .graph-section {
     background: #16213e;
     padding: 1rem;
     border-radius: 8px;
+    margin-bottom: 1rem;
   }
 
   .mermaid-container {
@@ -306,5 +252,20 @@
   .mermaid-container :global(svg) {
     max-width: 100%;
     height: auto;
+  }
+
+  .danger-zone {
+    background: #1f2937;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #7f1d1d;
+  }
+
+  .danger {
+    background: #dc2626;
+  }
+
+  .danger:hover {
+    background: #b91c1c;
   }
 </style>

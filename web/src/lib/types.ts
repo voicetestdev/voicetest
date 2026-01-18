@@ -66,7 +66,7 @@ export interface ModelOverride {
 export interface TestResult {
   test_id: string;
   test_name: string;
-  status: "pass" | "fail" | "error";
+  status: "pass" | "fail" | "error" | "running";
   transcript: Message[];
   metric_results: MetricResult[];
   nodes_visited: string[];
@@ -89,14 +89,21 @@ export interface TestRun {
   failed_count: number;
 }
 
+export type TestType = "llm" | "rule";
+
 export interface TestCase {
   name: string;
   user_prompt: string;
-  metrics: string[];
   dynamic_variables: Record<string, unknown>;
   tool_mocks: unknown[];
-  type: string;
+  type: TestType | string;
   llm_model?: string;
+  // LLM test fields
+  metrics: string[];
+  // Rule test fields
+  includes: string[];
+  excludes: string[];
+  patterns: string[];
 }
 
 export interface RunOptions {
@@ -117,7 +124,9 @@ export interface Settings {
   run: {
     max_turns: number;
     verbose: boolean;
+    flow_judge: boolean;
   };
+  env: Record<string, string>;
 }
 
 export interface ImporterInfo {
@@ -130,4 +139,74 @@ export interface ExporterInfo {
   id: string;
   name: string;
   description: string;
+}
+
+export interface AgentRecord {
+  id: string;
+  name: string;
+  source_type: string;
+  source_path: string | null;
+  graph_json: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestCaseRecord {
+  id: string;
+  agent_id: string;
+  name: string;
+  user_prompt: string;
+  metrics: string;
+  dynamic_variables: string;
+  tool_mocks: string;
+  type: string;
+  llm_model: string | null;
+  includes: string | null;
+  excludes: string | null;
+  patterns: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GalleryItem {
+  id: string;
+  name: string;
+  description: string;
+  tests: TestCase[];
+}
+
+export interface RunRecord {
+  id: string;
+  agent_id: string;
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface RunResultRecord {
+  id: string;
+  run_id: string;
+  test_case_id: string;
+  test_name: string;
+  status: "pass" | "fail" | "error" | "running";
+  duration_ms: number | null;
+  turn_count: number | null;
+  end_reason: string | null;
+  error_message: string | null;
+  transcript_json: string | null;
+  metrics_json: string | null;
+  nodes_visited: string | null;
+  tools_called: string | null;
+  models_used: string | null;
+  created_at: string;
+}
+
+export interface RunWithResults extends RunRecord {
+  results: RunResultRecord[];
+}
+
+export interface StartRunResponse {
+  id: string;
+  agent_id: string;
+  started_at: string;
+  test_count: number;
 }

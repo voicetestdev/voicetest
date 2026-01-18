@@ -1,5 +1,7 @@
 """Tests for settings module."""
 
+import os
+
 from voicetest.settings import Settings, load_settings, save_settings
 
 
@@ -14,6 +16,30 @@ class TestSettings:
         assert settings.models.judge == "openai/gpt-4o-mini"
         assert settings.run.max_turns == 20
         assert settings.run.verbose is False
+        assert settings.env == {}
+
+    def test_env_settings(self):
+        settings = Settings(env={"OPENAI_API_KEY": "sk-test123", "CUSTOM_VAR": "value"})
+
+        assert settings.env["OPENAI_API_KEY"] == "sk-test123"
+        assert settings.env["CUSTOM_VAR"] == "value"
+
+    def test_apply_env(self, monkeypatch):
+        monkeypatch.delenv("TEST_API_KEY", raising=False)
+
+        settings = Settings(env={"TEST_API_KEY": "test-value-123"})
+        settings.apply_env()
+
+        assert os.environ.get("TEST_API_KEY") == "test-value-123"
+
+    def test_apply_env_does_not_clear_existing(self, monkeypatch):
+        monkeypatch.setenv("EXISTING_KEY", "existing-value")
+
+        settings = Settings(env={"NEW_KEY": "new-value"})
+        settings.apply_env()
+
+        assert os.environ.get("EXISTING_KEY") == "existing-value"
+        assert os.environ.get("NEW_KEY") == "new-value"
 
     def test_custom_settings(self):
         settings = Settings(
@@ -78,3 +104,35 @@ class TestSettingsPersistence:
         assert settings.models.agent == "custom/model"
         assert settings.models.simulator == "openai/gpt-4o-mini"  # default
         assert settings.run.max_turns == 20  # default
+
+    def test_save_and_load_with_env(self, tmp_path):
+        settings_file = tmp_path / ".voicetest.toml"
+
+        original = Settings(env={"OPENAI_API_KEY": "sk-test", "ANTHROPIC_API_KEY": "ant-test"})
+        save_settings(original, settings_file)
+
+        loaded = load_settings(settings_file)
+
+        assert loaded.env["OPENAI_API_KEY"] == "sk-test"
+        assert loaded.env["ANTHROPIC_API_KEY"] == "ant-test"
+
+    def test_toml_format_with_env(self, tmp_path):
+        settings_file = tmp_path / ".voicetest.toml"
+
+        settings = Settings(env={"MY_API_KEY": "secret123"})
+        save_settings(settings, settings_file)
+
+        content = settings_file.read_text()
+
+        assert "[env]" in content
+        assert 'MY_API_KEY = "secret123"' in content
+
+    def test_toml_no_env_section_when_empty(self, tmp_path):
+        settings_file = tmp_path / ".voicetest.toml"
+
+        settings = Settings()
+        save_settings(settings, settings_file)
+
+        content = settings_file.read_text()
+
+        assert "[env]" not in content

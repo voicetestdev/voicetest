@@ -1,32 +1,102 @@
 """Tests for voicetest.judges.flow module."""
 
+import pytest
+
+from voicetest.judges.flow import FlowJudge, FlowResult
+from voicetest.models.agent import AgentNode, Transition, TransitionCondition
+from voicetest.models.results import Message
+
 
 class TestFlowJudge:
     """Tests for FlowJudge."""
 
     def test_create_judge(self):
-        from voicetest.judges.flow import FlowJudge
-
         judge = FlowJudge()
-
         assert judge is not None
+        assert judge.model == "openai/gpt-4o-mini"
 
-    def test_validate_returns_empty_list(self):
-        from voicetest.judges.flow import FlowJudge
+    def test_create_judge_with_model(self):
+        judge = FlowJudge("anthropic/claude-3-haiku")
+        assert judge.model == "anthropic/claude-3-haiku"
 
+    @pytest.mark.asyncio
+    async def test_evaluate_empty_nodes_visited(self):
         judge = FlowJudge()
 
-        violations = judge.validate(
-            nodes_visited=["greeting", "billing", "end"],
+        nodes = {
+            "greeting": AgentNode(
+                id="greeting",
+                instructions="Greet the user",
+                transitions=[],
+            )
+        }
+        transcript = [Message(role="assistant", content="Hello!")]
+
+        result = await judge.evaluate(nodes, transcript, nodes_visited=[])
+
+        assert result.valid is True
+        assert result.issues == []
+        assert "No nodes visited" in result.reasoning
+
+    @pytest.mark.asyncio
+    async def test_evaluate_with_mock_mode(self):
+        judge = FlowJudge()
+        judge._mock_mode = True
+        judge._mock_result = FlowResult(
+            valid=False,
+            issues=["Jumped from greeting to billing without verification"],
+            reasoning="The transition skipped required identity check",
         )
 
-        assert violations == []
+        nodes = {
+            "greeting": AgentNode(
+                id="greeting",
+                instructions="Greet the user",
+                transitions=[
+                    Transition(
+                        target_node_id="verify",
+                        condition=TransitionCondition(
+                            type="llm_prompt", value="User wants to proceed"
+                        ),
+                    )
+                ],
+            ),
+            "verify": AgentNode(id="verify", instructions="Verify identity", transitions=[]),
+            "billing": AgentNode(id="billing", instructions="Handle billing", transitions=[]),
+        }
+        transcript = [
+            Message(role="assistant", content="Hello!"),
+            Message(role="user", content="I want to pay my bill"),
+            Message(role="assistant", content="Here's your bill."),
+        ]
 
-    def test_validate_with_empty_nodes(self):
-        from voicetest.judges.flow import FlowJudge
+        result = await judge.evaluate(nodes, transcript, nodes_visited=["greeting", "billing"])
 
-        judge = FlowJudge()
+        assert result.valid is False
+        assert len(result.issues) == 1
+        assert "verification" in result.issues[0].lower()
 
-        violations = judge.validate(nodes_visited=[])
 
-        assert violations == []
+class TestFlowResult:
+    """Tests for FlowResult."""
+
+    def test_create_result(self):
+        result = FlowResult(
+            valid=True,
+            issues=[],
+            reasoning="All transitions were logical",
+        )
+
+        assert result.valid is True
+        assert result.issues == []
+        assert result.reasoning == "All transitions were logical"
+
+    def test_create_result_with_issues(self):
+        result = FlowResult(
+            valid=False,
+            issues=["Issue 1", "Issue 2"],
+            reasoning="Found problems",
+        )
+
+        assert result.valid is False
+        assert len(result.issues) == 2

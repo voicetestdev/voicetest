@@ -63,10 +63,14 @@ The web UI provides:
 
 - Agent import and graph visualization
 - Export to multiple formats (Mermaid, LiveKit, Retell LLM, Retell CF)
-- Test case management
-- Test execution with live results
+- Test case management with persistence
+- Test execution with real-time streaming transcripts
+- Cancel in-progress tests
+- Run history with detailed results
 - Transcript and metric inspection
 - Settings configuration
+
+Data is persisted to `.voicetest/data.duckdb` (configurable via `VOICETEST_DB_PATH`).
 
 ### REST API
 
@@ -76,27 +80,31 @@ The REST API is available at http://localhost:8000/api when running `voicetest s
 # Health check
 curl http://localhost:8000/api/health
 
-# List importers
-curl http://localhost:8000/api/importers
+# List agents
+curl http://localhost:8000/api/agents
 
-# List export formats
-curl http://localhost:8000/api/exporters
+# Get agent with graph
+curl http://localhost:8000/api/agents/{id}/graph
 
-# Import agent
-curl -X POST http://localhost:8000/api/agents/import \
+# List tests for agent
+curl http://localhost:8000/api/agents/{id}/tests
+
+# Start a test run
+curl -X POST http://localhost:8000/api/agents/{id}/runs \
   -H "Content-Type: application/json" \
-  -d '{"config": {...}}'
+  -d '{"test_ids": ["test-1", "test-2"]}'
 
-# Export agent (formats: mermaid, livekit, retell-llm, retell-cf)
-curl -X POST http://localhost:8000/api/agents/export \
-  -H "Content-Type: application/json" \
-  -d '{"graph": {...}, "format": "retell-llm"}'
+# Get run with results
+curl http://localhost:8000/api/runs/{id}
 
-# Run tests
-curl -X POST http://localhost:8000/api/runs \
-  -H "Content-Type: application/json" \
-  -d '{"graph": {...}, "test_cases": [...]}'
+# WebSocket for real-time updates
+wscat -c ws://localhost:8000/api/runs/{id}/ws
 ```
+
+WebSocket messages:
+
+- Server → Client: `test_started`, `transcript_update`, `test_completed`, `run_completed`
+- Client → Server: `cancel_test` (with `result_id`), `cancel_run`
 
 ## Format Conversion
 
@@ -147,6 +155,9 @@ Test cases follow the Retell export format:
 - **Configurable LLMs**: Separate models for agent, simulator, and judge
 - **DSPy-based evaluation**: LLM judges with reasoning
 - **Multiple interfaces**: CLI, TUI, interactive shell, Web UI, REST API
+- **Persistence**: DuckDB storage for agents, tests, and run history
+- **Real-time streaming**: WebSocket-based transcript streaming during test execution
+- **Cancellation**: Cancel in-progress tests to stop token usage
 
 ## LLM Configuration
 
@@ -226,13 +237,14 @@ voicetest/
 ├── voicetest/           # Python package
 │   ├── api.py           # Core API
 │   ├── cli.py           # CLI
-│   ├── rest.py          # REST API server + SPA serving
+│   ├── rest.py          # REST API server + WebSocket + SPA serving
 │   ├── models/          # Pydantic models
 │   ├── importers/       # Source importers (retell, retell_llm, custom)
 │   ├── exporters/       # Format exporters (mermaid, livekit, retell_llm, retell_cf)
 │   ├── engine/          # Execution engine
 │   ├── simulator/       # User simulation
 │   ├── judges/          # Evaluation judges
+│   ├── storage/         # DuckDB persistence layer
 │   └── tui/             # TUI and shell
 ├── web/                 # Frontend (Bun + Svelte + Vite)
 │   ├── src/
@@ -248,4 +260,4 @@ voicetest/
 
 ## License
 
-MIT
+Apache 2.0
