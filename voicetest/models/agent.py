@@ -53,6 +53,30 @@ class AgentNode(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class GlobalMetric(BaseModel):
+    """A metric that runs on all tests for an agent.
+
+    Global metrics are evaluated against every test transcript,
+    useful for compliance checks that should always pass.
+    """
+
+    name: str
+    criteria: str
+    threshold: float | None = None
+    enabled: bool = True
+
+
+class MetricsConfig(BaseModel):
+    """Configuration for metric evaluation on an agent.
+
+    Contains the default threshold and any global metrics
+    that should run on all tests.
+    """
+
+    threshold: float = 0.7
+    global_metrics: list[GlobalMetric] = Field(default_factory=list)
+
+
 class AgentGraph(BaseModel):
     """Complete agent workflow graph.
 

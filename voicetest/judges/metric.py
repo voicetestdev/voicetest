@@ -1,6 +1,10 @@
 """Metric judge for evaluating conversation against success criteria."""
 
+import asyncio
+
 from voicetest.models.results import Message, MetricResult
+
+DEFAULT_THRESHOLD = 0.7
 
 
 class MetricJudge:
@@ -27,15 +31,17 @@ class MetricJudge:
         self,
         transcript: list[Message],
         criterion: str,
+        threshold: float = DEFAULT_THRESHOLD,
     ) -> MetricResult:
         """Evaluate transcript against a single criterion.
 
         Args:
             transcript: Conversation transcript to evaluate.
             criterion: Success criterion to check.
+            threshold: Minimum score (0-1) to pass. Defaults to 0.7.
 
         Returns:
-            MetricResult with pass/fail and reasoning.
+            MetricResult with score, pass/fail, and reasoning.
         """
         # Mock mode for testing
         if self._mock_mode and self._mock_results:
@@ -44,25 +50,27 @@ class MetricJudge:
             return result
 
         # Real LLM evaluation
-        return await self._evaluate_with_llm(transcript, criterion)
+        return await self._evaluate_with_llm(transcript, criterion, threshold)
 
     async def evaluate_all(
         self,
         transcript: list[Message],
         criteria: list[str],
+        threshold: float = DEFAULT_THRESHOLD,
     ) -> list[MetricResult]:
         """Evaluate transcript against multiple criteria.
 
         Args:
             transcript: Conversation transcript to evaluate.
             criteria: List of success criteria.
+            threshold: Minimum score (0-1) to pass. Defaults to 0.7.
 
         Returns:
             List of MetricResult objects.
         """
         results = []
         for criterion in criteria:
-            result = await self.evaluate(transcript, criterion)
+            result = await self.evaluate(transcript, criterion, threshold)
             results.append(result)
         return results
 
@@ -70,6 +78,7 @@ class MetricJudge:
         self,
         transcript: list[Message],
         criterion: str,
+        threshold: float,
     ) -> MetricResult:
         """Evaluate using LLM."""
         import dspy
@@ -77,26 +86,35 @@ class MetricJudge:
         lm = dspy.LM(self.model)
 
         class MetricJudgeSignature(dspy.Signature):
-            """Evaluate if a conversation meets a success criterion."""
+            """Evaluate how well a conversation meets a success criterion."""
 
             transcript: str = dspy.InputField(desc="Full conversation transcript")
             criterion: str = dspy.InputField(desc="Success criterion to evaluate")
 
-            passed: bool = dspy.OutputField(desc="True if criterion was met")
-            reasoning: str = dspy.OutputField(desc="Explanation of the judgment")
-            confidence: float = dspy.OutputField(desc="Confidence score 0.0-1.0")
-
-        with dspy.context(lm=lm):
-            predictor = dspy.Predict(MetricJudgeSignature)
-            result = predictor(
-                transcript=self._format_transcript(transcript),
-                criterion=criterion,
+            score: float = dspy.OutputField(
+                desc="Score from 0.0 to 1.0 indicating how well the criterion was met"
             )
+            reasoning: str = dspy.OutputField(desc="Explanation of the judgment")
+            confidence: float = dspy.OutputField(desc="Confidence in the assessment 0.0-1.0")
+
+        formatted_transcript = self._format_transcript(transcript)
+
+        def run_predictor():
+            with dspy.context(lm=lm):
+                predictor = dspy.Predict(MetricJudgeSignature)
+                return predictor(
+                    transcript=formatted_transcript,
+                    criterion=criterion,
+                )
+
+        result = await asyncio.to_thread(run_predictor)
 
         return MetricResult(
             metric=criterion,
-            passed=result.passed,
+            score=result.score,
+            passed=result.score >= threshold,
             reasoning=result.reasoning,
+            threshold=threshold,
             confidence=result.confidence,
         )
 

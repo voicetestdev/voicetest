@@ -85,6 +85,33 @@ class TestMetricResult:
         assert result.passed is False
         assert result.confidence is None
 
+    def test_create_metric_with_score(self):
+        from voicetest.models.results import MetricResult
+
+        result = MetricResult(
+            metric="HIPAA compliance",
+            score=0.85,
+            passed=True,
+            reasoning="Agent verified patient identity",
+            threshold=0.7,
+            confidence=0.92,
+        )
+        assert result.score == 0.85
+        assert result.threshold == 0.7
+        assert result.passed is True
+        assert result.confidence == 0.92
+
+    def test_metric_score_defaults(self):
+        from voicetest.models.results import MetricResult
+
+        result = MetricResult(
+            metric="Test metric",
+            passed=True,
+            reasoning="Test reasoning",
+        )
+        assert result.score is None
+        assert result.threshold is None
+
 
 class TestTestResult:
     """Tests for TestResult model."""

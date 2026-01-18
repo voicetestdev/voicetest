@@ -38,7 +38,7 @@ if (typeof window !== "undefined") {
   expandedRuns.subscribe((v) => localStorage.setItem("expandedRuns", String(v)));
 }
 
-export type NavView = "config" | "tests" | "runs" | "settings" | "import";
+export type NavView = "config" | "tests" | "runs" | "metrics" | "settings" | "import";
 export const currentView = writable<NavView>("import");
 
 // Persist expandedAgents to localStorage
@@ -327,14 +327,23 @@ export function connectRunWebSocket(runId: string): void {
   disconnectRunWebSocket();
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const ws = new WebSocket(`${protocol}//${window.location.host}/api/runs/${runId}/ws`);
+  const wsUrl = `${protocol}//${window.location.host}/api/runs/${runId}/ws`;
+  const ws = new WebSocket(wsUrl);
 
   // Poll API as fallback for missed WebSocket messages
   pollInterval = setInterval(async () => {
-    const run = get(currentRunWithResults);
-    if (run && !run.completed_at) {
+    const current = get(currentRunWithResults);
+    if (current && current.id === runId && !current.completed_at) {
       const fresh = await api.getRun(runId);
-      currentRunWithResults.set(fresh);
+      // Merge: keep running results from current that aren't in server state
+      const serverResultIds = new Set(fresh.results.map((r: RunWithResults["results"][0]) => r.id));
+      const runningResultsToKeep = current.results.filter(
+        (r) => r.status === "running" && !serverResultIds.has(r.id)
+      );
+      currentRunWithResults.set({
+        ...fresh,
+        results: [...fresh.results, ...runningResultsToKeep],
+      });
     }
   }, 3000);
 
@@ -342,7 +351,21 @@ export function connectRunWebSocket(runId: string): void {
     const data = JSON.parse(event.data);
 
     if (data.type === "state" && data.run) {
-      currentRunWithResults.set(data.run);
+      // Merge results to avoid losing running tests that may not be in DB yet
+      currentRunWithResults.update((current) => {
+        if (!current || current.id !== data.run.id) {
+          return data.run;
+        }
+        // Merge: keep running results from current that aren't in server state
+        const serverResultIds = new Set(data.run.results.map((r: RunResultRecord) => r.id));
+        const runningResultsToKeep = current.results.filter(
+          (r) => r.status === "running" && !serverResultIds.has(r.id)
+        );
+        return {
+          ...data.run,
+          results: [...data.run.results, ...runningResultsToKeep],
+        };
+      });
     } else if (data.type === "test_started") {
       // Add running result to the list
       currentRunWithResults.update((run) => {
@@ -356,6 +379,8 @@ export function connectRunWebSocket(runId: string): void {
             results: [],
           };
         }
+        // Ensure we're updating the correct run
+        if (run.id !== runId) return run;
         const exists = run.results.some((r) => r.id === data.result_id);
         if (exists) return run;
         const newResult: RunResultRecord = {
@@ -382,7 +407,7 @@ export function connectRunWebSocket(runId: string): void {
       });
     } else if (data.type === "transcript_update") {
       currentRunWithResults.update((run) => {
-        if (!run) return run;
+        if (!run || run.id !== runId) return run;
         return {
           ...run,
           results: run.results.map((r) =>
@@ -394,19 +419,36 @@ export function connectRunWebSocket(runId: string): void {
       });
     } else if (data.type === "test_completed" || data.type === "test_error" || data.type === "test_cancelled") {
       // Refresh full state to get complete result data
-      api.getRun(runId).then((run) => currentRunWithResults.set(run));
+      api.getRun(runId).then((fresh) => {
+        currentRunWithResults.update((current) => {
+          if (!current || current.id !== runId) return current;
+          // Merge: keep running results from current that aren't in server state
+          const serverResultIds = new Set(fresh.results.map((r: RunWithResults["results"][0]) => r.id));
+          const runningResultsToKeep = current.results.filter(
+            (r) => r.status === "running" && !serverResultIds.has(r.id)
+          );
+          return {
+            ...fresh,
+            results: [...fresh.results, ...runningResultsToKeep],
+          };
+        });
+      });
     } else if (data.type === "run_completed") {
       isRunning.set(false);
+      // Update the run to mark it as completed
+      currentRunWithResults.update((run) => {
+        if (!run) return run;
+        return {
+          ...run,
+          completed_at: new Date().toISOString(),
+        };
+      });
       const agentId = get(currentAgentId);
       if (agentId) {
         loadRunHistory(agentId);
       }
       disconnectRunWebSocket();
     }
-  };
-
-  ws.onerror = () => {
-    console.error("WebSocket error");
   };
 
   ws.onclose = () => {

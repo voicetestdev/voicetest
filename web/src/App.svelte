@@ -17,6 +17,7 @@
   import type { RunRecord } from "./lib/types";
   import AgentView from "./components/AgentView.svelte";
   import TestsView from "./components/TestsView.svelte";
+  import MetricsView from "./components/MetricsView.svelte";
   import RunsView from "./components/RunsView.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import ImportView from "./components/ImportView.svelte";
@@ -41,7 +42,7 @@
     }
   }
 
-  function handleNavClick(agentId: string, view: "config" | "tests" | "runs") {
+  function handleNavClick(agentId: string, view: "config" | "tests" | "metrics" | "runs") {
     // selectAgent will automatically load the first run when view is "runs"
     selectAgent(agentId, view);
   }
@@ -99,6 +100,14 @@
                     onclick={() => handleNavClick(agent.id, "config")}
                   >
                     Config
+                  </button>
+                </li>
+                <li>
+                  <button
+                    class:active={isSelected && $currentView === "metrics"}
+                    onclick={() => handleNavClick(agent.id, "metrics")}
+                  >
+                    Metrics
                   </button>
                 </li>
                 <li>
@@ -182,6 +191,8 @@
       <AgentView />
     {:else if $currentView === "tests"}
       <TestsView />
+    {:else if $currentView === "metrics"}
+      <MetricsView />
     {:else if $currentView === "runs"}
       <RunsView />
     {:else if $currentView === "settings"}
@@ -417,6 +428,10 @@
 
   .import-btn {
     color: #3b82f6 !important;
+  }
+
+  .import-btn.active {
+    color: white !important;
   }
 
   main {

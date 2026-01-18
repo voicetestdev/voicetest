@@ -16,12 +16,13 @@ from typing import Any
 
 import duckdb
 from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from voicetest import api
-from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentGraph, GlobalMetric, MetricsConfig
 from voicetest.models.results import Message, MetricResult, TestResult, TestRun
 from voicetest.models.test_case import RunOptions, TestCase
 from voicetest.settings import Settings, load_settings, save_settings
@@ -118,6 +119,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Add CORS middleware to allow cross-origin requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 router = APIRouter(prefix="/api")
 
 
@@ -173,6 +183,13 @@ class UpdateAgentRequest(BaseModel):
     """Request to update an agent."""
 
     name: str | None = None
+
+
+class UpdateMetricsConfigRequest(BaseModel):
+    """Request to update an agent's metrics configuration."""
+
+    threshold: float = 0.7
+    global_metrics: list[GlobalMetric] = []
 
 
 class CreateTestCaseRequest(BaseModel):
@@ -400,6 +417,34 @@ async def delete_agent(agent_id: str) -> dict:
     return {"status": "deleted", "id": agent_id}
 
 
+@router.get("/agents/{agent_id}/metrics-config")
+async def get_metrics_config(agent_id: str) -> dict:
+    """Get an agent's metrics configuration."""
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    config = repo.get_metrics_config(agent_id)
+    return config.model_dump()
+
+
+@router.put("/agents/{agent_id}/metrics-config")
+async def update_metrics_config(agent_id: str, request: UpdateMetricsConfigRequest) -> dict:
+    """Update an agent's metrics configuration."""
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    config = MetricsConfig(
+        threshold=request.threshold,
+        global_metrics=request.global_metrics,
+    )
+    repo.update_metrics_config(agent_id, config)
+    return config.model_dump()
+
+
 @router.get("/agents/{agent_id}/tests")
 async def list_tests_for_agent(agent_id: str) -> list[dict]:
     """List all test cases for an agent."""
@@ -508,6 +553,22 @@ async def get_run(run_id: str) -> dict:
     return run
 
 
+@router.delete("/runs/{run_id}")
+async def delete_run(run_id: str) -> dict:
+    """Delete a run and all its results."""
+    run_repo = get_run_repo()
+    run = run_repo.get_with_results(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Don't allow deleting active runs
+    if run_id in _active_runs:
+        raise HTTPException(status_code=400, detail="Cannot delete an active run")
+
+    run_repo.delete(run_id)
+    return {"status": "deleted", "id": run_id}
+
+
 async def _broadcast_run_update(run_id: str, data: dict) -> None:
     """Broadcast update to all WebSocket clients watching this run."""
     if run_id not in _active_runs:
@@ -542,6 +603,7 @@ async def _execute_run(
     run_id: str,
     agent_id: str,
     test_records: list[dict],
+    result_ids: dict[str, str],
     options: RunOptions,
 ) -> None:
     """Execute tests for a run in the background."""
@@ -562,16 +624,34 @@ async def _execute_run(
 
     try:
         for test_record in test_records:
+            # Get pre-created result ID
+            result_id = result_ids[test_record["id"]]
+
+            # Check if this specific test was cancelled before it started
+            if run_id in _active_runs and result_id in _active_runs[run_id]["cancelled_tests"]:
+                run_repo.mark_result_cancelled(result_id)
+                await _broadcast_run_update(
+                    run_id,
+                    {"type": "test_cancelled", "result_id": result_id},
+                )
+                continue
+
             # Check if entire run is cancelled
             if _is_run_cancelled(run_id):
+                # Mark ALL remaining tests (including current) as cancelled
+                remaining_idx = test_records.index(test_record)
+                for remaining_record in test_records[remaining_idx:]:
+                    remaining_result_id = result_ids[remaining_record["id"]]
+                    run_repo.mark_result_cancelled(remaining_result_id)
+                    await _broadcast_run_update(
+                        run_id,
+                        {"type": "test_cancelled", "result_id": remaining_result_id},
+                    )
                 break
 
             test_case = test_case_repo.to_model(test_record)
 
-            # Create pending result for streaming transcript
-            result_id = run_repo.create_pending_result(run_id, test_record["id"], test_case.name)
-
-            # Broadcast that test started
+            # Broadcast that test is now actively running
             await _broadcast_run_update(
                 run_id,
                 {
@@ -659,9 +739,45 @@ async def _execute_run(
 @router.websocket("/runs/{run_id}/ws")
 async def run_websocket(websocket: WebSocket, run_id: str):
     """WebSocket for streaming run updates and receiving cancel commands."""
-    await websocket.accept()
+    from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-    # Register this WebSocket and get any queued messages
+    try:
+        await websocket.accept()
+    except Exception as e:
+        print(f"[WS] Failed to accept connection for run {run_id}: {e}")
+        return
+
+    # Send current state BEFORE registering for broadcasts to avoid race condition
+    # where test_started arrives before state and then state overwrites it
+    try:
+        run = get_run_repo().get_with_results(run_id)
+        if not run:
+            # Run not found - send error and close
+            await websocket.send_json({"type": "error", "message": "Run not found"})
+            await websocket.close(code=1008)  # Policy violation
+            return
+        msg = json.dumps({"type": "state", "run": run})
+        await websocket.send_text(msg)
+
+        # If run is already complete (not in _active_runs), send run_completed and close
+        if run.get("completed_at") and run_id not in _active_runs:
+            await websocket.send_json({"type": "run_completed"})
+            await websocket.close(code=1000)  # Normal closure
+            return
+
+    except WebSocketDisconnect:
+        print(f"[WS] Client disconnected during state send for run {run_id}")
+        return
+    except Exception as e:
+        print(f"[WS] Error sending state for run {run_id}: {type(e).__name__}: {e}")
+        try:
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.close(code=1011)  # Unexpected condition
+        except Exception:
+            pass
+        return
+
+    # Now register this WebSocket and get any queued messages
     queued_messages = []
     if run_id in _active_runs:
         _active_runs[run_id]["websockets"].add(websocket)
@@ -669,11 +785,6 @@ async def run_websocket(websocket: WebSocket, run_id: str):
         _active_runs[run_id]["message_queue"] = []
 
     try:
-        # Send current state
-        run = get_run_repo().get_with_results(run_id)
-        if run:
-            await websocket.send_text(json.dumps({"type": "state", "run": run}))
-
         # Replay any messages that were queued before connection
         for msg in queued_messages:
             await websocket.send_text(msg)
@@ -687,8 +798,11 @@ async def run_websocket(websocket: WebSocket, run_id: str):
                     _active_runs[run_id]["cancelled_tests"].add(result_id)
             elif data.get("type") == "cancel_run" and run_id in _active_runs:
                 _active_runs[run_id]["cancel"].set()
-    except Exception:
+    except WebSocketDisconnect:
+        # Normal disconnect - client closed connection
         pass
+    except Exception as e:
+        print(f"[WS] Exception in websocket handler for run {run_id}: {type(e).__name__}: {e}")
     finally:
         if run_id in _active_runs:
             _active_runs[run_id]["websockets"].discard(websocket)
@@ -720,6 +834,15 @@ async def start_run(
     run_repo = get_run_repo()
     run = run_repo.create(agent_id)
 
+    # Create all pending results upfront so they appear immediately in UI
+    # Map test_case_id -> result_id for the background task to use
+    result_ids: dict[str, str] = {}
+    for test_record in test_records:
+        result_id = run_repo.create_pending_result(
+            run["id"], test_record["id"], test_record["name"]
+        )
+        result_ids[test_record["id"]] = result_id
+
     settings = load_settings()
     settings.apply_env()
     options = _build_run_options(settings, request.options)
@@ -733,7 +856,7 @@ async def start_run(
         "message_queue": [],
     }
 
-    background_tasks.add_task(_execute_run, run["id"], agent_id, test_records, options)
+    background_tasks.add_task(_execute_run, run["id"], agent_id, test_records, result_ids, options)
 
     return {
         "id": run["id"],

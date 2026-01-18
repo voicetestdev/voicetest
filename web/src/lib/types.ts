@@ -41,6 +41,8 @@ export interface MetricResult {
   metric: string;
   passed: boolean;
   reasoning: string;
+  score?: number;
+  threshold?: number;
   confidence?: number;
 }
 
@@ -66,7 +68,7 @@ export interface ModelOverride {
 export interface TestResult {
   test_id: string;
   test_name: string;
-  status: "pass" | "fail" | "error" | "running";
+  status: "pass" | "fail" | "error" | "running" | "cancelled";
   transcript: Message[];
   metric_results: MetricResult[];
   nodes_visited: string[];
@@ -141,12 +143,25 @@ export interface ExporterInfo {
   description: string;
 }
 
+export interface GlobalMetric {
+  name: string;
+  criteria: string;
+  threshold?: number | null;
+  enabled: boolean;
+}
+
+export interface MetricsConfig {
+  threshold: number;
+  global_metrics: GlobalMetric[];
+}
+
 export interface AgentRecord {
   id: string;
   name: string;
   source_type: string;
   source_path: string | null;
   graph_json: string | null;
+  metrics_config?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -187,7 +202,7 @@ export interface RunResultRecord {
   run_id: string;
   test_case_id: string;
   test_name: string;
-  status: "pass" | "fail" | "error" | "running";
+  status: "pass" | "fail" | "error" | "running" | "cancelled";
   duration_ms: number | null;
   turn_count: number | null;
   end_reason: string | null;

@@ -1,11 +1,15 @@
 <script lang="ts">
+  import { api } from "../lib/api";
   import {
     currentRunWithResults,
+    currentRunId,
+    runHistory,
     cancelTest,
   } from "../lib/stores";
   import type { RunResultRecord, Message, MetricResult, ModelsUsed } from "../lib/types";
 
   let selectedResultId = $state<string | null>(null);
+  let deleting = $state(false);
 
   // Auto-select the first running test so user can see streaming transcript
   $effect(() => {
@@ -54,6 +58,7 @@
   function getStatusClass(status: string): string {
     if (status === "running") return "running";
     if (status === "error") return "error";
+    if (status === "cancelled") return "cancelled";
     return status === "pass" ? "pass" : "fail";
   }
 
@@ -61,6 +66,24 @@
     const passed = results.filter((r) => r.status === "pass").length;
     const failed = results.filter((r) => r.status !== "pass").length;
     return { passed, failed, total: results.length };
+  }
+
+  async function deleteRun() {
+    const runId = $currentRunId;
+    if (!runId || deleting) return;
+
+    if (!confirm("Delete this run and all its results?")) return;
+
+    deleting = true;
+    try {
+      await api.deleteRun(runId);
+      runHistory.update((runs) => runs.filter((r) => r.id !== runId));
+      currentRunWithResults.set(null);
+      currentRunId.set(null);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to delete run");
+    }
+    deleting = false;
   }
 
   const selectedResult = $derived(
@@ -88,6 +111,14 @@
           <span class="pass">{summary.passed} passed</span>
           <span class="fail">{summary.failed} failed</span>
         </span>
+        <button
+          class="delete-run-btn"
+          onclick={deleteRun}
+          disabled={deleting}
+          title="Delete run"
+        >
+          {deleting ? "Deleting..." : "Delete"}
+        </button>
       {/if}
     </div>
 
@@ -106,7 +137,7 @@
                     <span class="mini-spinner"></span>
                   {:else}
                     <span class="status {getStatusClass(result.status)}">
-                      {result.status === "error" ? "ERR" : result.status === "pass" ? "PASS" : "FAIL"}
+                      {result.status === "error" ? "ERR" : result.status === "cancelled" ? "SKIP" : result.status === "pass" ? "PASS" : "FAIL"}
                     </span>
                   {/if}
                   <span class="test-name">{result.test_name}</span>
@@ -153,9 +184,11 @@
                   <span class={getStatusClass(selectedResult.status)}>
                     {selectedResult.status === "error"
                       ? "Error"
-                      : selectedResult.status === "pass"
-                        ? "Passed"
-                        : "Failed"}
+                      : selectedResult.status === "cancelled"
+                        ? "Cancelled"
+                        : selectedResult.status === "pass"
+                          ? "Passed"
+                          : "Failed"}
                   </span>
                 {/if}
               </div>
@@ -343,6 +376,23 @@
     font-size: 0.9rem;
   }
 
+  .delete-run-btn {
+    background: #7f1d1d !important;
+    color: #f87171 !important;
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.75rem !important;
+    margin-left: auto;
+  }
+
+  .delete-run-btn:hover:not(:disabled) {
+    background: #991b1b !important;
+  }
+
+  .delete-run-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .results-list {
     list-style: none;
     padding: 0;
@@ -412,6 +462,11 @@
     color: #fbbf24;
   }
 
+  .status.cancelled {
+    background: #374151;
+    color: #9ca3af;
+  }
+
   .test-name {
     flex: 1;
   }
@@ -472,6 +527,10 @@
 
   .error {
     color: #fbbf24;
+  }
+
+  .cancelled {
+    color: #9ca3af;
   }
 
   .running {

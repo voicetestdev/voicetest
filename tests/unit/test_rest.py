@@ -223,11 +223,13 @@ class TestEvaluateEndpoint:
 
         from voicetest.models.results import MetricResult
 
-        async def mock_evaluate_with_llm(self, transcript, criterion):
+        async def mock_evaluate_with_llm(self, transcript, criterion, threshold):
             return MetricResult(
                 metric=criterion,
+                score=0.9,
                 passed=True,
                 reasoning=f"Mock evaluation for: {criterion}",
+                threshold=threshold,
             )
 
         transcript = [
@@ -388,6 +390,73 @@ class TestAgentsCRUD:
 
         get_response = db_client.get(f"/api/agents/{agent_id}")
         assert get_response.status_code == 404
+
+    def test_get_metrics_config_default(self, db_client, sample_retell_config):
+        create_response = db_client.post(
+            "/api/agents",
+            json={"name": "Test Agent", "config": sample_retell_config},
+        )
+        agent_id = create_response.json()["id"]
+
+        response = db_client.get(f"/api/agents/{agent_id}/metrics-config")
+        assert response.status_code == 200
+
+        config = response.json()
+        assert config["threshold"] == 0.7
+        assert config["global_metrics"] == []
+
+    def test_update_metrics_config(self, db_client, sample_retell_config):
+        create_response = db_client.post(
+            "/api/agents",
+            json={"name": "Test Agent", "config": sample_retell_config},
+        )
+        agent_id = create_response.json()["id"]
+
+        new_config = {
+            "threshold": 0.8,
+            "global_metrics": [
+                {
+                    "name": "HIPAA",
+                    "criteria": "Check HIPAA compliance",
+                    "threshold": None,
+                    "enabled": True,
+                },
+            ],
+        }
+
+        response = db_client.put(
+            f"/api/agents/{agent_id}/metrics-config",
+            json=new_config,
+        )
+        assert response.status_code == 200
+
+        config = response.json()
+        assert config["threshold"] == 0.8
+        assert len(config["global_metrics"]) == 1
+        assert config["global_metrics"][0]["name"] == "HIPAA"
+
+    def test_metrics_config_included_in_agent_response(self, db_client, sample_retell_config):
+        create_response = db_client.post(
+            "/api/agents",
+            json={"name": "Test Agent", "config": sample_retell_config},
+        )
+        agent_id = create_response.json()["id"]
+
+        # Update metrics config
+        db_client.put(
+            f"/api/agents/{agent_id}/metrics-config",
+            json={
+                "threshold": 0.9,
+                "global_metrics": [],
+            },
+        )
+
+        # Get agent should include metrics_config
+        response = db_client.get(f"/api/agents/{agent_id}")
+        assert response.status_code == 200
+
+        agent = response.json()
+        assert "metrics_config" in agent
 
 
 class TestTestCasesCRUD:
@@ -722,3 +791,251 @@ class TestOrphanedRunDetection:
             assert run_data["completed_at"] is None, "Active run should NOT be marked complete"
         finally:
             _active_runs.pop(run_id, None)
+
+
+class TestRunDeletion:
+    """Tests for run deletion endpoint."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app, init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    def test_delete_run(self, db_client, sample_retell_config):
+        """DELETE /runs/{id} should delete the run and its results."""
+        from voicetest.rest import get_run_repo
+
+        agent_response = db_client.post(
+            "/api/agents",
+            json={"name": "Test Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_response.json()["id"]
+
+        run_repo = get_run_repo()
+        run = run_repo.create(agent_id)
+        run_id = run["id"]
+        run_repo.create_pending_result(run_id, "test-case-1", "Test Case 1")
+        run_repo.complete(run_id)
+
+        response = db_client.delete(f"/api/runs/{run_id}")
+        assert response.status_code == 200
+        assert response.json() == {"status": "deleted", "id": run_id}
+
+        get_response = db_client.get(f"/api/runs/{run_id}")
+        assert get_response.status_code == 404
+
+    def test_delete_run_not_found(self, db_client):
+        """DELETE /runs/{id} should return 404 for non-existent run."""
+        response = db_client.delete("/api/runs/nonexistent-run-id")
+        assert response.status_code == 404
+
+    def test_delete_active_run_fails(self, db_client, sample_retell_config):
+        """DELETE /runs/{id} should not allow deleting an active run."""
+        import asyncio
+
+        from voicetest.rest import _active_runs, get_run_repo
+
+        agent_response = db_client.post(
+            "/api/agents",
+            json={"name": "Test Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_response.json()["id"]
+
+        run_repo = get_run_repo()
+        run = run_repo.create(agent_id)
+        run_id = run["id"]
+
+        _active_runs[run_id] = {
+            "cancel": asyncio.Event(),
+            "websockets": set(),
+            "cancelled_tests": set(),
+            "message_queue": [],
+        }
+
+        try:
+            response = db_client.delete(f"/api/runs/{run_id}")
+            assert response.status_code == 400
+            assert "active" in response.json()["detail"].lower()
+        finally:
+            _active_runs.pop(run_id, None)
+
+
+class TestWebSocketStateMessage:
+    """Tests for WebSocket state message with pending results."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app, init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    @pytest.fixture
+    def agent_with_tests(self, db_client, sample_retell_config):
+        """Create an agent with multiple test cases."""
+        agent_response = db_client.post(
+            "/api/agents",
+            json={"name": "WS State Test Agent", "config": sample_retell_config},
+        )
+        assert agent_response.status_code == 200, f"Failed to create agent: {agent_response.json()}"
+        agent_id = agent_response.json()["id"]
+
+        test_ids = []
+        for i in range(3):
+            test_response = db_client.post(
+                f"/api/agents/{agent_id}/tests",
+                json={
+                    "name": f"Test {i+1}",
+                    "user_prompt": f"Test prompt {i+1}",
+                    "metrics": [],
+                },
+            )
+            assert (
+                test_response.status_code == 200
+            ), f"Failed to create test: {test_response.json()}"
+            test_ids.append(test_response.json()["id"])
+
+        return {"agent_id": agent_id, "test_ids": test_ids}
+
+    def test_websocket_connection_receives_state_message(self, db_client, agent_with_tests):
+        """WebSocket connection should receive a valid state message with run data.
+
+        This test verifies the WebSocket endpoint works correctly:
+        1. Connection is accepted
+        2. State message is sent immediately after connection
+        3. State message contains valid run data with results
+        """
+        agent_id = agent_with_tests["agent_id"]
+        test_ids = agent_with_tests["test_ids"]
+
+        # Start a run via HTTP
+        run_response = db_client.post(
+            f"/api/agents/{agent_id}/runs",
+            json={"test_ids": test_ids},
+        )
+        assert run_response.status_code == 200
+        run_id = run_response.json()["id"]
+
+        # Connect to WebSocket - this is the key test
+        # If the WebSocket handler fails (e.g., serialization error), this will raise
+        with db_client.websocket_connect(f"/api/runs/{run_id}/ws") as websocket:
+            # Should receive state message immediately after connection
+            data = websocket.receive_json()
+
+            # Verify message structure
+            assert data["type"] == "state", f"Expected 'state' message, got {data.get('type')}"
+            assert "run" in data, "State message should contain 'run'"
+
+            run_data = data["run"]
+            assert run_data["id"] == run_id
+            assert "results" in run_data, "Run should have 'results' field"
+            assert "started_at" in run_data, "Run should have 'started_at' field"
+            assert run_data["agent_id"] == agent_id
+
+            # Results should exist (created by start_run)
+            results = run_data["results"]
+            assert len(results) == len(
+                test_ids
+            ), f"Expected {len(test_ids)} results, got {len(results)}"
+
+            # Verify each result has required fields (status may vary due to race)
+            for result in results:
+                assert "id" in result
+                assert "test_case_id" in result
+                assert "test_name" in result
+                assert "status" in result
+                assert result["run_id"] == run_id
+
+    def test_websocket_state_message_json_serializable(self, db_client, agent_with_tests):
+        """State message must be JSON serializable (no datetime objects etc).
+
+        Regression test for: TypeError: Object of type datetime is not JSON serializable
+        """
+        import json
+
+        agent_id = agent_with_tests["agent_id"]
+        test_ids = agent_with_tests["test_ids"]
+
+        run_response = db_client.post(
+            f"/api/agents/{agent_id}/runs",
+            json={"test_ids": test_ids},
+        )
+        run_id = run_response.json()["id"]
+
+        with db_client.websocket_connect(f"/api/runs/{run_id}/ws") as websocket:
+            data = websocket.receive_json()
+
+            # If we got here, JSON parsing worked on the client side
+            # Also verify we can re-serialize it (round-trip test)
+            reserialized = json.dumps(data)
+            assert len(reserialized) > 0
+
+            # Verify datetime fields are strings, not datetime objects
+            run_data = data["run"]
+            assert isinstance(run_data["started_at"], str), "started_at should be ISO string"
+            if run_data.get("completed_at"):
+                assert isinstance(
+                    run_data["completed_at"], str
+                ), "completed_at should be ISO string"
+
+            for result in run_data["results"]:
+                assert isinstance(result["created_at"], str), "created_at should be ISO string"
+
+    def test_websocket_nonexistent_run_sends_error(self, db_client):
+        """WebSocket connection to non-existent run should receive error and close."""
+        fake_run_id = "00000000-0000-0000-0000-000000000000"
+
+        with db_client.websocket_connect(f"/api/runs/{fake_run_id}/ws") as websocket:
+            data = websocket.receive_json()
+            assert data["type"] == "error"
+            assert "not found" in data["message"].lower()
+
+    def test_websocket_completed_run_sends_state_and_closes(self, db_client, agent_with_tests):
+        """WebSocket connection to completed run should receive state and run_completed."""
+        import time
+
+        from voicetest.rest import _active_runs
+
+        agent_id = agent_with_tests["agent_id"]
+        test_ids = agent_with_tests["test_ids"]
+
+        # Start a run and wait for it to complete
+        run_response = db_client.post(
+            f"/api/agents/{agent_id}/runs",
+            json={"test_ids": test_ids},
+        )
+        run_id = run_response.json()["id"]
+
+        # Wait for run to complete and be removed from _active_runs
+        max_wait = 10
+        while run_id in _active_runs and max_wait > 0:
+            time.sleep(0.5)
+            max_wait -= 1
+
+        # Verify run is complete
+        run = db_client.get(f"/api/runs/{run_id}").json()
+        assert run["completed_at"] is not None, "Run should be complete"
+
+        # Connect WebSocket - should receive state showing completion
+        with db_client.websocket_connect(f"/api/runs/{run_id}/ws") as websocket:
+            data = websocket.receive_json()
+            assert data["type"] == "state"
+            assert data["run"]["completed_at"] is not None
+
+            # Should also receive run_completed message
+            data = websocket.receive_json()
+            assert data["type"] == "run_completed"

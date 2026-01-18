@@ -5,6 +5,7 @@ import type {
   GalleryItem,
   ImporterInfo,
   MetricResult,
+  MetricsConfig,
   Message,
   RunOptions,
   RunRecord,
@@ -135,6 +136,14 @@ export const api = {
 
   getRun: (runId: string) => get<RunWithResults>(`/runs/${runId}`),
 
+  deleteRun: (runId: string) => del<{ status: string; id: string }>(`/runs/${runId}`),
+
   startRun: (agentId: string, testIds?: string[], options?: Partial<RunOptions>) =>
     post<StartRunResponse>(`/agents/${agentId}/runs`, { test_ids: testIds, options }),
+
+  getMetricsConfig: (agentId: string) =>
+    get<MetricsConfig>(`/agents/${agentId}/metrics-config`),
+
+  updateMetricsConfig: (agentId: string, config: MetricsConfig) =>
+    put<MetricsConfig>(`/agents/${agentId}/metrics-config`, config),
 };

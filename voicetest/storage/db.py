@@ -34,10 +34,15 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
             source_type TEXT NOT NULL,
             source_path TEXT,
             graph_json TEXT,
+            metrics_config TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    # Migration: add metrics_config column if it doesn't exist (for existing databases)
+    with contextlib.suppress(duckdb.CatalogException):
+        conn.execute("ALTER TABLE agents ADD COLUMN metrics_config TEXT")
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS test_cases (

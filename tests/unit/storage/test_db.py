@@ -66,6 +66,7 @@ class TestInitSchema:
         assert "source_type" in columns
         assert "source_path" in columns
         assert "graph_json" in columns
+        assert "metrics_config" in columns
         assert "created_at" in columns
         assert "updated_at" in columns
         conn.close()

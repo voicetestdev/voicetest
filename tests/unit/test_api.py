@@ -166,6 +166,74 @@ class TestExportAgent:
         assert "class Agent_greeting" in result
 
 
+class TestRunTestWithMetricsConfig:
+    """Tests for run_test with MetricsConfig."""
+
+    @pytest.mark.asyncio
+    async def test_run_test_with_global_metrics(self, sample_retell_config):
+        from voicetest import api
+        from voicetest.models.agent import GlobalMetric, MetricsConfig
+        from voicetest.models.test_case import RunOptions, TestCase
+
+        graph = await api.import_agent(sample_retell_config)
+        test_case = TestCase(
+            name="Test",
+            user_prompt="When asked, say John. Say hi.",
+            metrics=["Agent greeted user"],
+        )
+        metrics_config = MetricsConfig(
+            threshold=0.7,
+            global_metrics=[
+                GlobalMetric(name="HIPAA", criteria="Check HIPAA compliance"),
+            ],
+        )
+
+        result = await api.run_test(
+            graph,
+            test_case,
+            options=RunOptions(max_turns=2),
+            metrics_config=metrics_config,
+            _mock_mode=True,
+        )
+
+        # Should have test metrics + global metrics
+        assert len(result.metric_results) == 2
+        metric_names = [r.metric for r in result.metric_results]
+        assert "Agent greeted user" in metric_names
+        assert "[HIPAA]" in metric_names
+
+    @pytest.mark.asyncio
+    async def test_run_test_global_metric_disabled(self, sample_retell_config):
+        from voicetest import api
+        from voicetest.models.agent import GlobalMetric, MetricsConfig
+        from voicetest.models.test_case import RunOptions, TestCase
+
+        graph = await api.import_agent(sample_retell_config)
+        test_case = TestCase(
+            name="Test",
+            user_prompt="When asked, say John. Say hi.",
+            metrics=["Agent greeted user"],
+        )
+        metrics_config = MetricsConfig(
+            threshold=0.7,
+            global_metrics=[
+                GlobalMetric(name="Disabled", criteria="Should not run", enabled=False),
+            ],
+        )
+
+        result = await api.run_test(
+            graph,
+            test_case,
+            options=RunOptions(max_turns=2),
+            metrics_config=metrics_config,
+            _mock_mode=True,
+        )
+
+        # Disabled global metric should not run
+        assert len(result.metric_results) == 1
+        assert result.metric_results[0].metric == "Agent greeted user"
+
+
 class TestEvaluateTranscript:
     """Tests for evaluate_transcript function."""
 

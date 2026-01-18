@@ -33,6 +33,8 @@ class MetricResult(BaseModel):
     metric: str
     passed: bool
     reasoning: str
+    score: float | None = None
+    threshold: float | None = None
     confidence: float | None = None
 
 

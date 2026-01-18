@@ -64,10 +64,11 @@ The web UI provides:
 - Agent import and graph visualization
 - Export to multiple formats (Mermaid, LiveKit, Retell LLM, Retell CF)
 - Test case management with persistence
+- Global metrics configuration (compliance checks that run on all tests)
 - Test execution with real-time streaming transcripts
 - Cancel in-progress tests
 - Run history with detailed results
-- Transcript and metric inspection
+- Transcript and metric inspection with scores
 - Settings configuration
 
 Data is persisted to `.voicetest/data.duckdb` (configurable via `VOICETEST_DB_PATH`).
@@ -96,6 +97,12 @@ curl -X POST http://localhost:8000/api/agents/{id}/runs \
 
 # Get run with results
 curl http://localhost:8000/api/runs/{id}
+
+# Get/update agent metrics configuration
+curl http://localhost:8000/api/agents/{id}/metrics-config
+curl -X PUT http://localhost:8000/api/agents/{id}/metrics-config \
+  -H "Content-Type: application/json" \
+  -d '{"threshold": 0.8, "global_metrics": [{"name": "HIPAA", "criteria": "Check compliance", "enabled": true}]}'
 
 # WebSocket for real-time updates
 wscat -c ws://localhost:8000/api/runs/{id}/ws
@@ -153,11 +160,35 @@ Test cases follow the Retell export format:
 - **Unified IR**: AgentGraph representation for any voice agent
 - **Multi-format export**: Mermaid diagrams, LiveKit Python code, Retell LLM, Retell CF
 - **Configurable LLMs**: Separate models for agent, simulator, and judge
-- **DSPy-based evaluation**: LLM judges with reasoning
+- **DSPy-based evaluation**: LLM judges with reasoning and 0-1 scores
+- **Global metrics**: Define compliance checks that run on all tests for an agent
 - **Multiple interfaces**: CLI, TUI, interactive shell, Web UI, REST API
 - **Persistence**: DuckDB storage for agents, tests, and run history
 - **Real-time streaming**: WebSocket-based transcript streaming during test execution
 - **Cancellation**: Cancel in-progress tests to stop token usage
+
+## Global Metrics
+
+Global metrics are compliance-style checks that run on every test for an agent. Configure them in the "Metrics" tab in the Web UI.
+
+Each agent has:
+
+- **Pass threshold**: Default score (0-1) required for metrics to pass (default: 0.7)
+- **Global metrics**: List of criteria evaluated on every test run
+
+Each global metric has:
+
+- **Name**: Display name (e.g., "HIPAA Compliance")
+- **Criteria**: What the LLM judge evaluates (e.g., "Agent must verify patient identity before sharing medical information")
+- **Threshold override**: Optional per-metric threshold (uses agent default if not set)
+- **Enabled**: Toggle to skip without deleting
+
+Example use cases:
+
+- HIPAA compliance checks for healthcare agents
+- PCI-DSS validation for payment processing
+- Brand voice consistency across all conversations
+- Safety guardrails and content policy adherence
 
 ## LLM Configuration
 
@@ -226,6 +257,9 @@ uv run voicetest serve --reload   # http://localhost:8000
 The Vite dev server proxies `/api/*` to the FastAPI backend.
 
 ```bash
+# Run frontend tests
+cd web && npx vitest run
+
 # Build for production
 cd web && mise exec -- bun run build
 ```

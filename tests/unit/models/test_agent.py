@@ -240,3 +240,90 @@ class TestAgentGraph:
         restored = AgentGraph.model_validate_json(json_str)
         assert restored.entry_node_id == "start"
         assert len(restored.nodes) == 2
+
+
+class TestGlobalMetric:
+    """Tests for GlobalMetric model."""
+
+    def test_create_global_metric(self):
+        from voicetest.models.agent import GlobalMetric
+
+        metric = GlobalMetric(
+            name="HIPAA",
+            criteria="Agent confirmed patient name AND DOB before sharing PHI",
+        )
+        assert metric.name == "HIPAA"
+        assert metric.criteria == "Agent confirmed patient name AND DOB before sharing PHI"
+        assert metric.threshold is None
+        assert metric.enabled is True
+
+    def test_create_global_metric_with_threshold(self):
+        from voicetest.models.agent import GlobalMetric
+
+        metric = GlobalMetric(
+            name="compliance",
+            criteria="Agent follows compliance rules",
+            threshold=0.9,
+        )
+        assert metric.threshold == 0.9
+
+    def test_create_disabled_global_metric(self):
+        from voicetest.models.agent import GlobalMetric
+
+        metric = GlobalMetric(
+            name="test",
+            criteria="Test criteria",
+            enabled=False,
+        )
+        assert metric.enabled is False
+
+
+class TestMetricsConfig:
+    """Tests for MetricsConfig model."""
+
+    def test_create_empty_metrics_config(self):
+        from voicetest.models.agent import MetricsConfig
+
+        config = MetricsConfig()
+        assert config.threshold == 0.7
+        assert config.global_metrics == []
+
+    def test_create_metrics_config_with_threshold(self):
+        from voicetest.models.agent import MetricsConfig
+
+        config = MetricsConfig(threshold=0.8)
+        assert config.threshold == 0.8
+
+    def test_create_metrics_config_with_global_metrics(self):
+        from voicetest.models.agent import GlobalMetric, MetricsConfig
+
+        config = MetricsConfig(
+            threshold=0.75,
+            global_metrics=[
+                GlobalMetric(name="HIPAA", criteria="Check HIPAA compliance"),
+                GlobalMetric(name="PCI", criteria="Check PCI compliance", threshold=0.9),
+            ],
+        )
+        assert config.threshold == 0.75
+        assert len(config.global_metrics) == 2
+        assert config.global_metrics[0].name == "HIPAA"
+        assert config.global_metrics[1].threshold == 0.9
+
+    def test_metrics_config_json_serialization(self):
+        from voicetest.models.agent import GlobalMetric, MetricsConfig
+
+        config = MetricsConfig(
+            threshold=0.8,
+            global_metrics=[
+                GlobalMetric(name="test", criteria="Test criteria", enabled=False),
+            ],
+        )
+
+        json_str = config.model_dump_json()
+        assert "test" in json_str
+        assert "0.8" in json_str
+
+        restored = MetricsConfig.model_validate_json(json_str)
+        assert restored.threshold == 0.8
+        assert len(restored.global_metrics) == 1
+        assert restored.global_metrics[0].enabled is False

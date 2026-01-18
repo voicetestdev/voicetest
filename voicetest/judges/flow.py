@@ -1,5 +1,7 @@
 """Flow judge for validating conversation traversal through agent graph."""
 
+import asyncio
+
 from voicetest.models.agent import AgentNode
 from voicetest.models.results import Message
 
@@ -91,13 +93,18 @@ class FlowJudge:
             )
             reasoning: str = dspy.OutputField(desc="Explanation of the evaluation")
 
-        with dspy.context(lm=lm):
-            predictor = dspy.Predict(FlowValidationSignature)
-            result = predictor(
-                nodes=nodes,
-                transcript=self._format_transcript(transcript),
-                nodes_visited=nodes_visited,
-            )
+        formatted_transcript = self._format_transcript(transcript)
+
+        def run_predictor():
+            with dspy.context(lm=lm):
+                predictor = dspy.Predict(FlowValidationSignature)
+                return predictor(
+                    nodes=nodes,
+                    transcript=formatted_transcript,
+                    nodes_visited=nodes_visited,
+                )
+
+        result = await asyncio.to_thread(run_predictor)
 
         return FlowResult(
             valid=result.flow_valid,

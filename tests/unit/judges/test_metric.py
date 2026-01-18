@@ -95,3 +95,73 @@ class TestMetricJudge:
 
         assert "USER: Hello" in formatted
         assert "ASSISTANT: Hi there!" in formatted
+
+    @pytest.mark.asyncio
+    async def test_evaluate_with_score_and_threshold(self):
+        from voicetest.judges.metric import MetricJudge
+        from voicetest.models.results import MetricResult
+
+        judge = MetricJudge()
+        judge._mock_mode = True
+        judge._mock_results = [
+            MetricResult(
+                metric="Test metric",
+                score=0.85,
+                passed=True,
+                reasoning="High score",
+                threshold=0.7,
+                confidence=0.9,
+            )
+        ]
+
+        transcript = [Message(role="user", content="Hello")]
+        result = await judge.evaluate(transcript, "Test metric", threshold=0.7)
+
+        assert result.score == 0.85
+        assert result.threshold == 0.7
+        assert result.passed is True
+
+    @pytest.mark.asyncio
+    async def test_evaluate_score_below_threshold_fails(self):
+        from voicetest.judges.metric import MetricJudge
+        from voicetest.models.results import MetricResult
+
+        judge = MetricJudge()
+        judge._mock_mode = True
+        judge._mock_results = [
+            MetricResult(
+                metric="Test metric",
+                score=0.5,
+                passed=False,
+                reasoning="Below threshold",
+                threshold=0.7,
+                confidence=0.9,
+            )
+        ]
+
+        transcript = [Message(role="user", content="Hello")]
+        result = await judge.evaluate(transcript, "Test metric", threshold=0.7)
+
+        assert result.score == 0.5
+        assert result.threshold == 0.7
+        assert result.passed is False
+
+    @pytest.mark.asyncio
+    async def test_evaluate_all_with_threshold(self):
+        from voicetest.judges.metric import MetricJudge
+        from voicetest.models.results import MetricResult
+
+        judge = MetricJudge()
+        judge._mock_mode = True
+        judge._mock_results = [
+            MetricResult(metric="m1", score=0.9, passed=True, reasoning="Good", threshold=0.8),
+            MetricResult(metric="m2", score=0.6, passed=False, reasoning="Bad", threshold=0.8),
+        ]
+
+        transcript = [Message(role="user", content="Hello")]
+        results = await judge.evaluate_all(transcript, ["m1", "m2"], threshold=0.8)
+
+        assert len(results) == 2
+        assert results[0].passed is True
+        assert results[1].passed is False
+        assert all(r.threshold == 0.8 for r in results)

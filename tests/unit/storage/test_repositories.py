@@ -222,6 +222,88 @@ class TestAgentRepository:
         with pytest.raises(FileNotFoundError):
             agent_repo.load_graph(record)
 
+    def test_create_agent_with_metrics_config(self, agent_repo):
+        from voicetest.models.agent import GlobalMetric, MetricsConfig
+
+        metrics_config = MetricsConfig(
+            threshold=0.8,
+            global_metrics=[
+                GlobalMetric(name="HIPAA", criteria="Check HIPAA compliance"),
+            ],
+        )
+
+        record = agent_repo.create(
+            name="Agent with metrics",
+            source_type="test",
+            graph_json="{}",
+            metrics_config=metrics_config,
+        )
+
+        assert record["metrics_config"] is not None
+        loaded = MetricsConfig.model_validate_json(record["metrics_config"])
+        assert loaded.threshold == 0.8
+        assert len(loaded.global_metrics) == 1
+        assert loaded.global_metrics[0].name == "HIPAA"
+
+    def test_update_metrics_config(self, agent_repo):
+        from voicetest.models.agent import GlobalMetric, MetricsConfig
+
+        record = agent_repo.create(
+            name="Agent",
+            source_type="test",
+            graph_json="{}",
+        )
+
+        assert record["metrics_config"] is None
+
+        new_config = MetricsConfig(
+            threshold=0.9,
+            global_metrics=[
+                GlobalMetric(name="PCI", criteria="Check PCI compliance"),
+            ],
+        )
+
+        updated = agent_repo.update_metrics_config(record["id"], new_config)
+
+        assert updated["metrics_config"] is not None
+        loaded = MetricsConfig.model_validate_json(updated["metrics_config"])
+        assert loaded.threshold == 0.9
+        assert loaded.global_metrics[0].name == "PCI"
+
+    def test_get_metrics_config(self, agent_repo):
+        from voicetest.models.agent import GlobalMetric, MetricsConfig
+
+        metrics_config = MetricsConfig(
+            threshold=0.75,
+            global_metrics=[
+                GlobalMetric(name="Test", criteria="Test criteria"),
+            ],
+        )
+
+        record = agent_repo.create(
+            name="Agent",
+            source_type="test",
+            graph_json="{}",
+            metrics_config=metrics_config,
+        )
+
+        loaded = agent_repo.get_metrics_config(record["id"])
+        assert loaded is not None
+        assert loaded.threshold == 0.75
+        assert len(loaded.global_metrics) == 1
+
+    def test_get_metrics_config_default(self, agent_repo):
+        record = agent_repo.create(
+            name="Agent",
+            source_type="test",
+            graph_json="{}",
+        )
+
+        loaded = agent_repo.get_metrics_config(record["id"])
+        assert loaded is not None
+        assert loaded.threshold == 0.7
+        assert loaded.global_metrics == []
+
 
 class TestTestCaseRepository:
     """Tests for test case repository CRUD operations."""
@@ -365,3 +447,23 @@ class TestRunRepository:
         runs = run_repo.list_for_agent(agent1["id"])
 
         assert len(runs) == 2
+
+    def test_delete(self, run_repo, agent_repo, sample_run):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+
+        for result in sample_run.results:
+            run_repo.add_result(run_record["id"], "test-case-1", result)
+        run_repo.complete(run_record["id"])
+
+        run = run_repo.get_with_results(run_record["id"])
+        assert run is not None
+        assert len(run["results"]) == 1
+
+        run_repo.delete(run_record["id"])
+
+        deleted_run = run_repo.get_with_results(run_record["id"])
+        assert deleted_run is None
+
+        runs = run_repo.list_all()
+        assert len(runs) == 0

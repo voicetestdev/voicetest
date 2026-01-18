@@ -7,9 +7,25 @@ from uuid import uuid4
 
 import duckdb
 
-from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentGraph, MetricsConfig
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import TestCase
+
+
+def _serialize_value(value):
+    """Convert datetime objects to ISO strings for JSON serialization."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def _result_to_dicts(result) -> list[dict]:
+    """Convert DuckDB result to list of dicts with JSON-safe values."""
+    columns = [desc[0] for desc in result.description]
+    return [
+        {col: _serialize_value(val) for col, val in zip(columns, row, strict=True)}
+        for row in result.fetchall()
+    ]
 
 
 class AgentRepository:
@@ -21,7 +37,7 @@ class AgentRepository:
     def list_all(self) -> list[dict]:
         """List all agents."""
         result = self.conn.execute(
-            "SELECT id, name, source_type, source_path, graph_json, "
+            "SELECT id, name, source_type, source_path, graph_json, metrics_config, "
             "created_at, updated_at FROM agents ORDER BY created_at DESC"
         )
         return self._to_dicts(result)
@@ -29,7 +45,7 @@ class AgentRepository:
     def get(self, agent_id: str) -> dict | None:
         """Get agent by ID."""
         result = self.conn.execute(
-            "SELECT id, name, source_type, source_path, graph_json, "
+            "SELECT id, name, source_type, source_path, graph_json, metrics_config, "
             "created_at, updated_at FROM agents WHERE id = ?",
             [agent_id],
         )
@@ -42,15 +58,17 @@ class AgentRepository:
         source_type: str,
         source_path: str | None = None,
         graph_json: str | None = None,
+        metrics_config: MetricsConfig | None = None,
     ) -> dict:
         """Create a new agent."""
         agent_id = str(uuid4())
         now = datetime.now(UTC)
+        metrics_json = metrics_config.model_dump_json() if metrics_config else None
 
         self.conn.execute(
             "INSERT INTO agents (id, name, source_type, source_path, graph_json, "
-            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [agent_id, name, source_type, source_path, graph_json, now, now],
+            "metrics_config, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [agent_id, name, source_type, source_path, graph_json, metrics_json, now, now],
         )
 
         return self.get(agent_id)
@@ -90,6 +108,36 @@ class AgentRepository:
 
         return self.get(agent_id)
 
+    def update_metrics_config(
+        self,
+        agent_id: str,
+        metrics_config: MetricsConfig,
+    ) -> dict | None:
+        """Update an agent's metrics configuration."""
+        now = datetime.now(UTC)
+        metrics_json = metrics_config.model_dump_json()
+
+        self.conn.execute(
+            "UPDATE agents SET metrics_config = ?, updated_at = ? WHERE id = ?",
+            [metrics_json, now, agent_id],
+        )
+
+        return self.get(agent_id)
+
+    def get_metrics_config(self, agent_id: str) -> MetricsConfig:
+        """Get an agent's metrics configuration.
+
+        Returns the stored configuration or a default if none exists.
+        """
+        agent = self.get(agent_id)
+        if not agent:
+            return MetricsConfig()
+
+        if agent.get("metrics_config"):
+            return MetricsConfig.model_validate_json(agent["metrics_config"])
+
+        return MetricsConfig()
+
     def delete(self, agent_id: str) -> None:
         """Delete an agent."""
         self.conn.execute("DELETE FROM agents WHERE id = ?", [agent_id])
@@ -112,9 +160,8 @@ class AgentRepository:
         raise ValueError(f"Agent {agent['id']} has neither source_path nor graph_json")
 
     def _to_dicts(self, result) -> list[dict]:
-        """Convert DuckDB result to list of dicts."""
-        columns = [desc[0] for desc in result.description]
-        return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+        """Convert DuckDB result to list of dicts with JSON-safe values."""
+        return _result_to_dicts(result)
 
 
 class TestCaseRepository:
@@ -224,9 +271,8 @@ class TestCaseRepository:
         )
 
     def _to_dicts(self, result) -> list[dict]:
-        """Convert DuckDB result to list of dicts."""
-        columns = [desc[0] for desc in result.description]
-        return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+        """Convert DuckDB result to list of dicts with JSON-safe values."""
+        return _result_to_dicts(result)
 
 
 class RunRepository:
@@ -358,6 +404,13 @@ class RunRepository:
             ["error", error_message, result_id],
         )
 
+    def mark_result_cancelled(self, result_id: str) -> None:
+        """Mark a result as cancelled before it started."""
+        self.conn.execute(
+            "UPDATE results SET status = ?, error_message = ? WHERE id = ?",
+            ["cancelled", "Cancelled before starting", result_id],
+        )
+
     def complete_result(self, result_id: str, result: "TestResult") -> None:
         """Update a pending result with final data."""
         transcript_json = json.dumps([m.model_dump() for m in result.transcript])
@@ -401,7 +454,11 @@ class RunRepository:
             [now, run_id],
         )
 
+    def delete(self, run_id: str) -> None:
+        """Delete a run and all its results."""
+        self.conn.execute("DELETE FROM results WHERE run_id = ?", [run_id])
+        self.conn.execute("DELETE FROM runs WHERE id = ?", [run_id])
+
     def _to_dicts(self, result) -> list[dict]:
-        """Convert DuckDB result to list of dicts."""
-        columns = [desc[0] for desc in result.description]
-        return [dict(zip(columns, row, strict=True)) for row in result.fetchall()]
+        """Convert DuckDB result to list of dicts with JSON-safe values."""
+        return _result_to_dicts(result)

@@ -3,6 +3,7 @@
 Wraps the execution of conversations using generated agents.
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -171,14 +172,20 @@ class ConversationRunner:
                 desc="Node ID to transition to, or 'none' to stay"
             )
 
-        with dspy.context(lm=lm):
-            predictor = dspy.Predict(AgentResponseSignature)
-            result = predictor(
-                agent_instructions=agent.instructions,
-                available_transitions=tools_desc,
-                conversation_history=self._format_transcript(state.transcript),
-                user_message=user_message,
-            )
+        agent_instructions = agent.instructions
+        conversation_history = self._format_transcript(state.transcript)
+
+        def run_predictor():
+            with dspy.context(lm=lm):
+                predictor = dspy.Predict(AgentResponseSignature)
+                return predictor(
+                    agent_instructions=agent_instructions,
+                    available_transitions=tools_desc,
+                    conversation_history=conversation_history,
+                    user_message=user_message,
+                )
+
+        result = await asyncio.to_thread(run_predictor)
 
         # Handle transition
         new_agent = None

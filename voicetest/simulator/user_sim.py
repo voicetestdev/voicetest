@@ -4,6 +4,7 @@ Generates user messages based on Identity/Goal/Personality prompts
 using an LLM to simulate realistic user behavior.
 """
 
+import asyncio
 import re
 from dataclasses import dataclass
 
@@ -90,12 +91,17 @@ class UserSimulator:
                 agent_said = msg.content
                 break
 
-        with dspy.context(lm=lm):
-            predictor = dspy.Predict(OpeningMessageSignature)
-            result = predictor(
-                persona=self.user_prompt,
-                agent_greeting=agent_said or "(agent has not spoken yet)",
-            )
+        user_prompt = self.user_prompt
+
+        def run_predictor():
+            with dspy.context(lm=lm):
+                predictor = dspy.Predict(OpeningMessageSignature)
+                return predictor(
+                    persona=user_prompt,
+                    agent_greeting=agent_said or "(agent has not spoken yet)",
+                )
+
+        result = await asyncio.to_thread(run_predictor)
 
         return SimulatorResponse(
             message=result.message,
@@ -110,7 +116,6 @@ class UserSimulator:
         """
         import dspy
 
-        # Configure DSPy
         lm = dspy.LM(self.model)
 
         class UserSimSignature(dspy.Signature):
@@ -128,13 +133,20 @@ class UserSimulator:
             )
             reasoning: str = dspy.OutputField(desc="Why the user said this or ended")
 
-        with dspy.context(lm=lm):
-            predictor = dspy.Predict(UserSimSignature)
-            result = predictor(
-                persona=self.user_prompt,
-                conversation=self._format_transcript(transcript),
-                turn_number=len([m for m in transcript if m.role == "user"]) + 1,
-            )
+        user_prompt = self.user_prompt
+        conversation = self._format_transcript(transcript)
+        turn_number = len([m for m in transcript if m.role == "user"]) + 1
+
+        def run_predictor():
+            with dspy.context(lm=lm):
+                predictor = dspy.Predict(UserSimSignature)
+                return predictor(
+                    persona=user_prompt,
+                    conversation=conversation,
+                    turn_number=turn_number,
+                )
+
+        result = await asyncio.to_thread(run_predictor)
 
         return SimulatorResponse(
             message=result.message if result.should_continue else "",

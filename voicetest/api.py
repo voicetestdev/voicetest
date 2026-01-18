@@ -10,7 +10,7 @@ from pathlib import Path
 
 from voicetest.importers.base import ImporterInfo
 from voicetest.importers.registry import get_registry
-from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentGraph, MetricsConfig
 from voicetest.models.results import (
     Message,
     MetricResult,
@@ -115,6 +115,7 @@ async def run_test(
     graph: AgentGraph,
     test_case: TestCase,
     options: RunOptions | None = None,
+    metrics_config: MetricsConfig | None = None,
     _mock_mode: bool = False,
     on_turn: OnTurnCallback | None = None,
 ) -> TestResult:
@@ -124,6 +125,7 @@ async def run_test(
         graph: The agent graph to test.
         test_case: Test case definition.
         options: Optional run options.
+        metrics_config: Optional metrics configuration with threshold and global metrics.
         _mock_mode: If True, use mock responses (for testing).
         on_turn: Optional callback invoked after each turn with current transcript.
 
@@ -178,6 +180,9 @@ async def run_test(
         rule_judge = RuleJudge()
         flow_judge = FlowJudge(options.judge_model)
 
+        # Get threshold from metrics_config or use default
+        threshold = metrics_config.threshold if metrics_config else 0.7
+
         # Enable mock mode for testing
         if _mock_mode:
             simulator._mock_mode = True
@@ -195,10 +200,35 @@ async def run_test(
                 SimulatorResponse(message="", should_end=True, reasoning="Goal achieved"),
             ]
             metric_judge._mock_mode = True
-            metric_judge._mock_results = [
-                MetricResult(metric=m, passed=True, reasoning="Mock evaluation", confidence=0.9)
+
+            # Build mock results for test metrics + enabled global metrics
+            mock_results = [
+                MetricResult(
+                    metric=m,
+                    score=0.9,
+                    passed=True,
+                    reasoning="Mock evaluation",
+                    threshold=threshold,
+                    confidence=0.9,
+                )
                 for m in test_case.metrics
             ]
+            if metrics_config:
+                for gm in metrics_config.global_metrics:
+                    if gm.enabled:
+                        gm_threshold = gm.threshold if gm.threshold is not None else threshold
+                        mock_results.append(
+                            MetricResult(
+                                metric=f"[{gm.name}]",
+                                score=0.9,
+                                passed=True,
+                                reasoning="Mock global metric evaluation",
+                                threshold=gm_threshold,
+                                confidence=0.9,
+                            )
+                        )
+            metric_judge._mock_results = mock_results
+
             flow_judge._mock_mode = True
             from voicetest.judges.flow import FlowResult
 
@@ -221,7 +251,23 @@ async def run_test(
             )
         else:
             # LLM-based evaluation (semantic metrics)
-            metric_results = await metric_judge.evaluate_all(state.transcript, test_case.metrics)
+            metric_results = await metric_judge.evaluate_all(
+                state.transcript, test_case.metrics, threshold=threshold
+            )
+
+        # Evaluate global metrics if configured
+        if metrics_config:
+            for gm in metrics_config.global_metrics:
+                if gm.enabled:
+                    gm_threshold = gm.threshold if gm.threshold is not None else threshold
+                    result = await metric_judge.evaluate(
+                        state.transcript,
+                        gm.criteria,
+                        threshold=gm_threshold,
+                    )
+                    # Override metric name to show global metric info
+                    result = result.model_copy(update={"metric": f"[{gm.name}]"})
+                    metric_results.append(result)
 
         # Check flow constraints (optional, informational only)
         flow_issues: list[str] = []
