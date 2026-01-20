@@ -1,0 +1,213 @@
+{
+  "id": "squad_healthcare_123",
+  "name": "Healthcare Squad",
+  "members": [
+    {
+      "assistant": {
+        "name": "Greeting",
+        "model": {
+          "provider": "openai",
+          "model": "gpt-4o",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the greeting assistant. Welcome callers warmly and determine their needs."
+            }
+          ],
+          "tools": [
+            {
+              "type": "handoff",
+              "destinations": [
+                {
+                  "type": "assistant",
+                  "assistantName": "Verify Identity",
+                  "description": "Patient wants to schedule, cancel, or check an appointment"
+                },
+                {
+                  "type": "assistant",
+                  "assistantName": "General Inquiry",
+                  "description": "Patient has a general question not requiring identity verification"
+                }
+              ]
+            }
+          ]
+        },
+        "firstMessage": "Hello! Thank you for calling Acme Healthcare. How can I help you today?"
+      }
+    },
+    {
+      "assistant": {
+        "name": "Verify Identity",
+        "model": {
+          "provider": "openai",
+          "model": "gpt-4o",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Verify the patient's identity by asking for their full name and date of birth. Confirm the information before proceeding."
+            }
+          ],
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "lookup_patient",
+                "description": "Look up patient in the system by name and date of birth.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "full_name": {
+                      "type": "string",
+                      "description": "Patient's full name"
+                    },
+                    "date_of_birth": {
+                      "type": "string",
+                      "description": "Patient's date of birth in YYYY-MM-DD format"
+                    }
+                  },
+                  "required": ["full_name", "date_of_birth"]
+                }
+              }
+            },
+            {
+              "type": "handoff",
+              "destinations": [
+                {
+                  "type": "assistant",
+                  "assistantName": "Appointment Management",
+                  "description": "Patient identity has been verified"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "assistant": {
+        "name": "Appointment Management",
+        "model": {
+          "provider": "openai",
+          "model": "gpt-4o",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Help the patient with their appointment needs. You can schedule new appointments, check existing ones, or cancel appointments."
+            }
+          ],
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "get_available_slots",
+                "description": "Get available appointment slots for a given date range.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "start_date": {
+                      "type": "string",
+                      "description": "Start date in YYYY-MM-DD format"
+                    },
+                    "end_date": {
+                      "type": "string",
+                      "description": "End date in YYYY-MM-DD format"
+                    }
+                  },
+                  "required": ["start_date", "end_date"]
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "book_appointment",
+                "description": "Book an appointment for the patient.",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "patient_id": {
+                      "type": "string"
+                    },
+                    "slot_id": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["patient_id", "slot_id", "reason"]
+                }
+              }
+            },
+            {
+              "type": "handoff",
+              "destinations": [
+                {
+                  "type": "assistant",
+                  "assistantName": "Closing",
+                  "description": "Appointment task is complete"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "assistant": {
+        "name": "General Inquiry",
+        "model": {
+          "provider": "openai",
+          "model": "gpt-4o",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Answer the patient's general questions about office hours, location, accepted insurance, or other non-sensitive information."
+            }
+          ],
+          "tools": [
+            {
+              "type": "handoff",
+              "destinations": [
+                {
+                  "type": "assistant",
+                  "assistantName": "Closing",
+                  "description": "Question has been answered"
+                },
+                {
+                  "type": "assistant",
+                  "assistantName": "Verify Identity",
+                  "description": "Patient now wants to do something requiring identity verification"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "assistant": {
+        "name": "Closing",
+        "model": {
+          "provider": "openai",
+          "model": "gpt-4o",
+          "messages": [
+            {
+              "role": "system",
+              "content": "Thank the patient for calling. Ask if there's anything else you can help with. If not, wish them a good day and end the call."
+            }
+          ],
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "end_call",
+                "description": "End the call when the conversation is complete."
+              }
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

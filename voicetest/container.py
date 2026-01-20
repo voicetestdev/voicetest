@@ -12,10 +12,12 @@ def _create_registry() -> ImporterRegistry:
     from voicetest.importers.custom import CustomImporter
     from voicetest.importers.retell import RetellImporter
     from voicetest.importers.retell_llm import RetellLLMImporter
+    from voicetest.importers.vapi import VapiImporter
 
     registry = ImporterRegistry()
     registry.register(RetellImporter())
     registry.register(RetellLLMImporter())
+    registry.register(VapiImporter())
     registry.register(CustomImporter())
     return registry
 

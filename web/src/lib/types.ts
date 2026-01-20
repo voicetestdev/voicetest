@@ -141,6 +141,7 @@ export interface ExporterInfo {
   id: string;
   name: string;
   description: string;
+  ext: string;
 }
 
 export interface GlobalMetric {

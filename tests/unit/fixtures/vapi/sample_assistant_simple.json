@@ -1,0 +1,25 @@
+{
+  "id": "asst_simple123",
+  "name": "Simple Greeter",
+  "model": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a friendly greeter. Welcome callers and answer basic questions about our business hours (9 AM to 5 PM, Monday through Friday)."
+      }
+    ],
+    "temperature": 0.5
+  },
+  "voice": {
+    "provider": "elevenlabs",
+    "voiceId": "adam"
+  },
+  "transcriber": {
+    "provider": "deepgram",
+    "model": "nova-2",
+    "language": "en"
+  },
+  "firstMessage": "Hello! Welcome to our office. How can I help you today?"
+}

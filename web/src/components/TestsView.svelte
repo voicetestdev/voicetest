@@ -362,11 +362,13 @@
       const testIds = exportSelection === "selected" ? [...selectedTests] : undefined;
       const data = await api.exportTests($currentAgentId, exportFormat, testIds);
 
+      const agentName = $currentAgent?.name || "tests";
+      const safeName = agentName.replace(/[^a-zA-Z0-9_-]/g, "_");
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${$currentAgent?.name || "tests"}-${exportFormat}.json`;
+      a.download = `${safeName}_tests_${exportFormat}.json`;
       a.click();
       URL.revokeObjectURL(url);
 

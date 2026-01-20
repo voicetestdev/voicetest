@@ -13,6 +13,7 @@
   let mermaidSvg = $state("");
   let exporters = $state<ExporterInfo[]>([]);
   let exporting = $state(false);
+  let showExportModal = $state(false);
   let lastGraphId = $state<string | null>(null);
   let renderCounter = 0;
 
@@ -52,24 +53,27 @@
     }
   }
 
-  async function exportTo(format: string) {
+  function getExportFilename(exp: ExporterInfo): string {
+    const agentName = $currentAgent?.name || "agent";
+    const safeName = agentName.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const suffix = exp.id.replace(/-/g, "_");
+    return `${safeName}_${suffix}.${exp.ext}`;
+  }
+
+  async function exportTo(exp: ExporterInfo) {
     if (!$agentGraph) return;
     exporting = true;
     error = "";
     try {
-      const result = await api.exportAgent($agentGraph, format);
+      const result = await api.exportAgent($agentGraph, exp.id);
       const blob = new Blob([result.content], { type: "text/plain" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const ext = format.includes("retell")
-        ? "json"
-        : format === "livekit"
-          ? "py"
-          : "md";
-      a.download = `agent-export.${ext}`;
+      a.download = getExportFilename(exp);
       a.click();
       URL.revokeObjectURL(url);
+      showExportModal = false;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -89,7 +93,21 @@
       error = e instanceof Error ? e.message : String(e);
     }
   }
+
+  function closeModal(e: MouseEvent) {
+    if ((e.target as HTMLElement).classList.contains("modal-backdrop")) {
+      showExportModal = false;
+    }
+  }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && showExportModal) {
+      showExportModal = false;
+    }
+  }
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div class="agent-view">
   {#if !$agentGraph || !$currentAgent}
@@ -118,24 +136,45 @@
       {/if}
     </section>
 
-    <section class="export-section">
-      <h3>Export</h3>
-      <div class="export-buttons">
-        {#each exporters as exp}
-          <button
-            class="export-btn"
-            onclick={() => exportTo(exp.id)}
-            disabled={exporting}
-            title={exp.description}
-          >
-            {exp.name}
-          </button>
-        {/each}
+    <div class="actions">
+      <button
+        class="export-btn primary"
+        onclick={() => (showExportModal = true)}
+        disabled={exporting}
+      >
+        Export Agent...
+      </button>
+    </div>
+    {#if error}
+      <p class="error-message">{error}</p>
+    {/if}
+
+    {#if showExportModal}
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <div class="modal-backdrop" onclick={closeModal}>
+        <div class="modal">
+          <div class="modal-header">
+            <h3>Export Agent</h3>
+            <button class="close-btn" onclick={() => (showExportModal = false)}>&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="export-options">
+              {#each exporters as exp}
+                <button
+                  class="export-option"
+                  onclick={() => exportTo(exp)}
+                  disabled={exporting}
+                >
+                  <span class="export-name">{exp.name}</span>
+                  <span class="export-desc">{exp.description}</span>
+                  <span class="export-ext">.{exp.ext}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        </div>
       </div>
-      {#if error}
-        <p class="error-message">{error}</p>
-      {/if}
-    </section>
+    {/if}
 
     <section class="graph-section">
       <h3>Agent Graph</h3>
@@ -205,17 +244,8 @@
     font-size: 0.85rem;
   }
 
-  .export-section {
-    background: #1f2937;
-    padding: 1rem;
-    border-radius: 8px;
+  .actions {
     margin-bottom: 1rem;
-  }
-
-  .export-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
   }
 
   .export-btn {
@@ -235,7 +265,7 @@
 
   .error-message {
     color: #f87171;
-    margin: 0.5rem 0 0 0;
+    margin: 0 0 1rem 0;
   }
 
   .graph-section {
@@ -267,5 +297,121 @@
 
   .danger:hover {
     background: #b91c1c;
+  }
+
+  .export-btn.primary {
+    background: #2563eb;
+    padding: 0.6rem 1.2rem;
+  }
+
+  .export-btn.primary:hover {
+    background: #1d4ed8;
+  }
+
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal {
+    background: #1f2937;
+    border-radius: 12px;
+    min-width: 400px;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow: hidden;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #374151;
+  }
+
+  .modal-header h3 {
+    margin: 0;
+    color: #f3f4f6;
+  }
+
+  .close-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #9ca3af;
+    padding: 0;
+    line-height: 1;
+  }
+
+  .close-btn:hover {
+    color: #f3f4f6;
+  }
+
+  .modal-body {
+    padding: 1rem;
+    overflow-y: auto;
+    max-height: calc(80vh - 60px);
+  }
+
+  .export-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .export-option {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 0.25rem 1rem;
+    padding: 1rem;
+    background: #374151;
+    border-radius: 8px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .export-option:hover {
+    background: #4b5563;
+  }
+
+  .export-option:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .export-name {
+    font-weight: 600;
+    color: #f3f4f6;
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .export-desc {
+    color: #9ca3af;
+    font-size: 0.85rem;
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .export-ext {
+    color: #6b7280;
+    font-family: monospace;
+    font-size: 0.8rem;
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-self: center;
   }
 </style>

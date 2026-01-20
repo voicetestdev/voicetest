@@ -1,6 +1,6 @@
 # voicetest
 
-A generic test harness for voice agent workflows. Test agents from Retell, Vapi, LiveKit, and custom sources using a unified execution and evaluation model.
+A generic test harness for voice agent workflows. Test agents from Retell, VAPI, LiveKit, and custom sources using a unified execution and evaluation model.
 
 ## Installation
 
@@ -128,6 +128,8 @@ Retell CF ─────┐                  ┌───▶ Retell LLM
                │                  │
 Retell LLM ────┼───▶ AgentGraph ──┼───▶ Retell CF
                │                  │
+VAPI ──────────┤                  ├───▶ VAPI
+               │                  │
 Custom ────────┘                  ├───▶ Mermaid
                                   └───▶ LiveKit
 ```
@@ -138,8 +140,11 @@ Import from any supported format, then export to any other:
 # Convert Retell Conversation Flow to Retell LLM format
 voicetest export --agent retell-cf-agent.json --format retell-llm > retell-llm-agent.json
 
-# Convert Retell LLM to Conversation Flow format
-voicetest export --agent retell-llm-agent.json --format retell-cf > retell-cf-agent.json
+# Convert VAPI assistant to Retell LLM format
+voicetest export --agent vapi-assistant.json --format retell-llm > retell-agent.json
+
+# Convert Retell LLM to VAPI format
+voicetest export --agent retell-llm-agent.json --format vapi > vapi-agent.json
 ```
 
 ## Test Case Format
@@ -161,10 +166,10 @@ Test cases follow the Retell export format:
 
 ## Features
 
-- **Multi-source import**: Retell Conversation Flow, Retell LLM, custom Python functions
-- **Format conversion**: Convert between Retell LLM and Conversation Flow formats
+- **Multi-source import**: Retell Conversation Flow, Retell LLM, VAPI, custom Python functions
+- **Format conversion**: Convert between Retell, VAPI, and other formats
 - **Unified IR**: AgentGraph representation for any voice agent
-- **Multi-format export**: Mermaid diagrams, LiveKit Python code, Retell LLM, Retell CF
+- **Multi-format export**: Mermaid diagrams, LiveKit Python code, Retell LLM, Retell CF, VAPI
 - **Configurable LLMs**: Separate models for agent, simulator, and judge
 - **DSPy-based evaluation**: LLM judges with reasoning and 0-1 scores
 - **Global metrics**: Define compliance checks that run on all tests for an agent
@@ -280,8 +285,8 @@ voicetest/
 │   ├── rest.py          # REST API server + WebSocket + SPA serving
 │   ├── container.py     # Dependency injection (Punq)
 │   ├── models/          # Pydantic models
-│   ├── importers/       # Source importers (retell, retell_llm, custom)
-│   ├── exporters/       # Format exporters (mermaid, livekit, retell_llm, retell_cf, test_cases)
+│   ├── importers/       # Source importers (retell, retell_llm, vapi, custom)
+│   ├── exporters/       # Format exporters (mermaid, livekit, retell_llm, retell_cf, vapi, test_cases)
 │   ├── engine/          # Execution engine
 │   ├── simulator/       # User simulation
 │   ├── judges/          # Evaluation judges (metric, flow, rule)

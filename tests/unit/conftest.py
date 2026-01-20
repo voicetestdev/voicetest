@@ -72,3 +72,42 @@ def sample_retell_config_complex(retell_fixtures_dir: Path) -> dict:
 def sample_retell_config_complex_path(retell_fixtures_dir: Path) -> Path:
     """Return path to complex Retell configuration file."""
     return retell_fixtures_dir / "sample_config_complex.json"
+
+
+@pytest.fixture
+def vapi_fixtures_dir(fixtures_dir: Path) -> Path:
+    """Return path to VAPI test fixtures."""
+    return fixtures_dir / "vapi"
+
+
+@pytest.fixture
+def sample_vapi_assistant(vapi_fixtures_dir: Path) -> dict:
+    """Load sample VAPI assistant configuration."""
+    config_path = vapi_fixtures_dir / "sample_assistant.json"
+    return json.loads(config_path.read_text())
+
+
+@pytest.fixture
+def sample_vapi_assistant_path(vapi_fixtures_dir: Path) -> Path:
+    """Return path to sample VAPI assistant file."""
+    return vapi_fixtures_dir / "sample_assistant.json"
+
+
+@pytest.fixture
+def sample_vapi_assistant_simple(vapi_fixtures_dir: Path) -> dict:
+    """Load simple VAPI assistant configuration."""
+    config_path = vapi_fixtures_dir / "sample_assistant_simple.json"
+    return json.loads(config_path.read_text())
+
+
+@pytest.fixture
+def sample_vapi_squad(vapi_fixtures_dir: Path) -> dict:
+    """Load sample VAPI squad configuration."""
+    config_path = vapi_fixtures_dir / "sample_squad.json"
+    return json.loads(config_path.read_text())
+
+
+@pytest.fixture
+def sample_vapi_squad_path(vapi_fixtures_dir: Path) -> Path:
+    """Return path to sample VAPI squad file."""
+    return vapi_fixtures_dir / "sample_squad.json"

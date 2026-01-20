@@ -56,25 +56,33 @@ class TestCLIImporters:
 class TestCLIExport:
     """Tests for the export command."""
 
-    def test_export_mermaid(self, cli_runner, temp_agent_file):
+    def test_export_mermaid(self, cli_runner, temp_agent_file, tmp_path, monkeypatch):
         from voicetest.cli import main
 
+        monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(
             main, ["export", "--agent", str(temp_agent_file), "--format", "mermaid"]
         )
 
         assert result.exit_code == 0
-        assert "flowchart" in result.output.lower()
+        # Default output file: {agent_name}_mermaid.md
+        output_file = tmp_path / "agent_mermaid.md"
+        assert output_file.exists()
+        assert "flowchart" in output_file.read_text().lower()
 
-    def test_export_livekit(self, cli_runner, temp_agent_file):
+    def test_export_livekit(self, cli_runner, temp_agent_file, tmp_path, monkeypatch):
         from voicetest.cli import main
 
+        monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(
             main, ["export", "--agent", str(temp_agent_file), "--format", "livekit"]
         )
 
         assert result.exit_code == 0
-        assert "class Agent_greeting" in result.output
+        # Default output file: {agent_name}_livekit.py
+        output_file = tmp_path / "agent_livekit.py"
+        assert output_file.exists()
+        assert "class Agent_greeting" in output_file.read_text()
 
     def test_export_to_file(self, cli_runner, temp_agent_file, tmp_path):
         from voicetest.cli import main

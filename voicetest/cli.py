@@ -186,7 +186,13 @@ def tui(agent: Path, tests: Path, source: str | None):
     help="Agent definition file",
 )
 @click.option(
-    "--format", "-f", required=True, type=click.Choice(["livekit", "mermaid"]), help="Export format"
+    "--format",
+    "-f",
+    required=True,
+    type=click.Choice(
+        ["livekit", "mermaid", "retell-llm", "retell-cf", "vapi-assistant", "vapi-squad"]
+    ),
+    help="Export format",
 )
 @click.option("--output", "-o", default=None, type=click.Path(path_type=Path), help="Output file")
 def export(agent: Path, format: str, output: Path | None):
@@ -194,15 +200,33 @@ def export(agent: Path, format: str, output: Path | None):
     asyncio.run(_export(agent, format, output))
 
 
+def _get_export_extension(format: str) -> str:
+    """Get file extension for export format."""
+    if format == "mermaid":
+        return ".md"
+    if format == "livekit":
+        return ".py"
+    return ".json"
+
+
+def _get_export_suffix(format: str) -> str:
+    """Get filename suffix for export format."""
+    return f"_{format.replace('-', '_')}"
+
+
 async def _export(agent: Path, format: str, output: Path | None) -> None:
     """Async implementation of export command."""
     graph = await api.import_agent(agent)
-    result = await api.export_agent(graph, format=format, output=output)
 
-    if not output:
-        console.print(result)
-    else:
-        console.print(f"[dim]Exported to {output}[/dim]")
+    # Generate default output filename if not provided
+    if output is None:
+        agent_name = agent.stem
+        suffix = _get_export_suffix(format)
+        ext = _get_export_extension(format)
+        output = Path(f"{agent_name}{suffix}{ext}")
+
+    await api.export_agent(graph, format=format, output=output)
+    console.print(f"[dim]Exported to {output}[/dim]")
 
 
 @main.command()

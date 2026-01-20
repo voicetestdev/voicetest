@@ -11,7 +11,6 @@ describe("api", () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
-    vi.resetAllMocks();
   });
 
   describe("getMetricsConfig", () => {

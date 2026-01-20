@@ -70,7 +70,8 @@ async def export_agent(
 
     Args:
         graph: The agent graph to export.
-        format: Export format ('livekit', 'mermaid', 'retell-llm', 'retell-cf').
+        format: Export format ('livekit', 'mermaid', 'retell-llm', 'retell-cf',
+                'vapi-assistant', 'vapi-squad').
         output: Optional output path. Returns string if None.
 
     Returns:
@@ -94,6 +95,14 @@ async def export_agent(
         from voicetest.exporters.retell_cf import export_retell_cf
 
         content = json.dumps(export_retell_cf(graph), indent=2)
+    elif format == "vapi-assistant":
+        from voicetest.exporters.vapi import export_vapi_assistant
+
+        content = json.dumps(export_vapi_assistant(graph), indent=2)
+    elif format == "vapi-squad":
+        from voicetest.exporters.vapi import export_vapi_squad
+
+        content = json.dumps(export_vapi_squad(graph), indent=2)
     else:
         raise ValueError(f"Unknown export format: {format}")
 
@@ -107,13 +116,45 @@ def list_export_formats() -> list[dict[str, str]]:
     """List available export formats.
 
     Returns:
-        List of dicts with format id and description.
+        List of dicts with format id, name, description, and extension.
     """
     return [
-        {"id": "mermaid", "name": "Mermaid", "description": "Mermaid flowchart diagram"},
-        {"id": "livekit", "name": "LiveKit", "description": "LiveKit Python agent code"},
-        {"id": "retell-llm", "name": "Retell LLM", "description": "Retell LLM JSON format"},
-        {"id": "retell-cf", "name": "Retell CF", "description": "Retell Conversation Flow JSON"},
+        {
+            "id": "mermaid",
+            "name": "Mermaid",
+            "description": "Flowchart diagram for documentation and visualization",
+            "ext": "md",
+        },
+        {
+            "id": "livekit",
+            "name": "LiveKit",
+            "description": "Python agent code for LiveKit voice platform",
+            "ext": "py",
+        },
+        {
+            "id": "retell-llm",
+            "name": "Retell LLM",
+            "description": "Single LLM agent config for Retell AI",
+            "ext": "json",
+        },
+        {
+            "id": "retell-cf",
+            "name": "Retell CF",
+            "description": "Conversation Flow with multi-state routing for Retell AI",
+            "ext": "json",
+        },
+        {
+            "id": "vapi-assistant",
+            "name": "VAPI Assistant",
+            "description": "Single assistant config for VAPI (merges all nodes)",
+            "ext": "json",
+        },
+        {
+            "id": "vapi-squad",
+            "name": "VAPI Squad",
+            "description": "Multi-assistant squad for VAPI (preserves node structure)",
+            "ext": "json",
+        },
     ]
 
 

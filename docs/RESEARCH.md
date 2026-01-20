@@ -128,6 +128,23 @@ API-based testing framework.
 
 **Limitation:** Turn-by-turn scripting, not autonomous simulation.
 
+**Implementation (v0.1):** VAPI importer and exporter added:
+
+- `voicetest/importers/vapi.py` — Imports VAPI assistant JSON
+- `voicetest/exporters/vapi.py` — Exports AgentGraph to VAPI format
+
+VAPI assistants are single-node (no multi-state workflow like Retell CF). The importer extracts:
+
+- System prompt from `model.messages`
+- Tools from the function-style tool array
+- Voice/transcriber configuration as metadata
+
+Key format differences from Retell:
+
+- Tools use `{type: "function", function: {name, description, parameters}}` structure
+- System prompt in `model.messages` array vs `general_prompt` field
+- No state machine support (single assistant per config)
+
 ______________________________________________________________________
 
 ## DSPy vs BAML Analysis

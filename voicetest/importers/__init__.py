@@ -5,6 +5,7 @@ from voicetest.importers.custom import CustomImporter
 from voicetest.importers.registry import ImporterRegistry, get_registry
 from voicetest.importers.retell import RetellImporter
 from voicetest.importers.retell_llm import RetellLLMImporter
+from voicetest.importers.vapi import VapiImporter
 
 __all__ = [
     "CustomImporter",
@@ -13,5 +14,6 @@ __all__ = [
     "RetellImporter",
     "RetellLLMImporter",
     "SourceImporter",
+    "VapiImporter",
     "get_registry",
 ]

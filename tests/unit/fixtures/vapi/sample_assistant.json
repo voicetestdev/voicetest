@@ -1,0 +1,132 @@
+{
+  "id": "asst_abc123def456",
+  "name": "Healthcare Receptionist",
+  "model": {
+    "provider": "openai",
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful medical receptionist at Acme Healthcare. Be professional, empathetic, and concise. Always verify patient identity before discussing medical information.\n\nYour responsibilities:\n- Greet patients warmly\n- Schedule, cancel, or check appointments\n- Answer general questions about office hours and location\n- Transfer to nurse for medical questions\n\nAlways confirm details before making changes."
+      }
+    ],
+    "temperature": 0.7,
+    "maxTokens": 300
+  },
+  "voice": {
+    "provider": "11labs",
+    "voiceId": "sarah",
+    "stability": 0.5,
+    "similarityBoost": 0.75
+  },
+  "transcriber": {
+    "provider": "deepgram",
+    "model": "nova-2",
+    "language": "en"
+  },
+  "firstMessage": "Hello! Thank you for calling Acme Healthcare. How can I help you today?",
+  "silenceTimeoutSeconds": 30,
+  "maxDurationSeconds": 600,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "lookup_patient",
+        "description": "Look up patient in the system by name and date of birth.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "full_name": {
+              "type": "string",
+              "description": "Patient's full name"
+            },
+            "date_of_birth": {
+              "type": "string",
+              "description": "Patient's date of birth in YYYY-MM-DD format"
+            }
+          },
+          "required": ["full_name", "date_of_birth"]
+        }
+      },
+      "server": {
+        "url": "https://api.acme.com/patients/lookup"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_available_slots",
+        "description": "Get available appointment slots for a given date range.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "start_date": {
+              "type": "string",
+              "description": "Start date in YYYY-MM-DD format"
+            },
+            "end_date": {
+              "type": "string",
+              "description": "End date in YYYY-MM-DD format"
+            }
+          },
+          "required": ["start_date", "end_date"]
+        }
+      },
+      "server": {
+        "url": "https://api.acme.com/appointments/slots"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "book_appointment",
+        "description": "Book an appointment for the patient.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "patient_id": {
+              "type": "string",
+              "description": "Patient ID from lookup"
+            },
+            "slot_id": {
+              "type": "string",
+              "description": "Available slot ID to book"
+            },
+            "reason": {
+              "type": "string",
+              "description": "Reason for the appointment"
+            }
+          },
+          "required": ["patient_id", "slot_id", "reason"]
+        }
+      },
+      "server": {
+        "url": "https://api.acme.com/appointments/book"
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "transfer_call",
+        "description": "Transfer the call to a nurse for medical questions.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "reason": {
+              "type": "string",
+              "description": "Reason for the transfer"
+            }
+          },
+          "required": ["reason"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "end_call",
+        "description": "End the call when the conversation is complete."
+      }
+    }
+  ]
+}
