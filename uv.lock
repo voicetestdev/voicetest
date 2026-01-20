@@ -2025,6 +2025,15 @@ wheels = [
 ]
 
 [[package]]
+name = "punq"
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e6/f1/c31e86ce1ab85837d8e6a6868163bae3afaef01c49d45f1bfa479c1a5b90/punq-0.7.0.tar.gz", hash = "sha256:bb7a6cc75a2e7d51b861b0e11f4830a12617b3ee33dbced9ce2be6a98ba39d63", size = 7254 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/6a/c89602766d4416371eb801c3de89eda45fcea4435836ba7c01d1da88d47a/punq-0.7.0-py3-none-any.whl", hash = "sha256:7e0aca446c36a73674ec3fc078ec5e90e7a172ee349537d075ff20d73c3b1810", size = 7719 },
+]
+
+[[package]]
 name = "pyarrow"
 version = "22.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2818,6 +2827,7 @@ dependencies = [
     { name = "livekit-agents" },
     { name = "livekit-plugins-openai" },
     { name = "livekit-plugins-silero" },
+    { name = "punq" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "rich" },
@@ -2848,6 +2858,7 @@ requires-dist = [
     { name = "livekit-plugins-openai", specifier = ">=1.0,<2.0" },
     { name = "livekit-plugins-silero", specifier = ">=1.0,<2.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0" },
+    { name = "punq", specifier = ">=0.7.0" },
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },

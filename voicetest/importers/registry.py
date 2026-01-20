@@ -49,13 +49,8 @@ class ImporterRegistry:
         return importer.import_agent(path_or_config)
 
 
-# Global registry singleton
-_registry: ImporterRegistry | None = None
-
-
 def get_registry() -> ImporterRegistry:
-    """Get the global importer registry."""
-    global _registry
-    if _registry is None:
-        _registry = ImporterRegistry()
-    return _registry
+    """Get the importer registry from the DI container."""
+    from voicetest.container import get_container
+
+    return get_container().resolve(ImporterRegistry)

@@ -532,6 +532,35 @@ class TestTestCasesCRUD:
         list_response = db_client.get(f"/api/agents/{agent_id}/tests")
         assert len(list_response.json()) == 0
 
+    def test_export_tests_retell(self, db_client, agent_id):
+        """Export tests to Retell format."""
+        db_client.post(
+            f"/api/agents/{agent_id}/tests",
+            json={"name": "LLM Test", "user_prompt": "Hello", "metrics": ["Be helpful"]},
+        )
+        db_client.post(
+            f"/api/agents/{agent_id}/tests",
+            json={
+                "name": "Rule Test",
+                "user_prompt": "Check",
+                "type": "rule",
+                "includes": ["welcome"],
+            },
+        )
+
+        response = db_client.post(
+            f"/api/agents/{agent_id}/tests/export",
+            json={"format": "retell"},
+        )
+        assert response.status_code == 200
+
+        exported = response.json()
+        assert len(exported) == 2
+        assert exported[0]["type"] == "simulation"
+        assert exported[0]["metrics"] == ["Be helpful"]
+        assert exported[1]["type"] == "unit"
+        assert exported[1]["includes"] == ["welcome"]
+
 
 class TestGalleryEndpoint:
     """Tests for test gallery endpoint."""

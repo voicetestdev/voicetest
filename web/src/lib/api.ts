@@ -129,6 +129,9 @@ export const api = {
   deleteTestCase: (testId: string) =>
     del<{ status: string; id: string }>(`/tests/${testId}`),
 
+  exportTests: (agentId: string, format: string, testIds?: string[]) =>
+    post<unknown[]>(`/agents/${agentId}/tests/export`, { format, test_ids: testIds }),
+
   listGallery: () => get<GalleryItem[]>("/gallery"),
 
   listRunsForAgent: (agentId: string, limit = 50) =>

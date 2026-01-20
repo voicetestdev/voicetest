@@ -33,8 +33,13 @@
   let saving = $state(false);
   let showNewTestModal = $state(false);
   let showImportModal = $state(false);
+  let showExportModal = $state(false);
   let selectedTests = $state<Set<string>>(new Set());
   let runError = $state("");
+  let exportFormat = $state("retell");
+  let exportSelection = $state<"all" | "selected">("all");
+  let exporting = $state(false);
+  let exportError = $state("");
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
@@ -42,6 +47,8 @@
         closeNewTestModal();
       } else if (showImportModal) {
         closeImportModal();
+      } else if (showExportModal) {
+        closeExportModal();
       }
     }
   }
@@ -332,6 +339,44 @@
       runError = e instanceof Error ? e.message : String(e);
     }
   }
+
+  function openExportModal() {
+    exportFormat = "retell";
+    exportSelection = "all";
+    exportError = "";
+    showExportModal = true;
+  }
+
+  function closeExportModal() {
+    showExportModal = false;
+    exportError = "";
+  }
+
+  async function doExport() {
+    if (!$currentAgentId) return;
+
+    exporting = true;
+    exportError = "";
+
+    try {
+      const testIds = exportSelection === "selected" ? [...selectedTests] : undefined;
+      const data = await api.exportTests($currentAgentId, exportFormat, testIds);
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${$currentAgent?.name || "tests"}-${exportFormat}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      closeExportModal();
+    } catch (e) {
+      exportError = e instanceof Error ? e.message : String(e);
+    }
+
+    exporting = false;
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -357,6 +402,11 @@
         </button>
         <button class="secondary" onclick={openNewTestModal}>+ New Test</button>
         <button class="secondary" onclick={openImportModal}>Import</button>
+        <button
+          class="secondary"
+          onclick={openExportModal}
+          disabled={$testCaseRecords.length === 0}
+        >Export</button>
       </div>
     {/if}
   </div>
@@ -608,6 +658,47 @@
         <button class="secondary" onclick={closeImportModal}>Cancel</button>
         <button onclick={importFromJson} disabled={!jsonImport || saving}>
           {saving ? "Importing..." : "Import"}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if showExportModal}
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus a11y_click_events_have_key_events -->
+  <div class="modal-backdrop" role="dialog" aria-modal="true" onclick={closeExportModal}>
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+    <div class="modal" role="document" onclick={(e) => e.stopPropagation()}>
+      <div class="modal-header">
+        <h3>Export Tests</h3>
+        <button class="close-btn" onclick={closeExportModal}>x</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="export-format">Format</label>
+          <select id="export-format" bind:value={exportFormat}>
+            <option value="retell">Retell</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="export-selection">Tests</label>
+          <select id="export-selection" bind:value={exportSelection}>
+            <option value="all">All tests ({$testCaseRecords.length})</option>
+            <option value="selected" disabled={selectedTests.size === 0}>
+              Selected tests ({selectedTests.size})
+            </option>
+          </select>
+        </div>
+
+        {#if exportError}
+          <p class="error-message">{exportError}</p>
+        {/if}
+      </div>
+      <div class="modal-footer">
+        <button class="secondary" onclick={closeExportModal}>Cancel</button>
+        <button onclick={doExport} disabled={exporting}>
+          {exporting ? "Exporting..." : "Export"}
         </button>
       </div>
     </div>

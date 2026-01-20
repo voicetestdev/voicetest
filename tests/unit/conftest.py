@@ -6,6 +6,16 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def reset_di_container():
+    """Reset the DI container before each test to ensure isolation."""
+    from voicetest.container import reset_container
+
+    reset_container()
+    yield
+    reset_container()
+
+
 @pytest.fixture
 def fixtures_dir() -> Path:
     """Return path to test fixtures directory."""

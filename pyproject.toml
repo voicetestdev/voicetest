@@ -31,6 +31,7 @@ dependencies = [
     "textual>=7.2.0",
     "duckdb>=1.4.3",
     "pyarrow>=22.0.0",
+    "punq>=0.7.0",
 ]
 
 [project.urls]

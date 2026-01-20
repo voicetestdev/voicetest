@@ -14,7 +14,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import duckdb
 from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -22,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from voicetest import api
+from voicetest.container import get_container
 from voicetest.models.agent import AgentGraph, GlobalMetric, MetricsConfig
 from voicetest.models.results import Message, MetricResult, TestResult, TestRun
 from voicetest.models.test_case import RunOptions, TestCase
@@ -36,22 +36,16 @@ from voicetest.storage.repositories import (
 # Active runs: run_id -> {"cancel": Event, "websockets": set[WebSocket], "message_queue": list}
 _active_runs: dict[str, dict[str, Any]] = {}
 
-_db_conn: duckdb.DuckDBPyConnection | None = None
-_agent_repo: AgentRepository | None = None
-_test_case_repo: TestCaseRepository | None = None
-_run_repo: RunRepository | None = None
+_initialized = False
 
 
 def init_storage() -> None:
     """Initialize storage and register linked agents."""
-    global _db_conn, _agent_repo, _test_case_repo, _run_repo
+    global _initialized
 
-    _db_conn = get_connection()
-    init_schema(_db_conn)
-
-    _agent_repo = AgentRepository(_db_conn)
-    _test_case_repo = TestCaseRepository(_db_conn)
-    _run_repo = RunRepository(_db_conn)
+    conn = get_connection()
+    init_schema(conn)
+    _initialized = True
 
     linked_agents = os.environ.get("VOICETEST_LINKED_AGENTS", "")
     if linked_agents:
@@ -62,13 +56,14 @@ def init_storage() -> None:
 
 def _register_linked_agent(path: Path) -> None:
     """Register a linked agent from filesystem if not already registered."""
-    existing = _agent_repo.list_all()
+    repo = get_agent_repo()
+    existing = repo.list_all()
     for agent in existing:
         if agent.get("source_path") == str(path):
             return
 
     name = path.stem
-    _agent_repo.create(
+    repo.create(
         name=name,
         source_type="linked",
         source_path=str(path),
@@ -76,24 +71,24 @@ def _register_linked_agent(path: Path) -> None:
 
 
 def get_agent_repo() -> AgentRepository:
-    """Get the agent repository, initializing if needed."""
-    if _agent_repo is None:
+    """Get the agent repository from the DI container."""
+    if not _initialized:
         init_storage()
-    return _agent_repo
+    return get_container().resolve(AgentRepository)
 
 
 def get_test_case_repo() -> TestCaseRepository:
-    """Get the test case repository, initializing if needed."""
-    if _test_case_repo is None:
+    """Get the test case repository from the DI container."""
+    if not _initialized:
         init_storage()
-    return _test_case_repo
+    return get_container().resolve(TestCaseRepository)
 
 
 def get_run_repo() -> RunRepository:
-    """Get the run repository, initializing if needed."""
-    if _run_repo is None:
+    """Get the run repository from the DI container."""
+    if not _initialized:
         init_storage()
-    return _run_repo
+    return get_container().resolve(RunRepository)
 
 
 def _find_web_dist() -> Path | None:
@@ -202,6 +197,9 @@ class CreateTestCaseRequest(BaseModel):
     tool_mocks: list[Any] = []
     type: str = "simulation"
     llm_model: str | None = None
+    includes: list[str] = []
+    excludes: list[str] = []
+    patterns: list[str] = []
 
 
 class StartRunRequest(BaseModel):
@@ -209,6 +207,13 @@ class StartRunRequest(BaseModel):
 
     test_ids: list[str] | None = None
     options: RunOptions | None = None
+
+
+class ExportTestsRequest(BaseModel):
+    """Request to export test cases."""
+
+    format: str = "retell"
+    test_ids: list[str] | None = None  # None means all tests
 
 
 class ImporterInfo(BaseModel):
@@ -451,6 +456,29 @@ async def list_tests_for_agent(agent_id: str) -> list[dict]:
     return get_test_case_repo().list_for_agent(agent_id)
 
 
+@router.post("/agents/{agent_id}/tests/export")
+async def export_tests_for_agent(agent_id: str, request: ExportTestsRequest) -> list[dict]:
+    """Export test cases for an agent to a specified format."""
+    from voicetest.exporters.test_cases import export_tests
+
+    repo = get_test_case_repo()
+
+    if request.test_ids:
+        records = [repo.get(tid) for tid in request.test_ids if repo.get(tid)]
+    else:
+        records = repo.list_for_agent(agent_id)
+
+    if not records:
+        return []
+
+    test_cases = [repo.to_model(r) for r in records]
+
+    try:
+        return export_tests(test_cases, request.format)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
 @router.post("/agents/{agent_id}/tests")
 async def create_test_case(agent_id: str, request: CreateTestCaseRequest) -> dict:
     """Create a test case for an agent."""
@@ -462,6 +490,9 @@ async def create_test_case(agent_id: str, request: CreateTestCaseRequest) -> dic
         tool_mocks=request.tool_mocks,
         type=request.type,
         llm_model=request.llm_model,
+        includes=request.includes,
+        excludes=request.excludes,
+        patterns=request.patterns,
     )
     return get_test_case_repo().create(agent_id, test_case)
 
@@ -482,6 +513,9 @@ async def update_test_case(test_id: str, request: CreateTestCaseRequest) -> dict
         tool_mocks=request.tool_mocks,
         type=request.type,
         llm_model=request.llm_model,
+        includes=request.includes,
+        excludes=request.excludes,
+        patterns=request.patterns,
     )
     return repo.update(test_id, test_case)
 

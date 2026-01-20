@@ -1,6 +1,6 @@
 # voicetest Research Notes
 
-Background research informing design decisions. See M1_SPEC.md for architecture and implementation.
+Background research informing design decisions.
 
 ______________________________________________________________________
 
@@ -159,6 +159,20 @@ BAML adapter uses BAML's prompting format inside DSPy, getting benefits of both.
 
 **Decision:** Use DSPy with BAMLAdapter for judges. Enables prompt optimization while getting efficient structured outputs.
 
+**Implementation (v0.1):** BAMLAdapter is configured globally in `api.py`:
+
+```python
+import dspy
+from dspy.adapters.baml_adapter import BAMLAdapter
+dspy.configure(adapter=BAMLAdapter())
+```
+
+Benefits observed:
+
+- ~5% reliability improvement for structured output parsing
+- Better performance with smaller models (important for cost efficiency)
+- Token-efficient prompting
+
 ______________________________________________________________________
 
 ## LiveKit Plugin Architecture (Background)
@@ -233,3 +247,97 @@ ______________________________________________________________________
 1. **Autonomous simulation** (not turn-by-turn scripting) is the key differentiator — matches how Retell does it, more realistic testing
 
 1. **Platform transition models are functionally equivalent** — all reducible to "LLM calls tools to trigger transitions"
+
+______________________________________________________________________
+
+## Implementation Architecture Decisions
+
+### Dependency Injection (Punq)
+
+After evaluating FastAPI Depends vs dedicated DI containers, chose **Punq** for:
+
+- Lightweight (~200 LOC)
+- No decorator pollution
+- Works cleanly with FastAPI without coupling
+- Scope support (singleton for ImporterRegistry)
+
+Container setup in `voicetest/container.py`:
+
+```python
+import punq
+
+def create_container() -> punq.Container:
+    container = punq.Container()
+    container.register(ImporterRegistry, factory=_create_registry, scope=punq.Scope.singleton)
+    container.register(AgentRepository, factory=lambda: AgentRepository(get_connection()))
+    # ... other registrations
+    return container
+```
+
+Usage pattern:
+
+```python
+from voicetest.container import get_container
+repo = get_container().resolve(AgentRepository)
+```
+
+### Async Pattern for Blocking LLM Calls
+
+DSPy predictor calls are synchronous and block the event loop. This caused WebSocket connection delays during test execution.
+
+**Solution:** Wrap all DSPy calls in `asyncio.to_thread()`:
+
+```python
+async def _evaluate_with_llm(self, transcript, criterion, threshold) -> MetricResult:
+    def run_predictor():
+        with dspy.context(lm=lm):
+            predictor = dspy.Predict(MetricJudgeSignature)
+            return predictor(transcript=..., criterion=...)
+
+    result = await asyncio.to_thread(run_predictor)
+    return MetricResult(...)
+```
+
+Applied to:
+
+- `voicetest/judges/metric.py` — MetricJudge
+- `voicetest/judges/flow.py` — FlowJudge
+- `voicetest/simulator/user_sim.py` — UserSimulator
+- `voicetest/engine/session.py` — Agent LLM calls
+
+### Score-Based Metric Evaluation
+
+Instead of binary pass/fail, judges return a 0-1 score with configurable threshold:
+
+```python
+class MetricResult(BaseModel):
+    metric: str
+    score: float           # 0-1 how well criterion was met
+    passed: bool           # Derived: score >= threshold
+    reasoning: str
+    threshold: float       # Threshold used for this evaluation
+    confidence: float | None
+```
+
+Benefits:
+
+- Nuanced evaluation (0.65 vs 0.35 both "fail" but very different)
+- Configurable per-agent and per-metric thresholds
+- Better visibility into near-misses
+
+### Global Metrics Architecture
+
+Global metrics stored as `metrics_config` column in agents table (not inside `graph_json`):
+
+```python
+class MetricsConfig(BaseModel):
+    threshold: float = 0.7
+    global_metrics: list[GlobalMetric] = Field(default_factory=list)
+```
+
+Rationale:
+
+- Works with both linked and imported agents
+- Original agent definition files remain unmodified
+- Keeps all metrics configuration together
+- Enables per-metric threshold overrides

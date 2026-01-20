@@ -98,8 +98,15 @@ class ConversationRunner:
                 state.end_reason = "user_ended"
                 break
 
+            async def notify():
+                if on_turn:
+                    result = on_turn(state.transcript)
+                    if result is not None:
+                        await result
+
             # Record user message
             state.transcript.append(Message(role="user", content=sim_response.message))
+            await notify()
 
             # Process with current agent
             response, new_agent = await self._process_turn(
@@ -111,18 +118,13 @@ class ConversationRunner:
 
             if response:
                 state.transcript.append(Message(role="assistant", content=response))
+                await notify()
 
             # Handle node transition
             if new_agent is not None:
                 current_agent = new_agent
 
             state.turn_count += 1
-
-            # Notify callback of turn completion
-            if on_turn:
-                result = on_turn(state.transcript)
-                if result is not None:
-                    await result
 
             # Check for agent-initiated end
             if self._should_end_conversation(current_agent, state):

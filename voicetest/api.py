@@ -8,6 +8,9 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 
+import dspy
+from dspy.adapters.baml_adapter import BAMLAdapter
+
 from voicetest.importers.base import ImporterInfo
 from voicetest.importers.registry import get_registry
 from voicetest.models.agent import AgentGraph, MetricsConfig
@@ -20,6 +23,9 @@ from voicetest.models.results import (
     TestRun,
 )
 from voicetest.models.test_case import RunOptions, TestCase
+
+# Configure DSPy to use BAML adapter for better structured output reliability
+dspy.configure(adapter=BAMLAdapter())
 
 # Callback type for turn updates
 OnTurnCallback = Callable[[list[Message]], Awaitable[None] | None]

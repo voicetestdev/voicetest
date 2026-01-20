@@ -62,8 +62,9 @@ voicetest serve
 The web UI provides:
 
 - Agent import and graph visualization
-- Export to multiple formats (Mermaid, LiveKit, Retell LLM, Retell CF)
+- Export agents to multiple formats (Mermaid, LiveKit, Retell LLM, Retell CF)
 - Test case management with persistence
+- Export tests to platform formats (Retell)
 - Global metrics configuration (compliance checks that run on all tests)
 - Test execution with real-time streaming transcripts
 - Cancel in-progress tests
@@ -103,6 +104,11 @@ curl http://localhost:8000/api/agents/{id}/metrics-config
 curl -X PUT http://localhost:8000/api/agents/{id}/metrics-config \
   -H "Content-Type: application/json" \
   -d '{"threshold": 0.8, "global_metrics": [{"name": "HIPAA", "criteria": "Check compliance", "enabled": true}]}'
+
+# Export test cases to platform format
+curl -X POST http://localhost:8000/api/agents/{id}/tests/export \
+  -H "Content-Type: application/json" \
+  -d '{"format": "retell"}'
 
 # WebSocket for real-time updates
 wscat -c ws://localhost:8000/api/runs/{id}/ws
@@ -272,12 +278,13 @@ voicetest/
 │   ├── api.py           # Core API
 │   ├── cli.py           # CLI
 │   ├── rest.py          # REST API server + WebSocket + SPA serving
+│   ├── container.py     # Dependency injection (Punq)
 │   ├── models/          # Pydantic models
 │   ├── importers/       # Source importers (retell, retell_llm, custom)
-│   ├── exporters/       # Format exporters (mermaid, livekit, retell_llm, retell_cf)
+│   ├── exporters/       # Format exporters (mermaid, livekit, retell_llm, retell_cf, test_cases)
 │   ├── engine/          # Execution engine
 │   ├── simulator/       # User simulation
-│   ├── judges/          # Evaluation judges
+│   ├── judges/          # Evaluation judges (metric, flow, rule)
 │   ├── storage/         # DuckDB persistence layer
 │   └── tui/             # TUI and shell
 ├── web/                 # Frontend (Bun + Svelte + Vite)
