@@ -47,13 +47,6 @@ jobs:
           cd web
           mise exec -- bun run build
 
-      - name: Install Ollama
-        run: |
-          curl -fsSL https://ollama.com/install.sh | sh
-          ollama serve &
-          sleep 5
-          ollama pull qwen2.5:0.5b
-
       - name: Install Python dependencies
         run: uv sync --frozen --all-extras
 
