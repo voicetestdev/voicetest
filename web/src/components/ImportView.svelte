@@ -5,6 +5,7 @@
 
   let configText = $state("");
   let agentName = $state("");
+  let filePath = $state("");
   let importing = $state(false);
   let error = $state("");
   let importers = $state<ImporterInfo[]>([]);
@@ -15,20 +16,30 @@
     });
   });
 
-  async function importFromText() {
+  async function importAgent() {
     if (!agentName.trim()) {
       error = "Please enter an agent name";
+      return;
+    }
+    if (!configText && !filePath) {
+      error = "Please provide a file path or paste JSON config";
       return;
     }
     importing = true;
     error = "";
     try {
-      const config = JSON.parse(configText);
-      const agent = await api.createAgent(agentName, config);
+      let agent;
+      if (filePath) {
+        agent = await api.createAgentFromPath(agentName, filePath);
+      } else {
+        const config = JSON.parse(configText);
+        agent = await api.createAgent(agentName, config);
+      }
       await loadAgents();
       await selectAgent(agent.id, "config");
       configText = "";
       agentName = "";
+      filePath = "";
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -40,6 +51,7 @@
     const file = input.files?.[0];
     if (!file) return;
     configText = await file.text();
+    filePath = "";
     if (!agentName) {
       agentName = file.name.replace(/\.json$/, "");
     }
@@ -63,6 +75,15 @@
     </label>
   </div>
 
+  <div class="form-row">
+    <label>
+      Server path:
+      <input type="text" bind:value={filePath} placeholder="/path/to/agent.json (optional)" />
+    </label>
+  </div>
+
+  <div class="divider">or</div>
+
   <div class="import-options">
     <label class="file-upload">
       <input type="file" accept=".json" onchange={handleFile} />
@@ -73,11 +94,11 @@
   <textarea
     bind:value={configText}
     placeholder="Or paste agent config JSON here..."
-    rows={16}
+    rows={14}
   ></textarea>
 
   <div class="button-row">
-    <button onclick={importFromText} disabled={importing || !configText}>
+    <button onclick={importAgent} disabled={importing || (!configText && !filePath)}>
       {importing ? "Importing..." : "Import Agent"}
     </button>
   </div>
@@ -149,6 +170,22 @@
 
   .file-upload input {
     display: none;
+  }
+
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin: 1rem 0;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid var(--border-color);
   }
 
   textarea {

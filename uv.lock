@@ -2818,12 +2818,13 @@ wheels = [
 
 [[package]]
 name = "voicetest"
-version = "0.2"
+version = "0.3"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "dspy" },
     { name = "duckdb" },
+    { name = "fastapi" },
     { name = "livekit-agents" },
     { name = "livekit-plugins-openai" },
     { name = "livekit-plugins-silero" },
@@ -2832,13 +2833,10 @@ dependencies = [
     { name = "pydantic" },
     { name = "rich" },
     { name = "textual" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
-api = [
-    { name = "fastapi" },
-    { name = "uvicorn" },
-]
 dev = [
     { name = "httpx" },
     { name = "pre-commit" },
@@ -2852,7 +2850,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.0" },
     { name = "dspy", specifier = ">=2.6" },
     { name = "duckdb", specifier = ">=1.4.3" },
-    { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115" },
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28" },
     { name = "livekit-agents", specifier = ">=1.0,<2.0" },
     { name = "livekit-plugins-openai", specifier = ">=1.0,<2.0" },
@@ -2866,9 +2864,9 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
     { name = "textual", specifier = ">=7.2.0" },
-    { name = "uvicorn", marker = "extra == 'api'", specifier = ">=0.32" },
+    { name = "uvicorn", specifier = ">=0.32" },
 ]
-provides-extras = ["api", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "watchfiles"

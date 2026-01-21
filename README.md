@@ -1,7 +1,7 @@
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-light.svg">
-  <source media="(prefers-color-scheme: light)" srcset="assets/logo-dark.svg">
-  <img alt="voicetest" src="assets/logo-dark.svg" width="300">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
+  <img alt="voicetest" src="assets/logo-light.svg" width="300">
 </picture>
 
 [![Tests](https://github.com/pld/voicetest/actions/workflows/test.yml/badge.svg)](https://github.com/pld/voicetest/actions/workflows/test.yml)

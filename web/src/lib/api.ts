@@ -112,6 +112,9 @@ export const api = {
   createAgent: (name: string, config: unknown, source?: string) =>
     post<AgentRecord>("/agents", { name, config, source }),
 
+  createAgentFromPath: (name: string, path: string, source?: string) =>
+    post<AgentRecord>("/agents", { name, path, source }),
+
   updateAgent: (id: string, name: string) =>
     put<AgentRecord>(`/agents/${id}`, { name }),
 

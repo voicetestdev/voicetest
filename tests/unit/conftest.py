@@ -62,6 +62,19 @@ def sample_retell_llm_config_path(retell_fixtures_dir: Path) -> Path:
 
 
 @pytest.fixture
+def sample_retell_llm_dashboard_export(retell_fixtures_dir: Path) -> dict:
+    """Load sample Retell LLM dashboard export (wrapped in retellLlmData)."""
+    config_path = retell_fixtures_dir / "sample_llm_dashboard_export.json"
+    return json.loads(config_path.read_text())
+
+
+@pytest.fixture
+def sample_retell_llm_dashboard_export_path(retell_fixtures_dir: Path) -> Path:
+    """Return path to sample Retell LLM dashboard export file."""
+    return retell_fixtures_dir / "sample_llm_dashboard_export.json"
+
+
+@pytest.fixture
 def sample_retell_config_complex(retell_fixtures_dir: Path) -> dict:
     """Load complex Retell Conversation Flow configuration with tools."""
     config_path = retell_fixtures_dir / "sample_config_complex.json"

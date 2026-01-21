@@ -76,10 +76,33 @@ class RetellLLMImporter:
             file_patterns=["*.json"],
         )
 
+    def _unwrap_config(self, config: dict) -> dict:
+        """Unwrap retellLlmData if present (dashboard export format).
+
+        Supports both:
+        - Top-level format (official API): {"general_prompt": ..., "states": ...}
+        - Wrapped format (dashboard): {"retellLlmData": {"general_prompt": ..., "states": ...}}
+
+        Raises ValueError if LLM fields exist at both levels (ambiguous).
+        """
+        llm_fields = {"general_prompt", "llm_id", "states"}
+        has_wrapper = "retellLlmData" in config
+        has_top_level = bool(llm_fields & set(config.keys()))
+
+        if has_wrapper and has_top_level:
+            raise ValueError(
+                "Ambiguous config: LLM fields found at both top level and inside retellLlmData"
+            )
+
+        if has_wrapper:
+            return config["retellLlmData"]
+        return config
+
     def can_import(self, path_or_config: str | Path | dict) -> bool:
         """Detect Retell LLM format by checking for characteristic fields."""
         try:
             config = self._load_config(path_or_config)
+            config = self._unwrap_config(config)
             has_general_prompt = "general_prompt" in config
             has_llm_id = "llm_id" in config
             has_states = "states" in config
@@ -92,6 +115,7 @@ class RetellLLMImporter:
     def import_agent(self, path_or_config: str | Path | dict) -> AgentGraph:
         """Convert Retell LLM JSON to AgentGraph."""
         raw_config = self._load_config(path_or_config)
+        raw_config = self._unwrap_config(raw_config)
         llm_config = RetellLLMConfig.model_validate(raw_config)
 
         nodes: dict[str, AgentNode] = {}

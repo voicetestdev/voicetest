@@ -181,3 +181,72 @@ class TestRetellLLMImporter:
         assert lookup_tool.parameters is not None
         assert "properties" in lookup_tool.parameters
         assert "full_name" in lookup_tool.parameters["properties"]
+
+
+class TestRetellLLMDashboardExport:
+    """Tests for Retell LLM dashboard export format (wrapped in retellLlmData)."""
+
+    def test_can_import_wrapped_format(self, sample_retell_llm_dashboard_export):
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        importer = RetellLLMImporter()
+        assert importer.can_import(sample_retell_llm_dashboard_export) is True
+
+    def test_can_import_wrapped_format_path(self, sample_retell_llm_dashboard_export_path):
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        importer = RetellLLMImporter()
+        assert importer.can_import(sample_retell_llm_dashboard_export_path) is True
+
+    def test_import_agent_from_wrapped_format(self, sample_retell_llm_dashboard_export):
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        importer = RetellLLMImporter()
+        graph = importer.import_agent(sample_retell_llm_dashboard_export)
+
+        assert graph.source_type == "retell-llm"
+        assert graph.entry_node_id == "greeting"
+        assert len(graph.nodes) == 5
+        assert "greeting" in graph.nodes
+        assert "verify_identity" in graph.nodes
+
+    def test_wrapped_format_metadata(self, sample_retell_llm_dashboard_export):
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        importer = RetellLLMImporter()
+        graph = importer.import_agent(sample_retell_llm_dashboard_export)
+
+        assert graph.source_metadata["llm_id"] == "llm_abc123def456"
+        assert graph.source_metadata["model"] == "gpt-4o"
+
+    def test_ambiguous_config_raises_error(self):
+        """Config with LLM fields at both top level and in retellLlmData should error."""
+        import pytest
+
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        ambiguous_config = {
+            "general_prompt": "Top level prompt",
+            "retellLlmData": {
+                "general_prompt": "Wrapped prompt",
+                "llm_id": "llm_123",
+            },
+        }
+
+        importer = RetellLLMImporter()
+        with pytest.raises(ValueError, match="[Aa]mbiguous"):
+            importer.import_agent(ambiguous_config)
+
+    def test_ambiguous_config_can_import_returns_false(self):
+        """can_import should return False for ambiguous configs."""
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        ambiguous_config = {
+            "llm_id": "top_level_id",
+            "retellLlmData": {
+                "general_prompt": "Wrapped prompt",
+            },
+        }
+
+        importer = RetellLLMImporter()
+        assert importer.can_import(ambiguous_config) is False

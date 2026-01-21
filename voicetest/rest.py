@@ -167,10 +167,11 @@ class EvaluateRequest(BaseModel):
 
 
 class CreateAgentRequest(BaseModel):
-    """Request to create an agent from config."""
+    """Request to create an agent from config or file path."""
 
     name: str
-    config: dict[str, Any]
+    config: dict[str, Any] | None = None
+    path: str | None = None
     source: str | None = None
 
 
@@ -385,11 +386,17 @@ async def get_agent_graph(agent_id: str) -> AgentGraph:
 
 @router.post("/agents")
 async def create_agent(request: CreateAgentRequest) -> dict:
-    """Create an agent from config."""
+    """Create an agent from config dict or file path."""
+    if not request.config and not request.path:
+        raise HTTPException(status_code=400, detail="Either config or path is required")
+
     try:
-        graph = await api.import_agent(request.config, source=request.source)
+        source = request.path if request.path else request.config
+        graph = await api.import_agent(source, source=request.source)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
+    except FileNotFoundError:
+        raise HTTPException(status_code=400, detail=f"File not found: {request.path}") from None
 
     repo = get_agent_repo()
     return repo.create(
