@@ -1,21 +1,10 @@
 """DuckDB connection and schema management."""
 
 import contextlib
-import os
-from pathlib import Path
 
 import duckdb
 
-
-def get_db_path() -> Path:
-    """Get the database file path.
-
-    Uses VOICETEST_DB_PATH env var if set, otherwise defaults to
-    .voicetest/data.duckdb in the current working directory.
-    """
-    if env_path := os.environ.get("VOICETEST_DB_PATH"):
-        return Path(env_path)
-    return Path.cwd() / ".voicetest" / "data.duckdb"
+from voicetest.config import get_db_path
 
 
 def get_connection() -> duckdb.DuckDBPyConnection:

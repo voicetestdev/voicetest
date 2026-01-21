@@ -1,18 +1,31 @@
 """Tests for DuckDB connection and schema management."""
 
+from pathlib import Path
+
 from voicetest.storage.db import get_connection, get_db_path, init_schema
 
 
 class TestGetDbPath:
     """Tests for database path resolution."""
 
-    def test_default_path(self, tmp_path, monkeypatch):
+    def test_project_mode_when_voicetest_dir_exists(self, tmp_path, monkeypatch):
+        """When .voicetest/ exists in CWD, use local path."""
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.delenv("VOICETEST_DB_PATH", raising=False)
+        (tmp_path / ".voicetest").mkdir()
+
+        path = get_db_path()
+
+        assert path == tmp_path / ".voicetest" / "data.duckdb"
+
+    def test_global_mode_when_no_voicetest_dir(self, tmp_path, monkeypatch):
+        """When no .voicetest/ in CWD, fall back to global ~/.voicetest/."""
         monkeypatch.chdir(tmp_path)
         monkeypatch.delenv("VOICETEST_DB_PATH", raising=False)
 
         path = get_db_path()
 
-        assert path == tmp_path / ".voicetest" / "data.duckdb"
+        assert path == Path.home() / ".voicetest" / "data.duckdb"
 
     def test_env_override(self, tmp_path, monkeypatch):
         custom_path = tmp_path / "custom" / "test.duckdb"

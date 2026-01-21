@@ -1,6 +1,6 @@
 """Settings management for voicetest.
 
-Settings are stored in .voicetest.toml in the current directory.
+Settings are stored in .voicetest/settings.toml (project-local or global).
 Both CLI and web UI read/write the same file.
 """
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-SETTINGS_FILE = ".voicetest.toml"
+from voicetest.config import get_settings_path
 
 
 class ModelSettings(BaseModel):
@@ -51,14 +51,15 @@ class Settings(BaseModel):
 
     def save(self, path: Path | None = None) -> None:
         """Save settings to TOML file."""
-        path = path or Path(SETTINGS_FILE)
+        path = path or get_settings_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
         content = _to_toml(self)
         path.write_text(content)
 
     @classmethod
     def load(cls, path: Path | None = None) -> "Settings":
         """Load settings from TOML file, or return defaults if not found."""
-        path = path or Path(SETTINGS_FILE)
+        path = path or get_settings_path()
         if not path.exists():
             return cls()
 
