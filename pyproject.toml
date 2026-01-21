@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "4"
+version = "0.3"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -32,6 +32,8 @@ dependencies = [
     "duckdb>=1.4.3",
     "pyarrow>=22.0.0",
     "punq>=0.7.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
 ]
 
 [project.urls]
@@ -40,10 +42,6 @@ Repository = "https://github.com/pld/voicetest"
 Issues = "https://github.com/pld/voicetest/issues"
 
 [project.optional-dependencies]
-api = [
-    "fastapi>=0.115",
-    "uvicorn>=0.32",
-]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
