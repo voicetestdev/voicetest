@@ -1,4 +1,16 @@
-# voicetest
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-light.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo-dark.svg">
+    <img alt="voicetest" src="assets/logo-dark.svg" width="300">
+  </picture>
+</p>
+
+<p align="center">
+  <a href="https://github.com/pld/voicetest/actions/workflows/test.yml">
+    <img src="https://github.com/pld/voicetest/actions/workflows/test.yml/badge.svg" alt="Tests">
+  </a>
+</p>
 
 A generic test harness for voice agent workflows. Test agents from Retell, VAPI, LiveKit, and custom sources using a unified execution and evaluation model.
 

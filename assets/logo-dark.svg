@@ -1,0 +1,11 @@
+<svg width="200" height="48" viewBox="0 0 200 48" xmlns="http://www.w3.org/2000/svg">
+  <rect width="48" height="48" rx="10" fill="#1a1a1a"/>
+  <rect x="8" y="18" width="4" height="12" rx="2" fill="#00B4D8"/>
+  <rect x="14" y="13" width="4" height="22" rx="2" fill="#00B4D8"/>
+  <rect x="20" y="16" width="4" height="16" rx="2" fill="#00B4D8"/>
+  <rect x="26" y="10" width="4" height="28" rx="2" fill="#00B4D8"/>
+  <rect x="32" y="14" width="4" height="20" rx="2" fill="#00B4D8"/>
+  <circle cx="38" cy="38" r="7" fill="#22C55E"/>
+  <path d="M34.5 38 L37 40.5 L42 35.5" stroke="white" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="58" y="33" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="24" font-weight="600" fill="#ffffff">voicetest</text>
+</svg>

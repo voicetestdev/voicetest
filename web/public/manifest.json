@@ -1,0 +1,22 @@
+{
+  "name": "voicetest",
+  "short_name": "voicetest",
+  "description": "Test harness for voice agent workflows",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "/icon-80.svg",
+      "sizes": "80x80",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

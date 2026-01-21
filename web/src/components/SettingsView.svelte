@@ -242,17 +242,17 @@
 
   .save-indicator {
     font-size: 0.85rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   h3 {
     margin-top: 0;
     font-size: 1rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   .settings-form {
-    background: #16213e;
+    background: var(--bg-secondary);
     padding: 1.5rem;
     border-radius: 8px;
     margin-bottom: 1.5rem;
@@ -269,7 +269,7 @@
   .form-group label {
     display: block;
     margin-bottom: 0.25rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
     font-size: 0.85rem;
   }
 
@@ -297,7 +297,7 @@
     display: block;
     margin-top: 0.25rem;
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--text-muted);
   }
 
   .hint a {
@@ -305,11 +305,11 @@
   }
 
   .secondary {
-    background: #374151;
+    background: var(--bg-hover);
   }
 
   .secondary:hover {
-    background: #4b5563;
+    background: var(--border-color);
   }
 
   .error-message {
@@ -328,13 +328,13 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    background: #1a1a2e;
+    background: var(--bg-primary);
     padding: 0.5rem 0.75rem;
     border-radius: 4px;
   }
 
   .env-key {
-    background: #374151;
+    background: var(--bg-hover);
     padding: 0.2rem 0.5rem;
     border-radius: 3px;
     font-size: 0.85rem;
@@ -343,7 +343,7 @@
 
   .env-value {
     flex: 1;
-    color: #6b7280;
+    color: var(--text-muted);
     font-family: monospace;
     font-size: 0.85rem;
   }
@@ -364,10 +364,11 @@
   }
 
   .danger {
-    background: #7f1d1d;
+    background: var(--danger-bg);
+    color: var(--danger-text);
   }
 
   .danger:hover {
-    background: #991b1b;
+    background: var(--danger-bg-hover);
   }
 </style>

@@ -103,12 +103,12 @@
     align-items: center;
     gap: 0.5rem;
     font-size: 0.85rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
     margin-bottom: 1.5rem;
   }
 
   .tag {
-    background: #374151;
+    background: var(--bg-hover);
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
     font-size: 0.8rem;
@@ -122,7 +122,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   .form-row input {
@@ -138,13 +138,13 @@
   .file-upload {
     display: inline-block;
     padding: 0.5rem 1rem;
-    background: #374151;
+    background: var(--bg-hover);
     border-radius: 4px;
     cursor: pointer;
   }
 
   .file-upload:hover {
-    background: #4b5563;
+    background: var(--border-color);
   }
 
   .file-upload input {
@@ -166,5 +166,17 @@
   .error-message {
     color: #f87171;
     margin: 1rem 0 0 0;
+  }
+
+  @media (max-width: 480px) {
+    .importers {
+      flex-wrap: wrap;
+    }
+
+    .form-row label {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.25rem;
+    }
   }
 </style>

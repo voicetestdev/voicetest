@@ -34,7 +34,7 @@ def export_mermaid(graph: AgentGraph) -> str:
             condition_label = condition_label.replace('"', "'").replace("\n", " ")
             lines.append(f'    {node_id} -->|"{condition_label}"| {transition.target_node_id}')
 
-    # Mark entry node with green fill
-    lines.append(f"    style {graph.entry_node_id} fill:#90EE90")
+    # Mark entry node with green fill and contrasting text
+    lines.append(f"    style {graph.entry_node_id} fill:#16a34a,color:#ffffff")
 
     return "\n".join(lines)

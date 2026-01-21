@@ -288,7 +288,7 @@
 
   .run-date {
     font-size: 0.9rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   .status-badge {
@@ -308,8 +308,8 @@
   .mini-spinner {
     width: 12px;
     height: 12px;
-    border: 2px solid #374151;
-    border-top-color: #3b82f6;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 1s linear infinite;
   }
@@ -328,17 +328,17 @@
   h3 {
     margin-top: 0;
     font-size: 1rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   h4 {
     font-size: 0.9rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
     margin: 1rem 0 0.5rem 0;
   }
 
   .empty-state {
-    background: #16213e;
+    background: var(--bg-secondary);
     padding: 2rem;
     border-radius: 8px;
     text-align: center;
@@ -346,13 +346,13 @@
 
   .empty-state p {
     margin: 0;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   .empty-state .hint {
     margin-top: 0.5rem;
     font-size: 0.85rem;
-    color: #6b7280;
+    color: var(--text-muted);
   }
 
   .layout {
@@ -364,7 +364,7 @@
   }
 
   .results {
-    background: #16213e;
+    background: var(--bg-secondary);
     padding: 1rem;
     border-radius: 8px;
     overflow-y: auto;
@@ -377,15 +377,15 @@
   }
 
   .delete-run-btn {
-    background: #7f1d1d !important;
-    color: #f87171 !important;
+    background: var(--danger-bg) !important;
+    color: var(--danger-text) !important;
     padding: 0.25rem 0.5rem !important;
     font-size: 0.75rem !important;
     margin-left: auto;
   }
 
   .delete-run-btn:hover:not(:disabled) {
-    background: #991b1b !important;
+    background: var(--danger-bg-hover) !important;
   }
 
   .delete-run-btn:disabled {
@@ -403,17 +403,17 @@
   }
 
   .results-list li {
-    background: #1a1a2e;
+    background: var(--bg-primary);
     border-radius: 4px;
     border: 1px solid transparent;
   }
 
   .results-list li:hover {
-    border-color: #374151;
+    border-color: var(--border-color);
   }
 
   .results-list li.selected {
-    border-color: #3b82f6;
+    border-color: var(--accent);
   }
 
   .result-select-btn {
@@ -444,27 +444,27 @@
     font-weight: 600;
     padding: 0.2rem 0.4rem;
     border-radius: 3px;
-    background: #374151;
+    background: var(--bg-hover);
   }
 
   .status.pass {
-    background: #064e3b;
-    color: #10b981;
+    background: var(--status-pass-bg);
+    color: var(--color-pass);
   }
 
   .status.fail {
-    background: #7f1d1d;
-    color: #f87171;
+    background: var(--status-fail-bg);
+    color: var(--color-fail);
   }
 
   .status.error {
-    background: #78350f;
-    color: #fbbf24;
+    background: var(--status-error-bg);
+    color: var(--color-error);
   }
 
   .status.cancelled {
-    background: #374151;
-    color: #9ca3af;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
   }
 
   .test-name {
@@ -472,13 +472,13 @@
   }
 
   .duration {
-    color: #6b7280;
+    color: var(--text-muted);
     font-size: 0.8rem;
   }
 
   .cancel-btn {
-    background: #7f1d1d !important;
-    color: #f87171 !important;
+    background: var(--danger-bg) !important;
+    color: var(--danger-text) !important;
     padding: 0.1rem 0.4rem !important;
     font-size: 0.9rem !important;
     line-height: 1;
@@ -487,16 +487,16 @@
   }
 
   .cancel-btn:hover {
-    background: #991b1b !important;
+    background: var(--danger-bg-hover) !important;
   }
 
   .empty {
-    color: #6b7280;
+    color: var(--text-muted);
     font-style: italic;
   }
 
   .detail {
-    background: #16213e;
+    background: var(--bg-secondary);
     padding: 1rem;
     border-radius: 8px;
     overflow-y: auto;
@@ -513,7 +513,7 @@
   }
 
   .label {
-    color: #9ca3af;
+    color: var(--text-secondary);
     min-width: 80px;
   }
 
@@ -530,7 +530,7 @@
   }
 
   .cancelled {
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   .running {
@@ -562,7 +562,7 @@
   .message {
     padding: 0.5rem;
     border-radius: 4px;
-    background: #1a1a2e;
+    background: var(--bg-primary);
   }
 
   .message.user {
@@ -575,7 +575,7 @@
 
   .role {
     font-size: 0.75rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
     text-transform: uppercase;
     display: block;
     margin-bottom: 0.25rem;
@@ -614,7 +614,7 @@
 
   .metrics li {
     padding: 0.5rem;
-    background: #1a1a2e;
+    background: var(--bg-primary);
     border-radius: 4px;
     display: flex;
     flex-wrap: wrap;
@@ -635,17 +635,17 @@
     font-weight: 600;
     padding: 0.15rem 0.3rem;
     border-radius: 3px;
-    background: #374151;
+    background: var(--bg-hover);
   }
 
   .metrics li.pass .metric-status {
-    background: #064e3b;
-    color: #10b981;
+    background: var(--status-pass-bg);
+    color: var(--color-pass);
   }
 
   .metrics li.fail .metric-status {
-    background: #7f1d1d;
-    color: #f87171;
+    background: var(--status-fail-bg);
+    color: var(--color-fail);
   }
 
   .metric-name {
@@ -656,11 +656,11 @@
   .metric-reason {
     width: 100%;
     font-size: 0.85rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   .models-used {
-    background: #1a1a2e;
+    background: var(--bg-primary);
     padding: 0.5rem;
     border-radius: 4px;
     margin-bottom: 0.5rem;
@@ -678,9 +678,16 @@
   }
 
   .model-row code {
-    background: #374151;
+    background: var(--bg-hover);
     padding: 0.1rem 0.4rem;
     border-radius: 3px;
     font-size: 0.8rem;
+  }
+
+  @media (max-width: 768px) {
+    .run-header {
+      grid-template-columns: 1fr;
+      gap: 0.5rem;
+    }
   }
 </style>

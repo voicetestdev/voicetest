@@ -235,25 +235,25 @@
 
   .save-indicator {
     font-size: 0.85rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   h3 {
     margin-top: 0;
     font-size: 1rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   h4 {
     margin: 1.5rem 0 1rem 0;
     font-size: 0.9rem;
-    color: #9ca3af;
-    border-top: 1px solid #374151;
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-color);
     padding-top: 1rem;
   }
 
   .settings-form {
-    background: #16213e;
+    background: var(--bg-secondary);
     padding: 1.5rem;
     border-radius: 8px;
     margin-bottom: 1.5rem;
@@ -270,7 +270,7 @@
   .form-group label {
     display: block;
     margin-bottom: 0.25rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
     font-size: 0.85rem;
   }
 
@@ -298,7 +298,7 @@
     margin-top: 0.25rem;
     margin-bottom: 1rem;
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--text-muted);
   }
 
   .metric-list {
@@ -308,10 +308,10 @@
   }
 
   .metric-item {
-    background: #1a1a2e;
+    background: var(--bg-primary);
     padding: 0.75rem 1rem;
     border-radius: 6px;
-    border: 1px solid #374151;
+    border: 1px solid var(--border-color);
   }
 
   .metric-item.disabled {
@@ -352,7 +352,7 @@
     align-items: center;
     gap: 0.5rem;
     font-size: 0.8rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   .metric-threshold input {
@@ -367,12 +367,12 @@
 
   .metric-criteria {
     font-size: 0.85rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
     line-height: 1.4;
   }
 
   .empty-state {
-    color: #6b7280;
+    color: var(--text-muted);
     font-style: italic;
     margin: 1rem 0;
   }
@@ -382,11 +382,11 @@
   }
 
   .secondary {
-    background: #374151;
+    background: var(--bg-hover);
   }
 
   .secondary:hover {
-    background: #4b5563;
+    background: var(--border-color);
   }
 
   .small {
@@ -395,11 +395,12 @@
   }
 
   .danger {
-    background: #7f1d1d;
+    background: var(--danger-bg);
+    color: var(--danger-text);
   }
 
   .danger:hover {
-    background: #991b1b;
+    background: var(--danger-bg-hover);
   }
 
   .error-message {

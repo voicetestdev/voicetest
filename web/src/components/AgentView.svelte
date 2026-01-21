@@ -9,12 +9,19 @@
   } from "../lib/stores";
   import type { ExporterInfo } from "../lib/types";
 
+  interface Props {
+    theme?: "light" | "dark";
+  }
+
+  let { theme = "dark" }: Props = $props();
+
   let error = $state("");
   let mermaidSvg = $state("");
   let exporters = $state<ExporterInfo[]>([]);
   let exporting = $state(false);
   let showExportModal = $state(false);
   let lastGraphId = $state<string | null>(null);
+  let lastTheme = $state<string | null>(null);
   let renderCounter = 0;
 
   $effect(() => {
@@ -26,24 +33,47 @@
   $effect(() => {
     const graph = $agentGraph;
     const graphId = graph ? `${graph.entry_node_id}-${Object.keys(graph.nodes).length}` : null;
+    const currentTheme = theme;
 
-    if (graphId && graphId !== lastGraphId) {
+    if (graphId && (graphId !== lastGraphId || currentTheme !== lastTheme)) {
       lastGraphId = graphId;
-      renderGraph(graph);
+      lastTheme = currentTheme;
+      renderGraph(graph, currentTheme);
     } else if (!graph) {
       mermaidSvg = "";
       lastGraphId = null;
     }
   });
 
-  async function renderGraph(graph: typeof $agentGraph) {
+  async function renderGraph(graph: typeof $agentGraph, currentTheme: "light" | "dark") {
     if (!graph) return;
     const currentRender = ++renderCounter;
     try {
       const result = await api.exportAgent(graph, "mermaid");
       if (currentRender !== renderCounter) return; // Stale render
       const mermaid = await import("mermaid");
-      mermaid.default.initialize({ startOnLoad: false, theme: "dark" });
+      const mermaidTheme = currentTheme === "light" ? "default" : "dark";
+      mermaid.default.initialize({
+        startOnLoad: false,
+        theme: mermaidTheme,
+        themeVariables: currentTheme === "light" ? {
+          primaryColor: "#dbeafe",
+          primaryTextColor: "#1e3a8a",
+          primaryBorderColor: "#3b82f6",
+          lineColor: "#6b7280",
+          secondaryColor: "#f3f4f6",
+          tertiaryColor: "#ecfdf5",
+          tertiaryTextColor: "#065f46",
+        } : {
+          primaryColor: "#1e3a5f",
+          primaryTextColor: "#e0f2fe",
+          primaryBorderColor: "#3b82f6",
+          lineColor: "#9ca3af",
+          secondaryColor: "#374151",
+          tertiaryColor: "#166534",
+          tertiaryTextColor: "#ffffff",
+        },
+      });
       const renderId = `agent-graph-${currentRender}`;
       const { svg } = await mermaid.default.render(renderId, result.content);
       if (currentRender !== renderCounter) return; // Stale render
@@ -206,16 +236,16 @@
   h3 {
     margin-top: 0;
     font-size: 1rem;
-    color: #9ca3af;
+    color: var(--text-secondary);
   }
 
   .placeholder {
-    color: #9ca3af;
+    color: var(--text-secondary);
     font-style: italic;
   }
 
   .tag {
-    background: #374151;
+    background: var(--bg-hover);
     padding: 0.2rem 0.5rem;
     border-radius: 4px;
     font-size: 0.8rem;
@@ -235,7 +265,7 @@
   }
 
   .label {
-    color: #9ca3af;
+    color: var(--text-secondary);
     min-width: 100px;
   }
 
@@ -249,13 +279,13 @@
   }
 
   .export-btn {
-    background: #374151;
+    background: var(--bg-hover);
     padding: 0.5rem 1rem;
     font-size: 0.85rem;
   }
 
   .export-btn:hover {
-    background: #4b5563;
+    background: var(--border-color);
   }
 
   .export-btn:disabled {
@@ -269,7 +299,7 @@
   }
 
   .graph-section {
-    background: #16213e;
+    background: var(--bg-secondary);
     padding: 1rem;
     border-radius: 8px;
     margin-bottom: 1rem;
@@ -285,18 +315,19 @@
   }
 
   .danger-zone {
-    background: #1f2937;
+    background: var(--bg-tertiary);
     padding: 1rem;
     border-radius: 8px;
     border: 1px solid #7f1d1d;
   }
 
   .danger {
-    background: #dc2626;
+    background: var(--danger-bg);
+    color: var(--danger-text);
   }
 
   .danger:hover {
-    background: #b91c1c;
+    background: var(--danger-bg-hover);
   }
 
   .export-btn.primary {
@@ -322,7 +353,7 @@
   }
 
   .modal {
-    background: #1f2937;
+    background: var(--bg-tertiary);
     border-radius: 12px;
     min-width: 400px;
     max-width: 500px;
@@ -336,12 +367,12 @@
     justify-content: space-between;
     align-items: center;
     padding: 1rem 1.5rem;
-    border-bottom: 1px solid #374151;
+    border-bottom: 1px solid var(--border-color);
   }
 
   .modal-header h3 {
     margin: 0;
-    color: #f3f4f6;
+    color: var(--text-primary);
   }
 
   .close-btn {
@@ -349,13 +380,13 @@
     border: none;
     font-size: 1.5rem;
     cursor: pointer;
-    color: #9ca3af;
+    color: var(--text-secondary);
     padding: 0;
     line-height: 1;
   }
 
   .close-btn:hover {
-    color: #f3f4f6;
+    color: var(--text-primary);
   }
 
   .modal-body {
@@ -376,7 +407,7 @@
     grid-template-rows: auto auto;
     gap: 0.25rem 1rem;
     padding: 1rem;
-    background: #374151;
+    background: var(--bg-hover);
     border-radius: 8px;
     text-align: left;
     cursor: pointer;
@@ -384,7 +415,7 @@
   }
 
   .export-option:hover {
-    background: #4b5563;
+    background: var(--border-color);
   }
 
   .export-option:disabled {
@@ -394,24 +425,37 @@
 
   .export-name {
     font-weight: 600;
-    color: #f3f4f6;
+    color: var(--text-primary);
     grid-column: 1;
     grid-row: 1;
   }
 
   .export-desc {
-    color: #9ca3af;
+    color: var(--text-secondary);
     font-size: 0.85rem;
     grid-column: 1;
     grid-row: 2;
   }
 
   .export-ext {
-    color: #6b7280;
+    color: var(--text-muted);
     font-family: monospace;
     font-size: 0.8rem;
     grid-column: 2;
     grid-row: 1 / 3;
     align-self: center;
+  }
+
+  @media (max-width: 768px) {
+    .modal {
+      min-width: unset;
+      max-width: unset;
+      width: calc(100% - 2rem);
+      margin: 1rem;
+    }
+
+    .export-option {
+      padding: 0.75rem;
+    }
   }
 </style>
