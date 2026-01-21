@@ -261,8 +261,9 @@ class TestSettingsEndpoint:
     """Tests for settings endpoints."""
 
     def test_get_settings(self, client, tmp_path, monkeypatch):
-        # Use temp directory so we don't pollute the real settings
+        # Use temp directory with .voicetest/ so we use project mode (not global fallback)
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".voicetest").mkdir()
 
         response = client.get("/api/settings")
 
@@ -274,6 +275,7 @@ class TestSettingsEndpoint:
 
     def test_update_settings(self, client, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
+        (tmp_path / ".voicetest").mkdir()
 
         new_settings = {
             "models": {
