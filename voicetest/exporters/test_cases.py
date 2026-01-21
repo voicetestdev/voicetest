@@ -14,7 +14,11 @@ def export_tests_retell(tests: list[TestCase]) -> list[dict[str, Any]]:
 
 
 def _convert_test_to_retell(test: TestCase) -> dict[str, Any]:
-    """Convert a TestCase to Retell test format."""
+    """Convert a TestCase to Retell test format.
+
+    Note: Retell's simulator UI only looks at the first element of the metrics
+    array, so multiple metrics are combined into a single string.
+    """
     result: dict[str, Any] = {
         "name": test.name,
         "user_prompt": test.user_prompt,
@@ -22,7 +26,12 @@ def _convert_test_to_retell(test: TestCase) -> dict[str, Any]:
     }
 
     if test.metrics:
-        result["metrics"] = test.metrics
+        if len(test.metrics) == 1:
+            result["metrics"] = test.metrics
+        else:
+            # Combine multiple metrics into one - Retell UI only reads first element
+            combined = "\n".join(f"- {m}" for m in test.metrics)
+            result["metrics"] = [combined]
 
     if test.dynamic_variables:
         result["dynamic_variables"] = test.dynamic_variables

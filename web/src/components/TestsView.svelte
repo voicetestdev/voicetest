@@ -19,6 +19,7 @@
     dynamic_variables: {},
     tool_mocks: [],
     type: "llm",
+    llm_model: undefined,
     includes: [],
     excludes: [],
     patterns: [],
@@ -179,6 +180,7 @@
       dynamic_variables: {},
       tool_mocks: [],
       type: "llm",
+      llm_model: undefined,
       includes: [],
       excludes: [],
       patterns: [],
@@ -508,6 +510,17 @@
             <option value="llm">LLM (semantic evaluation)</option>
             <option value="rule">Rule (pattern matching)</option>
           </select>
+        </div>
+
+        <div class="form-group">
+          <label for="test-llm-model">LLM Model (optional)</label>
+          <input
+            id="test-llm-model"
+            type="text"
+            bind:value={newTest.llm_model}
+            placeholder="e.g., openai/gpt-4o-mini (leave empty for default)"
+          />
+          <span class="field-hint">Override the agent model for this specific test</span>
         </div>
 
         {#if newTest.type === "llm" || newTest.type === "simulation"}
@@ -948,6 +961,13 @@
     color: var(--text-primary);
     padding: 0.5rem;
     border-radius: 4px;
+  }
+
+  .field-hint {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
   }
 
   .input-row {

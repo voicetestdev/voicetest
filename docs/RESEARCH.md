@@ -85,8 +85,8 @@ Your order number is 7891273.
 ## Goal
 Your primary objective is to return the package you received and get a refund.
 
-## Personality  
-You are a patient customer. However, if the conversation becomes too long 
+## Personality
+You are a patient customer. However, if the conversation becomes too long
 or complicated, you will show signs of impatience.
 ```
 
@@ -97,6 +97,20 @@ or complicated, you will show signs of impatience.
 - Dashboard-only (no API)
 - No CI/CD integration
 - No cross-platform testing
+
+### Retell Import Formats
+
+voicetest supports multiple Retell export formats:
+
+| Format                | Source       | Detection Keys                       |
+| --------------------- | ------------ | ------------------------------------ |
+| **Conversation Flow** | API export   | `start_node_id`, `nodes`             |
+| **Retell LLM**        | API response | `general_prompt`, `llm_id`, `states` |
+| **Dashboard Export**  | Dashboard UI | `retellLlmData` wrapper              |
+
+The dashboard export wraps the LLM config in a `retellLlmData` field alongside agent metadata (`agent_id`, `voice_id`, etc.). The importer automatically unwraps this format.
+
+**Ambiguity handling:** If LLM fields exist at both top level and inside `retellLlmData`, import fails with an error to prevent silent data loss.
 
 ### Vapi Evals
 
@@ -358,3 +372,71 @@ Rationale:
 - Original agent definition files remain unmodified
 - Keeps all metrics configuration together
 - Enables per-metric threshold overrides
+
+### Project-Local vs Global Configuration
+
+Supports two usage patterns:
+
+1. **Project-local**: `.voicetest/` directory in CWD for project-specific setup
+1. **Global fallback**: `~/.voicetest/` when no local directory exists
+
+Resolution order for settings and database:
+
+1. `./.voicetest/settings.toml` and `./.voicetest/data.duckdb` (project)
+1. `~/.voicetest/settings.toml` and `~/.voicetest/data.duckdb` (global)
+
+Implemented in `voicetest/config.py`. Environment variable `VOICETEST_DB_PATH` overrides database location.
+
+______________________________________________________________________
+
+## Future Features
+
+### File-Based Tests
+
+**Status:** Planned
+
+**Problem:** Tests are currently stored in the database, requiring import via UI or API. For teams using version control, having tests as files alongside agent definitions is more natural.
+
+**Proposed Solution:**
+
+Per-agent `tests_paths` field pointing to one or more JSON files on disk:
+
+```python
+class AgentRecord:
+    # ... existing fields
+    tests_paths: list[str] | None = None  # Paths to test JSON files
+```
+
+**Behavior:**
+
+- **Multiple paths per agent**: Each agent can reference multiple test files
+- **Merge with DB tests**: File-based tests combined with any DB-stored tests
+- **Write-back support**: Edits in web UI write back to source files
+- **Format**: JSON arrays matching existing import format (Retell-compatible)
+
+**File format:**
+
+```json
+[
+  {
+    "name": "Greeting test",
+    "user_prompt": "Hello, I need help",
+    "metrics": ["Agent greeted user warmly"],
+    "type": "llm"
+  }
+]
+```
+
+**Implementation considerations:**
+
+- File watcher for hot-reload during development
+- Conflict resolution when same test name exists in file and DB
+- Read-only mode option for CI environments
+- Path resolution relative to `.voicetest/` directory
+
+**Use cases:**
+
+- Version-controlled test suites
+- Sharing tests across team members
+- CI/CD pipelines with tests in repo
+- Importing tests exported from Retell dashboard
