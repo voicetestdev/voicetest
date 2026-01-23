@@ -4,6 +4,7 @@ import type {
   ExporterInfo,
   GalleryItem,
   ImporterInfo,
+  LoadDemoResponse,
   MetricResult,
   MetricsConfig,
   Message,
@@ -152,4 +153,6 @@ export const api = {
 
   updateMetricsConfig: (agentId: string, config: MetricsConfig) =>
     put<MetricsConfig>(`/agents/${agentId}/metrics-config`, config),
+
+  loadDemo: () => post<LoadDemoResponse>("/demo", {}),
 };

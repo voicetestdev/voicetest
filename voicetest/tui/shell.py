@@ -146,10 +146,12 @@ class VoicetestShell(App):
         Binding("ctrl+l", "clear", "Clear"),
     ]
 
-    def __init__(self):
+    def __init__(self, agent_path: Path | None = None, tests_path: Path | None = None):
         super().__init__()
         self._history: list[str] = []
         self._history_index = 0
+        self._initial_agent_path = agent_path
+        self._initial_tests_path = tests_path
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -184,6 +186,17 @@ class VoicetestShell(App):
         if Path(SETTINGS_FILE).exists():
             self._log(f"[dim]Loaded settings from {SETTINGS_FILE}[/dim]")
         self._log("Type 'help' for commands, 'quit' to exit\n")
+
+        config_panel = self.query_one("#config-panel", ConfigPanel)
+        if self._initial_agent_path:
+            config_panel.set_agent(self._initial_agent_path)
+            self._log(f"[green]Agent loaded: {self._initial_agent_path}[/green]")
+        if self._initial_tests_path:
+            config_panel.set_tests(self._initial_tests_path)
+            self._log(f"[green]Tests loaded: {self._initial_tests_path}[/green]")
+        if self._initial_agent_path or self._initial_tests_path:
+            self._log("")
+
         self.query_one("#command-input", Input).focus()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:

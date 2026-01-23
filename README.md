@@ -26,6 +26,23 @@ Or add to a project (use `uv run voicetest` to run):
 uv add voicetest
 ```
 
+## Quick Demo
+
+Try voicetest with a sample healthcare receptionist agent and tests:
+
+```bash
+# Set up an API key (get a free one at https://openrouter.ai)
+export OPENROUTER_API_KEY=sk-or-v1-...
+
+# Load demo and start interactive shell
+voicetest demo
+
+# Or load demo and start web UI
+voicetest demo --serve
+```
+
+The demo includes a healthcare receptionist agent with 8 test cases covering appointment scheduling, identity verification, and more.
+
 ## Quick Start
 
 ### Interactive Shell

@@ -14,6 +14,28 @@ from voicetest.runner import TestRunContext
 console = Console()
 
 
+def _start_server(host: str, port: int, reload: bool = False) -> None:
+    """Start the uvicorn web server."""
+    try:
+        import uvicorn
+    except ImportError:
+        console.print("[red]Error: uvicorn not installed.[/red]")
+        console.print("Install with: uv add 'voicetest[api]'")
+        raise SystemExit(1) from None
+
+    console.print("[bold]Starting voicetest API server...[/bold]")
+    console.print(f"  URL: http://{host}:{port}")
+    console.print(f"  Docs: http://{host}:{port}/docs")
+    console.print()
+
+    uvicorn.run(
+        "voicetest.rest:app",
+        host=host,
+        port=port,
+        reload=reload,
+    )
+
+
 @click.group(invoke_without_command=True)
 @click.version_option(version="0.1.0", prog_name="voicetest")
 @click.pass_context
@@ -250,6 +272,89 @@ def importers():
 
 
 @main.command()
+@click.option("--serve", "-s", is_flag=True, help="Start web server instead of shell")
+@click.option("--host", "-h", default="127.0.0.1", help="Host to bind to (with --serve)")
+@click.option("--port", "-p", default=8000, type=int, help="Port to bind to (with --serve)")
+def demo(serve: bool, host: str, port: int):
+    """Load demo agent and tests for trying voicetest.
+
+    Loads a sample healthcare receptionist agent with test cases.
+
+    Examples:
+
+        voicetest demo              # Load demo, start shell
+
+        voicetest demo --serve      # Load demo, start web server
+    """
+    import json
+    import tempfile
+
+    from voicetest.demo import get_demo_agent, get_demo_tests
+
+    console.print("[bold]Loading demo agent and tests...[/bold]")
+
+    demo_agent_config = get_demo_agent()
+    demo_tests = get_demo_tests()
+
+    if serve:
+        from voicetest.models.test_case import TestCase
+        from voicetest.storage.db import get_connection, init_schema
+        from voicetest.storage.repositories import AgentRepository, TestCaseRepository
+
+        conn = get_connection()
+        init_schema(conn)
+
+        agent_repo = AgentRepository(conn)
+        test_repo = TestCaseRepository(conn)
+
+        graph = asyncio.run(api.import_agent(demo_agent_config))
+
+        existing = agent_repo.list_all()
+        demo_exists = any(a.get("name") == "Demo Healthcare Agent" for a in existing)
+
+        if demo_exists:
+            agent = next(a for a in existing if a.get("name") == "Demo Healthcare Agent")
+            console.print(f"  Using existing demo agent: {agent['id']}")
+        else:
+            agent = agent_repo.create(
+                name="Demo Healthcare Agent",
+                source_type=graph.source_type,
+                graph_json=graph.model_dump_json(),
+            )
+            console.print(f"  Created demo agent: {agent['id']}")
+
+            for test_data in demo_tests:
+                test_case = TestCase(**test_data)
+                test_repo.create(agent["id"], test_case)
+
+            console.print(f"  Created {len(demo_tests)} test cases")
+
+        console.print()
+        _start_server(host, port)
+    else:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix="_agent.json", delete=False
+        ) as agent_file:
+            json.dump(demo_agent_config, agent_file, indent=2)
+            agent_path = Path(agent_file.name)
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix="_tests.json", delete=False
+        ) as tests_file:
+            json.dump(demo_tests, tests_file, indent=2)
+            tests_path = Path(tests_file.name)
+
+        console.print(f"  Agent: {agent_path}")
+        console.print(f"  Tests: {tests_path}")
+        console.print()
+
+        from voicetest.tui import VoicetestShell
+
+        app = VoicetestShell(agent_path=agent_path, tests_path=tests_path)
+        app.run()
+
+
+@main.command()
 @click.option("--host", "-h", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", "-p", default=8000, type=int, help="Port to bind to")
 @click.option("--reload", is_flag=True, help="Enable auto-reload for development")
@@ -262,32 +367,16 @@ def importers():
 )
 def serve(host: str, port: int, reload: bool, agent: tuple[Path, ...]):
     """Start the REST API server."""
-    try:
-        import uvicorn
-    except ImportError:
-        console.print("[red]Error: uvicorn not installed.[/red]")
-        console.print("Install with: uv add 'voicetest[api]'")
-        raise SystemExit(1) from None
-
     import os
 
     os.environ["VOICETEST_LINKED_AGENTS"] = ",".join(str(p) for p in agent)
 
-    console.print("[bold]Starting voicetest API server...[/bold]")
-    console.print(f"  URL: http://{host}:{port}")
-    console.print(f"  Docs: http://{host}:{port}/docs")
     if agent:
         console.print(f"  Linked agents: {len(agent)}")
         for a in agent:
             console.print(f"    - {a}")
-    console.print()
 
-    uvicorn.run(
-        "voicetest.rest:app",
-        host=host,
-        port=port,
-        reload=reload,
-    )
+    _start_server(host, port, reload)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,88 @@
+[
+  {
+    "name": "Schedule appointment",
+    "user_prompt": "Say your name is John Smith and your date of birth is January 15, 1985. You want to schedule a checkup appointment for next week. Accept any available slot the agent offers.",
+    "metrics": [
+      "Agent verified the patient's identity by asking for name and date of birth.",
+      "Agent offered available appointment times.",
+      "Agent confirmed the appointment details before ending."
+    ],
+    "dynamic_variables": {},
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Office hours inquiry",
+    "user_prompt": "Ask what the office hours are and whether they are open on weekends.",
+    "metrics": [
+      "Agent provided information about office hours.",
+      "Agent was helpful and professional."
+    ],
+    "dynamic_variables": {},
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Cancel appointment",
+    "user_prompt": "Say you are Maria Garcia, born March 22, 1990. You need to cancel your appointment scheduled for tomorrow because you have a conflict.",
+    "metrics": [
+      "Agent verified the patient's identity.",
+      "Agent acknowledged the cancellation request.",
+      "Agent was empathetic about the situation."
+    ],
+    "dynamic_variables": {},
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Insurance question",
+    "user_prompt": "Ask if the clinic accepts Blue Cross Blue Shield insurance and what documents you need to bring for a first visit.",
+    "metrics": [
+      "Agent addressed the insurance question.",
+      "Agent provided helpful information about what to bring."
+    ],
+    "dynamic_variables": {},
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Transfer to nurse",
+    "user_prompt": "Say you have a medical question about your recent prescription and need to speak with a nurse.",
+    "metrics": [
+      "Agent recognized this requires a nurse.",
+      "Agent offered to transfer the call appropriately."
+    ],
+    "dynamic_variables": {},
+    "tool_mocks": [],
+    "type": "simulation",
+    "llm_model": "gpt-4o-mini"
+  },
+  {
+    "name": "Greeting includes company name",
+    "user_prompt": "Say hello.",
+    "includes": ["Acme", "Healthcare", "help"],
+    "excludes": ["goodbye"],
+    "patterns": [],
+    "type": "unit"
+  },
+  {
+    "name": "Identity verification required",
+    "user_prompt": "Say you want to check your upcoming appointments. When asked, say your name is Test Patient.",
+    "includes": ["name", "birth"],
+    "excludes": [],
+    "patterns": [],
+    "type": "unit"
+  },
+  {
+    "name": "Professional tone",
+    "user_prompt": "Be rude and demanding. Say you've been waiting forever and demand to see a doctor immediately.",
+    "includes": ["understand", "help", "apologize"],
+    "excludes": ["rude", "stupid", "idiot"],
+    "patterns": [],
+    "type": "unit"
+  }
+]

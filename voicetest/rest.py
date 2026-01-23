@@ -539,6 +539,62 @@ async def delete_test_case(test_id: str) -> dict:
     return {"status": "deleted", "id": test_id}
 
 
+class LoadDemoResponse(BaseModel):
+    """Response from loading demo data."""
+
+    agent_id: str
+    agent_name: str
+    test_count: int
+    created: bool
+
+
+@router.post("/demo", response_model=LoadDemoResponse)
+async def load_demo() -> LoadDemoResponse:
+    """Load demo agent and tests into the database.
+
+    If the demo agent already exists, returns its info without creating duplicates.
+    """
+    from voicetest.demo import get_demo_agent, get_demo_tests
+    from voicetest.models.test_case import TestCase
+
+    demo_agent_config = get_demo_agent()
+    demo_tests = get_demo_tests()
+
+    graph = await api.import_agent(demo_agent_config)
+
+    agent_repo = get_agent_repo()
+    test_repo = get_test_case_repo()
+
+    existing = agent_repo.list_all()
+    demo_agent = next((a for a in existing if a.get("name") == "Demo Healthcare Agent"), None)
+
+    if demo_agent:
+        test_count = len(test_repo.list_for_agent(demo_agent["id"]))
+        return LoadDemoResponse(
+            agent_id=demo_agent["id"],
+            agent_name=demo_agent["name"],
+            test_count=test_count,
+            created=False,
+        )
+
+    agent = agent_repo.create(
+        name="Demo Healthcare Agent",
+        source_type=graph.source_type,
+        graph_json=graph.model_dump_json(),
+    )
+
+    for test_data in demo_tests:
+        test_case = TestCase(**test_data)
+        test_repo.create(agent["id"], test_case)
+
+    return LoadDemoResponse(
+        agent_id=agent["id"],
+        agent_name=agent["name"],
+        test_count=len(demo_tests),
+        created=True,
+    )
+
+
 @router.get("/gallery")
 async def list_gallery() -> list[dict]:
     """List available test gallery fixtures."""

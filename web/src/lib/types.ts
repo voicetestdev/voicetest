@@ -226,3 +226,10 @@ export interface StartRunResponse {
   started_at: string;
   test_count: number;
 }
+
+export interface LoadDemoResponse {
+  agent_id: string;
+  agent_name: string;
+  test_count: number;
+  created: boolean;
+}

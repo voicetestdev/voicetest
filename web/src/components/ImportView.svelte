@@ -7,6 +7,7 @@
   let agentName = $state("");
   let filePath = $state("");
   let importing = $state(false);
+  let loadingDemo = $state(false);
   let error = $state("");
   let importers = $state<ImporterInfo[]>([]);
 
@@ -15,6 +16,19 @@
       importers = list;
     });
   });
+
+  async function loadDemo() {
+    loadingDemo = true;
+    error = "";
+    try {
+      const result = await api.loadDemo();
+      await loadAgents();
+      await selectAgent(result.agent_id, "config");
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    loadingDemo = false;
+  }
 
   async function importAgent() {
     if (!agentName.trim()) {
@@ -60,6 +74,15 @@
 
 <div class="import-view">
   <h2>Import Agent</h2>
+
+  <div class="demo-section">
+    <p>Try voicetest with a sample healthcare receptionist agent:</p>
+    <button class="demo-button" onclick={loadDemo} disabled={loadingDemo}>
+      {loadingDemo ? "Loading..." : "Load Demo"}
+    </button>
+  </div>
+
+  <div class="divider">or import your own</div>
 
   <div class="importers">
     <span>Supported formats:</span>
@@ -117,6 +140,38 @@
 
   h2 {
     margin-top: 0;
+  }
+
+  .demo-section {
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .demo-section p {
+    margin: 0 0 0.75rem 0;
+    color: var(--text-secondary);
+  }
+
+  .demo-button {
+    background: var(--accent-color, #6366f1);
+    color: white;
+    border: none;
+    padding: 0.5rem 1.25rem;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .demo-button:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .demo-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .importers {
