@@ -105,7 +105,7 @@ def _collect_all_tools(graph: AgentGraph) -> list[ToolDefinition]:
 def _convert_tool(tool: ToolDefinition) -> dict[str, Any]:
     """Convert a ToolDefinition to Retell Conversation Flow tool format."""
     result: dict[str, Any] = {
-        "type": "custom",
+        "type": tool.type,
         "name": tool.name,
         "description": tool.description,
     }

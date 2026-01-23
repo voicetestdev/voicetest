@@ -11,6 +11,7 @@ from voicetest import api
 from voicetest.models.test_case import RunOptions
 from voicetest.runner import TestRunContext
 
+
 console = Console()
 
 
@@ -222,18 +223,22 @@ def export(agent: Path, format: str, output: Path | None):
     asyncio.run(_export(agent, format, output))
 
 
-def _get_export_extension(format: str) -> str:
-    """Get file extension for export format."""
-    if format == "mermaid":
-        return ".md"
-    if format == "livekit":
-        return ".py"
-    return ".json"
+def _get_export_info(format: str) -> tuple[str, str]:
+    """Get file extension and suffix for export format.
 
+    Uses list_export_formats() as the single source of truth.
 
-def _get_export_suffix(format: str) -> str:
-    """Get filename suffix for export format."""
-    return f"_{format.replace('-', '_')}"
+    Returns:
+        Tuple of (extension with dot, filename suffix).
+    """
+    formats = api.list_export_formats()
+    for fmt in formats:
+        if fmt["id"] == format:
+            ext = f".{fmt['ext']}"
+            suffix = f"_{format.replace('-', '_')}"
+            return ext, suffix
+    # Fallback for unknown formats
+    return ".json", f"_{format.replace('-', '_')}"
 
 
 async def _export(agent: Path, format: str, output: Path | None) -> None:
@@ -243,8 +248,7 @@ async def _export(agent: Path, format: str, output: Path | None) -> None:
     # Generate default output filename if not provided
     if output is None:
         agent_name = agent.stem
-        suffix = _get_export_suffix(format)
-        ext = _get_export_extension(format)
+        ext, suffix = _get_export_info(format)
         output = Path(f"{agent_name}{suffix}{ext}")
 
     await api.export_agent(graph, format=format, output=output)

@@ -1,7 +1,7 @@
 """Tests for voicetest.models.agent module."""
 
-import pytest
 from pydantic import ValidationError
+import pytest
 
 
 class TestTransitionCondition:

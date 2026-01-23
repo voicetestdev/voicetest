@@ -45,6 +45,6 @@ repos:
       - id: check-json
         exclude: ^web/node_modules/
       - id: check-added-large-files
-        args: ['--maxkb=1000']
+        args: ['--maxkb=10000']
         exclude: ^web/node_modules/
       - id: check-merge-conflict

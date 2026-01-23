@@ -53,8 +53,32 @@ jobs:
       - name: Run linting
         run: uv run ruff check voicetest/ tests/
 
-      - name: Run Python tests
-        run: uv run pytest tests/ -v --tb=short
+      - name: Run Python unit tests
+        run: uv run pytest tests/unit -v --tb=short
+
+  platform-integration:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies with platform extras
+        run: uv sync --frozen --all-extras
+
+      - name: Run platform integration tests
+        env:
+          RETELL_API_KEY: ${{ secrets.RETELL_API_KEY }}
+          RETELL_TEST_FLOW_ID: ${{ secrets.RETELL_TEST_FLOW_ID }}
+          VAPI_API_KEY: ${{ secrets.VAPI_API_KEY }}
+          VAPI_TEST_ASSISTANT_ID: ${{ secrets.VAPI_TEST_ASSISTANT_ID }}
+        run: uv run pytest tests/integration/test_retell_api.py tests/integration/test_vapi_api.py -v --tb=short
 
   build:
     runs-on: ubuntu-latest

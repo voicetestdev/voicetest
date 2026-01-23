@@ -14,6 +14,9 @@ def export_mermaid(graph: AgentGraph) -> str:
     """
     lines = ["flowchart TD"]
 
+    # Track nodes with end_call tool
+    nodes_with_end_call: list[tuple[str, str]] = []
+
     # Add nodes
     for node_id, node in graph.nodes.items():
         # Truncate long instructions
@@ -24,6 +27,17 @@ def export_mermaid(graph: AgentGraph) -> str:
         label = label.replace('"', "'").replace("\n", " ")
         lines.append(f'    {node_id}["{node_id}<br/>{label}"]')
 
+        # Check for end_call tool
+        if node.tools:
+            for tool in node.tools:
+                if tool.name == "end_call" or getattr(tool, "type", "") == "end_call":
+                    desc = tool.description[:30] if tool.description else "End call"
+                    if len(tool.description) > 30:
+                        desc += "..."
+                    desc = desc.replace('"', "'").replace("\n", " ")
+                    nodes_with_end_call.append((node_id, desc))
+                    break
+
     # Add edges
     for node_id, node in graph.nodes.items():
         for transition in node.transitions:
@@ -33,6 +47,13 @@ def export_mermaid(graph: AgentGraph) -> str:
                 condition_label += "..."
             condition_label = condition_label.replace('"', "'").replace("\n", " ")
             lines.append(f'    {node_id} -->|"{condition_label}"| {transition.target_node_id}')
+
+    # Add end_call node and edges if any nodes have end_call tool
+    if nodes_with_end_call:
+        lines.append('    end_call(("End Call"))')
+        for node_id, description in nodes_with_end_call:
+            lines.append(f'    {node_id} -->|"{description}"| end_call')
+        lines.append("    style end_call fill:#dc2626,color:#ffffff")
 
     # Mark entry node with green fill and contrasting text
     lines.append(f"    style {graph.entry_node_id} fill:#16a34a,color:#ffffff")

@@ -4,6 +4,7 @@ import asyncio
 
 from voicetest.models.results import Message, MetricResult
 
+
 DEFAULT_THRESHOLD = 0.7
 
 

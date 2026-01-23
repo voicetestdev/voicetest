@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+
 TestType = Literal["llm", "rule"]
 
 

@@ -5,8 +5,8 @@ using an LLM to simulate realistic user behavior.
 """
 
 import asyncio
-import re
 from dataclasses import dataclass
+import re
 
 from voicetest.models.results import Message
 

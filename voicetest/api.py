@@ -3,10 +3,10 @@
 This is the single interface for all consumers. CLI and Web UI are thin wrappers.
 """
 
-import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
+import uuid
 
 import dspy
 from dspy.adapters.baml_adapter import BAMLAdapter
@@ -23,6 +23,8 @@ from voicetest.models.results import (
     TestRun,
 )
 from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.utils import substitute_variables
+
 
 # Configure DSPy to use BAML adapter for better structured output reliability
 dspy.configure(adapter=BAMLAdapter())
@@ -220,9 +222,15 @@ async def run_test(
     start_time = datetime.now()
 
     try:
+        # Substitute dynamic variables
+        dynamic_vars = test_case.dynamic_variables
+        user_prompt = substitute_variables(test_case.user_prompt, dynamic_vars)
+
         # Setup components
-        runner = ConversationRunner(graph, options, mock_mode=_mock_mode)
-        simulator = UserSimulator(test_case.user_prompt, options.simulator_model)
+        runner = ConversationRunner(
+            graph, options, mock_mode=_mock_mode, dynamic_variables=dynamic_vars
+        )
+        simulator = UserSimulator(user_prompt, options.simulator_model)
         metric_judge = MetricJudge(options.judge_model)
         rule_judge = RuleJudge()
         flow_judge = FlowJudge(options.judge_model)

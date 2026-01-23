@@ -43,6 +43,10 @@ voicetest demo --serve
 
 The demo includes a healthcare receptionist agent with 8 test cases covering appointment scheduling, identity verification, and more.
 
+![CLI Demo](docs/demos/cli-demo.gif)
+
+![Web UI Demo](docs/demos/web-demo.gif)
+
 ## Quick Start
 
 ### Interactive Shell

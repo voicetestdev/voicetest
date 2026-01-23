@@ -3,8 +3,8 @@
 Provides bundled demo agent and tests for trying voicetest without external files.
 """
 
-import json
 from importlib import resources
+import json
 from typing import Any
 
 

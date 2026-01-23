@@ -230,7 +230,15 @@
 
               <h4>Transcript</h4>
               <div class="transcript">
-                {#each transcript as msg}
+                {#each transcript as msg, i}
+                  {@const prevNode = i > 0 ? transcript[i - 1].metadata?.node_id : null}
+                  {@const currNode = msg.metadata?.node_id}
+                  {#if currNode && currNode !== prevNode}
+                    <div class="state-transition">
+                      <span class="transition-arrow">→</span>
+                      <span class="state-name">{currNode}</span>
+                    </div>
+                  {/if}
                   <div class="message {msg.role}">
                     <span class="role">{msg.role}</span>
                     <span class="content">{msg.content}</span>
@@ -557,6 +565,28 @@
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+  }
+
+  .state-transition {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    border-left: 2px solid #a855f7;
+    background: rgba(168, 85, 247, 0.1);
+    border-radius: 0 4px 4px 0;
+  }
+
+  .transition-arrow {
+    color: #a855f7;
+    font-weight: bold;
+  }
+
+  .state-name {
+    font-family: monospace;
+    color: #a855f7;
   }
 
   .message {

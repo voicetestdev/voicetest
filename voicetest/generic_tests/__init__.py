@@ -8,6 +8,7 @@ from voicetest.generic_tests.adversarial import (
 from voicetest.generic_tests.greeting import get_greeting_test
 from voicetest.generic_tests.hangup import get_hangup_test
 
+
 __all__ = [
     "get_abusive_test",
     "get_greeting_test",

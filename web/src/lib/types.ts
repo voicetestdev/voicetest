@@ -13,6 +13,7 @@ export interface ToolDefinition {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
+  type?: string;
 }
 
 export interface AgentNode {

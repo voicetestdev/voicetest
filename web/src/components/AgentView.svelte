@@ -23,6 +23,8 @@
   let lastGraphId = $state<string | null>(null);
   let lastTheme = $state<string | null>(null);
   let renderCounter = 0;
+  let mermaidContainer: HTMLDivElement;
+  let tooltip = $state({ show: false, x: 0, y: 0, text: "" });
 
   $effect(() => {
     api.listExporters().then((list) => {
@@ -78,9 +80,36 @@
       const { svg } = await mermaid.default.render(renderId, result.content);
       if (currentRender !== renderCounter) return; // Stale render
       mermaidSvg = svg;
+      // Setup tooltips after DOM update
+      requestAnimationFrame(() => setupTooltips());
     } catch (e) {
       console.error("Failed to render graph:", e);
     }
+  }
+
+  function setupTooltips() {
+    if (!mermaidContainer || !$agentGraph) return;
+    const nodes = mermaidContainer.querySelectorAll(".node");
+    nodes.forEach((node) => {
+      const textEl = node.querySelector(".nodeLabel");
+      if (!textEl) return;
+      const nodeId = node.id?.replace(/^flowchart-/, "").split("-")[0];
+      if (!nodeId || !$agentGraph?.nodes[nodeId]) return;
+
+      node.addEventListener("mouseenter", (e) => {
+        const rect = (e.target as Element).getBoundingClientRect();
+        const instructions = $agentGraph?.nodes[nodeId]?.instructions || "";
+        tooltip = {
+          show: true,
+          x: rect.left + rect.width / 2,
+          y: rect.top - 8,
+          text: instructions,
+        };
+      });
+      node.addEventListener("mouseleave", () => {
+        tooltip = { ...tooltip, show: false };
+      });
+    });
   }
 
   function getExportFilename(exp: ExporterInfo): string {
@@ -208,10 +237,19 @@
 
     <section class="graph-section">
       <h3>Agent Graph</h3>
-      <div class="mermaid-container">
+      <div class="mermaid-container" bind:this={mermaidContainer}>
         {@html mermaidSvg}
       </div>
     </section>
+
+    {#if tooltip.show}
+      <div
+        class="node-tooltip"
+        style="left: {tooltip.x}px; top: {tooltip.y}px;"
+      >
+        {tooltip.text}
+      </div>
+    {/if}
 
     <section class="danger-zone">
       <h3>Danger Zone</h3>
@@ -312,6 +350,28 @@
   .mermaid-container :global(svg) {
     max-width: 100%;
     height: auto;
+  }
+
+  .mermaid-container :global(.node) {
+    cursor: pointer;
+  }
+
+  .node-tooltip {
+    position: fixed;
+    transform: translate(-50%, -100%);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem;
+    max-width: 400px;
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    pointer-events: none;
   }
 
   .danger-zone {

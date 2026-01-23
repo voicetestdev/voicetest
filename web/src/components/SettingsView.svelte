@@ -18,6 +18,7 @@
   });
   let loading = $state(false);
   let saving = $state(false);
+  let saved = $state(false);
   let error = $state("");
   let newEnvKey = $state("");
   let newEnvValue = $state("");
@@ -42,11 +43,14 @@
 
   async function saveSettings() {
     saving = true;
+    saved = false;
     error = "";
 
     try {
       const updated = await api.updateSettings(localSettings);
       settings.set(updated);
+      saved = true;
+      setTimeout(() => { saved = false; }, 2000);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -88,6 +92,8 @@
     <h2>Settings</h2>
     {#if saving}
       <span class="save-indicator">Saving...</span>
+    {:else if saved}
+      <span class="save-indicator saved">Saved</span>
     {/if}
   </div>
 
@@ -243,6 +249,10 @@
   .save-indicator {
     font-size: 0.85rem;
     color: var(--text-secondary);
+  }
+
+  .save-indicator.saved {
+    color: #22c55e;
   }
 
   h3 {

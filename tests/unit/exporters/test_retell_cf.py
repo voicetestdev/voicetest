@@ -279,3 +279,17 @@ class TestRetellCFExporter:
         assert len(exported["nodes"]) == 11
         assert exported["conversation_flow_id"] == "cf_healthcare_001"
         assert len(exported["tools"]) == 6
+
+    def test_tool_types_preserved(self, sample_retell_config_complex):
+        """Test that tool types (custom, end_call, transfer_call) are preserved."""
+        from voicetest.exporters.retell_cf import export_retell_cf
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+        exported = export_retell_cf(graph)
+
+        tool_types = {t["name"]: t["type"] for t in exported["tools"]}
+        assert tool_types["end_call"] == "end_call"
+        assert tool_types["transfer_to_nurse"] == "transfer_call"
+        assert tool_types["lookup_patient"] == "custom"

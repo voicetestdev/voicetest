@@ -49,6 +49,10 @@ dev = [
     "httpx>=0.28",
     "pre-commit>=4.0",
 ]
+platforms = [
+    "retell-sdk>=5.0",
+    "vapi-server-sdk>=0.2",
+]
 
 [project.scripts]
 voicetest = "voicetest.cli:main"
@@ -76,7 +80,14 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B", "SIM", "TID"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+lines-after-imports = 2
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

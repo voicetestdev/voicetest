@@ -10,6 +10,7 @@ The presence of .voicetest/ directory in CWD indicates project mode.
 import os
 from pathlib import Path
 
+
 VOICETEST_DIR = ".voicetest"
 SETTINGS_FILE = "settings.toml"
 DB_FILE = "data.duckdb"

@@ -133,7 +133,8 @@
 
 <style>
   .import-view {
-    max-width: 700px;
+    max-width: 900px;
+    width: 100%;
     overflow-y: auto;
     flex: 1;
   }
@@ -245,6 +246,7 @@
 
   textarea {
     width: 100%;
+    box-sizing: border-box;
     resize: vertical;
     font-family: monospace;
     margin-bottom: 1rem;

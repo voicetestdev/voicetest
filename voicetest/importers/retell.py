@@ -199,4 +199,5 @@ class RetellImporter:
             name=tool.name,
             description=tool.description,
             parameters=tool.parameters or {},
+            type=tool.type,
         )

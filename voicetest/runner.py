@@ -4,8 +4,8 @@ This module provides the core test execution logic that both the
 command-line interface and the TUI share.
 """
 
-import json
 from collections.abc import AsyncIterator
+import json
 from pathlib import Path
 
 from voicetest import api

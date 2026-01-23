@@ -128,3 +128,51 @@ class TestNodeTracker:
 
         # Should record both visits
         assert tracker.visited == ["greeting", "greeting"]
+
+
+class TestConversationRunnerWithDynamicVariables:
+    """Tests for ConversationRunner with dynamic variables."""
+
+    def test_runner_accepts_dynamic_variables(self, simple_graph):
+        from voicetest.engine.session import ConversationRunner
+
+        variables = {"name": "Alice", "age": 30}
+        runner = ConversationRunner(simple_graph, dynamic_variables=variables)
+
+        assert runner._dynamic_variables == variables
+
+    def test_runner_default_empty_dynamic_variables(self, simple_graph):
+        from voicetest.engine.session import ConversationRunner
+
+        runner = ConversationRunner(simple_graph)
+
+        assert runner._dynamic_variables == {}
+
+
+class TestMessageNodeMetadata:
+    """Tests for node_id in message metadata."""
+
+    @pytest.mark.asyncio
+    async def test_messages_include_node_id_metadata(self, simple_graph):
+        """Test that messages include node_id in their metadata."""
+        from voicetest.engine.session import ConversationRunner
+        from voicetest.models.test_case import TestCase
+        from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
+
+        runner = ConversationRunner(simple_graph, mock_mode=True)
+        test_case = TestCase(name="test", user_prompt="Say hello")
+
+        simulator = UserSimulator("test", "mock-model")
+        simulator._mock_mode = True
+        simulator._mock_responses = [
+            SimulatorResponse(message="Hello", should_end=False, reasoning="greeting"),
+            SimulatorResponse(message="", should_end=True, reasoning="done"),
+        ]
+
+        state = await runner.run(test_case, simulator)
+
+        # Check that messages have node_id in metadata
+        for msg in state.transcript:
+            assert "node_id" in msg.metadata
+            # Should be one of our node IDs
+            assert msg.metadata["node_id"] in ["greeting", "farewell"]

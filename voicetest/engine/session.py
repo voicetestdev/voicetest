@@ -13,6 +13,8 @@ from voicetest.engine.agent_gen import GeneratedAgent, generate_agent_classes
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message, ToolCall
 from voicetest.models.test_case import RunOptions
+from voicetest.utils import substitute_variables
+
 
 # Callback type for turn updates: receives transcript after each turn
 OnTurnCallback = Callable[[list[Message]], Awaitable[None] | None]
@@ -56,11 +58,13 @@ class ConversationRunner:
         graph: AgentGraph,
         options: RunOptions | None = None,
         mock_mode: bool = False,
+        dynamic_variables: dict | None = None,
     ):
         self.graph = graph
         self.options = options or RunOptions()
         self.agent_classes = generate_agent_classes(graph)
         self._mock_mode = mock_mode
+        self._dynamic_variables = dynamic_variables or {}
 
     async def run(
         self,
@@ -104,8 +108,14 @@ class ConversationRunner:
                     if result is not None:
                         await result
 
-            # Record user message
-            state.transcript.append(Message(role="user", content=sim_response.message))
+            # Record user message with current node
+            state.transcript.append(
+                Message(
+                    role="user",
+                    content=sim_response.message,
+                    metadata={"node_id": node_tracker.current_node},
+                )
+            )
             await notify()
 
             # Process with current agent
@@ -117,7 +127,13 @@ class ConversationRunner:
             )
 
             if response:
-                state.transcript.append(Message(role="assistant", content=response))
+                state.transcript.append(
+                    Message(
+                        role="assistant",
+                        content=response,
+                        metadata={"node_id": node_tracker.current_node},
+                    )
+                )
                 await notify()
 
             # Handle node transition
@@ -174,7 +190,7 @@ class ConversationRunner:
                 desc="Node ID to transition to, or 'none' to stay"
             )
 
-        agent_instructions = agent.instructions
+        agent_instructions = substitute_variables(agent.instructions, self._dynamic_variables)
         conversation_history = self._format_transcript(state.transcript)
 
         def run_predictor():

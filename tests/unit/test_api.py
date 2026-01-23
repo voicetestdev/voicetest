@@ -253,3 +253,46 @@ class TestEvaluateTranscript:
 
         assert len(results) == 1
         assert isinstance(results[0], MetricResult)
+
+
+class TestDynamicVariableSubstitution:
+    """Tests for dynamic variable substitution in run_test."""
+
+    @pytest.mark.asyncio
+    async def test_run_test_with_dynamic_variables(self, sample_retell_config):
+        from voicetest import api
+        from voicetest.models.test_case import RunOptions, TestCase
+
+        graph = await api.import_agent(sample_retell_config)
+        test_case = TestCase(
+            name="Test with variables",
+            user_prompt="My name is {{name}} and I am {{age}} years old.",
+            dynamic_variables={"name": "Alice", "age": 30},
+        )
+
+        result = await api.run_test(
+            graph, test_case, options=RunOptions(max_turns=2), _mock_mode=True
+        )
+
+        assert result.test_id == "Test with variables"
+        # Test ran without errors
+        assert result.status in ("pass", "fail")
+
+    @pytest.mark.asyncio
+    async def test_run_test_empty_dynamic_variables(self, sample_retell_config):
+        from voicetest import api
+        from voicetest.models.test_case import RunOptions, TestCase
+
+        graph = await api.import_agent(sample_retell_config)
+        test_case = TestCase(
+            name="Test without variables",
+            user_prompt="Hello, how are you?",
+            dynamic_variables={},
+        )
+
+        result = await api.run_test(
+            graph, test_case, options=RunOptions(max_turns=2), _mock_mode=True
+        )
+
+        assert result.test_id == "Test without variables"
+        assert result.status in ("pass", "fail")
