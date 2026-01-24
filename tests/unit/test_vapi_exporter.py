@@ -37,7 +37,7 @@ class TestVapiExporterBasic:
         assert result["model"]["messages"][0]["content"] == "You are a helpful assistant."
 
     def test_export_with_tools(self):
-        """Export graph with tools."""
+        """Export graph with tools (tools go inside model config for VAPI)."""
         graph = AgentGraph(
             nodes={
                 "main": AgentNode(
@@ -64,12 +64,13 @@ class TestVapiExporterBasic:
 
         result = export_vapi_assistant(graph)
 
-        assert "tools" in result
-        assert len(result["tools"]) == 1
-        assert result["tools"][0]["type"] == "function"
-        assert result["tools"][0]["function"]["name"] == "get_weather"
-        assert result["tools"][0]["function"]["description"] == "Get current weather"
-        assert "parameters" in result["tools"][0]["function"]
+        # Tools are inside model config for VAPI
+        assert "tools" in result["model"]
+        assert len(result["model"]["tools"]) == 1
+        assert result["model"]["tools"][0]["type"] == "function"
+        assert result["model"]["tools"][0]["function"]["name"] == "get_weather"
+        assert result["model"]["tools"][0]["function"]["description"] == "Get current weather"
+        assert "parameters" in result["model"]["tools"][0]["function"]
 
     def test_export_preserves_metadata(self):
         """Export preserves source metadata."""
@@ -316,8 +317,10 @@ class TestVapiRoundTrip:
         assert exported["model"]["provider"] == sample_vapi_assistant["model"]["provider"]
         assert exported["model"]["model"] == sample_vapi_assistant["model"]["model"]
 
-        # Tools count matches
-        assert len(exported.get("tools", [])) == len(sample_vapi_assistant.get("tools", []))
+        # Tools count matches (tools are inside model config for VAPI)
+        exported_tools = exported["model"].get("tools", [])
+        original_tools = sample_vapi_assistant.get("tools", [])
+        assert len(exported_tools) == len(original_tools)
 
     def test_roundtrip_preserves_tools(self, sample_vapi_assistant: dict):
         """Tool definitions are preserved through round trip."""
@@ -330,7 +333,9 @@ class TestVapiRoundTrip:
             for t in sample_vapi_assistant.get("tools", [])
             if t.get("function")
         }
-        exported_tool_names = {t["function"]["name"] for t in exported.get("tools", [])}
+        # Tools are inside model config for VAPI
+        exported_tools = exported["model"].get("tools", [])
+        exported_tool_names = {t["function"]["name"] for t in exported_tools}
 
         assert original_tool_names == exported_tool_names
 

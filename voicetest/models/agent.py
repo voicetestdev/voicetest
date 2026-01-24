@@ -36,8 +36,9 @@ class ToolDefinition(BaseModel):
 
     name: str
     description: str
-    parameters: dict[str, Any]
+    parameters: dict[str, Any] = Field(default_factory=dict)
     type: str = "custom"
+    url: str | None = None
 
 
 class AgentNode(BaseModel):

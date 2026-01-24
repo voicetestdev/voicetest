@@ -72,9 +72,9 @@ def _export_assistant(graph: AgentGraph) -> dict[str, Any]:
     if graph.source_metadata and "first_message" in graph.source_metadata:
         result["firstMessage"] = graph.source_metadata["first_message"]
 
-    # Collect tools from the node
+    # Collect tools from the node - tools go inside model config for VAPI
     if node and node.tools:
-        result["tools"] = [_convert_tool(t) for t in node.tools]
+        model_config["tools"] = [_convert_tool(t) for t in node.tools]
 
     return result
 

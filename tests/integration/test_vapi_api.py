@@ -4,9 +4,9 @@ These tests interact with the real VAPI API and require VAPI_API_KEY.
 Run with: uv run pytest tests/integration/test_vapi_api.py -v
 """
 
+import json
 import os
 
-import httpx
 import pytest
 
 from voicetest.platforms import vapi
@@ -27,17 +27,7 @@ def client():
 
 
 @pytest.fixture
-def api_headers():
-    """Get API headers for direct HTTP calls."""
-    api_key = os.environ["VAPI_API_KEY"]
-    return {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-
-@pytest.fixture
-async def test_assistant(client, api_headers):
+async def test_assistant(client):
     """Create a test assistant and clean up after."""
     from voicetest import api
     from voicetest.demo import get_demo_agent
@@ -45,22 +35,12 @@ async def test_assistant(client, api_headers):
     demo_agent = get_demo_agent()
     graph = await api.import_agent(demo_agent)
     exported_json = await api.export_agent(graph, format="vapi-assistant")
-
-    import json
-
     exported = json.loads(exported_json)
+
     exported["name"] = "voicetest-integration-test"
 
-    async with httpx.AsyncClient() as http:
-        response = await http.post(
-            "https://api.vapi.ai/assistant",
-            headers=api_headers,
-            json=exported,
-            timeout=30.0,
-        )
-        assert response.status_code == 201, f"Failed to create test assistant: {response.text}"
-        created = response.json()
-        assistant_id = created["id"]
+    assistant = client.assistants.create(**exported)
+    assistant_id = assistant.id
 
     yield assistant_id
 
@@ -110,8 +90,6 @@ class TestVAPIImportExportRoundtrip:
     @pytest.mark.asyncio
     async def test_export_to_vapi_assistant_format(self, client, test_assistant):
         """Test exporting voicetest graph to VAPI assistant format."""
-        import json
-
         from voicetest import api
 
         assistant = client.assistants.get(test_assistant)
@@ -126,8 +104,6 @@ class TestVAPIImportExportRoundtrip:
     @pytest.mark.asyncio
     async def test_export_to_vapi_squad_format(self, client, test_assistant):
         """Test exporting voicetest graph to VAPI squad format."""
-        import json
-
         from voicetest import api
 
         assistant = client.assistants.get(test_assistant)
@@ -144,7 +120,7 @@ class TestVAPIExportValidation:
     """Tests that validate exported formats are accepted by the VAPI API."""
 
     @pytest.mark.asyncio
-    async def test_exported_assistant_accepted_by_vapi_api(self, api_headers):
+    async def test_exported_assistant_accepted_by_vapi_api(self, client):
         """Test that our VAPI assistant export is accepted by the VAPI API.
 
         This is the key validation test - it creates a real assistant in VAPI
@@ -152,11 +128,8 @@ class TestVAPIExportValidation:
         This catches schema mismatches between our export and what VAPI
         actually accepts.
         """
-        import json
-
         from voicetest import api
         from voicetest.demo import get_demo_agent
-        from voicetest.platforms import vapi as vapi_platform
 
         demo_agent = get_demo_agent()
         graph = await api.import_agent(demo_agent)
@@ -165,25 +138,12 @@ class TestVAPIExportValidation:
 
         exported["name"] = "voicetest-ci-validation"
 
-        created_assistant_id = None
+        created_assistant = None
         try:
-            async with httpx.AsyncClient() as http:
-                response = await http.post(
-                    "https://api.vapi.ai/assistant",
-                    headers=api_headers,
-                    json=exported,
-                    timeout=30.0,
-                )
-
-                assert (
-                    response.status_code == 201
-                ), f"VAPI API rejected our export: {response.status_code} {response.text}"
-
-                created = response.json()
-                created_assistant_id = created.get("id")
-                assert created_assistant_id is not None
+            created_assistant = client.assistants.create(**exported)
+            assert created_assistant.id is not None
+            assert created_assistant.model is not None
 
         finally:
-            if created_assistant_id:
-                client = vapi_platform.get_client()
-                client.assistants.delete(created_assistant_id)
+            if created_assistant:
+                client.assistants.delete(created_assistant.id)

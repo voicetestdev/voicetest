@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import (
@@ -97,6 +97,21 @@ class RetellConfig(BaseModel):
     start_speaker: str | None = None
     knowledge_base_ids: list[str] = []
     default_dynamic_variables: dict[str, str] = {}
+
+    @field_validator("tools", mode="before")
+    @classmethod
+    def tools_default(cls, v):
+        return v if v is not None else []
+
+    @field_validator("knowledge_base_ids", mode="before")
+    @classmethod
+    def kb_ids_default(cls, v):
+        return v if v is not None else []
+
+    @field_validator("default_dynamic_variables", mode="before")
+    @classmethod
+    def dyn_vars_default(cls, v):
+        return v if v is not None else {}
 
 
 class RetellImporter:
@@ -200,4 +215,5 @@ class RetellImporter:
             description=tool.description,
             parameters=tool.parameters or {},
             type=tool.type,
+            url=tool.url,
         )

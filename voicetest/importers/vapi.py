@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import (
@@ -70,6 +70,11 @@ class VapiModel(BaseModel):
     max_tokens: int | None = Field(default=None, alias="maxTokens")
     tools: list[VapiTool] = Field(default_factory=list)
     tool_ids: list[str] = Field(default_factory=list, alias="toolIds")
+
+    @field_validator("tools", "tool_ids", "messages", mode="before")
+    @classmethod
+    def list_default(cls, v):
+        return v if v is not None else []
 
 
 class VapiVoice(BaseModel):

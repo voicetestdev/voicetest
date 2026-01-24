@@ -66,10 +66,12 @@ def graph_with_tools() -> AgentGraph:
             },
             "required": ["user_id"],
         },
+        url="https://api.example.com/lookup",
     )
-    end_call_tool = ToolDefinition(
-        name="end_call",
-        description="End the call",
+    transfer_tool = ToolDefinition(
+        name="transfer_to_nurse",
+        description="Transfer the call",
+        type="transfer_call",
         parameters={},
     )
     return AgentGraph(
@@ -77,7 +79,7 @@ def graph_with_tools() -> AgentGraph:
             "greeting": AgentNode(
                 id="greeting",
                 instructions="Greet the user.",
-                tools=[end_call_tool],
+                tools=[transfer_tool],
                 transitions=[
                     Transition(
                         target_node_id="lookup",
@@ -91,7 +93,7 @@ def graph_with_tools() -> AgentGraph:
             "lookup": AgentNode(
                 id="lookup",
                 instructions="Look up the user's account.",
-                tools=[lookup_tool, end_call_tool],
+                tools=[lookup_tool, transfer_tool],
                 transitions=[],
             ),
         },
@@ -199,14 +201,14 @@ class TestRetellCFExporter:
         assert "tools" in result
         tool_names = [t["name"] for t in result["tools"]]
         assert "lookup_user" in tool_names
-        assert "end_call" in tool_names
+        assert "transfer_to_nurse" in tool_names
 
     def test_export_tools_deduplicated(self, graph_with_tools):
         from voicetest.exporters.retell_cf import export_retell_cf
 
         result = export_retell_cf(graph_with_tools)
         tool_names = [t["name"] for t in result["tools"]]
-        assert tool_names.count("end_call") == 1
+        assert tool_names.count("transfer_to_nurse") == 1
 
     def test_export_tool_format(self, graph_with_tools):
         from voicetest.exporters.retell_cf import export_retell_cf
@@ -278,10 +280,11 @@ class TestRetellCFExporter:
 
         assert len(exported["nodes"]) == 11
         assert exported["conversation_flow_id"] == "cf_healthcare_001"
-        assert len(exported["tools"]) == 6
+        # 4 custom tools with URLs + 1 transfer_call (end_call is built-in and skipped)
+        assert len(exported["tools"]) == 5
 
     def test_tool_types_preserved(self, sample_retell_config_complex):
-        """Test that tool types (custom, end_call, transfer_call) are preserved."""
+        """Test that tool types are preserved (built-in actions like end_call are skipped)."""
         from voicetest.exporters.retell_cf import export_retell_cf
         from voicetest.importers.retell import RetellImporter
 
@@ -290,6 +293,7 @@ class TestRetellCFExporter:
         exported = export_retell_cf(graph)
 
         tool_types = {t["name"]: t["type"] for t in exported["tools"]}
-        assert tool_types["end_call"] == "end_call"
+        # end_call is skipped (built-in action handled via node type)
+        assert "end_call" not in tool_types
         assert tool_types["transfer_to_nurse"] == "transfer_call"
         assert tool_types["lookup_patient"] == "custom"
