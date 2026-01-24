@@ -63,11 +63,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
       - name: Set up Python
         run: uv python install 3.12
+
+      - name: Build frontend
+        run: |
+          cd web
+          mise exec -- bun install
+          mise exec -- bun run build
 
       - name: Install dependencies with platform extras
         run: uv sync --frozen --all-extras
@@ -75,9 +84,7 @@ jobs:
       - name: Run platform integration tests
         env:
           RETELL_API_KEY: ${{ secrets.RETELL_API_KEY }}
-          RETELL_TEST_FLOW_ID: ${{ secrets.RETELL_TEST_FLOW_ID }}
           VAPI_API_KEY: ${{ secrets.VAPI_API_KEY }}
-          VAPI_TEST_ASSISTANT_ID: ${{ secrets.VAPI_TEST_ASSISTANT_ID }}
         run: uv run pytest tests/integration/test_retell_api.py tests/integration/test_vapi_api.py -v --tb=short
 
   build:
@@ -109,3 +116,34 @@ jobs:
         run: |
           ls -la dist/
           uv run python -m zipfile -l dist/*.whl | head -20
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Build frontend
+        run: |
+          cd web
+          mise exec -- bun install
+          mise exec -- bun run build
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Run smoke test
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: uv run voicetest smoke-test --max-turns 2

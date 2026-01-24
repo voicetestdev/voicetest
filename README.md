@@ -234,6 +234,34 @@ Example use cases:
 - Brand voice consistency across all conversations
 - Safety guardrails and content policy adherence
 
+## CI/CD Integration
+
+Run voice agent tests in CI to catch regressions before they reach production. Key benefits:
+
+- **Bring your own LLM keys** - Use OpenRouter, OpenAI, etc. directly instead of paying per-minute through Retell/VAPI's built-in LLM interfaces
+- **Test on prompt changes** - Automatically validate agent behavior when prompts or configs change
+- **Track quality over time** - Ensure consistent agent performance across releases
+
+Example GitHub Actions workflow (see [docs/examples/ci-workflow.yml](docs/examples/ci-workflow.yml)):
+
+```yaml
+name: Voice Agent Tests
+on:
+  push:
+    paths: ["agents/**"]  # Trigger on agent config or test changes
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv tool install voicetest
+      - run: voicetest run --agent agents/receptionist.json --tests agents/tests.json --all
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+```
+
 ## LLM Configuration
 
 Configure different models for each role using [LiteLLM format](https://docs.litellm.ai/docs/providers):

@@ -113,6 +113,10 @@ class TestRunContext:
         self.graph = await load_agent(self.agent_path, self.source)
         self.test_cases = load_test_cases(self.tests_path)
 
+    def filter_tests(self, test_names: list[str]) -> None:
+        """Filter test cases to only include those with matching names."""
+        self.test_cases = [tc for tc in self.test_cases if tc.name in test_names]
+
     async def run_all(self) -> TestRun:
         """Run all tests at once."""
         if not self.graph:

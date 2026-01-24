@@ -1,0 +1,55 @@
+# Example GitHub Actions workflow for running voicetest in CI
+#
+# Benefits of running voice agent tests in CI:
+# - Use your own LLM API keys (OpenRouter, OpenAI, etc.) - much cheaper than
+#   paying per-minute through Retell/VAPI's built-in LLM interfaces
+# - Automatically test on every prompt or config change
+# - Catch regressions before they reach production
+# - Track test results over time
+#
+# Setup:
+# 1. Copy this file to .github/workflows/voicetest.yml in your repo
+# 2. Add your LLM API key as a repository secret (e.g., OPENROUTER_API_KEY)
+# 3. Export your agent config from Retell/VAPI and commit to agents/
+# 4. Create test cases and commit to agents/tests/
+#
+# Example repo structure:
+#   agents/
+#     receptionist.json      # Exported from Retell/VAPI
+#     receptionist-tests.json # Test cases for this agent
+
+name: Voice Agent Tests
+
+on:
+  push:
+    paths:
+      - "agents/**"
+  pull_request:
+    paths:
+      - "agents/**"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install voicetest
+        run: uv tool install voicetest
+
+      - name: Run voice agent tests
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          voicetest run \
+            --agent agents/receptionist.json \
+            --tests agents/receptionist-tests.json \
+            --all

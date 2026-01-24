@@ -77,6 +77,9 @@ def main(ctx):
 )
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 @click.option("--interactive", "-i", is_flag=True, help="Launch interactive TUI")
+@click.option("--all", "run_all", is_flag=True, help="Run all tests")
+@click.option("--test", "test_names", multiple=True, help="Run specific test(s) by name")
+@click.option("--max-turns", type=int, default=None, help="Maximum conversation turns")
 def run(
     agent: Path,
     tests: Path,
@@ -84,12 +87,15 @@ def run(
     output: Path | None,
     verbose: bool,
     interactive: bool,
+    run_all: bool,
+    test_names: tuple[str, ...],
+    max_turns: int | None,
 ):
     """Run tests against an agent definition."""
     if interactive:
         _run_tui(agent, tests, source, verbose)
     else:
-        asyncio.run(_run_cli(agent, tests, source, output, verbose))
+        asyncio.run(_run_cli(agent, tests, source, output, verbose, run_all, test_names, max_turns))
 
 
 def _run_tui(
@@ -127,6 +133,9 @@ async def _run_cli(
     source: str | None,
     output: Path | None,
     verbose: bool,
+    run_all: bool,
+    test_names: tuple[str, ...],
+    max_turns: int | None,
 ) -> None:
     """Run tests in CLI mode."""
     from voicetest.settings import load_settings
@@ -137,7 +146,7 @@ async def _run_cli(
         agent_model=settings.models.agent,
         simulator_model=settings.models.simulator,
         judge_model=settings.models.judge,
-        max_turns=settings.run.max_turns,
+        max_turns=max_turns if max_turns is not None else settings.run.max_turns,
         verbose=verbose or settings.run.verbose,
     )
     ctx = TestRunContext(
@@ -145,7 +154,6 @@ async def _run_cli(
         tests_path=tests,
         source=source,
         options=options,
-        mock_mode=True,  # For now, use mock mode
     )
 
     # Load
@@ -155,6 +163,13 @@ async def _run_cli(
     console.print(f"  Nodes: {len(ctx.graph.nodes)}")
     console.print(f"  Entry: {ctx.graph.entry_node_id}")
     console.print()
+
+    # Filter tests if specific ones requested
+    if test_names:
+        ctx.filter_tests(list(test_names))
+    elif not run_all:
+        console.print("[yellow]Warning: No tests selected. Use --all or --test NAME[/yellow]")
+        return
 
     # Run
     console.print(f"[bold]Running {ctx.total_tests} tests...[/bold]")
@@ -356,6 +371,62 @@ def demo(serve: bool, host: str, port: int):
 
         app = VoicetestShell(agent_path=agent_path, tests_path=tests_path)
         app.run()
+
+
+@main.command("smoke-test")
+@click.option("--max-turns", type=int, default=2, help="Maximum conversation turns")
+def smoke_test(max_turns: int):
+    """Run a quick smoke test using bundled demo data.
+
+    Runs 1 test with limited turns to verify voicetest works.
+    Useful for CI pipelines.
+
+    Example:
+        voicetest smoke-test
+    """
+    asyncio.run(_smoke_test(max_turns))
+
+
+async def _smoke_test(max_turns: int) -> None:
+    """Run smoke test with bundled demo data."""
+    from voicetest.demo import get_demo_agent, get_demo_tests
+    from voicetest.settings import load_settings
+
+    settings = load_settings()
+    settings.apply_env()
+
+    console.print("[bold]Running smoke test...[/bold]")
+
+    demo_agent = get_demo_agent()
+    demo_tests = get_demo_tests()
+
+    # Use first test only
+    first_test = demo_tests[0]
+    console.print(f"  Test: {first_test['name']}")
+    console.print(f"  Max turns: {max_turns}")
+    console.print()
+
+    graph = await api.import_agent(demo_agent)
+
+    from voicetest.models.test_case import TestCase
+
+    test_case = TestCase.model_validate(first_test)
+    options = RunOptions(
+        agent_model=settings.models.agent,
+        simulator_model=settings.models.simulator,
+        judge_model=settings.models.judge,
+        max_turns=max_turns,
+    )
+
+    result = await api.run_test(graph, test_case, options)
+
+    # Display result
+    status_color = "green" if result.status == "pass" else "red"
+    console.print(f"[{status_color}]Status: {result.status.upper()}[/{status_color}]")
+    console.print(f"Turns: {len(result.transcript)}")
+
+    if result.status == "fail":
+        raise SystemExit(1)
 
 
 @main.command()
