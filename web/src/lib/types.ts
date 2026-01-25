@@ -128,6 +128,7 @@ export interface Settings {
     max_turns: number;
     verbose: boolean;
     flow_judge: boolean;
+    streaming: boolean;
   };
   env: Record<string, string>;
 }

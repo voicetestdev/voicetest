@@ -13,11 +13,21 @@ from voicetest.engine.agent_gen import GeneratedAgent, generate_agent_classes
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message, ToolCall
 from voicetest.models.test_case import RunOptions
-from voicetest.utils import substitute_variables
+from voicetest.utils import DSPyAdapterMixin, substitute_variables
 
 
 # Callback type for turn updates: receives transcript after each turn
 OnTurnCallback = Callable[[list[Message]], Awaitable[None] | None]
+
+# Callback type for token updates: receives token string and source ("agent" or "user")
+OnTokenCallback = Callable[[str, str], Awaitable[None] | None]
+
+
+async def _invoke_callback(callback: Callable, *args) -> None:
+    """Invoke callback, handling both sync and async."""
+    result = callback(*args)
+    if result is not None and hasattr(result, "__await__"):
+        await result
 
 
 @dataclass
@@ -44,7 +54,7 @@ class NodeTracker:
         self.current_node = node_id
 
 
-class ConversationRunner:
+class ConversationRunner(DSPyAdapterMixin):
     """Runs simulated conversations.
 
     This class orchestrates the conversation loop, managing:
@@ -59,18 +69,21 @@ class ConversationRunner:
         options: RunOptions | None = None,
         mock_mode: bool = False,
         dynamic_variables: dict | None = None,
+        adapter: dspy.Adapter | None = None,
     ):
         self.graph = graph
         self.options = options or RunOptions()
         self.agent_classes = generate_agent_classes(graph)
         self._mock_mode = mock_mode
         self._dynamic_variables = dynamic_variables or {}
+        self._adapter = adapter
 
     async def run(
         self,
         test_case: "TestCase",  # noqa: F821 - Forward reference
         user_simulator: "UserSimulator",  # noqa: F821 - Forward reference
         on_turn: OnTurnCallback | None = None,
+        on_token: OnTokenCallback | None = None,
     ) -> ConversationState:
         """Run a complete conversation.
 
@@ -83,6 +96,7 @@ class ConversationRunner:
             test_case: The test case defining constraints.
             user_simulator: The user persona simulator.
             on_turn: Optional callback invoked after each turn with current transcript.
+            on_token: Optional callback invoked for each token during streaming.
 
         Returns:
             ConversationState with transcript and tracking data.
@@ -96,7 +110,10 @@ class ConversationRunner:
 
         for _turn in range(self.options.max_turns):
             # Get simulated user input
-            sim_response = await user_simulator.generate(state.transcript)
+            sim_response = await user_simulator.generate(
+                state.transcript,
+                on_token=on_token if self.options.streaming else None,
+            )
 
             if sim_response.should_end:
                 state.end_reason = "user_ended"
@@ -124,6 +141,7 @@ class ConversationRunner:
                 sim_response.message,
                 state,
                 node_tracker,
+                on_token=on_token if self.options.streaming else None,
             )
 
             if response:
@@ -158,10 +176,18 @@ class ConversationRunner:
         user_message: str,
         state: ConversationState,
         node_tracker: NodeTracker,
+        on_token: OnTokenCallback | None = None,
     ) -> tuple[str, GeneratedAgent | None]:
         """Process a single conversation turn.
 
         Uses DSPy to generate agent responses and handle transitions.
+
+        Args:
+            agent: The current agent instance.
+            user_message: The user's message to respond to.
+            state: Current conversation state.
+            node_tracker: Tracks visited nodes.
+            on_token: Optional callback for streaming tokens.
 
         Returns:
             Tuple of (response text, new agent if transition occurred).
@@ -193,17 +219,32 @@ class ConversationRunner:
         agent_instructions = substitute_variables(agent.instructions, self._dynamic_variables)
         conversation_history = self._format_transcript(state.transcript)
 
-        def run_predictor():
-            with dspy.context(lm=lm):
-                predictor = dspy.Predict(AgentResponseSignature)
-                return predictor(
-                    agent_instructions=agent_instructions,
-                    available_transitions=tools_desc,
-                    conversation_history=conversation_history,
-                    user_message=user_message,
-                )
+        if on_token:
+            # Streaming mode: use streamify to get tokens as they're generated
+            result = await self._process_turn_streaming(
+                lm,
+                AgentResponseSignature,
+                agent_instructions,
+                tools_desc,
+                conversation_history,
+                user_message,
+                on_token,
+            )
+        else:
+            # Non-streaming mode: blocking call in thread pool
+            ctx = self._dspy_context(lm)
 
-        result = await asyncio.to_thread(run_predictor)
+            def run_predictor():
+                with ctx:
+                    predictor = dspy.Predict(AgentResponseSignature)
+                    return predictor(
+                        agent_instructions=agent_instructions,
+                        available_transitions=tools_desc,
+                        conversation_history=conversation_history,
+                        user_message=user_message,
+                    )
+
+            result = await asyncio.to_thread(run_predictor)
 
         # Handle transition
         new_agent = None
@@ -225,6 +266,54 @@ class ConversationRunner:
                     break
 
         return result.response, new_agent
+
+    async def _process_turn_streaming(
+        self,
+        lm: dspy.LM,
+        signature_class: type,
+        agent_instructions: str,
+        tools_desc: str,
+        conversation_history: str,
+        user_message: str,
+        on_token: OnTokenCallback,
+    ) -> dspy.Prediction:
+        """Process turn with streaming, yielding tokens via callback.
+
+        Uses DSPy's streamify to get tokens as they're generated.
+        """
+        from dspy.streaming import StreamListener, streamify
+
+        predictor = dspy.Predict(signature_class)
+        stream_listeners = [StreamListener(signature_field_name="response")]
+
+        streaming_predictor = streamify(
+            predictor,
+            stream_listeners=stream_listeners,
+            is_async_program=False,
+        )
+
+        result = None
+        with self._dspy_context(lm):
+            async for chunk in streaming_predictor(
+                agent_instructions=agent_instructions,
+                available_transitions=tools_desc,
+                conversation_history=conversation_history,
+                user_message=user_message,
+            ):
+                if isinstance(chunk, dspy.Prediction):
+                    result = chunk
+                elif (
+                    hasattr(chunk, "chunk")
+                    and hasattr(chunk, "signature_field_name")
+                    and chunk.signature_field_name == "response"
+                ):
+                    # StreamResponse with token data for response field
+                    await _invoke_callback(on_token, chunk.chunk, "agent")
+
+        if result is None:
+            raise RuntimeError("Streaming predictor did not return a Prediction")
+
+        return result
 
     def _format_tools(self, agent: GeneratedAgent) -> str:
         """Format available transition tools for LLM."""

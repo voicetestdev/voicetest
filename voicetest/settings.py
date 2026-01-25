@@ -27,6 +27,7 @@ class RunSettings(BaseModel):
     max_turns: int = Field(default=20, description="Maximum conversation turns")
     verbose: bool = Field(default=False, description="Verbose output")
     flow_judge: bool = Field(default=False, description="Run flow judge to validate transitions")
+    streaming: bool = Field(default=False, description="Stream tokens as they are generated")
 
 
 class Settings(BaseModel):
@@ -83,6 +84,7 @@ def _to_toml(settings: Settings) -> str:
     lines.append(f"max_turns = {settings.run.max_turns}")
     lines.append(f"verbose = {str(settings.run.verbose).lower()}")
     lines.append(f"flow_judge = {str(settings.run.flow_judge).lower()}")
+    lines.append(f"streaming = {str(settings.run.streaming).lower()}")
     lines.append("")
 
     if settings.env:

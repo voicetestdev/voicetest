@@ -13,6 +13,7 @@
       max_turns: 20,
       verbose: false,
       flow_judge: false,
+      streaming: false,
     },
     env: {},
   });
@@ -179,6 +180,17 @@
         />
         <label for="flow-judge">Flow judge</label>
         <span class="hint checkbox-hint">LLM evaluates if node transitions were logical</span>
+      </div>
+
+      <div class="form-group checkbox">
+        <input
+          id="streaming"
+          type="checkbox"
+          bind:checked={localSettings.run.streaming}
+          onchange={saveSettings}
+        />
+        <label for="streaming">Streaming</label>
+        <span class="hint checkbox-hint">Stream tokens as they are generated (experimental)</span>
       </div>
     </section>
 

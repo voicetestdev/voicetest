@@ -23,6 +23,7 @@ class RunOptions(BaseModel):
     timeout_seconds: float = 60.0
     verbose: bool = False
     flow_judge: bool = False
+    streaming: bool = False
 
     # LLM model configuration
     agent_model: str = "openai/gpt-4o-mini"

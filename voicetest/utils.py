@@ -3,6 +3,18 @@
 import re
 from typing import Any
 
+import dspy
+
+
+class DSPyAdapterMixin:
+    """Mixin providing DSPy adapter context management."""
+
+    _adapter: dspy.Adapter | None = None
+
+    def _dspy_context(self, lm):
+        """Get DSPy context with configured adapter."""
+        return dspy.context(lm=lm, adapter=self._adapter)
+
 
 def substitute_variables(text: str, variables: dict[str, Any]) -> str:
     """Substitute {{var}} placeholders in text with values from variables dict.

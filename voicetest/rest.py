@@ -353,8 +353,8 @@ async def export_agent(request: ExportRequest) -> dict[str, str]:
 def _build_run_options(settings: Settings, request_options: RunOptions | None) -> RunOptions:
     """Build RunOptions from settings, with request options for run params only.
 
-    Models always come from settings. Run parameters (max_turns, timeout, verbose, flow_judge)
-    come from request if provided, otherwise from settings.
+    Models always come from settings. Run parameters (max_turns, timeout, verbose, flow_judge,
+    streaming) come from request if provided, otherwise from settings.
     """
     return RunOptions(
         agent_model=settings.models.agent,
@@ -366,6 +366,7 @@ def _build_run_options(settings: Settings, request_options: RunOptions | None) -
         flow_judge=(
             (request_options.flow_judge if request_options else False) or settings.run.flow_judge
         ),
+        streaming=settings.run.streaming,
     )
 
 
@@ -880,9 +881,27 @@ async def _execute_run(
 
                 return on_turn
 
+            def make_on_token(rid: str):
+                async def on_token(token: str, source: str) -> None:
+                    await _broadcast_run_update(
+                        run_id,
+                        {
+                            "type": "token_update",
+                            "result_id": rid,
+                            "token": token,
+                            "source": source,
+                        },
+                    )
+
+                return on_token
+
             try:
                 result = await api.run_test(
-                    graph, test_case, options=options, on_turn=await make_on_turn(result_id)
+                    graph,
+                    test_case,
+                    options=options,
+                    on_turn=await make_on_turn(result_id),
+                    on_token=make_on_token(result_id) if options.streaming else None,
                 )
                 run_repo.complete_result(result_id, result)
                 await _broadcast_run_update(

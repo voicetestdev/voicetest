@@ -88,9 +88,10 @@ jobs:
         env:
           RETELL_API_KEY: ${{ secrets.RETELL_API_KEY }}
           VAPI_API_KEY: ${{ secrets.VAPI_API_KEY }}
+          BLAND_API_KEY: ${{ secrets.BLAND_API_KEY }}
           LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
           LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
-        run: uv run pytest tests/integration/test_retell_api.py tests/integration/test_vapi_api.py tests/integration/test_livekit_api.py -v --tb=short
+        run: uv run pytest tests/integration/test_platforms.py tests/integration/test_livekit_api.py -v --tb=short
 
   build:
     runs-on: ubuntu-latest

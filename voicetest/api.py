@@ -8,7 +8,6 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 
-import dspy
 from dspy.adapters.baml_adapter import BAMLAdapter
 
 from voicetest.importers.base import ImporterInfo
@@ -26,11 +25,11 @@ from voicetest.models.test_case import RunOptions, TestCase
 from voicetest.utils import substitute_variables
 
 
-# Configure DSPy to use BAML adapter for better structured output reliability
-dspy.configure(adapter=BAMLAdapter())
-
 # Callback type for turn updates
 OnTurnCallback = Callable[[list[Message]], Awaitable[None] | None]
+
+# Callback type for token updates: receives token string and source ("agent" or "user")
+OnTokenCallback = Callable[[str, str], Awaitable[None] | None]
 
 
 async def import_agent(
@@ -167,6 +166,7 @@ async def run_test(
     metrics_config: MetricsConfig | None = None,
     _mock_mode: bool = False,
     on_turn: OnTurnCallback | None = None,
+    on_token: OnTokenCallback | None = None,
 ) -> TestResult:
     """Run a single test case against an agent.
 
@@ -177,6 +177,7 @@ async def run_test(
         metrics_config: Optional metrics configuration with threshold and global metrics.
         _mock_mode: If True, use mock responses (for testing).
         on_turn: Optional callback invoked after each turn with current transcript.
+        on_token: Optional callback invoked for each token during streaming.
 
     Returns:
         TestResult with pass/fail status, transcript, and metrics.
@@ -222,15 +223,18 @@ async def run_test(
     start_time = datetime.now()
 
     try:
+        # BAMLAdapter provides better structured output but doesn't support streaming
+        adapter = None if options.streaming else BAMLAdapter()
+
         # Substitute dynamic variables
         dynamic_vars = test_case.dynamic_variables
         user_prompt = substitute_variables(test_case.user_prompt, dynamic_vars)
 
         # Setup components
         runner = ConversationRunner(
-            graph, options, mock_mode=_mock_mode, dynamic_variables=dynamic_vars
+            graph, options, mock_mode=_mock_mode, dynamic_variables=dynamic_vars, adapter=adapter
         )
-        simulator = UserSimulator(user_prompt, options.simulator_model)
+        simulator = UserSimulator(user_prompt, options.simulator_model, adapter=adapter)
         metric_judge = MetricJudge(options.judge_model)
         rule_judge = RuleJudge()
         flow_judge = FlowJudge(options.judge_model)
@@ -292,7 +296,7 @@ async def run_test(
             )
 
         # Run conversation
-        state = await runner.run(test_case, simulator, on_turn=on_turn)
+        state = await runner.run(test_case, simulator, on_turn=on_turn, on_token=on_token)
 
         # Evaluate based on test type
         test_type = test_case.effective_type
@@ -354,6 +358,19 @@ async def run_test(
             model_overrides=overrides,
         )
 
+    except BaseExceptionGroup as eg:
+        # DSPy streamify wraps exceptions in ExceptionGroup - unwrap to surface real error
+        duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+        real_error = eg.exceptions[0] if eg.exceptions else eg
+        return TestResult(
+            test_id=test_case.name,
+            test_name=test_case.name,
+            status="error",
+            duration_ms=duration_ms,
+            error_message=str(real_error),
+            models_used=models_used,
+            model_overrides=overrides,
+        )
     except Exception as e:
         duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
         return TestResult(
