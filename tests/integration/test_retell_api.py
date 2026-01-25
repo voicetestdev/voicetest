@@ -1,15 +1,23 @@
-"""Integration tests for Retell API.
+"""Integration tests for Retell REST endpoints.
 
-These tests interact with the real Retell API and require RETELL_API_KEY.
+These tests verify our REST endpoints work correctly with the real Retell API.
+Requires RETELL_API_KEY to be set (in environment or .voicetest/settings.toml).
+
 Run with: uv run pytest tests/integration/test_retell_api.py -v
 """
 
-import json
 import os
 
+from fastapi.testclient import TestClient
 import pytest
 
-from voicetest.platforms import retell
+from voicetest.rest import app
+from voicetest.settings import load_settings
+
+
+# Load settings and apply to environment before skip check
+_settings = load_settings()
+_settings.apply_env()
 
 
 def retell_available() -> bool:
@@ -22,136 +30,192 @@ pytestmark = pytest.mark.skipif(not retell_available(), reason="RETELL_API_KEY n
 
 @pytest.fixture
 def client():
-    """Get a configured Retell client."""
-    return retell.get_client()
+    """Create a test client."""
+    return TestClient(app)
 
 
 @pytest.fixture
-async def test_flow(client):
-    """Create a test conversation flow and clean up after."""
-    from voicetest import api
-    from voicetest.demo import get_demo_agent
+def sample_graph():
+    """Sample agent graph for testing exports."""
+    return {
+        "source_type": "custom",
+        "entry_node_id": "greeting",
+        "nodes": {
+            "greeting": {
+                "id": "greeting",
+                "instructions": "Greet the user warmly and ask how you can help.",
+                "transitions": [],
+                "tools": [],
+                "metadata": {},
+            }
+        },
+        "source_metadata": {},
+    }
 
-    demo_agent = get_demo_agent()
-    graph = await api.import_agent(demo_agent)
-    exported_json = await api.export_agent(graph, format="retell-cf")
-    exported = json.loads(exported_json)
 
-    flow = client.conversation_flow.create(**exported)
-    flow_id = flow.conversation_flow_id
+@pytest.fixture
+def created_flow(client, sample_graph):
+    """Create a test flow in Retell and clean up after."""
+    response = client.post(
+        "/api/platforms/retell/export",
+        json={"graph": sample_graph, "name": "voicetest-integration-test"},
+    )
+    assert response.status_code == 200
+    flow_id = response.json()["id"]
 
     yield flow_id
 
-    client.conversation_flow.delete(flow_id)
+    from voicetest.platforms.retell import get_client
+
+    get_client().conversation_flow.delete(flow_id)
 
 
-class TestRetellConversationFlows:
-    """Tests for Retell conversation flow API."""
+class TestRetellPlatformStatus:
+    """Tests for GET /platforms/retell/status."""
 
-    def test_list_conversation_flows(self, client):
-        """Test listing conversation flows."""
-        flows = list(client.conversation_flow.list())
+    def test_status_returns_configured_true(self, client):
+        """Status endpoint returns configured=true when API key is set."""
+        response = client.get("/api/platforms/retell/status")
 
-        assert isinstance(flows, list)
-
-    @pytest.mark.asyncio
-    async def test_get_conversation_flow(self, client, test_flow):
-        """Test retrieving a specific conversation flow."""
-        flow = client.conversation_flow.retrieve(test_flow)
-
-        assert flow.conversation_flow_id == test_flow
-        assert flow.start_node_id is not None
-        assert flow.nodes is not None
-
-    @pytest.mark.asyncio
-    async def test_conversation_flow_has_nodes(self, client, test_flow):
-        """Test that retrieved flow has node structure."""
-        flow = client.conversation_flow.retrieve(test_flow)
-
-        assert len(flow.nodes) > 0
-        for node in flow.nodes:
-            assert node.id is not None
-            assert node.instruction is not None
+        assert response.status_code == 200
+        data = response.json()
+        assert data["platform"] == "retell"
+        assert data["configured"] is True
 
 
-class TestRetellImportExportRoundtrip:
-    """Tests for importing from and exporting to Retell."""
+class TestRetellListAgents:
+    """Tests for GET /platforms/retell/agents."""
 
-    @pytest.mark.asyncio
-    async def test_import_conversation_flow(self, client, test_flow):
-        """Test importing a Retell conversation flow into voicetest."""
-        from voicetest import api
+    def test_list_agents_returns_list(self, client):
+        """List agents returns a list of conversation flows."""
+        response = client.get("/api/platforms/retell/agents")
 
-        flow = client.conversation_flow.retrieve(test_flow)
-        flow_dict = flow.model_dump()
+        assert response.status_code == 200
+        agents = response.json()
+        assert isinstance(agents, list)
 
-        graph = await api.import_agent(flow_dict)
+    def test_list_agents_items_have_required_fields(self, client, created_flow):
+        """Each agent in list has id and name fields."""
+        response = client.get("/api/platforms/retell/agents")
 
-        assert graph.source_type == "retell"
-        assert graph.entry_node_id == flow.start_node_id
-        assert len(graph.nodes) == len(flow.nodes)
+        assert response.status_code == 200
+        agents = response.json()
 
-    @pytest.mark.asyncio
-    async def test_export_to_retell_cf_format(self, client, test_flow):
-        """Test exporting voicetest graph to Retell CF format."""
-        from voicetest import api
+        # Find our created flow
+        flow_ids = [a["id"] for a in agents]
+        assert created_flow in flow_ids
 
-        flow = client.conversation_flow.retrieve(test_flow)
-        flow_dict = flow.model_dump()
-
-        graph = await api.import_agent(flow_dict)
-        exported_json = await api.export_agent(graph, format="retell-cf")
-        exported = json.loads(exported_json)
-
-        assert "start_node_id" in exported
-        assert "nodes" in exported
-        assert exported["start_node_id"] == flow.start_node_id
-
-    @pytest.mark.asyncio
-    async def test_roundtrip_preserves_structure(self, client, test_flow):
-        """Test that import/export roundtrip preserves flow structure."""
-        from voicetest import api
-
-        flow = client.conversation_flow.retrieve(test_flow)
-        flow_dict = flow.model_dump()
-
-        graph = await api.import_agent(flow_dict)
-        exported_json = await api.export_agent(graph, format="retell-cf")
-        exported = json.loads(exported_json)
-
-        assert len(exported["nodes"]) == len(flow.nodes)
-
-        original_node_ids = {n.id for n in flow.nodes}
-        exported_node_ids = {n["id"] for n in exported["nodes"]}
-        assert original_node_ids == exported_node_ids
+        for agent in agents:
+            assert "id" in agent
+            assert "name" in agent
+            assert isinstance(agent["id"], str)
+            assert isinstance(agent["name"], str)
 
 
-class TestRetellExportValidation:
-    """Tests that validate exported formats are accepted by the Retell API."""
+class TestRetellImportAgent:
+    """Tests for POST /platforms/retell/agents/{id}/import."""
 
-    @pytest.mark.asyncio
-    async def test_exported_cf_accepted_by_retell_api(self, client):
-        """Test that our Retell CF export is accepted by the Retell API.
+    def test_import_agent_returns_graph(self, client, created_flow):
+        """Import endpoint returns a valid AgentGraph."""
+        response = client.post(
+            f"/api/platforms/retell/agents/{created_flow}/import",
+            json={},
+        )
 
-        This is the key validation test - it creates a real conversation flow
-        in Retell using our exported format, verifies it was accepted, then
-        cleans up. This catches schema mismatches between our export and what
-        Retell actually accepts.
+        assert response.status_code == 200
+        graph = response.json()
+        assert graph["source_type"] == "retell"
+        assert graph["entry_node_id"] == "greeting"
+        assert "greeting" in graph["nodes"]
+
+    def test_import_preserves_node_structure(self, client, created_flow):
+        """Imported graph preserves the node structure."""
+        response = client.post(
+            f"/api/platforms/retell/agents/{created_flow}/import",
+            json={},
+        )
+
+        assert response.status_code == 200
+        graph = response.json()
+        node = graph["nodes"]["greeting"]
+        assert "instructions" in node
+        assert "Greet the user" in node["instructions"]
+
+    def test_import_nonexistent_flow_returns_error(self, client):
+        """Import of non-existent flow returns 500."""
+        response = client.post(
+            "/api/platforms/retell/agents/nonexistent-flow-id/import",
+            json={},
+        )
+
+        assert response.status_code == 500
+
+
+class TestRetellExportAgent:
+    """Tests for POST /platforms/retell/export."""
+
+    def test_export_creates_flow_in_retell(self, client, sample_graph):
+        """Export creates a real conversation flow in Retell."""
+        response = client.post(
+            "/api/platforms/retell/export",
+            json={"graph": sample_graph, "name": "voicetest-export-test"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["platform"] == "retell"
+        assert data["id"] is not None
+        assert data["name"] is not None
+
+        # Clean up
+        from voicetest.platforms.retell import get_client
+
+        get_client().conversation_flow.delete(data["id"])
+
+    def test_export_returns_provided_name_in_response(self, client, sample_graph):
+        """Export returns the provided name in response.
+
+        Note: Retell doesn't support naming flows on create.
         """
-        from voicetest import api
-        from voicetest.demo import get_demo_agent
+        test_name = "voicetest-named-export-test"
+        response = client.post(
+            "/api/platforms/retell/export",
+            json={"graph": sample_graph, "name": test_name},
+        )
 
-        demo_agent = get_demo_agent()
-        graph = await api.import_agent(demo_agent)
-        exported_json = await api.export_agent(graph, format="retell-cf")
-        exported = json.loads(exported_json)
+        assert response.status_code == 200
+        data = response.json()
+        # Name is echoed back even though Retell doesn't store it
+        assert data["name"] == test_name
 
-        created_flow = None
+        # Clean up
+        from voicetest.platforms.retell import get_client
+
+        get_client().conversation_flow.delete(data["id"])
+
+    def test_export_roundtrip(self, client, sample_graph):
+        """Exported flow can be imported back with same structure."""
+        # Export
+        export_response = client.post(
+            "/api/platforms/retell/export",
+            json={"graph": sample_graph, "name": "voicetest-roundtrip-test"},
+        )
+        assert export_response.status_code == 200
+        flow_id = export_response.json()["id"]
+
         try:
-            created_flow = client.conversation_flow.create(**exported)
-            assert created_flow.conversation_flow_id is not None
-            assert created_flow.nodes is not None
+            # Import back
+            import_response = client.post(
+                f"/api/platforms/retell/agents/{flow_id}/import",
+                json={},
+            )
+            assert import_response.status_code == 200
+
+            graph = import_response.json()
+            assert graph["entry_node_id"] == sample_graph["entry_node_id"]
+            assert "greeting" in graph["nodes"]
 
         finally:
-            if created_flow:
-                client.conversation_flow.delete(created_flow.conversation_flow_id)
+            from voicetest.platforms.retell import get_client
+
+            get_client().conversation_flow.delete(flow_id)

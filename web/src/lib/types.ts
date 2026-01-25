@@ -234,3 +234,21 @@ export interface LoadDemoResponse {
   test_count: number;
   created: boolean;
 }
+
+export type Platform = "retell" | "vapi";
+
+export interface RemoteAgentInfo {
+  id: string;
+  name: string;
+}
+
+export interface PlatformStatus {
+  configured: boolean;
+  platform: string;
+}
+
+export interface ExportToPlatformResponse {
+  id: string;
+  name: string;
+  platform: string;
+}

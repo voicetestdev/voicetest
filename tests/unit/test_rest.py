@@ -1070,3 +1070,205 @@ class TestWebSocketStateMessage:
             # Should also receive run_completed message
             data = websocket.receive_json()
             assert data["type"] == "run_completed"
+
+
+class TestPlatformEndpoints:
+    """Tests for platform integration endpoints."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database and settings."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        # Clear platform API keys from environment
+        monkeypatch.delenv("RETELL_API_KEY", raising=False)
+        monkeypatch.delenv("VAPI_API_KEY", raising=False)
+
+        # Use temp directory for settings
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".voicetest").mkdir()
+
+        from voicetest.rest import app, init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    def test_get_platform_status_retell_not_configured(self, db_client):
+        """Platform status returns false when API key not configured."""
+        response = db_client.get("/api/platforms/retell/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["platform"] == "retell"
+        assert data["configured"] is False
+
+    def test_get_platform_status_vapi_not_configured(self, db_client):
+        """Platform status returns false when API key not configured."""
+        response = db_client.get("/api/platforms/vapi/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["platform"] == "vapi"
+        assert data["configured"] is False
+
+    def test_get_platform_status_invalid_platform(self, db_client):
+        """Invalid platform name returns 400."""
+        response = db_client.get("/api/platforms/invalid/status")
+        assert response.status_code == 400
+        assert "Invalid platform" in response.json()["detail"]
+
+    def test_configure_platform_retell(self, db_client):
+        """Configure platform sets API key in settings."""
+        response = db_client.post(
+            "/api/platforms/retell/configure",
+            json={"api_key": "test-retell-key"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["platform"] == "retell"
+        assert data["configured"] is True
+
+        # Verify status now shows configured
+        status_response = db_client.get("/api/platforms/retell/status")
+        assert status_response.json()["configured"] is True
+
+    def test_configure_platform_already_configured_returns_409(self, db_client):
+        """Configure returns 409 when API key already set."""
+        # First configuration succeeds
+        db_client.post(
+            "/api/platforms/retell/configure",
+            json={"api_key": "test-key-1"},
+        )
+
+        # Second configuration fails
+        response = db_client.post(
+            "/api/platforms/retell/configure",
+            json={"api_key": "test-key-2"},
+        )
+        assert response.status_code == 409
+        assert "already configured" in response.json()["detail"]
+
+    def test_list_retell_agents_not_configured(self, db_client):
+        """List agents returns 400 when API key not configured."""
+        response = db_client.get("/api/platforms/retell/agents")
+        assert response.status_code == 400
+        assert "not configured" in response.json()["detail"]
+
+    def test_list_vapi_agents_not_configured(self, db_client):
+        """List agents returns 400 when API key not configured."""
+        response = db_client.get("/api/platforms/vapi/agents")
+        assert response.status_code == 400
+        assert "not configured" in response.json()["detail"]
+
+    def test_list_retell_agents_mocked(self, db_client, monkeypatch):
+        """List Retell agents with mocked client."""
+        from unittest.mock import MagicMock
+
+        # Configure platform first
+        db_client.post(
+            "/api/platforms/retell/configure",
+            json={"api_key": "test-retell-key"},
+        )
+
+        # Mock the client
+        mock_flow = MagicMock()
+        mock_flow.conversation_flow_id = "flow-123"
+        mock_flow.conversation_flow_name = "Test Flow"
+
+        mock_client = MagicMock()
+        mock_client.conversation_flow.list.return_value = [mock_flow]
+
+        def mock_get_client(api_key=None):
+            return mock_client
+
+        monkeypatch.setattr("voicetest.rest.get_client", mock_get_client, raising=False)
+
+        # Patch the module import
+        import voicetest.rest as rest_module
+
+        monkeypatch.setattr(rest_module, "get_client", mock_get_client, raising=False)
+
+        # Need to patch the import inside the function
+        import voicetest.platforms.retell as retell_module
+
+        monkeypatch.setattr(retell_module, "get_client", mock_get_client)
+
+        response = db_client.get("/api/platforms/retell/agents")
+        assert response.status_code == 200
+        agents = response.json()
+        assert len(agents) == 1
+        assert agents[0]["id"] == "flow-123"
+        assert agents[0]["name"] == "Test Flow"
+
+    def test_list_vapi_agents_mocked(self, db_client, monkeypatch):
+        """List VAPI agents with mocked client."""
+        from unittest.mock import MagicMock
+
+        # Configure platform first
+        db_client.post(
+            "/api/platforms/vapi/configure",
+            json={"api_key": "test-vapi-key"},
+        )
+
+        # Mock the client
+        mock_asst = MagicMock()
+        mock_asst.id = "asst-456"
+        mock_asst.name = "Test Assistant"
+
+        mock_client = MagicMock()
+        mock_client.assistants.list.return_value = [mock_asst]
+
+        import voicetest.platforms.vapi as vapi_module
+
+        monkeypatch.setattr(vapi_module, "get_client", lambda api_key=None: mock_client)
+
+        response = db_client.get("/api/platforms/vapi/agents")
+        assert response.status_code == 200
+        agents = response.json()
+        assert len(agents) == 1
+        assert agents[0]["id"] == "asst-456"
+        assert agents[0]["name"] == "Test Assistant"
+
+    def test_import_retell_agent_not_configured(self, db_client):
+        """Import agent returns 400 when API key not configured."""
+        response = db_client.post("/api/platforms/retell/agents/flow-123/import", json={})
+        assert response.status_code == 400
+        assert "not configured" in response.json()["detail"]
+
+    def test_export_to_retell_not_configured(self, db_client, sample_retell_config):
+        """Export to platform returns 400 when API key not configured."""
+        # First import to get a graph
+        import_response = db_client.post(
+            "/api/agents/import", json={"config": sample_retell_config}
+        )
+        graph = import_response.json()
+
+        response = db_client.post(
+            "/api/platforms/retell/export",
+            json={"graph": graph, "name": "Test Export"},
+        )
+        assert response.status_code == 400
+        assert "not configured" in response.json()["detail"]
+
+    def test_export_to_vapi_not_configured(self, db_client, sample_retell_config):
+        """Export to platform returns 400 when API key not configured."""
+        import_response = db_client.post(
+            "/api/agents/import", json={"config": sample_retell_config}
+        )
+        graph = import_response.json()
+
+        response = db_client.post(
+            "/api/platforms/vapi/export",
+            json={"graph": graph, "name": "Test Export"},
+        )
+        assert response.status_code == 400
+        assert "not configured" in response.json()["detail"]
+
+    def test_platform_status_configured_via_env(self, db_client, monkeypatch):
+        """Platform shows as configured when API key is in environment."""
+        monkeypatch.setenv("RETELL_API_KEY", "env-api-key")
+
+        response = db_client.get("/api/platforms/retell/status")
+        assert response.status_code == 200
+        assert response.json()["configured"] is True

@@ -2,12 +2,16 @@ import type {
   AgentGraph,
   AgentRecord,
   ExporterInfo,
+  ExportToPlatformResponse,
   GalleryItem,
   ImporterInfo,
   LoadDemoResponse,
   MetricResult,
   MetricsConfig,
   Message,
+  Platform,
+  PlatformStatus,
+  RemoteAgentInfo,
   RunOptions,
   RunRecord,
   RunWithResults,
@@ -192,4 +196,19 @@ export const api = {
     put<MetricsConfig>(`/agents/${agentId}/metrics-config`, config),
 
   loadDemo: () => post<LoadDemoResponse>("/demo", {}),
+
+  getPlatformStatus: (platform: Platform) =>
+    get<PlatformStatus>(`/platforms/${platform}/status`),
+
+  configurePlatform: (platform: Platform, apiKey: string) =>
+    post<PlatformStatus>(`/platforms/${platform}/configure`, { api_key: apiKey }),
+
+  listRemoteAgents: (platform: Platform) =>
+    get<RemoteAgentInfo[]>(`/platforms/${platform}/agents`),
+
+  importRemoteAgent: (platform: Platform, agentId: string) =>
+    post<AgentGraph>(`/platforms/${platform}/agents/${agentId}/import`, {}),
+
+  exportToPlatform: (platform: Platform, graph: AgentGraph, name?: string) =>
+    post<ExportToPlatformResponse>(`/platforms/${platform}/export`, { graph, name }),
 };

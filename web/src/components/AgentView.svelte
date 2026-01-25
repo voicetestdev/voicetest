@@ -7,7 +7,7 @@
     loadAgents,
     currentView,
   } from "../lib/stores";
-  import type { ExporterInfo } from "../lib/types";
+  import type { ExporterInfo, Platform, PlatformStatus } from "../lib/types";
 
   interface Props {
     theme?: "light" | "dark";
@@ -26,10 +26,25 @@
   let mermaidContainer: HTMLDivElement;
   let tooltip = $state({ show: false, x: 0, y: 0, text: "" });
 
+  let retellStatus = $state<PlatformStatus | null>(null);
+  let vapiStatus = $state<PlatformStatus | null>(null);
+  let apiKeyInput = $state("");
+  let configuringPlatform = $state(false);
+  let exportingToPlatform = $state(false);
+  let exportSuccess = $state<{ platform: string; id: string; name: string } | null>(null);
+
   $effect(() => {
     api.listExporters().then((list) => {
       exporters = list;
     });
+  });
+
+  $effect(() => {
+    if (showExportModal) {
+      api.getPlatformStatus("retell").then((s) => (retellStatus = s)).catch(() => {});
+      api.getPlatformStatus("vapi").then((s) => (vapiStatus = s)).catch(() => {});
+      exportSuccess = null;
+    }
   });
 
   $effect(() => {
@@ -139,6 +154,46 @@
     exporting = false;
   }
 
+  async function exportToPlatform(platform: Platform) {
+    if (!$agentGraph) return;
+    exportingToPlatform = true;
+    error = "";
+    try {
+      const name = $currentAgent?.name;
+      const result = await api.exportToPlatform(platform, $agentGraph, name);
+      exportSuccess = {
+        platform: result.platform,
+        id: result.id,
+        name: result.name,
+      };
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    exportingToPlatform = false;
+  }
+
+  async function configureAndExport(platform: Platform) {
+    if (!apiKeyInput.trim()) {
+      error = "Please enter an API key";
+      return;
+    }
+    configuringPlatform = true;
+    error = "";
+    try {
+      const status = await api.configurePlatform(platform, apiKeyInput);
+      if (platform === "retell") {
+        retellStatus = status;
+      } else {
+        vapiStatus = status;
+      }
+      apiKeyInput = "";
+      await exportToPlatform(platform);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    configuringPlatform = false;
+  }
+
   async function deleteCurrentAgent() {
     if (!$currentAgentId) return;
     if (!confirm("Are you sure you want to delete this agent?")) return;
@@ -163,6 +218,10 @@
     if (e.key === "Escape" && showExportModal) {
       showExportModal = false;
     }
+  }
+
+  function getPlatformStatus(platform: Platform): PlatformStatus | null {
+    return platform === "retell" ? retellStatus : vapiStatus;
   }
 </script>
 
@@ -217,19 +276,80 @@
             <button class="close-btn" onclick={() => (showExportModal = false)}>&times;</button>
           </div>
           <div class="modal-body">
-            <div class="export-options">
-              {#each exporters as exp}
-                <button
-                  class="export-option"
-                  onclick={() => exportTo(exp)}
-                  disabled={exporting}
-                >
-                  <span class="export-name">{exp.name}</span>
-                  <span class="export-desc">{exp.description}</span>
-                  <span class="export-ext">.{exp.ext}</span>
-                </button>
-              {/each}
-            </div>
+            {#if exportSuccess}
+              <div class="export-success">
+                <div class="success-icon">&#10003;</div>
+                <p>Agent created in {exportSuccess.platform === "retell" ? "Retell" : "VAPI"}!</p>
+                <p class="success-details">
+                  <strong>{exportSuccess.name}</strong><br />
+                  <span class="mono">{exportSuccess.id}</span>
+                </p>
+                <button onclick={() => (exportSuccess = null)}>Export Another</button>
+              </div>
+            {:else}
+              <div class="export-section">
+                <h4>Download as File</h4>
+                <div class="export-options">
+                  {#each exporters as exp}
+                    <button
+                      class="export-option"
+                      onclick={() => exportTo(exp)}
+                      disabled={exporting}
+                    >
+                      <span class="export-name">{exp.name}</span>
+                      <span class="export-desc">{exp.description}</span>
+                      <span class="export-ext">.{exp.ext}</span>
+                    </button>
+                  {/each}
+                </div>
+              </div>
+
+              <div class="divider">or</div>
+
+              <div class="export-section">
+                <h4>Export to Platform</h4>
+
+                {#each ["retell", "vapi"] as platform}
+                  {@const status = getPlatformStatus(platform as Platform)}
+                  {@const platformName = platform === "retell" ? "Retell" : "VAPI"}
+                  <div class="platform-export-row">
+                    {#if !status?.configured}
+                      <div class="platform-setup">
+                        <span class="platform-label">{platformName}</span>
+                        <input
+                          type="password"
+                          bind:value={apiKeyInput}
+                          placeholder="API Key"
+                          class="api-key-input-small"
+                        />
+                        <button
+                          onclick={() => configureAndExport(platform as Platform)}
+                          disabled={configuringPlatform || exportingToPlatform || !apiKeyInput.trim()}
+                        >
+                          {configuringPlatform || exportingToPlatform ? "..." : "Connect & Export"}
+                        </button>
+                      </div>
+                    {:else}
+                      <div class="platform-configured">
+                        <span class="platform-label">{platformName}</span>
+                        <span class="connected-badge-small">Connected</span>
+                        <button
+                          class="platform-export-btn"
+                          onclick={() => exportToPlatform(platform as Platform)}
+                          disabled={exportingToPlatform}
+                        >
+                          {exportingToPlatform ? "Creating..." : `Create in ${platformName}`}
+                        </button>
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+
+              {#if error}
+                <p class="modal-error">{error}</p>
+              {/if}
+            {/if}
           </div>
         </div>
       </div>
@@ -275,6 +395,13 @@
     margin-top: 0;
     font-size: 1rem;
     color: var(--text-secondary);
+  }
+
+  h4 {
+    margin: 0 0 0.75rem 0;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    font-weight: 500;
   }
 
   .placeholder {
@@ -416,7 +543,7 @@
     background: var(--bg-tertiary);
     border-radius: 12px;
     min-width: 400px;
-    max-width: 500px;
+    max-width: 550px;
     max-height: 80vh;
     overflow: hidden;
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
@@ -453,6 +580,10 @@
     padding: 1rem;
     overflow-y: auto;
     max-height: calc(80vh - 60px);
+  }
+
+  .export-section {
+    margin-bottom: 1rem;
   }
 
   .export-options {
@@ -506,6 +637,100 @@
     align-self: center;
   }
 
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin: 1rem 0;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .platform-export-row {
+    margin-bottom: 0.75rem;
+  }
+
+  .platform-setup,
+  .platform-configured {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .platform-label {
+    font-weight: 500;
+    min-width: 50px;
+  }
+
+  .api-key-input-small {
+    flex: 1;
+    min-width: 120px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.85rem;
+    font-family: monospace;
+  }
+
+  .connected-badge-small {
+    background: #166534;
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 500;
+  }
+
+  .platform-export-btn {
+    margin-left: auto;
+  }
+
+  .modal-error {
+    color: #f87171;
+    margin: 1rem 0 0 0;
+    font-size: 0.85rem;
+  }
+
+  .export-success {
+    text-align: center;
+    padding: 1rem;
+  }
+
+  .success-icon {
+    width: 48px;
+    height: 48px;
+    background: #166534;
+    color: white;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .export-success p {
+    margin: 0 0 0.5rem 0;
+  }
+
+  .success-details {
+    background: var(--bg-hover);
+    padding: 0.75rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+  }
+
+  .success-details .mono {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
   @media (max-width: 768px) {
     .modal {
       min-width: unset;
@@ -516,6 +741,16 @@
 
     .export-option {
       padding: 0.75rem;
+    }
+
+    .platform-setup,
+    .platform-configured {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .platform-export-btn {
+      margin-left: 0;
     }
   }
 </style>
