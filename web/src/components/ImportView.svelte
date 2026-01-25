@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api } from "../lib/api";
   import { loadAgents, selectAgent } from "../lib/stores";
-  import type { ImporterInfo, Platform, PlatformStatus, RemoteAgentInfo } from "../lib/types";
+  import type { ImporterInfo, Platform, PlatformInfo, PlatformStatus, RemoteAgentInfo } from "../lib/types";
 
   let configText = $state("");
   let agentName = $state("");
@@ -12,15 +12,10 @@
   let error = $state("");
   let importers = $state<ImporterInfo[]>([]);
 
-  type ImportTab = "file" | "retell" | "vapi" | "livekit";
-  let activeTab = $state<ImportTab>("file");
-
-  let retellStatus = $state<PlatformStatus | null>(null);
-  let vapiStatus = $state<PlatformStatus | null>(null);
-  let livekitStatus = $state<PlatformStatus | null>(null);
-  let retellAgents = $state<RemoteAgentInfo[]>([]);
-  let vapiAgents = $state<RemoteAgentInfo[]>([]);
-  let livekitAgents = $state<RemoteAgentInfo[]>([]);
+  let activeTab = $state<string>("file");
+  let platforms = $state<PlatformInfo[]>([]);
+  let platformStatus = $state<Record<string, PlatformStatus>>({});
+  let platformAgents = $state<Record<string, RemoteAgentInfo[]>>({});
   let loadingAgents = $state(false);
   let selectedRemoteAgent = $state<RemoteAgentInfo | null>(null);
   let apiKeyInput = $state("");
@@ -28,13 +23,27 @@
 
   const binaryExtensions = [".xlsx", ".xls"];
 
+  const platformDisplayNames: Record<string, string> = {
+    retell: "Retell",
+    vapi: "VAPI",
+    livekit: "LiveKit",
+    bland: "Bland",
+  };
+
+  function getPlatformDisplayName(platform: string): string {
+    return platformDisplayNames[platform] || platform.charAt(0).toUpperCase() + platform.slice(1);
+  }
+
   $effect(() => {
     api.listImporters().then((list) => {
       importers = list;
     });
-    api.getPlatformStatus("retell").then((s) => (retellStatus = s)).catch(() => {});
-    api.getPlatformStatus("vapi").then((s) => (vapiStatus = s)).catch(() => {});
-    api.getPlatformStatus("livekit").then((s) => (livekitStatus = s)).catch(() => {});
+    api.listPlatforms().then((list) => {
+      platforms = list;
+      for (const p of list) {
+        platformStatus[p.name] = { platform: p.name, configured: p.configured };
+      }
+    }).catch(() => {});
   });
 
   async function loadDemo() {
@@ -105,18 +114,14 @@
     }
   }
 
-  function switchTab(tab: ImportTab) {
+  function switchTab(tab: string) {
     activeTab = tab;
     error = "";
     selectedRemoteAgent = null;
     apiKeyInput = "";
 
-    if (tab === "retell" && retellStatus?.configured) {
-      loadRemoteAgents("retell");
-    } else if (tab === "vapi" && vapiStatus?.configured) {
-      loadRemoteAgents("vapi");
-    } else if (tab === "livekit" && livekitStatus?.configured) {
-      loadRemoteAgents("livekit");
+    if (tab !== "file" && platformStatus[tab]?.configured) {
+      loadRemoteAgents(tab);
     }
   }
 
@@ -125,13 +130,7 @@
     error = "";
     try {
       const agents = await api.listRemoteAgents(platform);
-      if (platform === "retell") {
-        retellAgents = agents;
-      } else if (platform === "vapi") {
-        vapiAgents = agents;
-      } else {
-        livekitAgents = agents;
-      }
+      platformAgents[platform] = agents;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -147,13 +146,7 @@
     error = "";
     try {
       const status = await api.configurePlatform(platform, apiKeyInput);
-      if (platform === "retell") {
-        retellStatus = status;
-      } else if (platform === "vapi") {
-        vapiStatus = status;
-      } else {
-        livekitStatus = status;
-      }
+      platformStatus[platform] = status;
       apiKeyInput = "";
       await loadRemoteAgents(platform);
     } catch (e) {
@@ -182,18 +175,6 @@
     }
     importing = false;
   }
-
-  function getPlatformStatus(platform: Platform): PlatformStatus | null {
-    if (platform === "retell") return retellStatus;
-    if (platform === "vapi") return vapiStatus;
-    return livekitStatus;
-  }
-
-  function getRemoteAgents(platform: Platform): RemoteAgentInfo[] {
-    if (platform === "retell") return retellAgents;
-    if (platform === "vapi") return vapiAgents;
-    return livekitAgents;
-  }
 </script>
 
 <div class="import-view">
@@ -216,27 +197,15 @@
     >
       From File
     </button>
-    <button
-      class="tab"
-      class:active={activeTab === "retell"}
-      onclick={() => switchTab("retell")}
-    >
-      From Retell
-    </button>
-    <button
-      class="tab"
-      class:active={activeTab === "vapi"}
-      onclick={() => switchTab("vapi")}
-    >
-      From VAPI
-    </button>
-    <button
-      class="tab"
-      class:active={activeTab === "livekit"}
-      onclick={() => switchTab("livekit")}
-    >
-      From LiveKit
-    </button>
+    {#each platforms as platform}
+      <button
+        class="tab"
+        class:active={activeTab === platform.name}
+        onclick={() => switchTab(platform.name)}
+      >
+        From {getPlatformDisplayName(platform.name)}
+      </button>
+    {/each}
   </div>
 
   {#if activeTab === "file"}
@@ -283,20 +252,20 @@
       </button>
     </div>
   {:else}
-    {@const platform = activeTab as Platform}
-    {@const status = getPlatformStatus(platform)}
-    {@const agents = getRemoteAgents(platform)}
-    {@const platformName = platform === "retell" ? "Retell" : platform === "vapi" ? "VAPI" : "LiveKit"}
+    {@const platform = activeTab}
+    {@const status = platformStatus[platform]}
+    {@const agents = platformAgents[platform] || []}
+    {@const displayName = getPlatformDisplayName(platform)}
 
     <div class="platform-section">
       {#if !status?.configured}
         <div class="api-key-setup">
-          <p>Connect your {platformName} account to import agents directly.</p>
+          <p>Connect your {displayName} account to import agents directly.</p>
           <div class="api-key-form">
             <input
               type="password"
               bind:value={apiKeyInput}
-              placeholder="{platformName} API Key"
+              placeholder="{displayName} API Key"
               class="api-key-input"
             />
             <button
@@ -324,7 +293,7 @@
         {#if loadingAgents}
           <p class="loading">Loading agents...</p>
         {:else if agents.length === 0}
-          <p class="empty-state">No agents found in your {platformName} account.</p>
+          <p class="empty-state">No agents found in your {displayName} account.</p>
         {:else}
           <div class="agents-list">
             <p class="list-label">Select an agent to import:</p>
@@ -408,6 +377,7 @@
     margin-bottom: 1.5rem;
     border-bottom: 1px solid var(--border-color);
     padding-bottom: 0.5rem;
+    flex-wrap: wrap;
   }
 
   .tab {

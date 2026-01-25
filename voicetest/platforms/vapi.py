@@ -4,10 +4,18 @@ Handles credential loading and SDK client creation.
 Requires: pip install voicetest[platforms]
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from vapi import Vapi
+
+
+if TYPE_CHECKING:
+    from voicetest.models.agent import AgentGraph
+    from voicetest.platforms.base import SourceImporter
 
 
 class VapiPlatformClient:
@@ -22,6 +30,23 @@ class VapiPlatformClient:
     def env_key(self) -> str:
         """Environment variable name for API key."""
         return "VAPI_API_KEY"
+
+    @property
+    def required_env_keys(self) -> list[str]:
+        """All environment variable names required for this platform."""
+        return [self.env_key]
+
+    def get_importer(self) -> SourceImporter:
+        """Get the importer for this platform."""
+        from voicetest.importers.vapi import VapiImporter
+
+        return VapiImporter()
+
+    def get_exporter(self) -> Callable[[AgentGraph], dict[str, Any]]:
+        """Get the exporter function for this platform."""
+        from voicetest.exporters.vapi import export_vapi_assistant
+
+        return export_vapi_assistant
 
     def get_client(self, api_key: str | None = None) -> Vapi:
         """Get a configured VAPI SDK client.

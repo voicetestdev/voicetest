@@ -4,12 +4,20 @@ Handles credential loading and agent deployment via CLI.
 LiveKit agents are Python code deployed via the `lk` CLI tool.
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
 import json
 import os
 from pathlib import Path
 import subprocess
 import tempfile
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from voicetest.models.agent import AgentGraph
+    from voicetest.platforms.base import SourceImporter
 
 
 class LiveKitPlatformClient:
@@ -28,6 +36,26 @@ class LiveKitPlatformClient:
     def env_key(self) -> str:
         """Environment variable name for API key."""
         return "LIVEKIT_API_KEY"
+
+    @property
+    def required_env_keys(self) -> list[str]:
+        """All environment variable names required for this platform."""
+        return ["LIVEKIT_API_KEY", "LIVEKIT_API_SECRET"]
+
+    def get_importer(self) -> SourceImporter:
+        """Get the importer for this platform."""
+        from voicetest.importers.livekit import LiveKitImporter
+
+        return LiveKitImporter()
+
+    def get_exporter(self) -> Callable[[AgentGraph], dict[str, Any]]:
+        """Get the exporter function for this platform."""
+        from voicetest.exporters.livekit_codegen import export_livekit_code
+
+        def _export_with_code(graph: AgentGraph) -> dict[str, Any]:
+            return {"code": export_livekit_code(graph), "graph": graph}
+
+        return _export_with_code
 
     def get_client(self, api_key: str | None = None) -> dict[str, str]:
         """Get LiveKit credentials as a dict (no SDK client).

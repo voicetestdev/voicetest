@@ -7,7 +7,7 @@
     loadAgents,
     currentView,
   } from "../lib/stores";
-  import type { ExporterInfo, Platform, PlatformStatus } from "../lib/types";
+  import type { ExporterInfo, Platform, PlatformInfo, PlatformStatus } from "../lib/types";
 
   interface Props {
     theme?: "light" | "dark";
@@ -26,13 +26,23 @@
   let mermaidContainer: HTMLDivElement;
   let tooltip = $state({ show: false, x: 0, y: 0, text: "" });
 
-  let retellStatus = $state<PlatformStatus | null>(null);
-  let vapiStatus = $state<PlatformStatus | null>(null);
-  let livekitStatus = $state<PlatformStatus | null>(null);
+  let platforms = $state<PlatformInfo[]>([]);
+  let platformStatus = $state<Record<string, PlatformStatus>>({});
   let apiKeyInput = $state("");
   let configuringPlatform = $state(false);
   let exportingToPlatform = $state(false);
   let exportSuccess = $state<{ platform: string; id: string; name: string } | null>(null);
+
+  const platformDisplayNames: Record<string, string> = {
+    retell: "Retell",
+    vapi: "VAPI",
+    livekit: "LiveKit",
+    bland: "Bland",
+  };
+
+  function getPlatformDisplayName(platform: string): string {
+    return platformDisplayNames[platform] || platform.charAt(0).toUpperCase() + platform.slice(1);
+  }
 
   $effect(() => {
     api.listExporters().then((list) => {
@@ -42,9 +52,12 @@
 
   $effect(() => {
     if (showExportModal) {
-      api.getPlatformStatus("retell").then((s) => (retellStatus = s)).catch(() => {});
-      api.getPlatformStatus("vapi").then((s) => (vapiStatus = s)).catch(() => {});
-      api.getPlatformStatus("livekit").then((s) => (livekitStatus = s)).catch(() => {});
+      api.listPlatforms().then((list) => {
+        platforms = list;
+        for (const p of list) {
+          platformStatus[p.name] = { platform: p.name, configured: p.configured };
+        }
+      }).catch(() => {});
       exportSuccess = null;
     }
   });
@@ -183,13 +196,7 @@
     error = "";
     try {
       const status = await api.configurePlatform(platform, apiKeyInput);
-      if (platform === "retell") {
-        retellStatus = status;
-      } else if (platform === "vapi") {
-        vapiStatus = status;
-      } else {
-        livekitStatus = status;
-      }
+      platformStatus[platform] = status;
       apiKeyInput = "";
       await exportToPlatform(platform);
     } catch (e) {
@@ -224,11 +231,6 @@
     }
   }
 
-  function getPlatformStatus(platform: Platform): PlatformStatus | null {
-    if (platform === "retell") return retellStatus;
-    if (platform === "vapi") return vapiStatus;
-    return livekitStatus;
-  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -285,7 +287,7 @@
             {#if exportSuccess}
               <div class="export-success">
                 <div class="success-icon">&#10003;</div>
-                <p>Agent created in {exportSuccess.platform === "retell" ? "Retell" : exportSuccess.platform === "vapi" ? "VAPI" : "LiveKit"}!</p>
+                <p>Agent created in {getPlatformDisplayName(exportSuccess.platform)}!</p>
                 <p class="success-details">
                   <strong>{exportSuccess.name}</strong><br />
                   <span class="mono">{exportSuccess.id}</span>
@@ -315,13 +317,13 @@
               <div class="export-section">
                 <h4>Export to Platform</h4>
 
-                {#each ["retell", "vapi", "livekit"] as platform}
-                  {@const status = getPlatformStatus(platform as Platform)}
-                  {@const platformName = platform === "retell" ? "Retell" : platform === "vapi" ? "VAPI" : "LiveKit"}
+                {#each platforms as platform}
+                  {@const status = platformStatus[platform.name]}
+                  {@const displayName = getPlatformDisplayName(platform.name)}
                   <div class="platform-export-row">
                     {#if !status?.configured}
                       <div class="platform-setup">
-                        <span class="platform-label">{platformName}</span>
+                        <span class="platform-label">{displayName}</span>
                         <input
                           type="password"
                           bind:value={apiKeyInput}
@@ -329,7 +331,7 @@
                           class="api-key-input-small"
                         />
                         <button
-                          onclick={() => configureAndExport(platform as Platform)}
+                          onclick={() => configureAndExport(platform.name)}
                           disabled={configuringPlatform || exportingToPlatform || !apiKeyInput.trim()}
                         >
                           {configuringPlatform || exportingToPlatform ? "..." : "Connect & Export"}
@@ -337,14 +339,14 @@
                       </div>
                     {:else}
                       <div class="platform-configured">
-                        <span class="platform-label">{platformName}</span>
+                        <span class="platform-label">{displayName}</span>
                         <span class="connected-badge-small">Connected</span>
                         <button
                           class="platform-export-btn"
-                          onclick={() => exportToPlatform(platform as Platform)}
+                          onclick={() => exportToPlatform(platform.name)}
                           disabled={exportingToPlatform}
                         >
-                          {exportingToPlatform ? "Creating..." : `Create in ${platformName}`}
+                          {exportingToPlatform ? "Creating..." : `Create in ${displayName}`}
                         </button>
                       </div>
                     {/if}

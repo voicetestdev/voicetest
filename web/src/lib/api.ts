@@ -10,6 +10,7 @@ import type {
   MetricsConfig,
   Message,
   Platform,
+  PlatformInfo,
   PlatformStatus,
   RemoteAgentInfo,
   RunOptions,
@@ -196,6 +197,8 @@ export const api = {
     put<MetricsConfig>(`/agents/${agentId}/metrics-config`, config),
 
   loadDemo: () => post<LoadDemoResponse>("/demo", {}),
+
+  listPlatforms: () => get<PlatformInfo[]>("/platforms"),
 
   getPlatformStatus: (platform: Platform) =>
     get<PlatformStatus>(`/platforms/${platform}/status`),

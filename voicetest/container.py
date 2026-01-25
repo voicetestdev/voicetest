@@ -10,6 +10,7 @@ from voicetest.storage.repositories import AgentRepository, RunRepository, TestC
 
 def _create_importer_registry() -> ImporterRegistry:
     """Create and configure the importer registry."""
+    from voicetest.importers.bland import BlandImporter
     from voicetest.importers.custom import CustomImporter
     from voicetest.importers.livekit import LiveKitImporter
     from voicetest.importers.retell import RetellImporter
@@ -22,6 +23,7 @@ def _create_importer_registry() -> ImporterRegistry:
     registry.register(RetellLLMImporter())
     registry.register(VapiImporter())
     registry.register(LiveKitImporter())
+    registry.register(BlandImporter())
     registry.register(XLSFormImporter())
     registry.register(CustomImporter())
     return registry
@@ -29,6 +31,7 @@ def _create_importer_registry() -> ImporterRegistry:
 
 def _create_platform_registry() -> PlatformRegistry:
     """Create and configure the platform registry."""
+    from voicetest.platforms.bland import BlandPlatformClient
     from voicetest.platforms.livekit import LiveKitPlatformClient
     from voicetest.platforms.retell import RetellPlatformClient
     from voicetest.platforms.vapi import VapiPlatformClient
@@ -37,6 +40,7 @@ def _create_platform_registry() -> PlatformRegistry:
     registry.register(RetellPlatformClient())
     registry.register(VapiPlatformClient())
     registry.register(LiveKitPlatformClient())
+    registry.register(BlandPlatformClient())
     return registry
 
 

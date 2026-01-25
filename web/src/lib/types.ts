@@ -235,7 +235,14 @@ export interface LoadDemoResponse {
   created: boolean;
 }
 
-export type Platform = "retell" | "vapi" | "livekit";
+export interface PlatformInfo {
+  name: string;
+  configured: boolean;
+  env_key: string;
+  required_env_keys: string[];
+}
+
+export type Platform = string;
 
 export interface RemoteAgentInfo {
   id: string;

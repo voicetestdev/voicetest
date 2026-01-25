@@ -151,6 +151,15 @@ class PlatformStatusResponse(BaseModel):
     platform: str
 
 
+class PlatformInfo(BaseModel):
+    """Information about a platform."""
+
+    name: str
+    configured: bool
+    env_key: str
+    required_env_keys: list[str]
+
+
 class ConfigurePlatformRequest(BaseModel):
     """Request to configure a platform API key."""
 
@@ -1060,41 +1069,51 @@ async def start_run(
 
 # Platform integration endpoints
 
-VALID_PLATFORMS = {"retell", "vapi", "livekit"}
-PLATFORM_ENV_KEYS = {
-    "retell": "RETELL_API_KEY",
-    "vapi": "VAPI_API_KEY",
-    "livekit": "LIVEKIT_API_KEY",
-}
+
+def _get_platform_registry():
+    """Get the platform registry from the DI container."""
+    from voicetest.platforms.registry import PlatformRegistry
+
+    return get_container().resolve(PlatformRegistry)
 
 
 def _validate_platform(platform: str) -> None:
-    """Validate platform name."""
-    if platform not in VALID_PLATFORMS:
+    """Validate platform name using registry."""
+    registry = _get_platform_registry()
+    if not registry.has_platform(platform):
         raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
 
 
 def _is_platform_configured(platform: str) -> bool:
-    """Check if a platform API key is configured in settings or env."""
-    env_key = PLATFORM_ENV_KEYS[platform]
+    """Check if a platform is configured using registry."""
+    registry = _get_platform_registry()
     settings = load_settings()
-    has_key = bool(settings.env.get(env_key) or os.environ.get(env_key))
-
-    # LiveKit requires both API_KEY and API_SECRET
-    if platform == "livekit" and has_key:
-        has_secret = bool(
-            settings.env.get("LIVEKIT_API_SECRET") or os.environ.get("LIVEKIT_API_SECRET")
-        )
-        return has_key and has_secret
-
-    return has_key
+    return registry.is_configured(platform, settings)
 
 
 def _get_platform_api_key(platform: str) -> str | None:
-    """Get API key for a platform from settings or env."""
-    env_key = PLATFORM_ENV_KEYS[platform]
+    """Get API key for a platform using registry."""
+    registry = _get_platform_registry()
     settings = load_settings()
-    return settings.env.get(env_key) or os.environ.get(env_key)
+    return registry.get_api_key(platform, settings)
+
+
+@router.get("/platforms", response_model=list[PlatformInfo])
+async def list_platforms() -> list[PlatformInfo]:
+    """List all available platforms and their configuration status."""
+    registry = _get_platform_registry()
+    settings = load_settings()
+    platforms = []
+    for platform_name in registry.list_platforms():
+        platforms.append(
+            PlatformInfo(
+                name=platform_name,
+                configured=registry.is_configured(platform_name, settings),
+                env_key=registry.get_env_key(platform_name),
+                required_env_keys=registry.get_required_env_keys(platform_name),
+            )
+        )
+    return platforms
 
 
 @router.get("/platforms/{platform}/status", response_model=PlatformStatusResponse)
@@ -1120,56 +1139,14 @@ async def configure_platform(
             detail=f"{platform} API key is already configured. Use Settings to change it.",
         )
 
-    env_key = PLATFORM_ENV_KEYS[platform]
+    registry = _get_platform_registry()
+    env_key = registry.get_env_key(platform)
     settings = load_settings()
     settings.env[env_key] = request.api_key
     save_settings(settings)
     settings.apply_env()
 
     return PlatformStatusResponse(configured=True, platform=platform)
-
-
-def _get_platform_registry():
-    """Get the platform registry from the DI container."""
-    from voicetest.platforms.registry import PlatformRegistry
-
-    return get_container().resolve(PlatformRegistry)
-
-
-def _get_exporter_for_platform(platform: str):
-    """Get the appropriate exporter function for a platform."""
-    if platform == "retell":
-        from voicetest.exporters.retell_cf import export_retell_cf
-
-        return export_retell_cf
-    elif platform == "vapi":
-        from voicetest.exporters.vapi import export_vapi_assistant
-
-        return export_vapi_assistant
-    elif platform == "livekit":
-        from voicetest.exporters.livekit_codegen import export_livekit_code
-
-        return lambda graph: {"code": export_livekit_code(graph), "graph": graph}
-    else:
-        raise ValueError(f"No exporter for platform: {platform}")
-
-
-def _get_importer_for_platform(platform: str):
-    """Get the appropriate importer for a platform."""
-    if platform == "retell":
-        from voicetest.importers.retell import RetellImporter
-
-        return RetellImporter()
-    elif platform == "vapi":
-        from voicetest.importers.vapi import VapiImporter
-
-        return VapiImporter()
-    elif platform == "livekit":
-        from voicetest.importers.livekit import LiveKitImporter
-
-        return LiveKitImporter()
-    else:
-        raise ValueError(f"No importer for platform: {platform}")
 
 
 @router.get("/platforms/{platform}/agents", response_model=list[RemoteAgentInfo])
@@ -1205,7 +1182,9 @@ async def import_platform_agent(platform: str, agent_id: str) -> AgentGraph:
         platform_client = registry.get(platform)
         client = platform_client.get_client(api_key)
         config = platform_client.get_agent(client, agent_id)
-        importer = _get_importer_for_platform(platform)
+        importer = registry.get_importer(platform)
+        if not importer:
+            raise ValueError(f"No importer for platform: {platform}")
         return importer.import_agent(config)
     except Exception as e:
         raise HTTPException(
@@ -1228,7 +1207,9 @@ async def export_to_platform(
         platform_client = registry.get(platform)
         client = platform_client.get_client(api_key)
 
-        exporter = _get_exporter_for_platform(platform)
+        exporter = registry.get_exporter(platform)
+        if not exporter:
+            raise ValueError(f"No exporter for platform: {platform}")
         config = exporter(request.graph)
 
         result = platform_client.create_agent(client, config, request.name)

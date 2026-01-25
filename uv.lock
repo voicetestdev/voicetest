@@ -233,6 +233,20 @@ wheels = [
 ]
 
 [[package]]
+name = "bland"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ba/52/68280fe786ee4795afbe57e7d7558b67a01f2be275e6de6493073fd0b1fe/bland-0.3.0.tar.gz", hash = "sha256:259ea309061c02cc8c29c0d04edcd23701a83c38b36578dcbf6bb5fe5d47bd0d", size = 64230 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b8/e9/ac9092e00ed2de30bf1a8b48344af8ddd3c46dc77072454c8da5405bd7c3/bland-0.3.0-py3-none-any.whl", hash = "sha256:e0ab9fcf0b54339e2c24416f2ab9ee567fe260355ae1a3a87ca1e92a3f0ca93d", size = 125924 },
+]
+
+[[package]]
 name = "cachetools"
 version = "6.2.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2940,6 +2954,7 @@ name = "voicetest"
 version = "0.5"
 source = { editable = "." }
 dependencies = [
+    { name = "bland" },
     { name = "click" },
     { name = "dspy" },
     { name = "duckdb" },
@@ -2972,6 +2987,7 @@ platforms = [
 
 [package.metadata]
 requires-dist = [
+    { name = "bland", specifier = ">=0.3.0" },
     { name = "click", specifier = ">=8.0" },
     { name = "dspy", specifier = ">=2.6" },
     { name = "duckdb", specifier = ">=1.4.3" },

@@ -4,10 +4,18 @@ Handles credential loading and SDK client creation.
 Requires: pip install voicetest[platforms]
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from retell import Retell
+
+
+if TYPE_CHECKING:
+    from voicetest.models.agent import AgentGraph
+    from voicetest.platforms.base import SourceImporter
 
 
 class RetellPlatformClient:
@@ -22,6 +30,23 @@ class RetellPlatformClient:
     def env_key(self) -> str:
         """Environment variable name for API key."""
         return "RETELL_API_KEY"
+
+    @property
+    def required_env_keys(self) -> list[str]:
+        """All environment variable names required for this platform."""
+        return [self.env_key]
+
+    def get_importer(self) -> SourceImporter:
+        """Get the importer for this platform."""
+        from voicetest.importers.retell import RetellImporter
+
+        return RetellImporter()
+
+    def get_exporter(self) -> Callable[[AgentGraph], dict[str, Any]]:
+        """Get the exporter function for this platform."""
+        from voicetest.exporters.retell_cf import export_retell_cf
+
+        return export_retell_cf
 
     def get_client(self, api_key: str | None = None) -> Retell:
         """Get a configured Retell SDK client.
