@@ -6,6 +6,7 @@ from voicetest.importers.registry import ImporterRegistry, get_registry
 from voicetest.importers.retell import RetellImporter
 from voicetest.importers.retell_llm import RetellLLMImporter
 from voicetest.importers.vapi import VapiImporter
+from voicetest.importers.xlsform import XLSFormImporter
 
 
 __all__ = [
@@ -16,5 +17,6 @@ __all__ = [
     "RetellLLMImporter",
     "SourceImporter",
     "VapiImporter",
+    "XLSFormImporter",
     "get_registry",
 ]

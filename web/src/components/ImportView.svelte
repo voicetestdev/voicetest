@@ -6,10 +6,13 @@
   let configText = $state("");
   let agentName = $state("");
   let filePath = $state("");
+  let selectedFile = $state<File | null>(null);
   let importing = $state(false);
   let loadingDemo = $state(false);
   let error = $state("");
   let importers = $state<ImporterInfo[]>([]);
+
+  const binaryExtensions = [".xlsx", ".xls"];
 
   $effect(() => {
     api.listImporters().then((list) => {
@@ -35,15 +38,17 @@
       error = "Please enter an agent name";
       return;
     }
-    if (!configText && !filePath) {
-      error = "Please provide a file path or paste JSON config";
+    if (!configText && !filePath && !selectedFile) {
+      error = "Please provide a file path, upload a file, or paste JSON config";
       return;
     }
     importing = true;
     error = "";
     try {
       let agent;
-      if (filePath) {
+      if (selectedFile) {
+        agent = await api.createAgentFromFile(selectedFile, agentName);
+      } else if (filePath) {
         agent = await api.createAgentFromPath(agentName, filePath);
       } else {
         const config = JSON.parse(configText);
@@ -54,6 +59,7 @@
       configText = "";
       agentName = "";
       filePath = "";
+      selectedFile = null;
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -64,10 +70,21 @@
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    configText = await file.text();
+
+    const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
+    const isBinary = binaryExtensions.includes(ext);
+
+    if (isBinary) {
+      selectedFile = file;
+      configText = `[Binary file: ${file.name}]`;
+    } else {
+      selectedFile = null;
+      configText = await file.text();
+    }
+
     filePath = "";
     if (!agentName) {
-      agentName = file.name.replace(/\.json$/, "");
+      agentName = file.name.replace(/\.(json|xlsx|xls)$/i, "");
     }
   }
 </script>
@@ -109,9 +126,10 @@
 
   <div class="import-options">
     <label class="file-upload">
-      <input type="file" accept=".json" onchange={handleFile} />
-      Upload JSON
+      <input type="file" accept=".json,.xlsx,.xls" onchange={handleFile} />
+      Upload File
     </label>
+    <span class="file-hint">.json, .xlsx (XLSForm)</span>
   </div>
 
   <textarea
@@ -121,7 +139,7 @@
   ></textarea>
 
   <div class="button-row">
-    <button onclick={importAgent} disabled={importing || (!configText && !filePath)}>
+    <button onclick={importAgent} disabled={importing || (!configText && !filePath && !selectedFile)}>
       {importing ? "Importing..." : "Import Agent"}
     </button>
   </div>
@@ -208,6 +226,7 @@
 
   .import-options {
     display: flex;
+    align-items: center;
     gap: 1rem;
     margin-bottom: 1rem;
   }
@@ -226,6 +245,11 @@
 
   .file-upload input {
     display: none;
+  }
+
+  .file-hint {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
   }
 
   .divider {

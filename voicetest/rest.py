@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, WebSocket
+from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -273,6 +273,29 @@ async def import_agent(request: ImportRequest) -> AgentGraph:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
 
+@router.post("/agents/import-file", response_model=AgentGraph)
+async def import_agent_file(file: UploadFile, source: str | None = None) -> AgentGraph:
+    """Import an agent from an uploaded file (XLSForm, JSON, etc.)."""
+    import tempfile
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    suffix = Path(file.filename).suffix
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            return await api.import_agent(tmp_path, source=source)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
 @router.post("/agents/export")
 async def export_agent(request: ExportRequest) -> dict[str, str]:
     """Export an agent graph to a format."""
@@ -402,6 +425,42 @@ async def create_agent(request: CreateAgentRequest) -> dict:
     repo = get_agent_repo()
     return repo.create(
         name=request.name,
+        source_type=graph.source_type,
+        graph_json=graph.model_dump_json(),
+    )
+
+
+@router.post("/agents/upload")
+async def create_agent_from_file(
+    file: UploadFile,
+    name: str | None = None,
+    source: str | None = None,
+) -> dict:
+    """Create an agent from an uploaded file (XLSForm, JSON, etc.)."""
+    import tempfile
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    agent_name = name or Path(file.filename).stem
+    suffix = Path(file.filename).suffix
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+
+        try:
+            graph = await api.import_agent(tmp_path, source=source)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+    repo = get_agent_repo()
+    return repo.create(
+        name=agent_name,
         source_type=graph.source_type,
         graph_json=graph.model_dump_json(),
     )

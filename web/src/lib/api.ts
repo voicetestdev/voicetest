@@ -67,6 +67,23 @@ async function del<T>(path: string): Promise<T> {
   return res.json();
 }
 
+async function postFile<T>(path: string, file: File, source?: string): Promise<T> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (source) {
+    formData.append("source", source);
+  }
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || res.statusText);
+  }
+  return res.json();
+}
+
 export const api = {
   health: () => get<{ status: string }>("/health"),
 
@@ -76,6 +93,26 @@ export const api = {
 
   importAgent: (config: unknown, source?: string) =>
     post<AgentGraph>("/agents/import", { config, source }),
+
+  importAgentFile: (file: File, source?: string) =>
+    postFile<AgentGraph>("/agents/import-file", file, source),
+
+  createAgentFromFile: (file: File, name?: string, source?: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (name) formData.append("name", name);
+    if (source) formData.append("source", source);
+    return fetch(`${BASE_URL}/agents/upload`, {
+      method: "POST",
+      body: formData,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || res.statusText);
+      }
+      return res.json() as Promise<AgentRecord>;
+    });
+  },
 
   exportAgent: (graph: AgentGraph, format: string) =>
     post<{ content: string; format: string }>("/agents/export", {
