@@ -1085,6 +1085,8 @@ class TestPlatformEndpoints:
         # Clear platform API keys from environment
         monkeypatch.delenv("RETELL_API_KEY", raising=False)
         monkeypatch.delenv("VAPI_API_KEY", raising=False)
+        monkeypatch.delenv("LIVEKIT_API_KEY", raising=False)
+        monkeypatch.delenv("LIVEKIT_API_SECRET", raising=False)
 
         # Use temp directory for settings
         monkeypatch.chdir(tmp_path)
@@ -1165,6 +1167,8 @@ class TestPlatformEndpoints:
         """List Retell agents with mocked client."""
         from unittest.mock import MagicMock
 
+        from voicetest.platforms.retell import RetellPlatformClient
+
         # Configure platform first
         db_client.post(
             "/api/platforms/retell/configure",
@@ -1179,20 +1183,9 @@ class TestPlatformEndpoints:
         mock_client = MagicMock()
         mock_client.conversation_flow.list.return_value = [mock_flow]
 
-        def mock_get_client(api_key=None):
-            return mock_client
-
-        monkeypatch.setattr("voicetest.rest.get_client", mock_get_client, raising=False)
-
-        # Patch the module import
-        import voicetest.rest as rest_module
-
-        monkeypatch.setattr(rest_module, "get_client", mock_get_client, raising=False)
-
-        # Need to patch the import inside the function
-        import voicetest.platforms.retell as retell_module
-
-        monkeypatch.setattr(retell_module, "get_client", mock_get_client)
+        monkeypatch.setattr(
+            RetellPlatformClient, "get_client", lambda self, api_key=None: mock_client
+        )
 
         response = db_client.get("/api/platforms/retell/agents")
         assert response.status_code == 200
@@ -1204,6 +1197,8 @@ class TestPlatformEndpoints:
     def test_list_vapi_agents_mocked(self, db_client, monkeypatch):
         """List VAPI agents with mocked client."""
         from unittest.mock import MagicMock
+
+        from voicetest.platforms.vapi import VapiPlatformClient
 
         # Configure platform first
         db_client.post(
@@ -1219,9 +1214,9 @@ class TestPlatformEndpoints:
         mock_client = MagicMock()
         mock_client.assistants.list.return_value = [mock_asst]
 
-        import voicetest.platforms.vapi as vapi_module
-
-        monkeypatch.setattr(vapi_module, "get_client", lambda api_key=None: mock_client)
+        monkeypatch.setattr(
+            VapiPlatformClient, "get_client", lambda self, api_key=None: mock_client
+        )
 
         response = db_client.get("/api/platforms/vapi/agents")
         assert response.status_code == 200
@@ -1272,3 +1267,94 @@ class TestPlatformEndpoints:
         response = db_client.get("/api/platforms/retell/status")
         assert response.status_code == 200
         assert response.json()["configured"] is True
+
+    def test_get_platform_status_livekit_not_configured(self, db_client):
+        """LiveKit platform status returns false when API key not configured."""
+        response = db_client.get("/api/platforms/livekit/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["platform"] == "livekit"
+        assert data["configured"] is False
+
+    def test_list_livekit_agents_not_configured(self, db_client):
+        """List LiveKit agents returns 400 when API key not configured."""
+        response = db_client.get("/api/platforms/livekit/agents")
+        assert response.status_code == 400
+        assert "not configured" in response.json()["detail"]
+
+    def test_import_livekit_agent_not_configured(self, db_client):
+        """Import LiveKit agent returns 400 when API key not configured."""
+        response = db_client.post("/api/platforms/livekit/agents/agent-123/import", json={})
+        assert response.status_code == 400
+        assert "not configured" in response.json()["detail"]
+
+    def test_export_to_livekit_not_configured(self, db_client, sample_retell_config):
+        """Export to LiveKit returns 400 when API key not configured."""
+        import_response = db_client.post(
+            "/api/agents/import", json={"config": sample_retell_config}
+        )
+        graph = import_response.json()
+
+        response = db_client.post(
+            "/api/platforms/livekit/export",
+            json={"graph": graph, "name": "Test Export"},
+        )
+        assert response.status_code == 400
+        assert "not configured" in response.json()["detail"]
+
+
+class TestLiveKitImportExport:
+    """Tests for LiveKit-specific import/export functionality."""
+
+    def test_import_livekit_agent_from_file(self, client, sample_livekit_agent_code):
+        """Import LiveKit agent code via dict."""
+        response = client.post(
+            "/api/agents/import",
+            json={"config": {"code": sample_livekit_agent_code}, "source": "livekit"},
+        )
+        assert response.status_code == 200
+
+        graph = response.json()
+        assert graph["source_type"] == "livekit"
+        assert graph["entry_node_id"] == "greeting"
+        assert "greeting" in graph["nodes"]
+
+    def test_export_to_livekit_format(self, client, sample_retell_config):
+        """Export graph to LiveKit Python code."""
+        import_response = client.post("/api/agents/import", json={"config": sample_retell_config})
+        graph = import_response.json()
+
+        response = client.post("/api/agents/export", json={"graph": graph, "format": "livekit"})
+        assert response.status_code == 200
+
+        result = response.json()
+        assert result["format"] == "livekit"
+        assert "class Agent_greeting" in result["content"]
+        assert "from livekit.agents import" in result["content"]
+
+    def test_livekit_roundtrip(self, client, sample_livekit_agent_code):
+        """Import LiveKit code and export back to LiveKit."""
+        import_response = client.post(
+            "/api/agents/import",
+            json={"config": {"code": sample_livekit_agent_code}, "source": "livekit"},
+        )
+        assert import_response.status_code == 200
+        graph = import_response.json()
+
+        export_response = client.post(
+            "/api/agents/export", json={"graph": graph, "format": "livekit"}
+        )
+        assert export_response.status_code == 200
+
+        result = export_response.json()
+        assert "Agent_greeting" in result["content"]
+        assert "Agent_billing" in result["content"]
+
+    def test_livekit_listed_in_importers(self, client):
+        """LiveKit should be listed in available importers."""
+        response = client.get("/api/importers")
+        assert response.status_code == 200
+
+        importers = response.json()
+        source_types = [imp["source_type"] for imp in importers]
+        assert "livekit" in source_types

@@ -12,13 +12,15 @@
   let error = $state("");
   let importers = $state<ImporterInfo[]>([]);
 
-  type ImportTab = "file" | "retell" | "vapi";
+  type ImportTab = "file" | "retell" | "vapi" | "livekit";
   let activeTab = $state<ImportTab>("file");
 
   let retellStatus = $state<PlatformStatus | null>(null);
   let vapiStatus = $state<PlatformStatus | null>(null);
+  let livekitStatus = $state<PlatformStatus | null>(null);
   let retellAgents = $state<RemoteAgentInfo[]>([]);
   let vapiAgents = $state<RemoteAgentInfo[]>([]);
+  let livekitAgents = $state<RemoteAgentInfo[]>([]);
   let loadingAgents = $state(false);
   let selectedRemoteAgent = $state<RemoteAgentInfo | null>(null);
   let apiKeyInput = $state("");
@@ -32,6 +34,7 @@
     });
     api.getPlatformStatus("retell").then((s) => (retellStatus = s)).catch(() => {});
     api.getPlatformStatus("vapi").then((s) => (vapiStatus = s)).catch(() => {});
+    api.getPlatformStatus("livekit").then((s) => (livekitStatus = s)).catch(() => {});
   });
 
   async function loadDemo() {
@@ -112,6 +115,8 @@
       loadRemoteAgents("retell");
     } else if (tab === "vapi" && vapiStatus?.configured) {
       loadRemoteAgents("vapi");
+    } else if (tab === "livekit" && livekitStatus?.configured) {
+      loadRemoteAgents("livekit");
     }
   }
 
@@ -122,8 +127,10 @@
       const agents = await api.listRemoteAgents(platform);
       if (platform === "retell") {
         retellAgents = agents;
-      } else {
+      } else if (platform === "vapi") {
         vapiAgents = agents;
+      } else {
+        livekitAgents = agents;
       }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -142,8 +149,10 @@
       const status = await api.configurePlatform(platform, apiKeyInput);
       if (platform === "retell") {
         retellStatus = status;
-      } else {
+      } else if (platform === "vapi") {
         vapiStatus = status;
+      } else {
+        livekitStatus = status;
       }
       apiKeyInput = "";
       await loadRemoteAgents(platform);
@@ -175,11 +184,15 @@
   }
 
   function getPlatformStatus(platform: Platform): PlatformStatus | null {
-    return platform === "retell" ? retellStatus : vapiStatus;
+    if (platform === "retell") return retellStatus;
+    if (platform === "vapi") return vapiStatus;
+    return livekitStatus;
   }
 
   function getRemoteAgents(platform: Platform): RemoteAgentInfo[] {
-    return platform === "retell" ? retellAgents : vapiAgents;
+    if (platform === "retell") return retellAgents;
+    if (platform === "vapi") return vapiAgents;
+    return livekitAgents;
   }
 </script>
 
@@ -216,6 +229,13 @@
       onclick={() => switchTab("vapi")}
     >
       From VAPI
+    </button>
+    <button
+      class="tab"
+      class:active={activeTab === "livekit"}
+      onclick={() => switchTab("livekit")}
+    >
+      From LiveKit
     </button>
   </div>
 
@@ -266,7 +286,7 @@
     {@const platform = activeTab as Platform}
     {@const status = getPlatformStatus(platform)}
     {@const agents = getRemoteAgents(platform)}
-    {@const platformName = platform === "retell" ? "Retell" : "VAPI"}
+    {@const platformName = platform === "retell" ? "Retell" : platform === "vapi" ? "VAPI" : "LiveKit"}
 
     <div class="platform-section">
       {#if !status?.configured}

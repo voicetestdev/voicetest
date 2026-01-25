@@ -1060,10 +1060,11 @@ async def start_run(
 
 # Platform integration endpoints
 
-VALID_PLATFORMS = {"retell", "vapi"}
+VALID_PLATFORMS = {"retell", "vapi", "livekit"}
 PLATFORM_ENV_KEYS = {
     "retell": "RETELL_API_KEY",
     "vapi": "VAPI_API_KEY",
+    "livekit": "LIVEKIT_API_KEY",
 }
 
 
@@ -1077,7 +1078,16 @@ def _is_platform_configured(platform: str) -> bool:
     """Check if a platform API key is configured in settings or env."""
     env_key = PLATFORM_ENV_KEYS[platform]
     settings = load_settings()
-    return bool(settings.env.get(env_key) or os.environ.get(env_key))
+    has_key = bool(settings.env.get(env_key) or os.environ.get(env_key))
+
+    # LiveKit requires both API_KEY and API_SECRET
+    if platform == "livekit" and has_key:
+        has_secret = bool(
+            settings.env.get("LIVEKIT_API_SECRET") or os.environ.get("LIVEKIT_API_SECRET")
+        )
+        return has_key and has_secret
+
+    return has_key
 
 
 def _get_platform_api_key(platform: str) -> str | None:
@@ -1119,145 +1129,118 @@ async def configure_platform(
     return PlatformStatusResponse(configured=True, platform=platform)
 
 
-@router.get("/platforms/retell/agents", response_model=list[RemoteAgentInfo])
-async def list_retell_agents() -> list[RemoteAgentInfo]:
-    """List conversation flows from user's Retell account."""
-    api_key = _get_platform_api_key("retell")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="Retell API key not configured")
+def _get_platform_registry():
+    """Get the platform registry from the DI container."""
+    from voicetest.platforms.registry import PlatformRegistry
 
-    try:
-        from voicetest.platforms.retell import get_client
-
-        client = get_client(api_key)
-        flows = client.conversation_flow.list()
-        return [
-            RemoteAgentInfo(
-                id=flow.conversation_flow_id,
-                name=getattr(flow, "conversation_flow_name", None) or flow.conversation_flow_id,
-            )
-            for flow in flows
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list Retell agents: {e}") from None
+    return get_container().resolve(PlatformRegistry)
 
 
-@router.get("/platforms/vapi/agents", response_model=list[RemoteAgentInfo])
-async def list_vapi_agents() -> list[RemoteAgentInfo]:
-    """List assistants from user's VAPI account."""
-    api_key = _get_platform_api_key("vapi")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="VAPI API key not configured")
-
-    try:
-        from voicetest.platforms.vapi import get_client
-
-        client = get_client(api_key)
-        assistants = client.assistants.list()
-        return [
-            RemoteAgentInfo(
-                id=asst.id,
-                name=asst.name or asst.id,
-            )
-            for asst in assistants
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list VAPI agents: {e}") from None
-
-
-@router.post("/platforms/retell/agents/{agent_id}/import", response_model=AgentGraph)
-async def import_retell_agent(agent_id: str) -> AgentGraph:
-    """Import a conversation flow from Retell by ID."""
-    api_key = _get_platform_api_key("retell")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="Retell API key not configured")
-
-    try:
-        from voicetest.importers.retell import RetellImporter
-        from voicetest.platforms.retell import get_client
-
-        client = get_client(api_key)
-        flow = client.conversation_flow.retrieve(agent_id)
-        config = flow.model_dump()
-        importer = RetellImporter()
-        return importer.import_agent(config)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to import Retell agent: {e}") from None
-
-
-@router.post("/platforms/vapi/agents/{agent_id}/import", response_model=AgentGraph)
-async def import_vapi_agent(agent_id: str) -> AgentGraph:
-    """Import an assistant from VAPI by ID."""
-    api_key = _get_platform_api_key("vapi")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="VAPI API key not configured")
-
-    try:
-        from voicetest.importers.vapi import VapiImporter
-        from voicetest.platforms.vapi import get_client
-
-        client = get_client(api_key)
-        assistant = client.assistants.get(agent_id)
-        config = assistant.model_dump()
-        importer = VapiImporter()
-        return importer.import_agent(config)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to import VAPI agent: {e}") from None
-
-
-@router.post("/platforms/retell/export", response_model=ExportToPlatformResponse)
-async def export_to_retell(request: ExportToPlatformRequest) -> ExportToPlatformResponse:
-    """Export an agent graph to Retell, creating a new conversation flow.
-
-    Note: Retell API does not support naming flows on creation.
-    The name parameter is ignored for Retell exports.
-    """
-    api_key = _get_platform_api_key("retell")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="Retell API key not configured")
-
-    try:
+def _get_exporter_for_platform(platform: str):
+    """Get the appropriate exporter function for a platform."""
+    if platform == "retell":
         from voicetest.exporters.retell_cf import export_retell_cf
-        from voicetest.platforms.retell import get_client
 
-        client = get_client(api_key)
-        config = export_retell_cf(request.graph)
+        return export_retell_cf
+    elif platform == "vapi":
+        from voicetest.exporters.vapi import export_vapi_assistant
 
-        flow = client.conversation_flow.create(**config)
-        return ExportToPlatformResponse(
-            id=flow.conversation_flow_id,
-            name=request.name or flow.conversation_flow_id,
-            platform="retell",
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to export to Retell: {e}") from None
+        return export_vapi_assistant
+    elif platform == "livekit":
+        from voicetest.exporters.livekit_codegen import export_livekit_code
+
+        return lambda graph: {"code": export_livekit_code(graph), "graph": graph}
+    else:
+        raise ValueError(f"No exporter for platform: {platform}")
 
 
-@router.post("/platforms/vapi/export", response_model=ExportToPlatformResponse)
-async def export_to_vapi(request: ExportToPlatformRequest) -> ExportToPlatformResponse:
-    """Export an agent graph to VAPI, creating a new assistant."""
-    api_key = _get_platform_api_key("vapi")
-    if not api_key:
-        raise HTTPException(status_code=400, detail="VAPI API key not configured")
+def _get_importer_for_platform(platform: str):
+    """Get the appropriate importer for a platform."""
+    if platform == "retell":
+        from voicetest.importers.retell import RetellImporter
+
+        return RetellImporter()
+    elif platform == "vapi":
+        from voicetest.importers.vapi import VapiImporter
+
+        return VapiImporter()
+    elif platform == "livekit":
+        from voicetest.importers.livekit import LiveKitImporter
+
+        return LiveKitImporter()
+    else:
+        raise ValueError(f"No importer for platform: {platform}")
+
+
+@router.get("/platforms/{platform}/agents", response_model=list[RemoteAgentInfo])
+async def list_platform_agents(platform: str) -> list[RemoteAgentInfo]:
+    """List agents from any supported platform."""
+    _validate_platform(platform)
+    if not _is_platform_configured(platform):
+        raise HTTPException(status_code=400, detail=f"{platform} API key not configured")
 
     try:
-        from voicetest.exporters.vapi import export_vapi_assistant
-        from voicetest.platforms.vapi import get_client
+        api_key = _get_platform_api_key(platform)
+        registry = _get_platform_registry()
+        platform_client = registry.get(platform)
+        client = platform_client.get_client(api_key)
+        agents = platform_client.list_agents(client)
+        return [RemoteAgentInfo(**a) for a in agents]
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to list {platform} agents: {e}"
+        ) from None
 
-        client = get_client(api_key)
-        config = export_vapi_assistant(request.graph)
 
-        if request.name:
-            config["name"] = request.name
+@router.post("/platforms/{platform}/agents/{agent_id}/import", response_model=AgentGraph)
+async def import_platform_agent(platform: str, agent_id: str) -> AgentGraph:
+    """Import an agent from any supported platform by ID."""
+    _validate_platform(platform)
+    if not _is_platform_configured(platform):
+        raise HTTPException(status_code=400, detail=f"{platform} API key not configured")
 
-        assistant = client.assistants.create(**config)
+    try:
+        api_key = _get_platform_api_key(platform)
+        registry = _get_platform_registry()
+        platform_client = registry.get(platform)
+        client = platform_client.get_client(api_key)
+        config = platform_client.get_agent(client, agent_id)
+        importer = _get_importer_for_platform(platform)
+        return importer.import_agent(config)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to import {platform} agent: {e}"
+        ) from None
+
+
+@router.post("/platforms/{platform}/export", response_model=ExportToPlatformResponse)
+async def export_to_platform(
+    platform: str, request: ExportToPlatformRequest
+) -> ExportToPlatformResponse:
+    """Export an agent graph to any supported platform."""
+    _validate_platform(platform)
+    if not _is_platform_configured(platform):
+        raise HTTPException(status_code=400, detail=f"{platform} API key not configured")
+
+    try:
+        api_key = _get_platform_api_key(platform)
+        registry = _get_platform_registry()
+        platform_client = registry.get(platform)
+        client = platform_client.get_client(api_key)
+
+        exporter = _get_exporter_for_platform(platform)
+        config = exporter(request.graph)
+
+        result = platform_client.create_agent(client, config, request.name)
         return ExportToPlatformResponse(
-            id=assistant.id,
-            name=assistant.name or assistant.id,
-            platform="vapi",
+            id=result["id"],
+            name=result["name"],
+            platform=platform,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to export to VAPI: {e}") from None
+        raise HTTPException(
+            status_code=500, detail=f"Failed to export to {platform}: {e}"
+        ) from None
 
 
 def create_app() -> FastAPI:

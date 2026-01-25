@@ -28,6 +28,7 @@
 
   let retellStatus = $state<PlatformStatus | null>(null);
   let vapiStatus = $state<PlatformStatus | null>(null);
+  let livekitStatus = $state<PlatformStatus | null>(null);
   let apiKeyInput = $state("");
   let configuringPlatform = $state(false);
   let exportingToPlatform = $state(false);
@@ -43,6 +44,7 @@
     if (showExportModal) {
       api.getPlatformStatus("retell").then((s) => (retellStatus = s)).catch(() => {});
       api.getPlatformStatus("vapi").then((s) => (vapiStatus = s)).catch(() => {});
+      api.getPlatformStatus("livekit").then((s) => (livekitStatus = s)).catch(() => {});
       exportSuccess = null;
     }
   });
@@ -183,8 +185,10 @@
       const status = await api.configurePlatform(platform, apiKeyInput);
       if (platform === "retell") {
         retellStatus = status;
-      } else {
+      } else if (platform === "vapi") {
         vapiStatus = status;
+      } else {
+        livekitStatus = status;
       }
       apiKeyInput = "";
       await exportToPlatform(platform);
@@ -221,7 +225,9 @@
   }
 
   function getPlatformStatus(platform: Platform): PlatformStatus | null {
-    return platform === "retell" ? retellStatus : vapiStatus;
+    if (platform === "retell") return retellStatus;
+    if (platform === "vapi") return vapiStatus;
+    return livekitStatus;
   }
 </script>
 
@@ -279,7 +285,7 @@
             {#if exportSuccess}
               <div class="export-success">
                 <div class="success-icon">&#10003;</div>
-                <p>Agent created in {exportSuccess.platform === "retell" ? "Retell" : "VAPI"}!</p>
+                <p>Agent created in {exportSuccess.platform === "retell" ? "Retell" : exportSuccess.platform === "vapi" ? "VAPI" : "LiveKit"}!</p>
                 <p class="success-details">
                   <strong>{exportSuccess.name}</strong><br />
                   <span class="mono">{exportSuccess.id}</span>
@@ -309,9 +315,9 @@
               <div class="export-section">
                 <h4>Export to Platform</h4>
 
-                {#each ["retell", "vapi"] as platform}
+                {#each ["retell", "vapi", "livekit"] as platform}
                   {@const status = getPlatformStatus(platform as Platform)}
-                  {@const platformName = platform === "retell" ? "Retell" : "VAPI"}
+                  {@const platformName = platform === "retell" ? "Retell" : platform === "vapi" ? "VAPI" : "LiveKit"}
                   <div class="platform-export-row">
                     {#if !status?.configured}
                       <div class="platform-setup">

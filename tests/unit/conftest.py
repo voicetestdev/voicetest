@@ -124,3 +124,33 @@ def sample_vapi_squad(vapi_fixtures_dir: Path) -> dict:
 def sample_vapi_squad_path(vapi_fixtures_dir: Path) -> Path:
     """Return path to sample VAPI squad file."""
     return vapi_fixtures_dir / "sample_squad.json"
+
+
+@pytest.fixture
+def livekit_fixtures_dir(fixtures_dir: Path) -> Path:
+    """Return path to LiveKit test fixtures."""
+    return fixtures_dir / "livekit"
+
+
+@pytest.fixture
+def sample_livekit_agent_path(livekit_fixtures_dir: Path) -> Path:
+    """Return path to sample LiveKit agent Python file."""
+    return livekit_fixtures_dir / "sample_agent.py"
+
+
+@pytest.fixture
+def sample_livekit_agent_code(sample_livekit_agent_path: Path) -> str:
+    """Load sample LiveKit agent Python code."""
+    return sample_livekit_agent_path.read_text()
+
+
+@pytest.fixture
+def sample_livekit_simple_path(livekit_fixtures_dir: Path) -> Path:
+    """Return path to simple LiveKit agent file."""
+    return livekit_fixtures_dir / "sample_agent_simple.py"
+
+
+@pytest.fixture
+def sample_livekit_simple_code(sample_livekit_simple_path: Path) -> str:
+    """Load simple LiveKit agent Python code."""
+    return sample_livekit_simple_path.read_text()

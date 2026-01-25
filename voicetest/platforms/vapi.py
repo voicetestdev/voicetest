@@ -5,8 +5,102 @@ Requires: pip install voicetest[platforms]
 """
 
 import os
+from typing import Any
 
 from vapi import Vapi
+
+
+class VapiPlatformClient:
+    """VAPI platform client implementing PlatformClient protocol."""
+
+    @property
+    def platform_name(self) -> str:
+        """Platform identifier."""
+        return "vapi"
+
+    @property
+    def env_key(self) -> str:
+        """Environment variable name for API key."""
+        return "VAPI_API_KEY"
+
+    def get_client(self, api_key: str | None = None) -> Vapi:
+        """Get a configured VAPI SDK client.
+
+        Args:
+            api_key: VAPI API key. Defaults to VAPI_API_KEY env var.
+
+        Returns:
+            Configured Vapi client.
+
+        Raises:
+            ValueError: If no API key available.
+        """
+        key = api_key or os.environ.get(self.env_key)
+        if not key:
+            raise ValueError(f"{self.env_key} not set")
+        return Vapi(token=key)
+
+    def list_agents(self, client: Vapi) -> list[dict[str, Any]]:
+        """List assistants from VAPI.
+
+        Args:
+            client: VAPI SDK client.
+
+        Returns:
+            List of dicts with id and name fields.
+        """
+        assistants = client.assistants.list()
+        return [
+            {
+                "id": asst.id,
+                "name": asst.name or asst.id,
+            }
+            for asst in assistants
+        ]
+
+    def get_agent(self, client: Vapi, agent_id: str) -> dict[str, Any]:
+        """Get an assistant by ID.
+
+        Args:
+            client: VAPI SDK client.
+            agent_id: Assistant ID.
+
+        Returns:
+            Assistant configuration dict.
+        """
+        assistant = client.assistants.get(agent_id)
+        return assistant.model_dump()
+
+    def create_agent(
+        self, client: Vapi, config: dict[str, Any], name: str | None = None
+    ) -> dict[str, Any]:
+        """Create an assistant in VAPI.
+
+        Args:
+            client: VAPI SDK client.
+            config: Assistant configuration (from export_vapi_assistant).
+            name: Optional name override for the assistant.
+
+        Returns:
+            Dict with id, name, and platform fields.
+        """
+        if name:
+            config["name"] = name
+        assistant = client.assistants.create(**config)
+        return {
+            "id": assistant.id,
+            "name": assistant.name or assistant.id,
+            "platform": self.platform_name,
+        }
+
+    def delete_agent(self, client: Vapi, agent_id: str) -> None:
+        """Delete an assistant from VAPI.
+
+        Args:
+            client: VAPI SDK client.
+            agent_id: Assistant ID.
+        """
+        client.assistants.delete(agent_id)
 
 
 def get_client(api_key: str | None = None) -> Vapi:
@@ -21,8 +115,4 @@ def get_client(api_key: str | None = None) -> Vapi:
     Raises:
         ValueError: If no API key available.
     """
-    key = api_key or os.environ.get("VAPI_API_KEY")
-    if not key:
-        raise ValueError("VAPI_API_KEY not set")
-
-    return Vapi(token=key)
+    return VapiPlatformClient().get_client(api_key)

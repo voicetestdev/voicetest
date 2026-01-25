@@ -314,6 +314,20 @@ uv run pytest tests/integration
 uv run ruff check voicetest/ tests/
 ```
 
+### LiveKit CLI
+
+LiveKit integration tests require the `lk` CLI tool for agent deployment and listing operations. Install it from https://docs.livekit.io/home/cli/cli-setup/
+
+```bash
+# macOS
+brew install livekit-cli
+
+# Linux
+curl -sSL https://get.livekit.io/cli | bash
+```
+
+Tests that require the CLI will skip automatically if it's not installed.
+
 ### Frontend Development
 
 The web UI is built with Bun + Svelte + Vite. Uses [mise](https://mise.jdx.dev/) for version management.

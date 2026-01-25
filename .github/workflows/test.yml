@@ -78,6 +78,9 @@ jobs:
           mise exec -- bun install
           mise exec -- bun run build
 
+      - name: Install LiveKit CLI
+        run: curl -sSL https://get.livekit.io/cli | bash
+
       - name: Install dependencies with platform extras
         run: uv sync --frozen --all-extras
 
@@ -85,7 +88,9 @@ jobs:
         env:
           RETELL_API_KEY: ${{ secrets.RETELL_API_KEY }}
           VAPI_API_KEY: ${{ secrets.VAPI_API_KEY }}
-        run: uv run pytest tests/integration/test_retell_api.py tests/integration/test_vapi_api.py -v --tb=short
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+        run: uv run pytest tests/integration/test_retell_api.py tests/integration/test_vapi_api.py tests/integration/test_livekit_api.py -v --tb=short
 
   build:
     runs-on: ubuntu-latest
