@@ -1,13 +1,13 @@
 [project]
 name = "voicetest"
-version = "0.6"
+version = "0.7"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
     { name = "pld", email = "50706+pld@users.noreply.github.com" }
 ]
-keywords = ["voice", "agent", "testing", "livekit", "retell", "vapi"]
+keywords = ["voice", "ai", "testing", "retell", "vapi", "bland", "livekit"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -42,9 +42,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/pld/voicetest"
-Repository = "https://github.com/pld/voicetest"
-Issues = "https://github.com/pld/voicetest/issues"
+Homepage = "https://voicetest.dev"
+Repository = "https://github.com/voicetestdev/voicetest"
+Issues = "https://github.com/voicetestdev/voicetest/issues"
 
 [project.optional-dependencies]
 dev = [

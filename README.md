@@ -1,4 +1,4 @@
-[![Tests](https://github.com/pld/voicetest/actions/workflows/test.yml/badge.svg)](https://github.com/pld/voicetest/actions/workflows/test.yml)
+[![Tests](https://github.com/voicetestdev/voicetest/actions/workflows/test.yml/badge.svg)](https://github.com/voicetestdev/voicetest/actions/workflows/test.yml)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
@@ -347,7 +347,7 @@ In the shell:
 
 ```bash
 # Clone and install
-git clone https://github.com/pld/voicetest
+git clone https://github.com/voicetestdev/voicetest
 cd voicetest
 uv sync --all-extras
 
