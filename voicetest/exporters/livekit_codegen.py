@@ -1,6 +1,24 @@
 """LiveKit code generation exporter."""
 
+from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph, AgentNode
+
+
+class LiveKitExporter:
+    """Exports AgentGraph to LiveKit Python agent code."""
+
+    format_id = "livekit"
+
+    def get_info(self) -> ExporterInfo:
+        return ExporterInfo(
+            format_id=self.format_id,
+            name="LiveKit",
+            description="Python agent code for LiveKit voice platform",
+            ext="py",
+        )
+
+    def export(self, graph: AgentGraph) -> str:
+        return export_livekit_code(graph)
 
 
 def export_livekit_code(graph: AgentGraph) -> str:

@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING, Any
 
 from retell import Retell
 
+from voicetest.exporters.retell_cf import export_retell_cf
+from voicetest.importers.retell import RetellImporter
+
 
 if TYPE_CHECKING:
     from voicetest.models.agent import AgentGraph
@@ -38,14 +41,10 @@ class RetellPlatformClient:
 
     def get_importer(self) -> SourceImporter:
         """Get the importer for this platform."""
-        from voicetest.importers.retell import RetellImporter
-
         return RetellImporter()
 
     def get_exporter(self) -> Callable[[AgentGraph], dict[str, Any]]:
         """Get the exporter function for this platform."""
-        from voicetest.exporters.retell_cf import export_retell_cf
-
         return export_retell_cf
 
     def get_client(self, api_key: str | None = None) -> Retell:

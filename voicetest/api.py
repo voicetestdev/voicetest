@@ -10,8 +10,12 @@ import uuid
 
 from dspy.adapters.baml_adapter import BAMLAdapter
 
+from voicetest.container import get_exporter_registry, get_importer_registry
+from voicetest.engine.session import ConversationRunner
 from voicetest.importers.base import ImporterInfo
-from voicetest.importers.registry import get_registry
+from voicetest.judges.flow import FlowJudge, FlowResult
+from voicetest.judges.metric import MetricJudge
+from voicetest.judges.rule import RuleJudge
 from voicetest.models.agent import AgentGraph, MetricsConfig
 from voicetest.models.results import (
     Message,
@@ -22,6 +26,7 @@ from voicetest.models.results import (
     TestRun,
 )
 from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
 from voicetest.utils import substitute_variables
 
 
@@ -48,7 +53,7 @@ async def import_agent(
     Raises:
         ValueError: If source type is unknown or cannot be auto-detected.
     """
-    registry = get_registry()
+    registry = get_importer_registry()
     return registry.import_agent(config, source_type=source)
 
 
@@ -58,7 +63,7 @@ def list_importers() -> list[ImporterInfo]:
     Returns:
         List of ImporterInfo objects describing each available importer.
     """
-    registry = get_registry()
+    registry = get_importer_registry()
     return registry.list_importers()
 
 
@@ -71,41 +76,14 @@ async def export_agent(
 
     Args:
         graph: The agent graph to export.
-        format: Export format ('livekit', 'mermaid', 'retell-llm', 'retell-cf',
-                'vapi-assistant', 'vapi-squad').
+        format: Export format (see list_export_formats()).
         output: Optional output path. Returns string if None.
 
     Returns:
         Exported content as string.
     """
-    import json
-
-    if format == "mermaid":
-        from voicetest.exporters.graph_viz import export_mermaid
-
-        content = export_mermaid(graph)
-    elif format == "livekit":
-        from voicetest.exporters.livekit_codegen import export_livekit_code
-
-        content = export_livekit_code(graph)
-    elif format == "retell-llm":
-        from voicetest.exporters.retell_llm import export_retell_llm
-
-        content = json.dumps(export_retell_llm(graph), indent=2)
-    elif format == "retell-cf":
-        from voicetest.exporters.retell_cf import export_retell_cf
-
-        content = json.dumps(export_retell_cf(graph), indent=2)
-    elif format == "vapi-assistant":
-        from voicetest.exporters.vapi import export_vapi_assistant
-
-        content = json.dumps(export_vapi_assistant(graph), indent=2)
-    elif format == "vapi-squad":
-        from voicetest.exporters.vapi import export_vapi_squad
-
-        content = json.dumps(export_vapi_squad(graph), indent=2)
-    else:
-        raise ValueError(f"Unknown export format: {format}")
+    registry = get_exporter_registry()
+    content = registry.export(graph, format)
 
     if output:
         output.write_text(content)
@@ -119,43 +97,10 @@ def list_export_formats() -> list[dict[str, str]]:
     Returns:
         List of dicts with format id, name, description, and extension.
     """
+    registry = get_exporter_registry()
     return [
-        {
-            "id": "mermaid",
-            "name": "Mermaid",
-            "description": "Flowchart diagram for documentation and visualization",
-            "ext": "md",
-        },
-        {
-            "id": "livekit",
-            "name": "LiveKit",
-            "description": "Python agent code for LiveKit voice platform",
-            "ext": "py",
-        },
-        {
-            "id": "retell-llm",
-            "name": "Retell LLM",
-            "description": "Single LLM agent config for Retell AI",
-            "ext": "json",
-        },
-        {
-            "id": "retell-cf",
-            "name": "Retell CF",
-            "description": "Conversation Flow with multi-state routing for Retell AI",
-            "ext": "json",
-        },
-        {
-            "id": "vapi-assistant",
-            "name": "VAPI Assistant",
-            "description": "Single assistant config for VAPI (merges all nodes)",
-            "ext": "json",
-        },
-        {
-            "id": "vapi-squad",
-            "name": "VAPI Squad",
-            "description": "Multi-assistant squad for VAPI (preserves node structure)",
-            "ext": "json",
-        },
+        {"id": info.format_id, "name": info.name, "description": info.description, "ext": info.ext}
+        for info in registry.list_formats()
     ]
 
 
@@ -182,12 +127,6 @@ async def run_test(
     Returns:
         TestResult with pass/fail status, transcript, and metrics.
     """
-    from voicetest.engine.session import ConversationRunner
-    from voicetest.judges.flow import FlowJudge
-    from voicetest.judges.metric import MetricJudge
-    from voicetest.judges.rule import RuleJudge
-    from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
-
     options = options or RunOptions()
     default_options = RunOptions()
     overrides: list[ModelOverride] = []
@@ -289,8 +228,6 @@ async def run_test(
             metric_judge._mock_results = mock_results
 
             flow_judge._mock_mode = True
-            from voicetest.judges.flow import FlowResult
-
             flow_judge._mock_result = FlowResult(
                 valid=True, issues=[], reasoning="Mock flow validation"
             )
@@ -432,8 +369,6 @@ async def evaluate_transcript(
     Returns:
         List of MetricResult objects.
     """
-    from voicetest.judges.metric import MetricJudge
-
     judge = MetricJudge()
 
     if _mock_mode:

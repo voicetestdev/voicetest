@@ -1,5 +1,6 @@
 """Base protocol and types for source importers."""
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -32,15 +33,10 @@ class SourceImporter(Protocol):
         ...
 
 
+@dataclass
 class ImporterInfo:
     """Metadata about an available importer."""
 
-    def __init__(
-        self,
-        source_type: str,
-        description: str,
-        file_patterns: list[str],
-    ):
-        self.source_type = source_type
-        self.description = description
-        self.file_patterns = file_patterns
+    source_type: str
+    description: str
+    file_patterns: list[str]

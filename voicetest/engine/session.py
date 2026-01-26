@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 import dspy
+from dspy.streaming import StreamListener, streamify
 
 from voicetest.engine.agent_gen import GeneratedAgent, generate_agent_classes
 from voicetest.models.agent import AgentGraph
@@ -281,8 +282,6 @@ class ConversationRunner(DSPyAdapterMixin):
 
         Uses DSPy's streamify to get tokens as they're generated.
         """
-        from dspy.streaming import StreamListener, streamify
-
         predictor = dspy.Predict(signature_class)
         stream_listeners = [StreamListener(signature_field_name="response")]
 

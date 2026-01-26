@@ -1,8 +1,27 @@
 """Bland AI inbound number configuration exporter."""
 
+import json
 from typing import Any
 
+from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph, ToolDefinition
+
+
+class BlandExporter:
+    """Exports AgentGraph to Bland AI config format."""
+
+    format_id = "bland"
+
+    def get_info(self) -> ExporterInfo:
+        return ExporterInfo(
+            format_id=self.format_id,
+            name="Bland",
+            description="Agent config for Bland AI",
+            ext="json",
+        )
+
+    def export(self, graph: AgentGraph) -> str:
+        return json.dumps(export_bland_config(graph), indent=2)
 
 
 def export_bland_config(graph: AgentGraph) -> dict[str, Any]:

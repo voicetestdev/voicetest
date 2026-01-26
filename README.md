@@ -8,7 +8,7 @@
 
 ### 
 
-A generic test harness for voice agent workflows. Test agents from Retell, VAPI, LiveKit, and custom sources using a unified execution and evaluation model.
+A generic test harness for voice agent workflows. Test agents from Retell, VAPI, LiveKit, Bland, and custom sources using a unified execution and evaluation model.
 
 ## Installation
 
@@ -74,10 +74,13 @@ voicetest importers
 voicetest run --agent agent.json --tests tests.json
 
 # Export agent to different formats
-voicetest export --agent agent.json --format mermaid      # Diagram
-voicetest export --agent agent.json --format livekit      # Python code
-voicetest export --agent agent.json --format retell-llm   # Retell LLM JSON
-voicetest export --agent agent.json --format retell-cf    # Retell Conversation Flow JSON
+voicetest export --agent agent.json --format mermaid         # Diagram
+voicetest export --agent agent.json --format livekit         # Python code
+voicetest export --agent agent.json --format retell-llm      # Retell LLM JSON
+voicetest export --agent agent.json --format retell-cf       # Retell Conversation Flow JSON
+voicetest export --agent agent.json --format vapi-assistant  # VAPI Assistant JSON
+voicetest export --agent agent.json --format vapi-squad      # VAPI Squad JSON
+voicetest export --agent agent.json --format bland           # Bland AI JSON
 
 # Launch full TUI
 voicetest tui --agent agent.json --tests tests.json
@@ -97,7 +100,8 @@ voicetest serve
 The web UI provides:
 
 - Agent import and graph visualization
-- Export agents to multiple formats (Mermaid, LiveKit, Retell LLM, Retell CF)
+- Export agents to multiple formats (Mermaid, LiveKit, Retell, VAPI, Bland)
+- Platform integration: import agents from and push agents to Retell, VAPI, Bland, LiveKit
 - Test case management with persistence
 - Export tests to platform formats (Retell)
 - Global metrics configuration (compliance checks that run on all tests)
@@ -105,7 +109,7 @@ The web UI provides:
 - Cancel in-progress tests
 - Run history with detailed results
 - Transcript and metric inspection with scores
-- Settings configuration
+- Settings configuration (models, max turns, streaming)
 
 Data is persisted to `.voicetest/data.duckdb` (configurable via `VOICETEST_DB_PATH`).
 
@@ -147,6 +151,18 @@ curl -X POST http://localhost:8000/api/agents/{id}/tests/export \
 
 # WebSocket for real-time updates
 wscat -c ws://localhost:8000/api/runs/{id}/ws
+
+# Platform integration (Retell, VAPI, Bland, LiveKit)
+curl http://localhost:8000/api/platforms                              # List platforms
+curl http://localhost:8000/api/platforms/retell/status                # Check connection
+curl -X POST http://localhost:8000/api/platforms/retell/configure \   # Configure API key
+  -H "Content-Type: application/json" \
+  -d '{"api_key": "key_..."}'
+curl http://localhost:8000/api/platforms/retell/agents                # List remote agents
+curl -X POST http://localhost:8000/api/platforms/retell/agents/{id}/import  # Import agent
+curl -X POST http://localhost:8000/api/platforms/retell/export \      # Push agent to platform
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "local-agent-id"}'
 ```
 
 WebSocket messages:
@@ -161,12 +177,17 @@ voicetest can convert between agent formats via its unified AgentGraph represent
 ```
 Retell CF ─────┐                  ┌───▶ Retell LLM
                │                  │
-Retell LLM ────┼───▶ AgentGraph ──┼───▶ Retell CF
+Retell LLM ────┼                  ├───▶ Retell CF
                │                  │
-VAPI ──────────┤                  ├───▶ VAPI
+VAPI ──────────┼───▶ AgentGraph ──┼───▶ VAPI
                │                  │
-Custom ────────┘                  ├───▶ Mermaid
-                                  └───▶ LiveKit
+Bland ─────────┤                  ├───▶ Bland
+               │                  │
+LiveKit ───────┤                  ├───▶ LiveKit
+               │                  │
+XLSForm ───────┤                  └───▶ Mermaid
+               │
+Custom ────────┘
 ```
 
 Import from any supported format, then export to any other:
@@ -201,16 +222,18 @@ Test cases follow the Retell export format:
 
 ## Features
 
-- **Multi-source import**: Retell Conversation Flow, Retell LLM, VAPI, custom Python functions
-- **Format conversion**: Convert between Retell, VAPI, and other formats
+- **Multi-source import**: Retell CF, Retell LLM, VAPI, Bland, LiveKit, XLSForm, custom Python functions
+- **Format conversion**: Convert between Retell, VAPI, Bland, LiveKit, and other formats
 - **Unified IR**: AgentGraph representation for any voice agent
-- **Multi-format export**: Mermaid diagrams, LiveKit Python code, Retell LLM, Retell CF, VAPI
+- **Multi-format export**: Mermaid diagrams, LiveKit Python, Retell LLM, Retell CF, VAPI, Bland
+- **Platform integration**: Import from and push agents to Retell, VAPI, Bland, LiveKit via API
 - **Configurable LLMs**: Separate models for agent, simulator, and judge
 - **DSPy-based evaluation**: LLM judges with reasoning and 0-1 scores
 - **Global metrics**: Define compliance checks that run on all tests for an agent
 - **Multiple interfaces**: CLI, TUI, interactive shell, Web UI, REST API
 - **Persistence**: DuckDB storage for agents, tests, and run history
 - **Real-time streaming**: WebSocket-based transcript streaming during test execution
+- **Token streaming**: Optional token-level streaming as LLM generates responses (experimental)
 - **Cancellation**: Cancel in-progress tests to stop token usage
 
 ## Global Metrics
@@ -235,6 +258,30 @@ Example use cases:
 - PCI-DSS validation for payment processing
 - Brand voice consistency across all conversations
 - Safety guardrails and content policy adherence
+
+## Platform Integration
+
+voicetest can connect directly to voice platforms to import and push agent configurations.
+
+### Supported Platforms
+
+| Platform | Import | Push | API Key Env Var                          |
+| -------- | ------ | ---- | ---------------------------------------- |
+| Retell   | ✓      | ✓    | `RETELL_API_KEY`                         |
+| VAPI     | ✓      | ✓    | `VAPI_API_KEY`                           |
+| Bland    | ✓      | ✓    | `BLAND_API_KEY`                          |
+| LiveKit  | ✓      | ✓    | `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` |
+
+### Usage
+
+In the Web UI, go to the "Platforms" tab to:
+
+1. **Configure** - Enter API keys (stored in settings, not in env)
+1. **Browse** - List agents on the remote platform
+1. **Import** - Pull an agent config into voicetest for testing
+1. **Push** - Deploy a local agent to the platform
+
+API keys can also be set via environment variables or in the Settings page.
 
 ## CI/CD Integration
 
@@ -362,8 +409,9 @@ voicetest/
 │   ├── rest.py          # REST API server + WebSocket + SPA serving
 │   ├── container.py     # Dependency injection (Punq)
 │   ├── models/          # Pydantic models
-│   ├── importers/       # Source importers (retell, retell_llm, vapi, custom)
-│   ├── exporters/       # Format exporters (mermaid, livekit, retell_llm, retell_cf, vapi, test_cases)
+│   ├── importers/       # Source importers (retell, vapi, bland, livekit, xlsform, custom)
+│   ├── exporters/       # Format exporters (mermaid, livekit, retell, vapi, bland, test_cases)
+│   ├── platforms/       # Platform SDK clients (retell, vapi, bland, livekit)
 │   ├── engine/          # Execution engine
 │   ├── simulator/       # User simulation
 │   ├── judges/          # Evaluation judges (metric, flow, rule)

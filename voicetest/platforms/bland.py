@@ -13,6 +13,9 @@ from typing import TYPE_CHECKING, Any
 from bland.client import BlandAI
 import httpx
 
+from voicetest.exporters.bland import export_bland_config
+from voicetest.importers.bland import BlandImporter
+
 
 if TYPE_CHECKING:
     from voicetest.models.agent import AgentGraph
@@ -41,14 +44,10 @@ class BlandPlatformClient:
 
     def get_importer(self) -> SourceImporter:
         """Get the importer for this platform."""
-        from voicetest.importers.bland import BlandImporter
-
         return BlandImporter()
 
     def get_exporter(self) -> Callable[[AgentGraph], dict[str, Any]]:
         """Get the exporter function for this platform."""
-        from voicetest.exporters.bland import export_bland_config
-
         return export_bland_config
 
     def get_client(self, api_key: str | None = None) -> BlandAI:

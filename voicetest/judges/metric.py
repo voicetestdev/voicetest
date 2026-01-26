@@ -2,6 +2,8 @@
 
 import asyncio
 
+import dspy
+
 from voicetest.models.results import Message, MetricResult
 
 
@@ -82,7 +84,6 @@ class MetricJudge:
         threshold: float,
     ) -> MetricResult:
         """Evaluate using LLM."""
-        import dspy
 
         lm = dspy.LM(self.model)
 

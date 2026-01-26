@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 import json
 import os
 from pathlib import Path
+import tempfile
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, UploadFile, WebSocket
@@ -19,12 +20,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from voicetest import api
 from voicetest.container import get_container
+from voicetest.demo import get_demo_agent, get_demo_tests
+from voicetest.exporters.test_cases import export_tests
 from voicetest.models.agent import AgentGraph, GlobalMetric, MetricsConfig
 from voicetest.models.results import Message, MetricResult, TestResult, TestRun
 from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.platforms.registry import PlatformRegistry
 from voicetest.settings import Settings, load_settings, save_settings
 from voicetest.storage.db import get_connection, init_schema
 from voicetest.storage.repositories import (
@@ -320,8 +325,6 @@ async def import_agent(request: ImportRequest) -> AgentGraph:
 @router.post("/agents/import-file", response_model=AgentGraph)
 async def import_agent_file(file: UploadFile, source: str | None = None) -> AgentGraph:
     """Import an agent from an uploaded file (XLSForm, JSON, etc.)."""
-    import tempfile
-
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 
@@ -482,8 +485,6 @@ async def create_agent_from_file(
     source: str | None = None,
 ) -> dict:
     """Create an agent from an uploaded file (XLSForm, JSON, etc.)."""
-    import tempfile
-
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 
@@ -571,8 +572,6 @@ async def list_tests_for_agent(agent_id: str) -> list[dict]:
 @router.post("/agents/{agent_id}/tests/export")
 async def export_tests_for_agent(agent_id: str, request: ExportTestsRequest) -> list[dict]:
     """Export test cases for an agent to a specified format."""
-    from voicetest.exporters.test_cases import export_tests
-
     repo = get_test_case_repo()
 
     if request.test_ids:
@@ -659,9 +658,6 @@ async def load_demo() -> LoadDemoResponse:
 
     If the demo agent already exists, returns its info without creating duplicates.
     """
-    from voicetest.demo import get_demo_agent, get_demo_tests
-    from voicetest.models.test_case import TestCase
-
     demo_agent_config = get_demo_agent()
     demo_tests = get_demo_tests()
 
@@ -913,8 +909,6 @@ async def _execute_run(
                     },
                 )
             except asyncio.CancelledError:
-                from voicetest.models.results import TestResult
-
                 cancelled_result = TestResult(
                     test_name=test_case.name,
                     status="error",
@@ -930,8 +924,6 @@ async def _execute_run(
                     },
                 )
             except Exception as e:
-                from voicetest.models.results import TestResult
-
                 error_result = TestResult(
                     test_name=test_case.name,
                     status="error",
@@ -959,8 +951,6 @@ async def _execute_run(
 @router.websocket("/runs/{run_id}/ws")
 async def run_websocket(websocket: WebSocket, run_id: str):
     """WebSocket for streaming run updates and receiving cancel commands."""
-    from starlette.websockets import WebSocketDisconnect, WebSocketState
-
     try:
         await websocket.accept()
     except Exception as e:
@@ -1091,8 +1081,6 @@ async def start_run(
 
 def _get_platform_registry():
     """Get the platform registry from the DI container."""
-    from voicetest.platforms.registry import PlatformRegistry
-
     return get_container().resolve(PlatformRegistry)
 
 

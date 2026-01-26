@@ -10,6 +10,8 @@ from pathlib import Path
 from uuid import uuid4
 
 import duckdb
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import TestRun
@@ -175,9 +177,6 @@ class DataStore:
 
     def _append_record(self, path: Path, record: dict) -> None:
         """Append a record to a parquet file."""
-        import pyarrow as pa
-        import pyarrow.parquet as pq
-
         # Convert record to table
         table = pa.Table.from_pylist([record])
 

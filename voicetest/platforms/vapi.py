@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING, Any
 
 from vapi import Vapi
 
+from voicetest.exporters.vapi import export_vapi_assistant
+from voicetest.importers.vapi import VapiImporter
+
 
 if TYPE_CHECKING:
     from voicetest.models.agent import AgentGraph
@@ -38,14 +41,10 @@ class VapiPlatformClient:
 
     def get_importer(self) -> SourceImporter:
         """Get the importer for this platform."""
-        from voicetest.importers.vapi import VapiImporter
-
         return VapiImporter()
 
     def get_exporter(self) -> Callable[[AgentGraph], dict[str, Any]]:
         """Get the exporter function for this platform."""
-        from voicetest.exporters.vapi import export_vapi_assistant
-
         return export_vapi_assistant
 
     def get_client(self, api_key: str | None = None) -> Vapi:

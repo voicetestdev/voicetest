@@ -1,8 +1,44 @@
 """VAPI assistant and squad JSON exporter."""
 
+import json
 from typing import Any
 
+from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph, AgentNode, ToolDefinition
+
+
+class VAPIAssistantExporter:
+    """Exports AgentGraph to VAPI single assistant format."""
+
+    format_id = "vapi-assistant"
+
+    def get_info(self) -> ExporterInfo:
+        return ExporterInfo(
+            format_id=self.format_id,
+            name="VAPI Assistant",
+            description="Single assistant config for VAPI (merges all nodes)",
+            ext="json",
+        )
+
+    def export(self, graph: AgentGraph) -> str:
+        return json.dumps(export_vapi_assistant(graph), indent=2)
+
+
+class VAPISquadExporter:
+    """Exports AgentGraph to VAPI squad format."""
+
+    format_id = "vapi-squad"
+
+    def get_info(self) -> ExporterInfo:
+        return ExporterInfo(
+            format_id=self.format_id,
+            name="VAPI Squad",
+            description="Multi-assistant squad for VAPI (preserves node structure)",
+            ext="json",
+        )
+
+    def export(self, graph: AgentGraph) -> str:
+        return json.dumps(export_vapi_squad(graph), indent=2)
 
 
 def export_vapi_assistant(graph: AgentGraph) -> dict[str, Any]:

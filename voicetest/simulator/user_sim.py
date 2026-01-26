@@ -9,6 +9,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import re
 
+import dspy
+from dspy.streaming import StreamListener, streamify
+
 from voicetest.models.results import Message
 from voicetest.utils import DSPyAdapterMixin
 
@@ -94,8 +97,6 @@ class UserSimulator(DSPyAdapterMixin):
         on_token: OnTokenCallback | None = None,
     ) -> SimulatorResponse:
         """Generate an opening message when the LLM incorrectly signals end on first turn."""
-        import dspy
-
         lm = dspy.LM(self.model)
 
         class OpeningMessageSignature(dspy.Signature):
@@ -163,8 +164,6 @@ class UserSimulator(DSPyAdapterMixin):
         Returns:
             SimulatorResponse with message, should_end flag, and reasoning.
         """
-        import dspy
-
         lm = dspy.LM(self.model)
 
         class UserSimSignature(dspy.Signature):
@@ -228,9 +227,6 @@ class UserSimulator(DSPyAdapterMixin):
 
         Uses DSPy's streamify to get tokens as they're generated.
         """
-        import dspy
-        from dspy.streaming import StreamListener, streamify
-
         predictor = dspy.Predict(signature_class)
         stream_listeners = [StreamListener(signature_field_name="message")]
 

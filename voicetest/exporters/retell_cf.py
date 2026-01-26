@@ -1,8 +1,27 @@
 """Retell Conversation Flow exporter."""
 
+import json
 from typing import Any
 
+from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph, AgentNode, ToolDefinition
+
+
+class RetellCFExporter:
+    """Exports AgentGraph to Retell Conversation Flow format."""
+
+    format_id = "retell-cf"
+
+    def get_info(self) -> ExporterInfo:
+        return ExporterInfo(
+            format_id=self.format_id,
+            name="Retell CF",
+            description="Conversation Flow with multi-state routing for Retell AI",
+            ext="json",
+        )
+
+    def export(self, graph: AgentGraph) -> str:
+        return json.dumps(export_retell_cf(graph), indent=2)
 
 
 def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:

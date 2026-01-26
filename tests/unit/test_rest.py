@@ -930,8 +930,8 @@ class TestWebSocketStateMessage:
             test_response = db_client.post(
                 f"/api/agents/{agent_id}/tests",
                 json={
-                    "name": f"Test {i+1}",
-                    "user_prompt": f"Test prompt {i+1}",
+                    "name": f"Test {i + 1}",
+                    "user_prompt": f"Test prompt {i + 1}",
                     "metrics": [],
                 },
             )

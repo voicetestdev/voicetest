@@ -1,18 +1,21 @@
 """Flow judge for validating conversation traversal through agent graph."""
 
 import asyncio
+from dataclasses import dataclass
+
+import dspy
 
 from voicetest.models.agent import AgentNode
 from voicetest.models.results import Message
 
 
+@dataclass
 class FlowResult:
     """Result of flow validation."""
 
-    def __init__(self, valid: bool, issues: list[str], reasoning: str):
-        self.valid = valid
-        self.issues = issues
-        self.reasoning = reasoning
+    valid: bool
+    issues: list[str]
+    reasoning: str
 
 
 class FlowJudge:
@@ -64,8 +67,6 @@ class FlowJudge:
         nodes_visited: list[str],
     ) -> FlowResult:
         """Evaluate using LLM."""
-        import dspy
-
         lm = dspy.LM(self.model)
 
         class FlowValidationSignature(dspy.Signature):

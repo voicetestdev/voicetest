@@ -1,6 +1,24 @@
 """Graph visualization exporters."""
 
+from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph
+
+
+class MermaidExporter:
+    """Exports AgentGraph to Mermaid flowchart format."""
+
+    format_id = "mermaid"
+
+    def get_info(self) -> ExporterInfo:
+        return ExporterInfo(
+            format_id=self.format_id,
+            name="Mermaid",
+            description="Flowchart diagram for documentation and visualization",
+            ext="md",
+        )
+
+    def export(self, graph: AgentGraph) -> str:
+        return export_mermaid(graph)
 
 
 def export_mermaid(graph: AgentGraph) -> str:

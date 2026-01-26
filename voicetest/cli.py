@@ -1,15 +1,25 @@
 """Command-line interface for voicetest."""
 
 import asyncio
+import json
+import os
 from pathlib import Path
+import tempfile
 
 import click
 from rich.console import Console
 from rich.table import Table
+import uvicorn
 
 from voicetest import api
-from voicetest.models.test_case import RunOptions
+from voicetest.demo import get_demo_agent, get_demo_tests
+from voicetest.formatting import format_run
+from voicetest.models.test_case import RunOptions, TestCase
 from voicetest.runner import TestRunContext
+from voicetest.settings import load_settings
+from voicetest.storage.db import get_connection, init_schema
+from voicetest.storage.repositories import AgentRepository, TestCaseRepository
+from voicetest.tui import VoicetestApp, VoicetestShell
 
 
 console = Console()
@@ -17,13 +27,6 @@ console = Console()
 
 def _start_server(host: str, port: int, reload: bool = False) -> None:
     """Start the uvicorn web server."""
-    try:
-        import uvicorn
-    except ImportError:
-        console.print("[red]Error: uvicorn not installed.[/red]")
-        console.print("Install with: uv add 'voicetest[api]'")
-        raise SystemExit(1) from None
-
     console.print("[bold]Starting voicetest API server...[/bold]")
     console.print(f"  URL: http://{host}:{port}")
     console.print(f"  Docs: http://{host}:{port}/docs")
@@ -50,8 +53,6 @@ def main(ctx):
     """
     if ctx.invoked_subcommand is None:
         # No subcommand - launch interactive shell
-        from voicetest.tui import VoicetestShell
-
         app = VoicetestShell()
         app.run()
 
@@ -105,9 +106,6 @@ def _run_tui(
     verbose: bool,
 ) -> None:
     """Launch interactive TUI."""
-    from voicetest.settings import load_settings
-    from voicetest.tui import VoicetestApp
-
     settings = load_settings()
     settings.apply_env()
     options = RunOptions(
@@ -138,8 +136,6 @@ async def _run_cli(
     max_turns: int | None,
 ) -> None:
     """Run tests in CLI mode."""
-    from voicetest.settings import load_settings
-
     settings = load_settings()
     settings.apply_env()
     options = RunOptions(
@@ -188,8 +184,6 @@ async def _run_cli(
 
 def _display_results(run_result) -> None:
     """Display test results using rich."""
-    from voicetest.formatting import format_run
-
     for line in format_run(run_result):
         console.print(line)
 
@@ -305,21 +299,12 @@ def demo(serve: bool, host: str, port: int):
 
         voicetest demo --serve      # Load demo, start web server
     """
-    import json
-    import tempfile
-
-    from voicetest.demo import get_demo_agent, get_demo_tests
-
     console.print("[bold]Loading demo agent and tests...[/bold]")
 
     demo_agent_config = get_demo_agent()
     demo_tests = get_demo_tests()
 
     if serve:
-        from voicetest.models.test_case import TestCase
-        from voicetest.storage.db import get_connection, init_schema
-        from voicetest.storage.repositories import AgentRepository, TestCaseRepository
-
         conn = get_connection()
         init_schema(conn)
 
@@ -367,8 +352,6 @@ def demo(serve: bool, host: str, port: int):
         console.print(f"  Tests: {tests_path}")
         console.print()
 
-        from voicetest.tui import VoicetestShell
-
         app = VoicetestShell(agent_path=agent_path, tests_path=tests_path)
         app.run()
 
@@ -389,9 +372,6 @@ def smoke_test(max_turns: int):
 
 async def _smoke_test(max_turns: int) -> None:
     """Run smoke test with bundled demo data."""
-    from voicetest.demo import get_demo_agent, get_demo_tests
-    from voicetest.settings import load_settings
-
     settings = load_settings()
     settings.apply_env()
 
@@ -407,9 +387,6 @@ async def _smoke_test(max_turns: int) -> None:
     console.print()
 
     graph = await api.import_agent(demo_agent)
-
-    from voicetest.models.test_case import TestCase
-
     test_case = TestCase.model_validate(first_test)
     options = RunOptions(
         agent_model=settings.models.agent,
@@ -442,8 +419,6 @@ async def _smoke_test(max_turns: int) -> None:
 )
 def serve(host: str, port: int, reload: bool, agent: tuple[Path, ...]):
     """Start the REST API server."""
-    import os
-
     os.environ["VOICETEST_LINKED_AGENTS"] = ",".join(str(p) for p in agent)
 
     if agent:

@@ -47,10 +47,3 @@ class ImporterRegistry:
                 raise ValueError("Could not auto-detect source type")
 
         return importer.import_agent(path_or_config)
-
-
-def get_registry() -> ImporterRegistry:
-    """Get the importer registry from the DI container."""
-    from voicetest.container import get_container
-
-    return get_container().resolve(ImporterRegistry)

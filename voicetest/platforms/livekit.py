@@ -14,9 +14,12 @@ import subprocess
 import tempfile
 from typing import TYPE_CHECKING, Any
 
+from voicetest.exporters.livekit_codegen import export_livekit_code
+from voicetest.importers.livekit import LiveKitImporter
+from voicetest.models.agent import AgentGraph
+
 
 if TYPE_CHECKING:
-    from voicetest.models.agent import AgentGraph
     from voicetest.platforms.base import SourceImporter
 
 
@@ -44,13 +47,10 @@ class LiveKitPlatformClient:
 
     def get_importer(self) -> SourceImporter:
         """Get the importer for this platform."""
-        from voicetest.importers.livekit import LiveKitImporter
-
         return LiveKitImporter()
 
     def get_exporter(self) -> Callable[[AgentGraph], dict[str, Any]]:
         """Get the exporter function for this platform."""
-        from voicetest.exporters.livekit_codegen import export_livekit_code
 
         def _export_with_code(graph: AgentGraph) -> dict[str, Any]:
             return {"code": export_livekit_code(graph), "graph": graph}
@@ -165,9 +165,6 @@ class LiveKitPlatformClient:
         """
         code = config.get("code")
         if not code:
-            from voicetest.exporters.livekit_codegen import export_livekit_code
-            from voicetest.models.agent import AgentGraph
-
             graph_data = config.get("graph")
             if graph_data:
                 if isinstance(graph_data, dict):

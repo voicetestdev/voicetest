@@ -1,5 +1,6 @@
 """Interactive shell TUI for voicetest."""
 
+import asyncio
 import difflib
 import os
 from pathlib import Path
@@ -10,7 +11,10 @@ from textual.containers import Horizontal, Vertical
 from textual.suggester import SuggestFromList
 from textual.widgets import Footer, Header, Input, RichLog, Static
 
+from voicetest import api
+from voicetest.config import get_settings_path
 from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.runner import load_test_cases
 from voicetest.settings import Settings, load_settings, save_settings
 
 
@@ -217,8 +221,6 @@ class VoicetestShell(App):
         yield Footer()
 
     def on_mount(self) -> None:
-        from voicetest.config import get_settings_path
-
         self.title = "voicetest"
         self.sub_title = "interactive shell"
         self._log("[bold green]voicetest[/bold green] interactive shell")
@@ -232,8 +234,6 @@ class VoicetestShell(App):
             config_panel.set_agent(self._initial_agent_path)
             self._log(f"[green]Agent loaded: {self._initial_agent_path}[/green]")
         if self._initial_tests_path:
-            from voicetest.runner import load_test_cases
-
             test_cases = load_test_cases(self._initial_tests_path)
             config_panel.set_tests(self._initial_tests_path, test_cases)
             self._log(f"[green]Tests loaded: {self._initial_tests_path}[/green]")
@@ -316,8 +316,6 @@ class VoicetestShell(App):
             if not path.exists():
                 self._log(f"[red]File not found: {path}[/red]")
                 return
-            from voicetest.runner import load_test_cases
-
             test_cases = load_test_cases(path)
             config_panel.set_tests(path, test_cases)
             self._log(f"[green]Tests set to {path}[/green]")
@@ -395,11 +393,6 @@ class VoicetestShell(App):
         if not config_panel.tests_path:
             self._log("[red]No tests set. Use 'tests <path>' first.[/red]")
             return
-
-        import asyncio
-
-        from voicetest import api
-        from voicetest.runner import load_test_cases
 
         self._running = True
         self._cancel_requested = False
@@ -510,8 +503,6 @@ class VoicetestShell(App):
             self._log("[red]Usage: export <format> (mermaid|livekit)[/red]")
             return
 
-        from voicetest import api
-
         try:
             graph = await api.import_agent(config_panel.agent_path)
             result = await api.export_agent(graph, format=format)
@@ -521,7 +512,6 @@ class VoicetestShell(App):
 
     async def _list_importers(self) -> None:
         """List available importers."""
-        from voicetest import api
 
         importers = api.list_importers()
         self._log("[bold]Available importers:[/bold]")
@@ -612,7 +602,6 @@ class VoicetestShell(App):
 
     async def _show_agent_graph(self, config_panel: ConfigPanel) -> None:
         """Show ASCII representation of agent graph."""
-        from voicetest import api
 
         try:
             graph = await api.import_agent(config_panel.agent_path)

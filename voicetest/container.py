@@ -2,22 +2,32 @@
 
 import punq
 
+from voicetest.exporters.bland import BlandExporter
+from voicetest.exporters.graph_viz import MermaidExporter
+from voicetest.exporters.livekit_codegen import LiveKitExporter
+from voicetest.exporters.registry import ExporterRegistry
+from voicetest.exporters.retell_cf import RetellCFExporter
+from voicetest.exporters.retell_llm import RetellLLMExporter
+from voicetest.exporters.vapi import VAPIAssistantExporter, VAPISquadExporter
+from voicetest.importers.bland import BlandImporter
+from voicetest.importers.custom import CustomImporter
+from voicetest.importers.livekit import LiveKitImporter
 from voicetest.importers.registry import ImporterRegistry
+from voicetest.importers.retell import RetellImporter
+from voicetest.importers.retell_llm import RetellLLMImporter
+from voicetest.importers.vapi import VapiImporter
+from voicetest.importers.xlsform import XLSFormImporter
+from voicetest.platforms.bland import BlandPlatformClient
+from voicetest.platforms.livekit import LiveKitPlatformClient
 from voicetest.platforms.registry import PlatformRegistry
+from voicetest.platforms.retell import RetellPlatformClient
+from voicetest.platforms.vapi import VapiPlatformClient
 from voicetest.storage.db import get_connection
 from voicetest.storage.repositories import AgentRepository, RunRepository, TestCaseRepository
 
 
 def _create_importer_registry() -> ImporterRegistry:
     """Create and configure the importer registry."""
-    from voicetest.importers.bland import BlandImporter
-    from voicetest.importers.custom import CustomImporter
-    from voicetest.importers.livekit import LiveKitImporter
-    from voicetest.importers.retell import RetellImporter
-    from voicetest.importers.retell_llm import RetellLLMImporter
-    from voicetest.importers.vapi import VapiImporter
-    from voicetest.importers.xlsform import XLSFormImporter
-
     registry = ImporterRegistry()
     registry.register(RetellImporter())
     registry.register(RetellLLMImporter())
@@ -29,13 +39,21 @@ def _create_importer_registry() -> ImporterRegistry:
     return registry
 
 
+def _create_exporter_registry() -> ExporterRegistry:
+    """Create and configure the exporter registry."""
+    registry = ExporterRegistry()
+    registry.register(MermaidExporter())
+    registry.register(LiveKitExporter())
+    registry.register(RetellLLMExporter())
+    registry.register(RetellCFExporter())
+    registry.register(VAPIAssistantExporter())
+    registry.register(VAPISquadExporter())
+    registry.register(BlandExporter())
+    return registry
+
+
 def _create_platform_registry() -> PlatformRegistry:
     """Create and configure the platform registry."""
-    from voicetest.platforms.bland import BlandPlatformClient
-    from voicetest.platforms.livekit import LiveKitPlatformClient
-    from voicetest.platforms.retell import RetellPlatformClient
-    from voicetest.platforms.vapi import VapiPlatformClient
-
     registry = PlatformRegistry()
     registry.register(RetellPlatformClient())
     registry.register(VapiPlatformClient())
@@ -51,6 +69,9 @@ def create_container() -> punq.Container:
     # Register singletons
     container.register(
         ImporterRegistry, factory=_create_importer_registry, scope=punq.Scope.singleton
+    )
+    container.register(
+        ExporterRegistry, factory=_create_exporter_registry, scope=punq.Scope.singleton
     )
     container.register(
         PlatformRegistry, factory=_create_platform_registry, scope=punq.Scope.singleton
@@ -89,3 +110,13 @@ def reset_container() -> None:
     """Reset the container (for testing)."""
     global _container
     _container = None
+
+
+def get_importer_registry() -> ImporterRegistry:
+    """Get the importer registry from the DI container."""
+    return get_container().resolve(ImporterRegistry)
+
+
+def get_exporter_registry() -> ExporterRegistry:
+    """Get the exporter registry from the DI container."""
+    return get_container().resolve(ExporterRegistry)

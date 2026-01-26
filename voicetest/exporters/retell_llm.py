@@ -1,8 +1,27 @@
 """Retell LLM (single/multi-prompt) exporter."""
 
+import json
 from typing import Any
 
+from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph, AgentNode, ToolDefinition
+
+
+class RetellLLMExporter:
+    """Exports AgentGraph to Retell LLM format."""
+
+    format_id = "retell-llm"
+
+    def get_info(self) -> ExporterInfo:
+        return ExporterInfo(
+            format_id=self.format_id,
+            name="Retell LLM",
+            description="Single LLM agent config for Retell AI",
+            ext="json",
+        )
+
+    def export(self, graph: AgentGraph) -> str:
+        return json.dumps(export_retell_llm(graph), indent=2)
 
 
 def export_retell_llm(graph: AgentGraph) -> dict[str, Any]:

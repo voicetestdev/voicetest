@@ -229,26 +229,25 @@ class TestGlobalRegistry:
     """Tests for the global importer registry."""
 
     def test_get_registry_returns_same_instance(self):
-        from voicetest.importers.registry import get_registry
+        from voicetest.container import get_importer_registry
 
-        r1 = get_registry()
-        r2 = get_registry()
+        r1 = get_importer_registry()
+        r2 = get_importer_registry()
         assert r1 is r2
 
     def test_builtin_importers_registered(self):
-        # Import the module to trigger registration
-        from voicetest.importers import get_registry
+        from voicetest.container import get_importer_registry
 
-        registry = get_registry()
+        registry = get_importer_registry()
 
         # Retell and Custom should be registered
         assert registry.get("retell") is not None
         assert registry.get("custom") is not None
 
     def test_can_import_retell_via_global_registry(self, sample_retell_config):
-        from voicetest.importers import get_registry
+        from voicetest.container import get_importer_registry
 
-        registry = get_registry()
+        registry = get_importer_registry()
         graph = registry.import_agent(sample_retell_config)
 
         assert graph.source_type == "retell"
