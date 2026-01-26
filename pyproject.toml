@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "0.5"
+version = "0.6"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -37,6 +37,8 @@ dependencies = [
     "openpyxl>=3.1.5",
     "python-multipart>=0.0.21",
     "bland>=0.3.0",
+    "retell-sdk>=5.0",
+    "vapi-server-sdk>=0.2",
 ]
 
 [project.urls]
@@ -51,10 +53,6 @@ dev = [
     "ruff>=0.8",
     "httpx>=0.28",
     "pre-commit>=4.0",
-]
-platforms = [
-    "retell-sdk>=5.0",
-    "vapi-server-sdk>=0.2",
 ]
 
 [project.scripts]
