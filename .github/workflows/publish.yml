@@ -114,3 +114,36 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-docs:
+    needs: [release, build]
+    if: needs.release.outputs.should_publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Export OpenAPI spec
+        run: |
+          mkdir -p api
+          uv run python scripts/export_openapi.py api/openapi.json
+
+      - name: Generate ReDoc HTML
+        run: |
+          npx @redocly/cli build-docs api/openapi.json -o api/index.html
+
+      - name: Push to docs site
+        env:
+          DOCS_DEPLOY_TOKEN: ${{ secrets.DOCS_DEPLOY_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${DOCS_DEPLOY_TOKEN}@github.com/voicetestdev/voicetestdev.github.io.git" docs-site
+          rm -rf docs-site/api
+          mv api docs-site/api
+          cd docs-site
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add api
+          git commit -m "Update API docs for v${{ needs.release.outputs.version }}" || echo "No changes to commit"
+          git push
