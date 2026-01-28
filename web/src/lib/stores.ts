@@ -422,12 +422,14 @@ export function connectRunWebSocket(runId: string): void {
         };
       });
     } else if (data.type === "test_completed" || data.type === "test_error" || data.type === "test_cancelled") {
-      // Clear retry status for this test
-      retryStatus.update((map) => {
-        const newMap = new Map(map);
-        newMap.delete(data.result_id);
-        return newMap;
-      });
+      // Clear retry status only on success or cancel (keep on error for context)
+      if (data.type !== "test_error") {
+        retryStatus.update((map) => {
+          const newMap = new Map(map);
+          newMap.delete(data.result_id);
+          return newMap;
+        });
+      }
       // Refresh full state to get complete result data
       api.getRun(runId).then((fresh) => {
         currentRunWithResults.update((current) => {
