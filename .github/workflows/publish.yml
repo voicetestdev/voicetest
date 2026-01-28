@@ -122,8 +122,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
       - name: Install uv
         uses: astral-sh/setup-uv@v5
+
+      - name: Build frontend
+        run: |
+          cd web
+          mise exec -- bun install
+          mise exec -- bun run build
 
       - name: Export OpenAPI spec
         run: |

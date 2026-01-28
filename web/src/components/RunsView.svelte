@@ -268,6 +268,16 @@
                       </span>
                     </div>
                   {/if}
+                {:else if selectedResult.status === "error"}
+                  {@const retry = $retryStatus.get(selectedResult.id)}
+                  {#if retry}
+                    <div class="retry-notice failed">
+                      <span class="retry-icon">⚠️</span>
+                      <span class="retry-text">
+                        Failed after {retry.attempt} retry attempts ({retry.error_type})
+                      </span>
+                    </div>
+                  {/if}
                 {/if}
               </div>
 
@@ -649,6 +659,12 @@
     border-radius: 4px;
     border-left: 3px solid #fbbf24;
     color: #fef3c7;
+  }
+
+  .retry-notice.failed {
+    background: #7f1d1d;
+    border-left-color: #f87171;
+    color: #fecaca;
   }
 
   .retry-icon {
