@@ -463,18 +463,40 @@ async def create_agent(request: CreateAgentRequest) -> dict:
     if not request.config and not request.path:
         raise HTTPException(status_code=400, detail="Either config or path is required")
 
+    # Validate and resolve path before attempting import
+    absolute_path: str | None = None
+    if request.path:
+        path = Path(request.path)
+        if not path.exists():
+            raise HTTPException(status_code=400, detail=f"File not found: {request.path}")
+        if not path.is_file():
+            raise HTTPException(status_code=400, detail=f"Path is not a file: {request.path}")
+        try:
+            path.read_text()
+        except PermissionError:
+            raise HTTPException(
+                status_code=400, detail=f"Permission denied: {request.path}"
+            ) from None
+        # Convert to absolute path for storage
+        absolute_path = str(path.resolve())
+
     try:
-        source = request.path if request.path else request.config
+        source = absolute_path if absolute_path else request.config
         graph = await api.import_agent(source, source=request.source)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     except FileNotFoundError:
         raise HTTPException(status_code=400, detail=f"File not found: {request.path}") from None
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from None
+    except PermissionError:
+        raise HTTPException(status_code=400, detail=f"Permission denied: {request.path}") from None
 
     repo = get_agent_repo()
     return repo.create(
         name=request.name,
         source_type=graph.source_type,
+        source_path=absolute_path,
         graph_json=graph.model_dump_json(),
     )
 

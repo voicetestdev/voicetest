@@ -33,6 +33,12 @@
   let exportingToPlatform = $state(false);
   let exportSuccess = $state<{ platform: string; id: string; name: string } | null>(null);
 
+  let editingName = $state(false);
+  let editedName = $state("");
+  let savingName = $state(false);
+  let nameSaved = $state(false);
+  let nameInput: HTMLInputElement;
+
   const platformDisplayNames: Record<string, string> = {
     retell: "Retell",
     vapi: "VAPI",
@@ -229,6 +235,46 @@
     if (e.key === "Escape" && showExportModal) {
       showExportModal = false;
     }
+    if (e.key === "Escape" && editingName) {
+      editingName = false;
+    }
+  }
+
+  function startEditingName() {
+    editedName = $currentAgent?.name || "";
+    editingName = true;
+    requestAnimationFrame(() => {
+      nameInput?.focus();
+      nameInput?.select();
+    });
+  }
+
+  async function saveName() {
+    if (!$currentAgentId || !editedName.trim()) {
+      editingName = false;
+      return;
+    }
+    if (editedName.trim() === $currentAgent?.name) {
+      editingName = false;
+      return;
+    }
+    savingName = true;
+    try {
+      await api.updateAgent($currentAgentId, editedName.trim());
+      await loadAgents();
+      editingName = false;
+      nameSaved = true;
+      setTimeout(() => { nameSaved = false; }, 2000);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    savingName = false;
+  }
+
+  function handleNameKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      saveName();
+    }
   }
 
 </script>
@@ -239,7 +285,29 @@
   {#if !$agentGraph || !$currentAgent}
     <p class="placeholder">No agent selected.</p>
   {:else}
-    <h2>{$currentAgent.name}</h2>
+    <div class="name-row">
+      {#if editingName}
+        <input
+          type="text"
+          class="name-input"
+          bind:value={editedName}
+          bind:this={nameInput}
+          onblur={saveName}
+          onkeydown={handleNameKeydown}
+          disabled={savingName}
+        />
+      {:else}
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <h2 class="editable-name" onclick={startEditingName} title="Click to edit">
+          {$currentAgent.name}
+        </h2>
+      {/if}
+      {#if savingName}
+        <span class="save-indicator">Saving...</span>
+      {:else if nameSaved}
+        <span class="save-indicator saved">Saved</span>
+      {/if}
+    </div>
 
     <section class="agent-info">
       <div class="info-row">
@@ -397,6 +465,46 @@
 
   h2 {
     margin-top: 0;
+  }
+
+  .name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .editable-name {
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    margin: -0.25rem -0.5rem;
+    border-radius: 4px;
+    transition: background 0.15s;
+  }
+
+  .editable-name:hover {
+    background: var(--bg-hover);
+  }
+
+  .name-input {
+    font-size: 1.5rem;
+    font-weight: bold;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--accent-color, #6366f1);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    outline: none;
+    min-width: 200px;
+  }
+
+  .save-indicator {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+
+  .save-indicator.saved {
+    color: #22c55e;
   }
 
   h3 {

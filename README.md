@@ -1,4 +1,4 @@
-[![Tests](https://github.com/voicetestdev/voicetest/actions/workflows/test.yml/badge.svg)](https://github.com/voicetestdev/voicetest/actions/workflows/test.yml)
+[![PyPI](https://img.shields.io/pypi/v/voicetest)](https://pypi.org/project/voicetest/) [![Release](https://img.shields.io/github/v/release/voicetestdev/voicetest)](https://github.com/voicetestdev/voicetest/releases) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Tests](https://github.com/voicetestdev/voicetest/actions/workflows/test.yml/badge.svg)](https://github.com/voicetestdev/voicetest/actions/workflows/test.yml)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">

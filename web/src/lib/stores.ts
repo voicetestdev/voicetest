@@ -248,6 +248,8 @@ export async function initStores(): Promise<void> {
 
   if (view === "settings") {
     currentView.set("settings");
+  } else if (view === "import") {
+    currentView.set("import");
   } else if (agentId && agentList.some((a) => a.id === agentId)) {
     await selectAgent(agentId, view, runId);
   } else if (agentList.length > 0) {

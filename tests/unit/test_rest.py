@@ -337,6 +337,105 @@ class TestAgentsCRUD:
         assert agent["name"] == "Test Agent"
         assert agent["source_type"] == "retell"
 
+    def test_create_agent_from_path(self, db_client, tmp_path, sample_retell_config):
+        import json
+
+        agent_file = tmp_path / "agent.json"
+        agent_file.write_text(json.dumps(sample_retell_config))
+
+        response = db_client.post(
+            "/api/agents",
+            json={
+                "name": "Path Agent",
+                "path": str(agent_file),
+            },
+        )
+        assert response.status_code == 200
+
+        agent = response.json()
+        assert agent["name"] == "Path Agent"
+        assert agent["source_type"] == "retell"
+        assert agent["source_path"] == str(agent_file.resolve())
+
+    def test_create_agent_relative_path_stored_as_absolute(
+        self, db_client, tmp_path, sample_retell_config, monkeypatch
+    ):
+        import json
+        import os
+
+        agent_file = tmp_path / "agent.json"
+        agent_file.write_text(json.dumps(sample_retell_config))
+
+        # Use a relative path
+        monkeypatch.chdir(tmp_path)
+        response = db_client.post(
+            "/api/agents",
+            json={
+                "name": "Relative Path Agent",
+                "path": "agent.json",
+            },
+        )
+        assert response.status_code == 200
+
+        agent = response.json()
+        # Path should be stored as absolute
+        assert os.path.isabs(agent["source_path"])
+        assert agent["source_path"] == str(agent_file.resolve())
+
+    def test_create_agent_path_not_found(self, db_client):
+        response = db_client.post(
+            "/api/agents",
+            json={
+                "name": "Missing Agent",
+                "path": "/nonexistent/path/agent.json",
+            },
+        )
+        assert response.status_code == 400
+        assert "File not found" in response.json()["detail"]
+
+    def test_create_agent_path_is_directory(self, db_client, tmp_path):
+        response = db_client.post(
+            "/api/agents",
+            json={
+                "name": "Dir Agent",
+                "path": str(tmp_path),
+            },
+        )
+        assert response.status_code == 400
+        assert "not a file" in response.json()["detail"]
+
+    def test_create_agent_invalid_json(self, db_client, tmp_path):
+        bad_file = tmp_path / "bad.json"
+        bad_file.write_text("{ not valid json }")
+
+        response = db_client.post(
+            "/api/agents",
+            json={
+                "name": "Bad JSON Agent",
+                "path": str(bad_file),
+            },
+        )
+        assert response.status_code == 400
+        # Auto-detection fails on invalid JSON before parsing
+        assert "Could not auto-detect" in response.json()["detail"]
+
+    def test_create_agent_invalid_config_json(self, db_client, tmp_path, sample_retell_config):
+        import json
+
+        # Valid JSON but missing required fields
+        bad_config = {"nodes": []}
+        bad_file = tmp_path / "bad_config.json"
+        bad_file.write_text(json.dumps(bad_config))
+
+        response = db_client.post(
+            "/api/agents",
+            json={
+                "name": "Bad Config Agent",
+                "path": str(bad_file),
+            },
+        )
+        assert response.status_code == 400
+
     def test_get_agent(self, db_client, sample_retell_config):
         create_response = db_client.post(
             "/api/agents",

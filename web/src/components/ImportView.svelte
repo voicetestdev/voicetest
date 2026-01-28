@@ -13,6 +13,7 @@
   let importers = $state<ImporterInfo[]>([]);
 
   let activeTab = $state<string>("file");
+  let showServerPath = $state(false);
   let platforms = $state<PlatformInfo[]>([]);
   let platformStatus = $state<Record<string, PlatformStatus>>({});
   let platformAgents = $state<Record<string, RemoteAgentInfo[]>>({});
@@ -111,6 +112,13 @@
     filePath = "";
     if (!agentName) {
       agentName = file.name.replace(/\.(json|xlsx|xls)$/i, "");
+    }
+  }
+
+  function handlePathBlur() {
+    if (!agentName && filePath) {
+      const filename = filePath.split("/").pop() || "";
+      agentName = filename.replace(/\.(json|xlsx|xls)$/i, "");
     }
   }
 
@@ -223,15 +231,6 @@
       </label>
     </div>
 
-    <div class="form-row">
-      <label>
-        Server path:
-        <input type="text" bind:value={filePath} placeholder="/path/to/agent.json (optional)" />
-      </label>
-    </div>
-
-    <div class="divider">or</div>
-
     <div class="import-options">
       <label class="file-upload">
         <input type="file" accept=".json,.xlsx,.xls" onchange={handleFile} />
@@ -243,13 +242,36 @@
     <textarea
       bind:value={configText}
       placeholder="Or paste agent config JSON here..."
-      rows={14}
+      rows={12}
     ></textarea>
 
     <div class="button-row">
       <button onclick={importAgent} disabled={importing || (!configText && !filePath && !selectedFile)}>
         {importing ? "Importing..." : "Import Agent"}
       </button>
+    </div>
+
+    <div class="server-path-section">
+      <button class="link-toggle" onclick={() => showServerPath = !showServerPath}>
+        {showServerPath ? "▼" : "▶"} Link to server file
+      </button>
+      {#if showServerPath}
+        <div class="server-path-input">
+          <input
+            type="text"
+            bind:value={filePath}
+            placeholder="/path/to/agent.json"
+            onblur={handlePathBlur}
+          />
+          <button
+            onclick={importAgent}
+            disabled={importing || !filePath}
+          >
+            {importing ? "Linking..." : "Link"}
+          </button>
+        </div>
+        <p class="hint">Link to a file on the server. Changes to the file will be reflected when reloading.</p>
+      {/if}
     </div>
   {:else}
     {@const platform = activeTab}
@@ -487,6 +509,36 @@
   .button-row {
     display: flex;
     gap: 0.5rem;
+  }
+
+  .server-path-section {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .link-toggle {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem 0;
+    font-size: 0.85rem;
+  }
+
+  .link-toggle:hover {
+    color: var(--text-primary);
+  }
+
+  .server-path-input {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .server-path-input input {
+    flex: 1;
+    font-family: monospace;
   }
 
   .error-message {
