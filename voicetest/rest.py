@@ -843,6 +843,9 @@ async def _execute_run(
     except (FileNotFoundError, ValueError):
         return
 
+    # Load metrics config for global metrics
+    metrics_config = agent_repo.get_metrics_config(agent_id)
+
     try:
         for test_record in test_records:
             # Get pre-created result ID
@@ -943,6 +946,7 @@ async def _execute_run(
                     graph,
                     test_case,
                     options=options,
+                    metrics_config=metrics_config,
                     on_turn=await make_on_turn(result_id, last_transcript),
                     on_token=make_on_token(result_id) if options.streaming else None,
                     on_error=make_on_error(result_id),

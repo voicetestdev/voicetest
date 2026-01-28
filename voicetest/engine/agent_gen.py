@@ -19,6 +19,8 @@ class GeneratedAgent:
     """
 
     _node_id: str = ""
+    _has_end_call: bool = False
+    _end_call_description: str = ""
 
     def __init__(self, instructions: str = ""):
         self.instructions = instructions
@@ -59,8 +61,20 @@ def _create_agent_class(node: AgentNode, graph: AgentGraph) -> type[GeneratedAge
     node_id = node.id
     transitions = node.transitions
 
+    # Check for end_call tool
+    has_end_call = False
+    end_call_description = "End the call"
+    for tool in node.tools:
+        if tool.name == "end_call" or getattr(tool, "type", "") == "end_call":
+            has_end_call = True
+            if tool.description:
+                end_call_description = tool.description
+            break
+
     class NodeAgent(GeneratedAgent):
         _node_id = node_id
+        _has_end_call = has_end_call
+        _end_call_description = end_call_description
 
         def __init__(self):
             super().__init__(instructions=node_instructions)

@@ -40,6 +40,7 @@ class ConversationState:
     tools_called: list[ToolCall] = field(default_factory=list)
     turn_count: int = 0
     end_reason: str = ""
+    end_call_invoked: bool = False
 
 
 class NodeTracker:
@@ -242,33 +243,49 @@ class ConversationRunner:
         new_agent = None
         transition_target = result.transition_to.strip().lower()
         if transition_target and transition_target != "none":
-            # Find matching transition
-            for tool in agent._transition_tools:
-                if tool.__name__ == f"route_to_{transition_target}":
-                    node_tracker.record(transition_target)
-                    state.tools_called.append(
-                        ToolCall(
-                            name=tool.__name__,
-                            arguments={},
-                            result=transition_target,
-                        )
+            # Check for end_call
+            if transition_target == "end_call" and agent._has_end_call:
+                state.end_call_invoked = True
+                state.tools_called.append(
+                    ToolCall(
+                        name="end_call",
+                        arguments={},
+                        result="call_ended",
                     )
-                    if transition_target in self.agent_classes:
-                        new_agent = self.agent_classes[transition_target]()
-                    break
+                )
+            else:
+                # Find matching transition
+                for tool in agent._transition_tools:
+                    if tool.__name__ == f"route_to_{transition_target}":
+                        node_tracker.record(transition_target)
+                        state.tools_called.append(
+                            ToolCall(
+                                name=tool.__name__,
+                                arguments={},
+                                result=transition_target,
+                            )
+                        )
+                        if transition_target in self.agent_classes:
+                            new_agent = self.agent_classes[transition_target]()
+                        break
 
         return result.response, new_agent
 
     def _format_tools(self, agent: GeneratedAgent) -> str:
         """Format available transition tools for LLM."""
-        if not agent._transition_tools:
-            return "(no transitions available - this is a terminal node)"
-
         lines = []
+
         for tool in agent._transition_tools:
             target = tool.__name__.replace("route_to_", "")
             condition = tool.__doc__ or "No condition specified"
             lines.append(f"- {target}: {condition}")
+
+        if agent._has_end_call:
+            lines.append(f"- end_call: {agent._end_call_description}")
+
+        if not lines:
+            return "(no transitions available - stay in current state)"
+
         return "\n".join(lines)
 
     def _format_transcript(self, transcript: list[Message]) -> str:
@@ -291,5 +308,5 @@ class ConversationRunner:
         state: ConversationState,
     ) -> bool:
         """Check if the agent has signaled conversation end."""
-        # Terminal node (no transitions) means conversation should end
-        return len(agent._transition_tools) == 0
+        # Only end when agent explicitly invokes end_call
+        return state.end_call_invoked

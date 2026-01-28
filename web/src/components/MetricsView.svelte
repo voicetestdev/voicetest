@@ -335,7 +335,7 @@
   }
 
   .toggle-btn.enabled {
-    background: #14532d;
+    background: #166534;
   }
 
   .toggle-btn:hover {

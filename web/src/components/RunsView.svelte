@@ -285,9 +285,26 @@
                 <h4>Metrics</h4>
                 <ul class="metrics">
                   {#each metrics as metric}
+                    {@const clampedScore = metric.score !== undefined
+                      ? Math.min(1, Math.max(0, metric.score))
+                      : undefined}
+                    {@const scoreColor = clampedScore !== undefined
+                      ? clampedScore >= 0.7 ? "green"
+                        : clampedScore >= 0.4 ? "yellow"
+                        : "red"
+                      : metric.passed ? "green" : "red"}
                     <li class={metric.passed ? "pass" : "fail"}>
                       <span class="metric-status">{metric.passed ? "PASS" : "FAIL"}</span>
+                      {#if clampedScore !== undefined}
+                        <span class="metric-score {scoreColor}">
+                          {(clampedScore * 100).toFixed(0)}%
+                        </span>
+                      {/if}
                       <span class="metric-name">{metric.metric}</span>
+                      {#if metric.threshold !== undefined}
+                        {@const clampedThreshold = Math.min(1, Math.max(0, metric.threshold))}
+                        <span class="metric-threshold">threshold: {(clampedThreshold * 100).toFixed(0)}%</span>
+                      {/if}
                       {#if metric.reasoning}
                         <span class="metric-reason">{metric.reasoning}</span>
                       {/if}
@@ -728,6 +745,34 @@
   .metric-name {
     font-weight: 500;
     flex: 1;
+  }
+
+  .metric-score {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+  }
+
+  .metric-score.green {
+    background: #065f46;
+    color: #34d399;
+  }
+
+  .metric-score.yellow {
+    background: #78350f;
+    color: #fbbf24;
+  }
+
+  .metric-score.red {
+    background: #7f1d1d;
+    color: #f87171;
+  }
+
+  .metric-threshold {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-style: italic;
   }
 
   .metric-reason {

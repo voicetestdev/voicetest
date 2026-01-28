@@ -24,7 +24,8 @@
   let lastTheme = $state<string | null>(null);
   let renderCounter = 0;
   let mermaidContainer: HTMLDivElement;
-  let tooltip = $state({ show: false, x: 0, y: 0, text: "" });
+  let tooltip = $state({ show: false, x: 0, y: 0, text: "", title: "" });
+  let zoomLevel = $state(1);
 
   let platforms = $state<PlatformInfo[]>([]);
   let platformStatus = $state<Record<string, PlatformStatus>>({});
@@ -125,27 +126,98 @@
 
   function setupTooltips() {
     if (!mermaidContainer || !$agentGraph) return;
+
+    // Build a map of known node IDs for matching
+    const knownNodeIds = new Set(Object.keys($agentGraph.nodes));
+
+    // Setup node tooltips
     const nodes = mermaidContainer.querySelectorAll(".node");
     nodes.forEach((node) => {
       const textEl = node.querySelector(".nodeLabel");
       if (!textEl) return;
-      const nodeId = node.id?.replace(/^flowchart-/, "").split("-")[0];
-      if (!nodeId || !$agentGraph?.nodes[nodeId]) return;
+
+      // Extract node ID from the label text (format: "node_id<br/>...")
+      const labelText = textEl.textContent || "";
+      const nodeId = labelText.split(/\s/)[0]; // First word is the node ID
+
+      // Try to find matching node - check exact match first, then prefix match
+      let matchedId: string | null = null;
+      if (knownNodeIds.has(nodeId)) {
+        matchedId = nodeId;
+      } else {
+        // Try to match by checking if any known ID is a prefix
+        for (const knownId of knownNodeIds) {
+          if (labelText.startsWith(knownId)) {
+            matchedId = knownId;
+            break;
+          }
+        }
+      }
+
+      if (!matchedId) return;
+      const nodeData = $agentGraph?.nodes[matchedId];
+      if (!nodeData) return;
 
       node.addEventListener("mouseenter", (e) => {
         const rect = (e.target as Element).getBoundingClientRect();
-        const instructions = $agentGraph?.nodes[nodeId]?.instructions || "";
         tooltip = {
           show: true,
           x: rect.left + rect.width / 2,
           y: rect.top - 8,
-          text: instructions,
+          title: matchedId,
+          text: nodeData.instructions,
         };
       });
       node.addEventListener("mouseleave", () => {
         tooltip = { ...tooltip, show: false };
       });
     });
+
+    // Setup edge label tooltips
+    const edgeLabels = mermaidContainer.querySelectorAll(".edgeLabel");
+    edgeLabels.forEach((label) => {
+      const labelText = label.textContent?.trim() || "";
+      if (!labelText) return;
+
+      // Find the full transition condition by matching truncated text
+      let fullCondition = labelText;
+      for (const node of Object.values($agentGraph?.nodes || {})) {
+        for (const transition of node.transitions) {
+          const condValue = transition.condition.value;
+          if (condValue.startsWith(labelText.replace("...", "")) ||
+              labelText.replace("...", "") === condValue.slice(0, labelText.length - 3)) {
+            fullCondition = condValue;
+            break;
+          }
+        }
+      }
+
+      label.addEventListener("mouseenter", (e) => {
+        const rect = (e.target as Element).getBoundingClientRect();
+        tooltip = {
+          show: true,
+          x: rect.left + rect.width / 2,
+          y: rect.top - 8,
+          title: "Transition",
+          text: fullCondition,
+        };
+      });
+      label.addEventListener("mouseleave", () => {
+        tooltip = { ...tooltip, show: false };
+      });
+    });
+  }
+
+  function zoomIn() {
+    zoomLevel = Math.min(zoomLevel + 0.25, 3);
+  }
+
+  function zoomOut() {
+    zoomLevel = Math.max(zoomLevel - 0.25, 0.25);
+  }
+
+  function resetZoom() {
+    zoomLevel = 1;
   }
 
   function getExportFilename(exp: ExporterInfo): string {
@@ -432,9 +504,19 @@
     {/if}
 
     <section class="graph-section">
-      <h3>Agent Graph</h3>
+      <div class="graph-header">
+        <h3>Agent Graph</h3>
+        <div class="zoom-controls">
+          <button onclick={zoomOut} title="Zoom out">−</button>
+          <span class="zoom-level">{Math.round(zoomLevel * 100)}%</span>
+          <button onclick={zoomIn} title="Zoom in">+</button>
+          <button onclick={resetZoom} title="Reset zoom">Reset</button>
+        </div>
+      </div>
       <div class="mermaid-container" bind:this={mermaidContainer}>
-        {@html mermaidSvg}
+        <div class="mermaid-content" style="transform: scale({zoomLevel}); transform-origin: top left;">
+          {@html mermaidSvg}
+        </div>
       </div>
     </section>
 
@@ -443,7 +525,10 @@
         class="node-tooltip"
         style="left: {tooltip.x}px; top: {tooltip.y}px;"
       >
-        {tooltip.text}
+        {#if tooltip.title}
+          <div class="tooltip-title">{tooltip.title}</div>
+        {/if}
+        <div class="tooltip-text">{tooltip.text}</div>
       </div>
     {/if}
 
@@ -586,16 +671,55 @@
     margin-bottom: 1rem;
   }
 
-  .mermaid-container {
-    overflow: auto;
+  .graph-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
   }
 
-  .mermaid-container :global(svg) {
-    max-width: 100%;
-    height: auto;
+  .graph-header h3 {
+    margin: 0;
+  }
+
+  .zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .zoom-controls button {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.85rem;
+    min-width: 2rem;
+  }
+
+  .zoom-level {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    min-width: 3rem;
+    text-align: center;
+  }
+
+  .mermaid-container {
+    overflow: auto;
+    max-height: 600px;
+  }
+
+  .mermaid-content {
+    display: inline-block;
+    min-width: 100%;
+  }
+
+  .mermaid-content :global(svg) {
+    display: block;
   }
 
   .mermaid-container :global(.node) {
+    cursor: pointer;
+  }
+
+  .mermaid-container :global(.edgeLabel) {
     cursor: pointer;
   }
 
@@ -606,8 +730,8 @@
     border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 0.75rem;
-    max-width: 400px;
-    max-height: 200px;
+    max-width: 500px;
+    max-height: 400px;
     overflow-y: auto;
     font-size: 0.85rem;
     line-height: 1.4;
@@ -615,6 +739,18 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 100;
     pointer-events: none;
+  }
+
+  .tooltip-title {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+  }
+
+  .tooltip-text {
+    color: var(--text-secondary);
   }
 
   .danger-zone {
