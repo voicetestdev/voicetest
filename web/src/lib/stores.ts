@@ -2,6 +2,7 @@ import { writable, derived, get } from "svelte/store";
 import type {
   AgentGraph,
   AgentRecord,
+  RetryInfo,
   RunRecord,
   RunResultRecord,
   RunWithResults,
@@ -27,6 +28,9 @@ export const runHistory = writable<RunRecord[]>([]);
 export const currentRunId = writable<string | null>(null);
 export const currentRunWithResults = writable<RunWithResults | null>(null);
 export const runWebSocket = writable<WebSocket | null>(null);
+
+// Track retry status per result_id
+export const retryStatus = writable<Map<string, RetryInfo>>(new Map());
 
 // Persist expandedRuns to localStorage
 function loadExpandedRuns(): boolean {
@@ -418,6 +422,12 @@ export function connectRunWebSocket(runId: string): void {
         };
       });
     } else if (data.type === "test_completed" || data.type === "test_error" || data.type === "test_cancelled") {
+      // Clear retry status for this test
+      retryStatus.update((map) => {
+        const newMap = new Map(map);
+        newMap.delete(data.result_id);
+        return newMap;
+      });
       // Refresh full state to get complete result data
       api.getRun(runId).then((fresh) => {
         currentRunWithResults.update((current) => {
@@ -433,8 +443,24 @@ export function connectRunWebSocket(runId: string): void {
           };
         });
       });
+    } else if (data.type === "retry_error") {
+      // Track retry status for display
+      retryStatus.update((map) => {
+        const newMap = new Map(map);
+        newMap.set(data.result_id, {
+          result_id: data.result_id,
+          error_type: data.error_type,
+          message: data.message,
+          attempt: data.attempt,
+          max_attempts: data.max_attempts,
+          retry_after: data.retry_after,
+        });
+        return newMap;
+      });
     } else if (data.type === "run_completed") {
       isRunning.set(false);
+      // Clear retry status for this run
+      retryStatus.set(new Map());
       // Update the run to mark it as completed
       currentRunWithResults.update((run) => {
         if (!run) return run;

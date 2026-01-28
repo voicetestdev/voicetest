@@ -15,6 +15,7 @@ from voicetest import api
 from voicetest.demo import get_demo_agent, get_demo_tests
 from voicetest.formatting import format_run
 from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.retry import RetryError
 from voicetest.runner import TestRunContext
 from voicetest.settings import load_settings
 from voicetest.storage.db import get_connection, init_schema
@@ -171,7 +172,13 @@ async def _run_cli(
     console.print(f"[bold]Running {ctx.total_tests} tests...[/bold]")
     console.print()
 
-    run_result = await ctx.run_all()
+    def on_error(error: RetryError) -> None:
+        console.print(
+            f"[yellow]Rate limited - retrying ({error.attempt}/{error.max_attempts})... "
+            f"waiting {error.retry_after:.1f}s[/yellow]"
+        )
+
+    run_result = await ctx.run_all(on_error=on_error)
 
     # Display
     _display_results(run_result)
@@ -395,7 +402,13 @@ async def _smoke_test(max_turns: int) -> None:
         max_turns=max_turns,
     )
 
-    result = await api.run_test(graph, test_case, options)
+    def on_error(error: RetryError) -> None:
+        console.print(
+            f"[yellow]Rate limited - retrying ({error.attempt}/{error.max_attempts})... "
+            f"waiting {error.retry_after:.1f}s[/yellow]"
+        )
+
+    result = await api.run_test(graph, test_case, options, on_error=on_error)
 
     # Display result
     status_color = "green" if result.status == "pass" else "red"

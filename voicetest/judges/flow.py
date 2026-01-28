@@ -1,12 +1,13 @@
 """Flow judge for validating conversation traversal through agent graph."""
 
-import asyncio
 from dataclasses import dataclass
 
 import dspy
 
+from voicetest.llm import call_llm
 from voicetest.models.agent import AgentNode
 from voicetest.models.results import Message
+from voicetest.retry import OnErrorCallback
 
 
 @dataclass
@@ -41,6 +42,7 @@ class FlowJudge:
         nodes: dict[str, AgentNode],
         transcript: list[Message],
         nodes_visited: list[str],
+        on_error: OnErrorCallback | None = None,
     ) -> FlowResult:
         """Evaluate if conversation flow was logical.
 
@@ -48,6 +50,7 @@ class FlowJudge:
             nodes: Agent graph nodes dict.
             transcript: Conversation transcript.
             nodes_visited: Sequence of node IDs visited.
+            on_error: Optional callback for retry notifications.
 
         Returns:
             FlowResult with validity, issues, and reasoning.
@@ -58,16 +61,16 @@ class FlowJudge:
         if not nodes_visited:
             return FlowResult(valid=True, issues=[], reasoning="No nodes visited")
 
-        return await self._evaluate_with_llm(nodes, transcript, nodes_visited)
+        return await self._evaluate_with_llm(nodes, transcript, nodes_visited, on_error)
 
     async def _evaluate_with_llm(
         self,
         nodes: dict[str, AgentNode],
         transcript: list[Message],
         nodes_visited: list[str],
+        on_error: OnErrorCallback | None = None,
     ) -> FlowResult:
         """Evaluate using LLM."""
-        lm = dspy.LM(self.model)
 
         class FlowValidationSignature(dspy.Signature):
             """Evaluate if conversation flow through an agent graph was logical.
@@ -96,16 +99,14 @@ class FlowJudge:
 
         formatted_transcript = self._format_transcript(transcript)
 
-        def run_predictor():
-            with dspy.context(lm=lm):
-                predictor = dspy.Predict(FlowValidationSignature)
-                return predictor(
-                    nodes=nodes,
-                    transcript=formatted_transcript,
-                    nodes_visited=nodes_visited,
-                )
-
-        result = await asyncio.to_thread(run_predictor)
+        result = await call_llm(
+            self.model,
+            FlowValidationSignature,
+            on_error=on_error,
+            nodes=nodes,
+            transcript=formatted_transcript,
+            nodes_visited=nodes_visited,
+        )
 
         return FlowResult(
             valid=result.flow_valid,

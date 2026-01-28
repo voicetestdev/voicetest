@@ -30,6 +30,7 @@ from voicetest.models.agent import AgentGraph, GlobalMetric, MetricsConfig
 from voicetest.models.results import Message, MetricResult, TestResult, TestRun
 from voicetest.models.test_case import RunOptions, TestCase
 from voicetest.platforms.registry import PlatformRegistry
+from voicetest.retry import RetryError
 from voicetest.settings import Settings, load_settings, save_settings
 from voicetest.storage.db import get_connection, init_schema
 from voicetest.storage.repositories import (
@@ -860,11 +861,15 @@ async def _execute_run(
                 },
             )
 
-            async def make_on_turn(rid: str):
+            async def make_on_turn(rid: str, transcript_ref: list[Message]):
                 async def on_turn(transcript: list) -> None:
+                    nonlocal transcript_ref
                     # Check for cancellation
                     if _is_run_cancelled(run_id, rid):
                         raise asyncio.CancelledError("Test cancelled by user")
+                    # Track transcript for error recovery
+                    transcript_ref.clear()
+                    transcript_ref.extend(transcript)
                     run_repo.update_transcript(rid, transcript)
                     await _broadcast_run_update(
                         run_id,
@@ -891,13 +896,34 @@ async def _execute_run(
 
                 return on_token
 
+            def make_on_error(rid: str):
+                async def on_error(error: RetryError) -> None:
+                    await _broadcast_run_update(
+                        run_id,
+                        {
+                            "type": "retry_error",
+                            "result_id": rid,
+                            "error_type": error.error_type,
+                            "message": error.message,
+                            "attempt": error.attempt,
+                            "max_attempts": error.max_attempts,
+                            "retry_after": error.retry_after,
+                        },
+                    )
+
+                return on_error
+
+            # Track transcript for error cases
+            last_transcript: list[Message] = []
+
             try:
                 result = await api.run_test(
                     graph,
                     test_case,
                     options=options,
-                    on_turn=await make_on_turn(result_id),
+                    on_turn=await make_on_turn(result_id, last_transcript),
                     on_token=make_on_token(result_id) if options.streaming else None,
+                    on_error=make_on_error(result_id),
                 )
                 run_repo.complete_result(result_id, result)
                 await _broadcast_run_update(
@@ -912,7 +938,7 @@ async def _execute_run(
                 cancelled_result = TestResult(
                     test_name=test_case.name,
                     status="error",
-                    transcript=[],
+                    transcript=last_transcript,
                     error_message="Cancelled by user",
                 )
                 run_repo.complete_result(result_id, cancelled_result)
@@ -927,7 +953,7 @@ async def _execute_run(
                 error_result = TestResult(
                     test_name=test_case.name,
                     status="error",
-                    transcript=[],
+                    transcript=last_transcript,
                     error_message=str(e),
                 )
                 run_repo.complete_result(result_id, error_result)

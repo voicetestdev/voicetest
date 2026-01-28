@@ -8,8 +8,6 @@ from datetime import datetime
 from pathlib import Path
 import uuid
 
-from dspy.adapters.baml_adapter import BAMLAdapter
-
 from voicetest.container import get_exporter_registry, get_importer_registry
 from voicetest.engine.session import ConversationRunner
 from voicetest.importers.base import ImporterInfo
@@ -26,6 +24,7 @@ from voicetest.models.results import (
     TestRun,
 )
 from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.retry import OnErrorCallback
 from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
 from voicetest.utils import substitute_variables
 
@@ -112,6 +111,7 @@ async def run_test(
     _mock_mode: bool = False,
     on_turn: OnTurnCallback | None = None,
     on_token: OnTokenCallback | None = None,
+    on_error: OnErrorCallback | None = None,
 ) -> TestResult:
     """Run a single test case against an agent.
 
@@ -123,6 +123,7 @@ async def run_test(
         _mock_mode: If True, use mock responses (for testing).
         on_turn: Optional callback invoked after each turn with current transcript.
         on_token: Optional callback invoked for each token during streaming.
+        on_error: Optional callback invoked on retryable errors (e.g., rate limits).
 
     Returns:
         TestResult with pass/fail status, transcript, and metrics.
@@ -161,19 +162,30 @@ async def run_test(
 
     start_time = datetime.now()
 
-    try:
-        # BAMLAdapter provides better structured output but doesn't support streaming
-        adapter = None if options.streaming else BAMLAdapter()
+    # Track transcript for error recovery
+    error_transcript: list[Message] = []
 
+    # Wrap on_turn to capture transcript
+    original_on_turn = on_turn
+
+    async def tracking_on_turn(transcript: list[Message]) -> None:
+        error_transcript.clear()
+        error_transcript.extend(transcript)
+        if original_on_turn:
+            result = original_on_turn(transcript)
+            if result is not None and hasattr(result, "__await__"):
+                await result
+
+    try:
         # Substitute dynamic variables
         dynamic_vars = test_case.dynamic_variables
         user_prompt = substitute_variables(test_case.user_prompt, dynamic_vars)
 
         # Setup components
         runner = ConversationRunner(
-            graph, options, mock_mode=_mock_mode, dynamic_variables=dynamic_vars, adapter=adapter
+            graph, options, mock_mode=_mock_mode, dynamic_variables=dynamic_vars
         )
-        simulator = UserSimulator(user_prompt, options.simulator_model, adapter=adapter)
+        simulator = UserSimulator(user_prompt, options.simulator_model)
         metric_judge = MetricJudge(options.judge_model)
         rule_judge = RuleJudge()
         flow_judge = FlowJudge(options.judge_model)
@@ -233,7 +245,9 @@ async def run_test(
             )
 
         # Run conversation
-        state = await runner.run(test_case, simulator, on_turn=on_turn, on_token=on_token)
+        state = await runner.run(
+            test_case, simulator, on_turn=tracking_on_turn, on_token=on_token, on_error=on_error
+        )
 
         # Evaluate based on test type
         test_type = test_case.effective_type
@@ -248,7 +262,7 @@ async def run_test(
         else:
             # LLM-based evaluation (semantic metrics)
             metric_results = await metric_judge.evaluate_all(
-                state.transcript, test_case.metrics, threshold=threshold
+                state.transcript, test_case.metrics, threshold=threshold, on_error=on_error
             )
 
         # Evaluate global metrics if configured
@@ -260,6 +274,7 @@ async def run_test(
                         state.transcript,
                         gm.criteria,
                         threshold=gm_threshold,
+                        on_error=on_error,
                     )
                     # Override metric name to show global metric info
                     result = result.model_copy(update={"metric": f"[{gm.name}]"})
@@ -269,7 +284,7 @@ async def run_test(
         flow_issues: list[str] = []
         if options.flow_judge:
             flow_result = await flow_judge.evaluate(
-                graph.nodes, state.transcript, state.nodes_visited
+                graph.nodes, state.transcript, state.nodes_visited, on_error=on_error
             )
             flow_issues = flow_result.issues
 
@@ -303,6 +318,7 @@ async def run_test(
             test_id=test_case.name,
             test_name=test_case.name,
             status="error",
+            transcript=error_transcript,
             duration_ms=duration_ms,
             error_message=str(real_error),
             models_used=models_used,
@@ -314,6 +330,7 @@ async def run_test(
             test_id=test_case.name,
             test_name=test_case.name,
             status="error",
+            transcript=error_transcript,
             duration_ms=duration_ms,
             error_message=str(e),
             models_used=models_used,

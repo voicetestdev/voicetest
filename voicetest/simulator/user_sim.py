@@ -4,16 +4,15 @@ Generates user messages based on Identity/Goal/Personality prompts
 using an LLM to simulate realistic user behavior.
 """
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import re
 
 import dspy
-from dspy.streaming import StreamListener, streamify
 
+from voicetest.llm import call_llm
 from voicetest.models.results import Message
-from voicetest.utils import DSPyAdapterMixin
+from voicetest.retry import OnErrorCallback
 
 
 # Callback type for token updates: receives token string and source ("agent" or "user")
@@ -36,24 +35,22 @@ class SimulatorResponse:
     reasoning: str
 
 
-class UserSimulator(DSPyAdapterMixin):
+class UserSimulator:
     """LLM-based user persona simulator.
 
     Generates realistic user messages based on a persona definition
     following the Identity/Goal/Personality format.
     """
 
-    def __init__(self, user_prompt: str, model: str = "openai/gpt-4o-mini", adapter=None):
+    def __init__(self, user_prompt: str, model: str = "openai/gpt-4o-mini"):
         """Initialize the simulator.
 
         Args:
             user_prompt: Persona definition in Identity/Goal/Personality format.
             model: LLM model to use for generation.
-            adapter: Optional DSPy adapter for structured output.
         """
         self.user_prompt = user_prompt
         self.model = model
-        self._adapter = adapter
 
         # Mock mode for testing without LLM calls
         self._mock_mode = False
@@ -64,12 +61,14 @@ class UserSimulator(DSPyAdapterMixin):
         self,
         transcript: list[Message],
         on_token: OnTokenCallback | None = None,
+        on_error: OnErrorCallback | None = None,
     ) -> SimulatorResponse:
         """Generate next user message based on conversation so far.
 
         Args:
             transcript: Conversation history.
             on_token: Optional callback for streaming tokens.
+            on_error: Optional callback for retryable errors.
 
         Returns:
             SimulatorResponse with message, should_end flag, and reasoning.
@@ -81,13 +80,13 @@ class UserSimulator(DSPyAdapterMixin):
             return response
 
         # Real LLM generation
-        response = await self._generate_with_llm(transcript, on_token)
+        response = await self._generate_with_llm(transcript, on_token, on_error)
 
         # Force first turn to continue - user shouldn't hang up without saying anything
         is_first_turn = len([m for m in transcript if m.role == "user"]) == 0
         if is_first_turn and response.should_end:
             # Retry with explicit instruction to start conversation
-            response = await self._generate_opening_message(transcript, on_token)
+            response = await self._generate_opening_message(transcript, on_token, on_error)
 
         return response
 
@@ -95,9 +94,9 @@ class UserSimulator(DSPyAdapterMixin):
         self,
         transcript: list[Message],
         on_token: OnTokenCallback | None = None,
+        on_error: OnErrorCallback | None = None,
     ) -> SimulatorResponse:
         """Generate an opening message when the LLM incorrectly signals end on first turn."""
-        lm = dspy.LM(self.model)
 
         class OpeningMessageSignature(dspy.Signature):
             """Generate an opening message to start a conversation."""
@@ -119,28 +118,20 @@ class UserSimulator(DSPyAdapterMixin):
         user_prompt = self.user_prompt
         agent_greeting = agent_said or "(agent has not spoken yet)"
 
-        if on_token:
-            # Streaming mode
-            result = await self._generate_streaming(
-                lm,
-                OpeningMessageSignature,
-                on_token,
-                persona=user_prompt,
-                agent_greeting=agent_greeting,
-            )
-        else:
-            # Non-streaming mode
-            ctx = self._dspy_context(lm)
+        # Wrap on_token to add source="user"
+        async def user_token_callback(token: str) -> None:
+            if on_token:
+                await _invoke_callback(on_token, token, "user")
 
-            def run_predictor():
-                with ctx:
-                    predictor = dspy.Predict(OpeningMessageSignature)
-                    return predictor(
-                        persona=user_prompt,
-                        agent_greeting=agent_greeting,
-                    )
-
-            result = await asyncio.to_thread(run_predictor)
+        result = await call_llm(
+            self.model,
+            OpeningMessageSignature,
+            on_token=user_token_callback if on_token else None,
+            stream_field="message" if on_token else None,
+            on_error=on_error,
+            persona=user_prompt,
+            agent_greeting=agent_greeting,
+        )
 
         return SimulatorResponse(
             message=result.message,
@@ -152,6 +143,7 @@ class UserSimulator(DSPyAdapterMixin):
         self,
         transcript: list[Message],
         on_token: OnTokenCallback | None = None,
+        on_error: OnErrorCallback | None = None,
     ) -> SimulatorResponse:
         """Generate response using LLM.
 
@@ -160,11 +152,11 @@ class UserSimulator(DSPyAdapterMixin):
         Args:
             transcript: Conversation history.
             on_token: Optional callback for streaming tokens.
+            on_error: Optional callback for retryable errors.
 
         Returns:
             SimulatorResponse with message, should_end flag, and reasoning.
         """
-        lm = dspy.LM(self.model)
 
         class UserSimSignature(dspy.Signature):
             """Generate next user message in a simulated conversation."""
@@ -185,74 +177,26 @@ class UserSimulator(DSPyAdapterMixin):
         conversation = self._format_transcript(transcript)
         turn_number = len([m for m in transcript if m.role == "user"]) + 1
 
-        if on_token:
-            # Streaming mode
-            result = await self._generate_streaming(
-                lm,
-                UserSimSignature,
-                on_token,
-                persona=user_prompt,
-                conversation=conversation,
-                turn_number=turn_number,
-            )
-        else:
-            # Non-streaming mode
-            ctx = self._dspy_context(lm)
+        # Wrap on_token to add source="user"
+        async def user_token_callback(token: str) -> None:
+            await _invoke_callback(on_token, token, "user")
 
-            def run_predictor():
-                with ctx:
-                    predictor = dspy.Predict(UserSimSignature)
-                    return predictor(
-                        persona=user_prompt,
-                        conversation=conversation,
-                        turn_number=turn_number,
-                    )
-
-            result = await asyncio.to_thread(run_predictor)
+        result = await call_llm(
+            self.model,
+            UserSimSignature,
+            on_token=user_token_callback if on_token else None,
+            stream_field="message" if on_token else None,
+            on_error=on_error,
+            persona=user_prompt,
+            conversation=conversation,
+            turn_number=turn_number,
+        )
 
         return SimulatorResponse(
             message=result.message if result.should_continue else "",
             should_end=not result.should_continue,
             reasoning=result.reasoning,
         )
-
-    async def _generate_streaming(
-        self,
-        lm,
-        signature_class: type,
-        on_token: OnTokenCallback,
-        **kwargs,
-    ):
-        """Generate response with streaming, yielding tokens via callback.
-
-        Uses DSPy's streamify to get tokens as they're generated.
-        """
-        predictor = dspy.Predict(signature_class)
-        stream_listeners = [StreamListener(signature_field_name="message")]
-
-        streaming_predictor = streamify(
-            predictor,
-            stream_listeners=stream_listeners,
-            is_async_program=False,
-        )
-
-        result = None
-        with self._dspy_context(lm):
-            async for chunk in streaming_predictor(**kwargs):
-                if isinstance(chunk, dspy.Prediction):
-                    result = chunk
-                elif (
-                    hasattr(chunk, "chunk")
-                    and hasattr(chunk, "signature_field_name")
-                    and chunk.signature_field_name == "message"
-                ):
-                    # StreamResponse with token data for message field
-                    await _invoke_callback(on_token, chunk.chunk, "user")
-
-        if result is None:
-            raise RuntimeError("Streaming predictor did not return a Prediction")
-
-        return result
 
     def _format_transcript(self, transcript: list[Message]) -> str:
         """Format transcript for LLM input."""

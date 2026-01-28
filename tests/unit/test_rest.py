@@ -223,7 +223,7 @@ class TestEvaluateEndpoint:
 
         from voicetest.models.results import MetricResult
 
-        async def mock_evaluate_with_llm(self, transcript, criterion, threshold):
+        async def mock_evaluate_with_llm(self, transcript, criterion, threshold, on_error=None):
             return MetricResult(
                 metric=criterion,
                 score=0.9,

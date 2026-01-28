@@ -5,13 +5,16 @@ command-line interface and the TUI share.
 """
 
 from collections.abc import AsyncIterator
+from datetime import datetime
 import json
 from pathlib import Path
+import uuid
 
 from voicetest import api
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import TestResult, TestRun
 from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.retry import OnErrorCallback
 
 
 async def load_agent(
@@ -68,6 +71,7 @@ async def run_tests_streaming(
     test_cases: list[TestCase],
     options: RunOptions | None = None,
     mock_mode: bool = False,
+    on_error: OnErrorCallback | None = None,
 ) -> AsyncIterator[TestResult]:
     """Run tests and yield results as they complete.
 
@@ -78,12 +82,15 @@ async def run_tests_streaming(
         test_cases: List of test cases.
         options: Run options.
         mock_mode: Use mock responses for testing.
+        on_error: Optional callback for retry notifications.
 
     Yields:
         TestResult as each test completes.
     """
     for test_case in test_cases:
-        result = await api.run_test(graph, test_case, options, _mock_mode=mock_mode)
+        result = await api.run_test(
+            graph, test_case, options, _mock_mode=mock_mode, on_error=on_error
+        )
         yield result
 
 
@@ -117,18 +124,29 @@ class TestRunContext:
         """Filter test cases to only include those with matching names."""
         self.test_cases = [tc for tc in self.test_cases if tc.name in test_names]
 
-    async def run_all(self) -> TestRun:
+    async def run_all(self, on_error: OnErrorCallback | None = None) -> TestRun:
         """Run all tests at once."""
         if not self.graph:
             await self.load()
-        return await run_all_tests(
-            self.graph,
-            self.test_cases,
-            self.options,
-            self.mock_mode,
+
+        # Use streaming internally to support on_error callback
+        run_id = str(uuid.uuid4())
+        started_at = datetime.now()
+        results = []
+
+        async for result in self.run_streaming(on_error=on_error):
+            results.append(result)
+
+        return TestRun(
+            run_id=run_id,
+            started_at=started_at,
+            completed_at=datetime.now(),
+            results=results,
         )
 
-    async def run_streaming(self) -> AsyncIterator[TestResult]:
+    async def run_streaming(
+        self, on_error: OnErrorCallback | None = None
+    ) -> AsyncIterator[TestResult]:
         """Run tests with streaming results."""
         if not self.graph:
             await self.load()
@@ -137,6 +155,7 @@ class TestRunContext:
             self.test_cases,
             self.options,
             self.mock_mode,
+            on_error=on_error,
         ):
             self.results.append(result)
             yield result

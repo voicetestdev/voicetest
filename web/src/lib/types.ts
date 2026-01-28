@@ -260,3 +260,12 @@ export interface ExportToPlatformResponse {
   name: string;
   platform: string;
 }
+
+export interface RetryInfo {
+  result_id: string;
+  error_type: string;
+  message: string;
+  attempt: number;
+  max_attempts: number;
+  retry_after: number;
+}

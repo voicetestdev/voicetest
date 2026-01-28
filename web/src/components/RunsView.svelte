@@ -5,6 +5,7 @@
     currentRunId,
     runHistory,
     cancelTest,
+    retryStatus,
   } from "../lib/stores";
   import type { RunResultRecord, Message, MetricResult, ModelsUsed } from "../lib/types";
 
@@ -249,13 +250,24 @@
                   {/if}
                 {/each}
                 {#if selectedResult.status === "running"}
-                  {@const nextRole = transcript.length % 2 === 0 ? "user" : "assistant"}
-                  <div class="message {nextRole} typing">
-                    <span class="role">{nextRole}</span>
-                    <span class="content typing-dots">
-                      <span>.</span><span>.</span><span>.</span>
-                    </span>
-                  </div>
+                  {@const retry = $retryStatus.get(selectedResult.id)}
+                  {#if retry}
+                    <div class="retry-notice">
+                      <span class="retry-icon">⏳</span>
+                      <span class="retry-text">
+                        Rate limited - retrying ({retry.attempt}/{retry.max_attempts})...
+                        waiting {retry.retry_after.toFixed(1)}s
+                      </span>
+                    </div>
+                  {:else}
+                    {@const nextRole = transcript.length % 2 === 0 ? "user" : "assistant"}
+                    <div class="message {nextRole} typing">
+                      <span class="role">{nextRole}</span>
+                      <span class="content typing-dots">
+                        <span>.</span><span>.</span><span>.</span>
+                      </span>
+                    </div>
+                  {/if}
                 {/if}
               </div>
 
@@ -626,6 +638,25 @@
 
   .typing-dots span:nth-child(3) {
     animation-delay: 0.4s;
+  }
+
+  .retry-notice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: #78350f;
+    border-radius: 4px;
+    border-left: 3px solid #fbbf24;
+    color: #fef3c7;
+  }
+
+  .retry-icon {
+    font-size: 1.2rem;
+  }
+
+  .retry-text {
+    font-size: 0.9rem;
   }
 
   @keyframes blink {
