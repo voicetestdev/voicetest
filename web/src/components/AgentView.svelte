@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { api } from "../lib/api";
   import {
     agentGraph,
@@ -51,7 +52,7 @@
     return platformDisplayNames[platform] || platform.charAt(0).toUpperCase() + platform.slice(1);
   }
 
-  $effect(() => {
+  onMount(() => {
     api.listExporters().then((list) => {
       exporters = list;
     });
@@ -61,9 +62,9 @@
     if (showExportModal) {
       api.listPlatforms().then((list) => {
         platforms = list;
-        for (const p of list) {
-          platformStatus[p.name] = { platform: p.name, configured: p.configured };
-        }
+        platformStatus = Object.fromEntries(
+          list.map((p) => [p.name, { platform: p.name, configured: p.configured }])
+        );
       }).catch(() => {});
       exportSuccess = null;
     }
@@ -274,7 +275,7 @@
     error = "";
     try {
       const status = await api.configurePlatform(platform, apiKeyInput);
-      platformStatus[platform] = status;
+      platformStatus = { ...platformStatus, [platform]: status };
       apiKeyInput = "";
       await exportToPlatform(platform);
     } catch (e) {

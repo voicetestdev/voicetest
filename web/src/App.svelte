@@ -24,6 +24,14 @@
   let mobileNavOpen = $state(false);
   let theme = $state<"light" | "dark">("dark");
 
+  // Use $derived to create reactive values from stores
+  // This ensures Svelte 5 properly tracks store changes
+  let view = $derived($currentView);
+  let agentList = $derived($agents);
+  let agentId = $derived($currentAgentId);
+  let testRecords = $derived($testCaseRecords);
+  let runs = $derived($runHistory);
+
   function initTheme() {
     const stored = localStorage.getItem("theme");
     if (stored === "light" || stored === "dark") {
@@ -78,8 +86,8 @@
     <div class="nav-section">
       <div class="nav-label">Agents</div>
       <ul class="agent-list">
-        {#each $agents as agent}
-          {@const isSelected = $currentAgentId === agent.id}
+        {#each agentList as agent}
+          {@const isSelected = agentId === agent.id}
           <li>
             <button
               class="agent-btn"
@@ -96,13 +104,13 @@
     <div class="nav-footer">
       <button
         class="import-btn"
-        class:active={$currentView === "import"}
+        class:active={view === "import"}
         onclick={() => currentView.set("import")}
       >
         + Import Agent
       </button>
       <button
-        class:active={$currentView === "settings"}
+        class:active={view === "settings"}
         onclick={() => currentView.set("settings")}
       >
         Settings
@@ -123,58 +131,62 @@
       </div>
     {:else if !initialized}
       <div class="loading">Loading...</div>
-    {:else if $currentView === "import"}
-      <ImportView />
-    {:else if $currentView === "settings"}
-      <SettingsView />
-    {:else if $currentAgentId}
-      <div class="view-tabs">
-        <button
-          class="tab-item"
-          class:active={$currentView === "config"}
-          onclick={() => switchView("config")}
-        >Config</button>
-        <button
-          class="tab-item"
-          class:active={$currentView === "metrics"}
-          onclick={() => switchView("metrics")}
-        >Metrics</button>
-        <button
-          class="tab-item"
-          class:active={$currentView === "tests"}
-          onclick={() => switchView("tests")}
-        >
-          Tests
-          {#if $testCaseRecords.length > 0}
-            <span class="tab-count">{$testCaseRecords.length}</span>
-          {/if}
-        </button>
-        <button
-          class="tab-item"
-          class:active={$currentView === "runs"}
-          onclick={() => switchView("runs")}
-        >
-          Runs
-          {#if $runHistory.length > 0}
-            <span class="tab-count">{$runHistory.length}</span>
-          {/if}
-        </button>
-      </div>
-      <div class="view-content">
-        {#if $currentView === "config"}
-          <AgentView {theme} />
-        {:else if $currentView === "tests"}
-          <TestsView />
-        {:else if $currentView === "metrics"}
-          <MetricsView />
-        {:else if $currentView === "runs"}
-          <RunsView />
-        {/if}
-      </div>
     {:else}
-      <div class="empty-state">
-        <p>Select an agent from the sidebar or import a new one.</p>
-      </div>
+      {#key `${view}-${agentId}`}
+        {#if view === "import"}
+          <ImportView />
+        {:else if view === "settings"}
+          <SettingsView />
+        {:else if agentId}
+          <div class="view-tabs">
+            <button
+              class="tab-item"
+              class:active={view === "config"}
+              onclick={() => switchView("config")}
+            >Config</button>
+            <button
+              class="tab-item"
+              class:active={view === "metrics"}
+              onclick={() => switchView("metrics")}
+            >Metrics</button>
+            <button
+              class="tab-item"
+              class:active={view === "tests"}
+              onclick={() => switchView("tests")}
+            >
+              Tests
+              {#if testRecords.length > 0}
+                <span class="tab-count">{testRecords.length}</span>
+              {/if}
+            </button>
+            <button
+              class="tab-item"
+              class:active={view === "runs"}
+              onclick={() => switchView("runs")}
+            >
+              Runs
+              {#if runs.length > 0}
+                <span class="tab-count">{runs.length}</span>
+              {/if}
+            </button>
+          </div>
+          <div class="view-content">
+            {#if view === "config"}
+              <AgentView {theme} />
+            {:else if view === "tests"}
+              <TestsView />
+            {:else if view === "metrics"}
+              <MetricsView />
+            {:else if view === "runs"}
+              <RunsView />
+            {/if}
+          </div>
+        {:else}
+          <div class="empty-state">
+            <p>Select an agent from the sidebar or import a new one.</p>
+          </div>
+        {/if}
+      {/key}
     {/if}
   </main>
 </div>

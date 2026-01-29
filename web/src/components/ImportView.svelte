@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { api } from "../lib/api";
   import { loadAgents, selectAgent } from "../lib/stores";
   import type { ImporterInfo, Platform, PlatformInfo, PlatformStatus, RemoteAgentInfo } from "../lib/types";
@@ -40,15 +41,15 @@
     return platformDisplayNames[platform] || platform.charAt(0).toUpperCase() + platform.slice(1);
   }
 
-  $effect(() => {
+  onMount(() => {
     api.listImporters().then((list) => {
       importers = list;
     });
     api.listPlatforms().then((list) => {
       platforms = list;
-      for (const p of list) {
-        platformStatus[p.name] = { platform: p.name, configured: p.configured };
-      }
+      platformStatus = Object.fromEntries(
+        list.map((p) => [p.name, { platform: p.name, configured: p.configured }])
+      );
     }).catch(() => {});
   });
 
@@ -144,12 +145,12 @@
     error = "";
     try {
       const agents = await api.listRemoteAgents(platform);
-      platformAgents[platform] = agents;
+      platformAgents = { ...platformAgents, [platform]: agents };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       // If credentials are missing/invalid, show the setup form instead of error
       if (message.includes("API_KEY") || message.includes("API_SECRET") || message.includes("credentials") || message.includes("Unauthorized") || message.includes("401")) {
-        platformStatus[platform] = { platform, configured: false };
+        platformStatus = { ...platformStatus, [platform]: { platform, configured: false } };
       } else {
         error = message;
       }
@@ -171,7 +172,7 @@
     try {
       const secret = platformNeedsSecret(platform) ? apiSecretInput : undefined;
       const status = await api.configurePlatform(platform, apiKeyInput, secret);
-      platformStatus[platform] = status;
+      platformStatus = { ...platformStatus, [platform]: status };
       apiKeyInput = "";
       apiSecretInput = "";
       await loadRemoteAgents(platform);

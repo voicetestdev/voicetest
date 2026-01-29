@@ -30,7 +30,7 @@ export const currentRunWithResults = writable<RunWithResults | null>(null);
 export const runWebSocket = writable<WebSocket | null>(null);
 
 // Track retry status per result_id
-export const retryStatus = writable<Map<string, RetryInfo>>(new Map());
+export const retryStatus = writable<Record<string, RetryInfo>>({});
 
 // Persist expandedRuns to localStorage
 function loadExpandedRuns(): boolean {
@@ -46,19 +46,19 @@ export type NavView = "config" | "tests" | "runs" | "metrics" | "settings" | "im
 export const currentView = writable<NavView>("import");
 
 // Persist expandedAgents to localStorage
-function loadExpandedAgents(): Set<string> {
-  if (typeof window === "undefined") return new Set();
+function loadExpandedAgents(): string[] {
+  if (typeof window === "undefined") return [];
   const stored = localStorage.getItem("expandedAgents");
-  if (!stored) return new Set();
+  if (!stored) return [];
   try {
-    return new Set(JSON.parse(stored));
+    return JSON.parse(stored);
   } catch {
-    return new Set();
+    return [];
   }
 }
-export const expandedAgents = writable<Set<string>>(loadExpandedAgents());
+export const expandedAgents = writable<string[]>(loadExpandedAgents());
 if (typeof window !== "undefined") {
-  expandedAgents.subscribe((v) => localStorage.setItem("expandedAgents", JSON.stringify([...v])));
+  expandedAgents.subscribe((v) => localStorage.setItem("expandedAgents", JSON.stringify(v)));
 }
 
 function parseHash(): { agentId: string | null; view: NavView; runId: string | null } {
@@ -197,9 +197,9 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
   // Now update hash once with all correct values
   updateHash(agentId, view, runId);
 
-  expandedAgents.update((set) => {
-    set.add(agentId);
-    return new Set(set);
+  expandedAgents.update((arr) => {
+    if (arr.includes(agentId)) return arr;
+    return [...arr, agentId];
   });
 
   const [graph, records, runs] = await Promise.all([
@@ -224,13 +224,12 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
 }
 
 export function toggleAgentExpanded(agentId: string): void {
-  expandedAgents.update((set) => {
-    if (set.has(agentId)) {
-      set.delete(agentId);
+  expandedAgents.update((arr) => {
+    if (arr.includes(agentId)) {
+      return arr.filter((id) => id !== agentId);
     } else {
-      set.add(agentId);
+      return [...arr, agentId];
     }
-    return new Set(set);
   });
 }
 
@@ -338,24 +337,35 @@ export function connectRunWebSocket(runId: string): void {
 
   // Poll API as fallback for missed WebSocket messages
   pollInterval = setInterval(async () => {
-    const current = get(currentRunWithResults);
-    if (current && current.id === runId && !current.completed_at) {
-      const fresh = await api.getRun(runId);
-      // Merge: keep running results from current that aren't in server state
-      const serverResultIds = new Set(fresh.results.map((r: RunWithResults["results"][0]) => r.id));
-      const runningResultsToKeep = current.results.filter(
-        (r) => r.status === "running" && !serverResultIds.has(r.id)
-      );
-      currentRunWithResults.set({
-        ...fresh,
-        results: [...fresh.results, ...runningResultsToKeep],
-      });
+    try {
+      const current = get(currentRunWithResults);
+      if (current && current.id === runId && !current.completed_at) {
+        const fresh = await api.getRun(runId);
+        // Merge: keep running results from current that aren't in server state
+        const serverResultIds = new Set(fresh.results.map((r: RunWithResults["results"][0]) => r.id));
+        const runningResultsToKeep = current.results.filter(
+          (r) => r.status === "running" && !serverResultIds.has(r.id)
+        );
+        currentRunWithResults.set({
+          ...fresh,
+          results: [...fresh.results, ...runningResultsToKeep],
+        });
+      }
+    } catch (e) {
+      console.error("[poll] Error fetching run:", e);
     }
   }, 3000);
 
   ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch (e) {
+      console.error("[ws] Invalid JSON:", e);
+      return;
+    }
 
+    try {
     if (data.type === "state" && data.run) {
       // Merge results to avoid losing running tests that may not be in DB yet
       currentRunWithResults.update((current) => {
@@ -426,10 +436,9 @@ export function connectRunWebSocket(runId: string): void {
     } else if (data.type === "test_completed" || data.type === "test_error" || data.type === "test_cancelled") {
       // Clear retry status only on success or cancel (keep on error for context)
       if (data.type !== "test_error") {
-        retryStatus.update((map) => {
-          const newMap = new Map(map);
-          newMap.delete(data.result_id);
-          return newMap;
+        retryStatus.update((obj) => {
+          const { [data.result_id]: _, ...rest } = obj;
+          return rest;
         });
       }
       // Refresh full state to get complete result data
@@ -446,25 +455,24 @@ export function connectRunWebSocket(runId: string): void {
             results: [...fresh.results, ...runningResultsToKeep],
           };
         });
-      });
+      }).catch((e) => console.error("[ws] Error refreshing run:", e));
     } else if (data.type === "retry_error") {
       // Track retry status for display
-      retryStatus.update((map) => {
-        const newMap = new Map(map);
-        newMap.set(data.result_id, {
+      retryStatus.update((obj) => ({
+        ...obj,
+        [data.result_id]: {
           result_id: data.result_id,
           error_type: data.error_type,
           message: data.message,
           attempt: data.attempt,
           max_attempts: data.max_attempts,
           retry_after: data.retry_after,
-        });
-        return newMap;
-      });
+        },
+      }));
     } else if (data.type === "run_completed") {
       isRunning.set(false);
       // Clear retry status for this run
-      retryStatus.set(new Map());
+      retryStatus.set({});
       // Update the run to mark it as completed
       currentRunWithResults.update((run) => {
         if (!run) return run;
@@ -479,6 +487,13 @@ export function connectRunWebSocket(runId: string): void {
       }
       disconnectRunWebSocket();
     }
+    } catch (e) {
+      console.error("[ws] Error handling message:", e);
+    }
+  };
+
+  ws.onerror = (e) => {
+    console.error("[ws] WebSocket error:", e);
   };
 
   ws.onclose = () => {

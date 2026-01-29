@@ -399,6 +399,27 @@ cd web && npx vitest run
 cd web && mise exec -- bun run build
 ```
 
+**Svelte 5 Reactivity Guidelines:**
+
+- Use `$derived($store)` to consume Svelte stores in components - the `$store` syntax alone may not trigger re-renders in browsers
+- Do not use `Set` or `Map` with `$state` or `writable` stores - use arrays and `Record<K,V>` instead
+- Always reassign objects/arrays instead of mutating them: `obj = { ...obj, [key]: value }` not `obj[key] = value`
+- Use `onMount()` for one-time data fetching, not `$effect()` - effects are for reactive dependencies
+- Violating these rules can cause the entire app's reactivity to silently break
+
+```svelte
+<script lang="ts">
+  import { myStore } from "./stores";
+
+  // WRONG - may not trigger re-renders in browser
+  // {#if $myStore === "value"}
+
+  // CORRECT - use $derived for reliable reactivity
+  let value = $derived($myStore);
+  // {#if value === "value"}
+</script>
+```
+
 ## Project Structure
 
 ```

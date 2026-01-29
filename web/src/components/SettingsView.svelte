@@ -1,13 +1,14 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { api } from "../lib/api";
   import { settings } from "../lib/stores";
   import type { Settings } from "../lib/types";
 
   let localSettings = $state<Settings>({
     models: {
-      agent: "openai/gpt-4o-mini",
-      simulator: "openai/gpt-4o-mini",
-      judge: "openai/gpt-4o-mini",
+      agent: "groq/llama-3.1-8b-instant",
+      simulator: "groq/llama-3.1-8b-instant",
+      judge: "groq/llama-3.1-8b-instant",
     },
     run: {
       max_turns: 20,
@@ -25,7 +26,7 @@
   let newEnvValue = $state("");
   let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  $effect(() => {
+  onMount(() => {
     loadSettings();
   });
 
@@ -115,7 +116,7 @@
           type="text"
           bind:value={localSettings.models.agent}
           oninput={debouncedSave}
-          placeholder="openai/gpt-4o-mini"
+          placeholder="groq/llama-3.1-8b-instant"
         />
         <span class="hint">Model used to generate agent responses</span>
       </div>
@@ -127,7 +128,7 @@
           type="text"
           bind:value={localSettings.models.simulator}
           oninput={debouncedSave}
-          placeholder="openai/gpt-4o-mini"
+          placeholder="groq/llama-3.1-8b-instant"
         />
         <span class="hint">Model used to simulate user behavior</span>
       </div>
@@ -139,7 +140,7 @@
           type="text"
           bind:value={localSettings.models.judge}
           oninput={debouncedSave}
-          placeholder="openai/gpt-4o-mini"
+          placeholder="groq/llama-3.1-8b-instant"
         />
         <span class="hint">Model used to evaluate test metrics</span>
       </div>

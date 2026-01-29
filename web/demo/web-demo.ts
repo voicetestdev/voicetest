@@ -28,27 +28,37 @@ test("record web UI demo", async ({ page }) => {
   await page.click("text=Tests");
   await page.waitForTimeout(1000);
 
-  // Select first 3 tests by clicking checkboxes
-  const checkboxes = page.locator('input[type="checkbox"]');
-  const count = await checkboxes.count();
-  for (let i = 0; i < Math.min(3, count); i++) {
-    await checkboxes.nth(i).click();
+  // Select first 3 tests by clicking row checkboxes (skip header checkbox)
+  const rowCheckboxes = page.locator('tbody input[type="checkbox"]');
+  const checkboxCount = await rowCheckboxes.count();
+  for (let i = 0; i < Math.min(3, checkboxCount); i++) {
+    await rowCheckboxes.nth(i).click();
     await page.waitForTimeout(300);
   }
-
   await page.waitForTimeout(500);
 
   // Click Run Selected button
-  await page.click("text=Run Selected");
+  await page.click("button:has-text('Run Selected')");
+  await page.waitForTimeout(500);
+
+  // Click Runs tab to ensure navigation (workaround for auto-switch issue)
+  await page.click('button.tab-item:has-text("Runs")');
   await page.waitForTimeout(1000);
 
-  // Wait for tests to complete (watch for status changes)
-  await page.waitForTimeout(15000);
-
-  // Click on a result to see details
-  const results = page.locator('[class*="result"]');
-  if ((await results.count()) > 0) {
-    await results.first().click();
-    await page.waitForTimeout(2000);
+  // Poll for the results list to appear
+  for (let i = 0; i < 20; i++) {
+    const resultsList = await page.locator(".result-select-btn").count();
+    if (resultsList > 0) break;
+    await page.waitForTimeout(500);
   }
+
+  // Wait a moment then click the first test result to show conversation
+  await page.waitForTimeout(500);
+  const resultBtn = page.locator(".result-select-btn").first();
+  if ((await resultBtn.count()) > 0) {
+    await resultBtn.click();
+  }
+
+  // Watch the conversation flow
+  await page.waitForTimeout(8000);
 });

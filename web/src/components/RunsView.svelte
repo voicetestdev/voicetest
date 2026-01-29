@@ -286,7 +286,7 @@
                   {/if}
                 {/each}
                 {#if selectedResult.status === "running"}
-                  {@const retry = $retryStatus.get(selectedResult.id)}
+                  {@const retry = $retryStatus[selectedResult.id]}
                   {#if retry}
                     <div class="retry-notice">
                       <span class="retry-icon">⏳</span>
@@ -305,7 +305,7 @@
                     </div>
                   {/if}
                 {:else if selectedResult.status === "error"}
-                  {@const retry = $retryStatus.get(selectedResult.id)}
+                  {@const retry = $retryStatus[selectedResult.id]}
                   {#if retry}
                     <div class="retry-notice failed">
                       <span class="retry-icon">⚠️</span>

@@ -16,9 +16,11 @@ from voicetest.config import get_settings_path
 class ModelSettings(BaseModel):
     """LLM model configuration."""
 
-    agent: str = Field(default="openai/gpt-4o-mini", description="Model for agent responses")
-    simulator: str = Field(default="openai/gpt-4o-mini", description="Model for user simulation")
-    judge: str = Field(default="openai/gpt-4o-mini", description="Model for evaluation")
+    agent: str = Field(default="groq/llama-3.1-8b-instant", description="Model for agent responses")
+    simulator: str = Field(
+        default="groq/llama-3.1-8b-instant", description="Model for user simulation"
+    )
+    judge: str = Field(default="groq/llama-3.1-8b-instant", description="Model for evaluation")
 
 
 class RunSettings(BaseModel):

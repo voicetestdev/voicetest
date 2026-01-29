@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { get } from "svelte/store";
-import { currentRunWithResults } from "./stores";
+import { currentRunWithResults, currentView, currentAgentId, isRunning } from "./stores";
 import type { RunResultRecord, RunWithResults } from "./types";
 
 function createResult(overrides: Partial<RunResultRecord> = {}): RunResultRecord {
@@ -460,6 +460,58 @@ describe("stores", () => {
         const run = get(currentRunWithResults);
         expect(run!.results[0].transcript_json).toBe("[]");
       });
+    });
+  });
+
+  describe("View switching on Run Selected", () => {
+    beforeEach(() => {
+      currentView.set("tests");
+      currentAgentId.set("agent-123");
+      currentRunWithResults.set(null);
+      isRunning.set(false);
+    });
+
+    it("should switch view to runs when currentView.set is called", () => {
+      expect(get(currentView)).toBe("tests");
+
+      currentView.set("runs");
+
+      expect(get(currentView)).toBe("runs");
+    });
+
+    it("should maintain view after multiple rapid updates", () => {
+      currentView.set("runs");
+      currentView.set("tests");
+      currentView.set("runs");
+
+      expect(get(currentView)).toBe("runs");
+    });
+
+    it("should allow view changes after isRunning is set", () => {
+      isRunning.set(true);
+      currentView.set("runs");
+
+      expect(get(currentView)).toBe("runs");
+      expect(get(isRunning)).toBe(true);
+    });
+
+    it("should handle concurrent store updates", () => {
+      // Simulate what happens in runSelectedTests
+      currentView.set("runs");
+      isRunning.set(true);
+      currentRunWithResults.set(null);
+
+      expect(get(currentView)).toBe("runs");
+      expect(get(isRunning)).toBe(true);
+      expect(get(currentRunWithResults)).toBe(null);
+    });
+
+    it("should allow switching back to tests view", () => {
+      currentView.set("runs");
+      expect(get(currentView)).toBe("runs");
+
+      currentView.set("tests");
+      expect(get(currentView)).toBe("tests");
     });
   });
 });

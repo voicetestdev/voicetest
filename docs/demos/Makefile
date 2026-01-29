@@ -19,11 +19,13 @@ cli-demo.gif: cli-demo.tape
 web: web-demo.gif
 
 web-demo.gif: web-demo.webm
-	ffmpeg -y -i web-demo.webm -vf "fps=10,scale=1200:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" web-demo.gif
+	ffmpeg -y -i web-demo.webm -vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" web-demo.gif
 
 web-demo.webm:
+	@echo "Clearing demo database..."
+	@rm -f ~/.voicetest/data.duckdb ~/.voicetest/data.duckdb.wal
 	@echo "Starting server in background..."
-	@uv run voicetest demo --serve &
+	(cd ../.. && uv run voicetest demo --serve) &
 	@sleep 5
 	@echo "Recording with Playwright..."
 	cd ../../web && mise exec -- bunx playwright test || true

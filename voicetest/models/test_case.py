@@ -16,7 +16,7 @@ class RunOptions(BaseModel):
     """Options for test execution.
 
     LLM model strings use LiteLLM format: "provider/model"
-    Examples: "openai/gpt-4o-mini", "anthropic/claude-3-haiku-20240307"
+    Examples: "groq/llama-3.1-8b-instant", "openai/gpt-4o-mini"
     """
 
     max_turns: int = 20
@@ -26,9 +26,9 @@ class RunOptions(BaseModel):
     streaming: bool = False
 
     # LLM model configuration
-    agent_model: str = "openai/gpt-4o-mini"
-    simulator_model: str = "openai/gpt-4o-mini"
-    judge_model: str = "openai/gpt-4o-mini"
+    agent_model: str = "groq/llama-3.1-8b-instant"
+    simulator_model: str = "groq/llama-3.1-8b-instant"
+    judge_model: str = "groq/llama-3.1-8b-instant"
 
 
 class TestCase(BaseModel):

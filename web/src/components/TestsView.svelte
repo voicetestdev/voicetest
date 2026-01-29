@@ -35,7 +35,7 @@
   let showNewTestModal = $state(false);
   let showImportModal = $state(false);
   let showExportModal = $state(false);
-  let selectedTests = $state<Set<string>>(new Set());
+  let selectedTestIds = $state<string[]>([]);
   let runError = $state("");
   let exportFormat = $state("retell");
   let exportSelection = $state<"all" | "selected">("all");
@@ -165,8 +165,7 @@
     try {
       await api.deleteTestCase(id);
       await refreshTests();
-      selectedTests.delete(id);
-      selectedTests = new Set(selectedTests);
+      selectedTestIds = selectedTestIds.filter((x) => x !== id);
     } catch (e) {
       importError = e instanceof Error ? e.message : String(e);
     }
@@ -289,19 +288,18 @@
   }
 
   function toggleTestSelection(id: string) {
-    if (selectedTests.has(id)) {
-      selectedTests.delete(id);
+    if (selectedTestIds.includes(id)) {
+      selectedTestIds = selectedTestIds.filter((x) => x !== id);
     } else {
-      selectedTests.add(id);
+      selectedTestIds = [...selectedTestIds, id];
     }
-    selectedTests = new Set(selectedTests);
   }
 
   function selectAllTests() {
-    if (selectedTests.size === $testCaseRecords.length) {
-      selectedTests = new Set();
+    if (selectedTestIds.length === $testCaseRecords.length && $testCaseRecords.length > 0) {
+      selectedTestIds = [];
     } else {
-      selectedTests = new Set($testCaseRecords.map((r) => r.id));
+      selectedTestIds = $testCaseRecords.map((r) => r.id);
     }
   }
 
@@ -324,19 +322,13 @@
   }
 
   async function runSelectedTests() {
-    if (!$currentAgentId || selectedTests.size === 0) return;
-
-    const testIds = [...selectedTests];
-
-    if (testIds.length === 0) {
-      return;
-    }
+    if (!$currentAgentId || selectedTestIds.length === 0) return;
 
     currentView.set("runs");
     runError = "";
 
     try {
-      await startRun($currentAgentId, testIds);
+      await startRun($currentAgentId, selectedTestIds);
     } catch (e) {
       runError = e instanceof Error ? e.message : String(e);
     }
@@ -361,7 +353,7 @@
     exportError = "";
 
     try {
-      const testIds = exportSelection === "selected" ? [...selectedTests] : undefined;
+      const testIds = exportSelection === "selected" ? selectedTestIds : undefined;
       const data = await api.exportTests($currentAgentId, exportFormat, testIds);
 
       const agentName = $currentAgent?.name || "tests";
@@ -400,9 +392,9 @@
         <button
           class="run-btn secondary"
           onclick={runSelectedTests}
-          disabled={$isRunning || !$agentGraph || selectedTests.size === 0}
+          disabled={$isRunning || !$agentGraph || selectedTestIds.length === 0}
         >
-          Run Selected ({selectedTests.size})
+          Run Selected ({selectedTestIds.length})
         </button>
         <button class="secondary" onclick={openNewTestModal}>+ New Test</button>
         <button class="secondary" onclick={openImportModal}>Import</button>
@@ -429,7 +421,7 @@
                 <th class="col-select">
                   <input
                     type="checkbox"
-                    checked={selectedTests.size === $testCaseRecords.length && $testCaseRecords.length > 0}
+                    checked={selectedTestIds.length === $testCaseRecords.length && $testCaseRecords.length > 0}
                     onchange={selectAllTests}
                   />
                 </th>
@@ -441,11 +433,11 @@
             </thead>
             <tbody>
               {#each $testCaseRecords as record}
-                <tr class:selected={selectedTests.has(record.id)}>
+                <tr class:selected={selectedTestIds.includes(record.id)}>
                   <td class="col-select">
                     <input
                       type="checkbox"
-                      checked={selectedTests.has(record.id)}
+                      checked={selectedTestIds.includes(record.id)}
                       onchange={() => toggleTestSelection(record.id)}
                     />
                   </td>
@@ -518,7 +510,7 @@
             id="test-llm-model"
             type="text"
             bind:value={newTest.llm_model}
-            placeholder="e.g., openai/gpt-4o-mini (leave empty for default)"
+            placeholder="e.g., groq/llama-3.1-8b-instant (leave empty for default)"
           />
           <span class="field-hint">Override the agent model for this specific test</span>
         </div>
@@ -700,8 +692,8 @@
           <label for="export-selection">Tests</label>
           <select id="export-selection" bind:value={exportSelection}>
             <option value="all">All tests ({$testCaseRecords.length})</option>
-            <option value="selected" disabled={selectedTests.size === 0}>
-              Selected tests ({selectedTests.size})
+            <option value="selected" disabled={selectedTestIds.length === 0}>
+              Selected tests ({selectedTestIds.length})
             </option>
           </select>
         </div>
