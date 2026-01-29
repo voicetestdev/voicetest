@@ -91,6 +91,9 @@ class AgentGraph(BaseModel):
     entry_node_id: str
     source_type: str
     source_metadata: dict[str, Any] = Field(default_factory=dict)
+    default_model: str | None = Field(
+        default=None, description="Default LLM model for this agent (from import)"
+    )
 
     def get_entry_node(self) -> AgentNode:
         """Return the entry node of the graph."""

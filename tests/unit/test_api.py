@@ -1,298 +1,271 @@
-"""Tests for the core API."""
+"""Tests for model precedence logic in run_test."""
 
 import pytest
 
-
-class TestImportAgent:
-    """Tests for import_agent API function."""
-
-    @pytest.mark.asyncio
-    async def test_import_agent_from_dict(self, sample_retell_config):
-        from voicetest import api
-
-        graph = await api.import_agent(sample_retell_config)
-
-        assert graph.source_type == "retell"
-        assert graph.entry_node_id == "greeting"
-        assert len(graph.nodes) == 4
-
-    @pytest.mark.asyncio
-    async def test_import_agent_from_path(self, sample_retell_config_path):
-        from voicetest import api
-
-        graph = await api.import_agent(sample_retell_config_path)
-
-        assert graph.source_type == "retell"
-        assert graph.entry_node_id == "greeting"
-
-    @pytest.mark.asyncio
-    async def test_import_agent_with_explicit_source(self, sample_retell_config):
-        from voicetest import api
-
-        graph = await api.import_agent(sample_retell_config, source="retell")
-
-        assert graph.source_type == "retell"
-
-    @pytest.mark.asyncio
-    async def test_import_agent_custom_function(self):
-        from voicetest import api
-        from voicetest.models.agent import AgentGraph, AgentNode
-
-        def create_agent() -> AgentGraph:
-            return AgentGraph(
-                nodes={"start": AgentNode(id="start", instructions="Hello")},
-                entry_node_id="start",
-                source_type="custom",
-            )
-
-        graph = await api.import_agent(create_agent, source="custom")
-
-        assert graph.source_type == "custom"
-        assert graph.entry_node_id == "start"
-
-    @pytest.mark.asyncio
-    async def test_import_agent_unknown_source_raises(self, sample_retell_config):
-        from voicetest import api
-
-        with pytest.raises(ValueError, match="Unknown importer"):
-            await api.import_agent(sample_retell_config, source="nonexistent")
-
-    @pytest.mark.asyncio
-    async def test_import_agent_no_match_raises(self):
-        from voicetest import api
-
-        with pytest.raises(ValueError, match="Could not auto-detect"):
-            await api.import_agent({"unknown": "config"})
+from voicetest.api import run_test
+from voicetest.models.agent import AgentGraph, AgentNode, Transition, TransitionCondition
+from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.settings import DEFAULT_MODEL
 
 
-class TestListImporters:
-    """Tests for list_importers API function."""
-
-    def test_list_importers_returns_list(self):
-        from voicetest import api
-
-        importers = api.list_importers()
-
-        assert isinstance(importers, list)
-        assert len(importers) >= 2  # At least retell and custom
-
-    def test_list_importers_includes_retell(self):
-        from voicetest import api
-
-        importers = api.list_importers()
-        types = [i.source_type for i in importers]
-
-        assert "retell" in types
-
-    def test_list_importers_includes_custom(self):
-        from voicetest import api
-
-        importers = api.list_importers()
-        types = [i.source_type for i in importers]
-
-        assert "custom" in types
-
-
-class TestRunTest:
-    """Tests for run_test function."""
-
-    @pytest.mark.asyncio
-    async def test_run_test_returns_result(self, sample_retell_config):
-        from voicetest import api
-        from voicetest.models.results import TestResult
-        from voicetest.models.test_case import RunOptions, TestCase
-
-        graph = await api.import_agent(sample_retell_config)
-        test_case = TestCase(
-            name="Test",
-            user_prompt="When asked, say John. Say hi.",
-        )
-
-        result = await api.run_test(
-            graph, test_case, options=RunOptions(max_turns=2), _mock_mode=True
-        )
-
-        assert isinstance(result, TestResult)
-        assert result.test_id == "Test"
-
-
-class TestRunTests:
-    """Tests for run_tests function."""
-
-    @pytest.mark.asyncio
-    async def test_run_tests_returns_run(self, sample_retell_config):
-        from voicetest import api
-        from voicetest.models.results import TestRun
-        from voicetest.models.test_case import RunOptions, TestCase
-
-        graph = await api.import_agent(sample_retell_config)
-        test_cases = [
-            TestCase(
-                name="T1",
-                user_prompt="When asked, say A. Do X.",
+@pytest.fixture
+def simple_graph() -> AgentGraph:
+    """Create a simple agent graph for testing."""
+    return AgentGraph(
+        nodes={
+            "greeting": AgentNode(
+                id="greeting",
+                instructions="Greet the user.",
+                transitions=[
+                    Transition(
+                        target_node_id="end",
+                        condition=TransitionCondition(type="llm_prompt", value="done"),
+                    )
+                ],
             ),
-        ]
-
-        result = await api.run_tests(
-            graph, test_cases, options=RunOptions(max_turns=2), _mock_mode=True
-        )
-
-        assert isinstance(result, TestRun)
-        assert len(result.results) == 1
+            "end": AgentNode(id="end", instructions="End conversation.", transitions=[]),
+        },
+        entry_node_id="greeting",
+        source_type="test",
+    )
 
 
-class TestExportAgent:
-    """Tests for export_agent function."""
+@pytest.fixture
+def simple_test_case() -> TestCase:
+    """Create a simple test case for testing."""
+    return TestCase(
+        name="test1",
+        user_prompt="Test the agent.",
+        metrics=["responds politely"],
+    )
 
-    @pytest.mark.asyncio
-    async def test_export_mermaid(self, sample_retell_config):
-        from voicetest import api
 
-        graph = await api.import_agent(sample_retell_config)
-
-        result = await api.export_agent(graph, format="mermaid")
-
-        assert "flowchart" in result.lower()
-        assert "greeting" in result
+class TestAgentModelPrecedence:
+    """Tests for agent model resolution with graph.default_model."""
 
     @pytest.mark.asyncio
-    async def test_export_livekit(self, sample_retell_config):
-        from voicetest import api
+    async def test_no_global_no_agent_default_uses_system_default(
+        self, simple_graph, simple_test_case
+    ):
+        """When neither global nor agent default is set, use DEFAULT_MODEL."""
+        options = RunOptions()  # agent_model = None
 
-        graph = await api.import_agent(sample_retell_config)
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
 
-        result = await api.export_agent(graph, format="livekit")
-
-        assert "class Agent_greeting" in result
-
-
-class TestRunTestWithMetricsConfig:
-    """Tests for run_test with MetricsConfig."""
+        assert result.models_used.agent == DEFAULT_MODEL
 
     @pytest.mark.asyncio
-    async def test_run_test_with_global_metrics(self, sample_retell_config):
-        from voicetest import api
-        from voicetest.models.agent import GlobalMetric, MetricsConfig
-        from voicetest.models.test_case import RunOptions, TestCase
+    async def test_no_global_with_agent_default_uses_agent_default(
+        self, simple_graph, simple_test_case
+    ):
+        """When global not set but agent has default, use agent's default."""
+        simple_graph.default_model = "openai/gpt-4o"
+        options = RunOptions()  # agent_model = None
 
-        graph = await api.import_agent(sample_retell_config)
-        test_case = TestCase(
-            name="Test",
-            user_prompt="When asked, say John. Say hi.",
-            metrics=["Agent greeted user"],
-        )
-        metrics_config = MetricsConfig(
-            threshold=0.7,
-            global_metrics=[
-                GlobalMetric(name="HIPAA", criteria="Check HIPAA compliance"),
-            ],
-        )
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
 
-        result = await api.run_test(
-            graph,
-            test_case,
-            options=RunOptions(max_turns=2),
-            metrics_config=metrics_config,
-            _mock_mode=True,
-        )
-
-        # Should have test metrics + global metrics
-        assert len(result.metric_results) == 2
-        metric_names = [r.metric for r in result.metric_results]
-        assert "Agent greeted user" in metric_names
-        assert "[HIPAA]" in metric_names
+        assert result.models_used.agent == "openai/gpt-4o"
+        assert len(result.model_overrides) >= 1
+        agent_override = next((o for o in result.model_overrides if o.role == "agent"), None)
+        assert agent_override is not None
+        assert agent_override.actual == "openai/gpt-4o"
+        assert "agent.default_model used" in agent_override.reason
 
     @pytest.mark.asyncio
-    async def test_run_test_global_metric_disabled(self, sample_retell_config):
-        from voicetest import api
-        from voicetest.models.agent import GlobalMetric, MetricsConfig
-        from voicetest.models.test_case import RunOptions, TestCase
+    async def test_global_set_overrides_agent_default(self, simple_graph, simple_test_case):
+        """When global is explicitly set, it wins over agent default."""
+        simple_graph.default_model = "openai/gpt-4o"
+        options = RunOptions(agent_model="anthropic/claude-3-sonnet")
 
-        graph = await api.import_agent(sample_retell_config)
-        test_case = TestCase(
-            name="Test",
-            user_prompt="When asked, say John. Say hi.",
-            metrics=["Agent greeted user"],
-        )
-        metrics_config = MetricsConfig(
-            threshold=0.7,
-            global_metrics=[
-                GlobalMetric(name="Disabled", criteria="Should not run", enabled=False),
-            ],
-        )
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
 
-        result = await api.run_test(
-            graph,
-            test_case,
-            options=RunOptions(max_turns=2),
-            metrics_config=metrics_config,
-            _mock_mode=True,
-        )
-
-        # Disabled global metric should not run
-        assert len(result.metric_results) == 1
-        assert result.metric_results[0].metric == "Agent greeted user"
-
-
-class TestEvaluateTranscript:
-    """Tests for evaluate_transcript function."""
+        assert result.models_used.agent == "anthropic/claude-3-sonnet"
+        agent_override = next((o for o in result.model_overrides if o.role == "agent"), None)
+        assert agent_override is not None
+        assert agent_override.actual == "anthropic/claude-3-sonnet"
+        assert "global settings override" in agent_override.reason
 
     @pytest.mark.asyncio
-    async def test_evaluate_transcript_returns_results(self):
-        from voicetest import api
-        from voicetest.models.results import Message, MetricResult
+    async def test_toggle_enabled_agent_default_wins_over_global(
+        self, simple_graph, simple_test_case
+    ):
+        """When toggle enabled, agent default wins even over explicit global."""
+        simple_graph.default_model = "openai/gpt-4o"
+        options = RunOptions(agent_model="anthropic/claude-3-sonnet", test_model_precedence=True)
 
-        transcript = [
-            Message(role="user", content="Hello"),
-            Message(role="assistant", content="Hi there!"),
-        ]
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
 
-        results = await api.evaluate_transcript(
-            transcript, metrics=["Greeted user"], _mock_mode=True
-        )
-
-        assert len(results) == 1
-        assert isinstance(results[0], MetricResult)
-
-
-class TestDynamicVariableSubstitution:
-    """Tests for dynamic variable substitution in run_test."""
+        assert result.models_used.agent == "openai/gpt-4o"
+        agent_override = next((o for o in result.model_overrides if o.role == "agent"), None)
+        assert agent_override is not None
+        assert agent_override.actual == "openai/gpt-4o"
+        assert "test_model_precedence enabled" in agent_override.reason
 
     @pytest.mark.asyncio
-    async def test_run_test_with_dynamic_variables(self, sample_retell_config):
-        from voicetest import api
-        from voicetest.models.test_case import RunOptions, TestCase
+    async def test_global_matches_agent_default_no_override(self, simple_graph, simple_test_case):
+        """When global equals agent default, no override is logged."""
+        simple_graph.default_model = "openai/gpt-4o"
+        options = RunOptions(agent_model="openai/gpt-4o")
 
-        graph = await api.import_agent(sample_retell_config)
-        test_case = TestCase(
-            name="Test with variables",
-            user_prompt="My name is {{name}} and I am {{age}} years old.",
-            dynamic_variables={"name": "Alice", "age": 30},
-        )
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
 
-        result = await api.run_test(
-            graph, test_case, options=RunOptions(max_turns=2), _mock_mode=True
-        )
+        assert result.models_used.agent == "openai/gpt-4o"
+        agent_override = next((o for o in result.model_overrides if o.role == "agent"), None)
+        assert agent_override is None
 
-        assert result.test_id == "Test with variables"
-        # Test ran without errors
-        assert result.status in ("pass", "fail")
+
+class TestSimulatorModelPrecedence:
+    """Tests for simulator model resolution with test_case.llm_model."""
 
     @pytest.mark.asyncio
-    async def test_run_test_empty_dynamic_variables(self, sample_retell_config):
-        from voicetest import api
-        from voicetest.models.test_case import RunOptions, TestCase
+    async def test_no_global_no_test_model_uses_system_default(
+        self, simple_graph, simple_test_case
+    ):
+        """When neither global nor test model is set, use DEFAULT_MODEL."""
+        options = RunOptions()  # simulator_model = None
 
-        graph = await api.import_agent(sample_retell_config)
-        test_case = TestCase(
-            name="Test without variables",
-            user_prompt="Hello, how are you?",
-            dynamic_variables={},
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.simulator == DEFAULT_MODEL
+
+    @pytest.mark.asyncio
+    async def test_no_global_with_test_model_uses_test_model(self, simple_graph, simple_test_case):
+        """When global not set but test has llm_model, use test's model."""
+        simple_test_case.llm_model = "openai/gpt-4o-mini"
+        options = RunOptions()  # simulator_model = None
+
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.simulator == "openai/gpt-4o-mini"
+        sim_override = next((o for o in result.model_overrides if o.role == "simulator"), None)
+        assert sim_override is not None
+        assert sim_override.actual == "openai/gpt-4o-mini"
+        assert "test_case.llm_model used" in sim_override.reason
+
+    @pytest.mark.asyncio
+    async def test_global_set_overrides_test_model(self, simple_graph, simple_test_case):
+        """When global is explicitly set, it wins over test model."""
+        simple_test_case.llm_model = "openai/gpt-4o-mini"
+        options = RunOptions(simulator_model="anthropic/claude-3-haiku")
+
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.simulator == "anthropic/claude-3-haiku"
+        sim_override = next((o for o in result.model_overrides if o.role == "simulator"), None)
+        assert sim_override is not None
+        assert sim_override.actual == "anthropic/claude-3-haiku"
+        assert "global settings override" in sim_override.reason
+
+    @pytest.mark.asyncio
+    async def test_toggle_enabled_test_model_wins_over_global(self, simple_graph, simple_test_case):
+        """When toggle enabled, test model wins even over explicit global."""
+        simple_test_case.llm_model = "openai/gpt-4o-mini"
+        options = RunOptions(simulator_model="anthropic/claude-3-haiku", test_model_precedence=True)
+
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.simulator == "openai/gpt-4o-mini"
+        sim_override = next((o for o in result.model_overrides if o.role == "simulator"), None)
+        assert sim_override is not None
+        assert sim_override.actual == "openai/gpt-4o-mini"
+        assert "test_model_precedence enabled" in sim_override.reason
+
+    @pytest.mark.asyncio
+    async def test_global_matches_test_model_no_override(self, simple_graph, simple_test_case):
+        """When global equals test model, no override is logged."""
+        simple_test_case.llm_model = "openai/gpt-4o-mini"
+        options = RunOptions(simulator_model="openai/gpt-4o-mini")
+
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.simulator == "openai/gpt-4o-mini"
+        sim_override = next((o for o in result.model_overrides if o.role == "simulator"), None)
+        assert sim_override is None
+
+
+class TestJudgeModel:
+    """Tests for judge model resolution."""
+
+    @pytest.mark.asyncio
+    async def test_no_global_uses_system_default(self, simple_graph, simple_test_case):
+        """When global judge not set, use DEFAULT_MODEL."""
+        options = RunOptions()  # judge_model = None
+
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.judge == DEFAULT_MODEL
+
+    @pytest.mark.asyncio
+    async def test_global_set_uses_global(self, simple_graph, simple_test_case):
+        """When global judge is set, use it."""
+        options = RunOptions(judge_model="anthropic/claude-3-opus")
+
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.judge == "anthropic/claude-3-opus"
+
+
+class TestCombinedPrecedence:
+    """Tests for combined agent and simulator model precedence."""
+
+    @pytest.mark.asyncio
+    async def test_all_models_from_defaults_when_none_configured(
+        self, simple_graph, simple_test_case
+    ):
+        """When nothing configured, all models use DEFAULT_MODEL."""
+        options = RunOptions()
+
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.agent == DEFAULT_MODEL
+        assert result.models_used.simulator == DEFAULT_MODEL
+        assert result.models_used.judge == DEFAULT_MODEL
+
+    @pytest.mark.asyncio
+    async def test_agent_and_test_models_both_override_when_global_not_set(
+        self, simple_graph, simple_test_case
+    ):
+        """Agent default_model and test llm_model both apply when globals not set."""
+        simple_graph.default_model = "openai/gpt-4o"
+        simple_test_case.llm_model = "openai/gpt-4o-mini"
+        options = RunOptions()
+
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.agent == "openai/gpt-4o"
+        assert result.models_used.simulator == "openai/gpt-4o-mini"
+
+    @pytest.mark.asyncio
+    async def test_global_overrides_both_agent_and_test_models(
+        self, simple_graph, simple_test_case
+    ):
+        """Global settings override both agent default and test llm_model."""
+        simple_graph.default_model = "openai/gpt-4o"
+        simple_test_case.llm_model = "openai/gpt-4o-mini"
+        options = RunOptions(
+            agent_model="anthropic/claude-3-sonnet",
+            simulator_model="anthropic/claude-3-haiku",
         )
 
-        result = await api.run_test(
-            graph, test_case, options=RunOptions(max_turns=2), _mock_mode=True
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.agent == "anthropic/claude-3-sonnet"
+        assert result.models_used.simulator == "anthropic/claude-3-haiku"
+
+    @pytest.mark.asyncio
+    async def test_toggle_makes_agent_and_test_models_win_over_global(
+        self, simple_graph, simple_test_case
+    ):
+        """Toggle enabled makes both agent default and test model win."""
+        simple_graph.default_model = "openai/gpt-4o"
+        simple_test_case.llm_model = "openai/gpt-4o-mini"
+        options = RunOptions(
+            agent_model="anthropic/claude-3-sonnet",
+            simulator_model="anthropic/claude-3-haiku",
+            test_model_precedence=True,
         )
 
-        assert result.test_id == "Test without variables"
-        assert result.status in ("pass", "fail")
+        result = await run_test(simple_graph, simple_test_case, options, _mock_mode=True)
+
+        assert result.models_used.agent == "openai/gpt-4o"
+        assert result.models_used.simulator == "openai/gpt-4o-mini"

@@ -13,14 +13,16 @@ from pydantic import BaseModel, Field
 from voicetest.config import get_settings_path
 
 
-class ModelSettings(BaseModel):
-    """LLM model configuration."""
+# Default model used when settings are not configured
+DEFAULT_MODEL = "groq/llama-3.1-8b-instant"
 
-    agent: str = Field(default="groq/llama-3.1-8b-instant", description="Model for agent responses")
-    simulator: str = Field(
-        default="groq/llama-3.1-8b-instant", description="Model for user simulation"
-    )
-    judge: str = Field(default="groq/llama-3.1-8b-instant", description="Model for evaluation")
+
+class ModelSettings(BaseModel):
+    """LLM model configuration. None means not configured (use defaults or test overrides)."""
+
+    agent: str | None = Field(default=None, description="Model for agent responses")
+    simulator: str | None = Field(default=None, description="Model for user simulation")
+    judge: str | None = Field(default=None, description="Model for evaluation")
 
 
 class RunSettings(BaseModel):
@@ -30,6 +32,10 @@ class RunSettings(BaseModel):
     verbose: bool = Field(default=False, description="Verbose output")
     flow_judge: bool = Field(default=False, description="Run flow judge to validate transitions")
     streaming: bool = Field(default=False, description="Stream tokens as they are generated")
+    test_model_precedence: bool = Field(
+        default=False,
+        description="When enabled, test-specific llm_model overrides global settings",
+    )
 
 
 class Settings(BaseModel):
@@ -76,17 +82,25 @@ def _to_toml(settings: Settings) -> str:
     """Convert settings to TOML string."""
     lines = []
 
-    lines.append("[models]")
-    lines.append(f'agent = "{settings.models.agent}"')
-    lines.append(f'simulator = "{settings.models.simulator}"')
-    lines.append(f'judge = "{settings.models.judge}"')
-    lines.append("")
+    # Only write [models] section if any model is configured
+    model_lines = []
+    if settings.models.agent is not None:
+        model_lines.append(f'agent = "{settings.models.agent}"')
+    if settings.models.simulator is not None:
+        model_lines.append(f'simulator = "{settings.models.simulator}"')
+    if settings.models.judge is not None:
+        model_lines.append(f'judge = "{settings.models.judge}"')
+    if model_lines:
+        lines.append("[models]")
+        lines.extend(model_lines)
+        lines.append("")
 
     lines.append("[run]")
     lines.append(f"max_turns = {settings.run.max_turns}")
     lines.append(f"verbose = {str(settings.run.verbose).lower()}")
     lines.append(f"flow_judge = {str(settings.run.flow_judge).lower()}")
     lines.append(f"streaming = {str(settings.run.streaming).lower()}")
+    lines.append(f"test_model_precedence = {str(settings.run.test_model_precedence).lower()}")
     lines.append("")
 
     if settings.env:

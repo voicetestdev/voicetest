@@ -231,6 +231,7 @@ class UpdateAgentRequest(BaseModel):
     """Request to update an agent."""
 
     name: str | None = None
+    default_model: str | None = None
 
 
 class UpdateMetricsConfigRequest(BaseModel):
@@ -358,8 +359,9 @@ async def export_agent(request: ExportRequest) -> dict[str, str]:
 def _build_run_options(settings: Settings, request_options: RunOptions | None) -> RunOptions:
     """Build RunOptions from settings, with request options for run params only.
 
-    Models always come from settings. Run parameters (max_turns, timeout, verbose, flow_judge,
-    streaming) come from request if provided, otherwise from settings.
+    Models come from settings (can be None if not configured).
+    Run parameters (max_turns, timeout, verbose, flow_judge, streaming) come from
+    request if provided, otherwise from settings.
     """
     return RunOptions(
         agent_model=settings.models.agent,
@@ -372,6 +374,7 @@ def _build_run_options(settings: Settings, request_options: RunOptions | None) -
             (request_options.flow_judge if request_options else False) or settings.run.flow_judge
         ),
         streaming=settings.run.streaming,
+        test_model_precedence=settings.run.test_model_precedence,
     )
 
 
@@ -544,7 +547,14 @@ async def update_agent(agent_id: str, request: UpdateAgentRequest) -> dict:
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    return repo.update(agent_id, name=request.name)
+    graph_json = None
+    if request.default_model is not None and agent.get("graph_json"):
+        graph_data = json.loads(agent["graph_json"])
+        # Empty string means clear the model (set to None)
+        graph_data["default_model"] = request.default_model if request.default_model else None
+        graph_json = json.dumps(graph_data)
+
+    return repo.update(agent_id, name=request.name, graph_json=graph_json)
 
 
 @router.delete("/agents/{agent_id}")

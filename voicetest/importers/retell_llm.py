@@ -165,6 +165,7 @@ class RetellLLMImporter:
                 "model": llm_config.model,
                 "begin_message": llm_config.begin_message,
             },
+            default_model=llm_config.model,
         )
 
     def _load_config(self, path_or_config: str | Path | dict) -> dict[str, Any]:

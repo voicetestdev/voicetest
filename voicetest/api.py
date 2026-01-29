@@ -25,6 +25,7 @@ from voicetest.models.results import (
 )
 from voicetest.models.test_case import RunOptions, TestCase
 from voicetest.retry import OnErrorCallback
+from voicetest.settings import DEFAULT_MODEL
 from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
 from voicetest.utils import substitute_variables
 
@@ -129,30 +130,93 @@ async def run_test(
         TestResult with pass/fail status, transcript, and metrics.
     """
     options = options or RunOptions()
-    default_options = RunOptions()
     overrides: list[ModelOverride] = []
 
-    # Use test case's llm_model as fallback for agent_model
-    if test_case.llm_model and options.agent_model == default_options.agent_model:
-        options = options.model_copy(update={"agent_model": test_case.llm_model})
-        overrides.append(
-            ModelOverride(
-                role="agent",
-                requested=default_options.agent_model,
-                actual=test_case.llm_model,
-                reason="test_case.llm_model used (settings were default)",
+    # Resolve agent_model with graph.default_model precedence
+    # Precedence: global (if set) > agent.default_model > DEFAULT_MODEL
+    if graph.default_model:
+        if options.agent_model is None:
+            # Global not configured, agent's default wins
+            options = options.model_copy(update={"agent_model": graph.default_model})
+            overrides.append(
+                ModelOverride(
+                    role="agent",
+                    requested="(not configured)",
+                    actual=graph.default_model,
+                    reason="agent.default_model used (global agent not configured)",
+                )
             )
-        )
-    elif test_case.llm_model and options.agent_model != test_case.llm_model:
-        # Settings override test's requested model
-        overrides.append(
-            ModelOverride(
-                role="agent",
-                requested=test_case.llm_model,
-                actual=options.agent_model,
-                reason="settings override test_case.llm_model",
+        elif options.test_model_precedence:
+            # Toggle enabled, agent's default wins over explicit global
+            if options.agent_model != graph.default_model:
+                overrides.append(
+                    ModelOverride(
+                        role="agent",
+                        requested=options.agent_model,
+                        actual=graph.default_model,
+                        reason="agent.default_model used (test_model_precedence enabled)",
+                    )
+                )
+                options = options.model_copy(update={"agent_model": graph.default_model})
+        else:
+            # Global explicitly set, global wins
+            if options.agent_model != graph.default_model:
+                overrides.append(
+                    ModelOverride(
+                        role="agent",
+                        requested=graph.default_model,
+                        actual=options.agent_model,
+                        reason="global settings override agent.default_model",
+                    )
+                )
+    elif options.agent_model is None:
+        # No agent default, no global, use DEFAULT_MODEL
+        options = options.model_copy(update={"agent_model": DEFAULT_MODEL})
+
+    # Resolve simulator_model with test_case.llm_model precedence
+    # test_case.llm_model controls the simulator (simulated user), not the agent
+    if test_case.llm_model:
+        if options.simulator_model is None:
+            # Global not configured, test wins
+            options = options.model_copy(update={"simulator_model": test_case.llm_model})
+            overrides.append(
+                ModelOverride(
+                    role="simulator",
+                    requested="(not configured)",
+                    actual=test_case.llm_model,
+                    reason="test_case.llm_model used (global simulator not configured)",
+                )
             )
-        )
+        elif options.test_model_precedence:
+            # Toggle enabled, test wins over explicit global
+            if options.simulator_model != test_case.llm_model:
+                overrides.append(
+                    ModelOverride(
+                        role="simulator",
+                        requested=options.simulator_model,
+                        actual=test_case.llm_model,
+                        reason="test_case.llm_model used (test_model_precedence enabled)",
+                    )
+                )
+                options = options.model_copy(update={"simulator_model": test_case.llm_model})
+        else:
+            # Global explicitly set, global wins
+            if options.simulator_model != test_case.llm_model:
+                overrides.append(
+                    ModelOverride(
+                        role="simulator",
+                        requested=test_case.llm_model,
+                        actual=options.simulator_model,
+                        reason="global settings override test_case.llm_model",
+                    )
+                )
+    elif options.simulator_model is None:
+        # No test model, no global, use default
+        options = options.model_copy(update={"simulator_model": DEFAULT_MODEL})
+
+    # Resolve judge_model (no test override, just global or default)
+    if options.judge_model is None:
+        options = options.model_copy(update={"judge_model": DEFAULT_MODEL})
 
     models_used = ModelsUsed(
         agent=options.agent_model,

@@ -11,9 +11,11 @@ class TestRunOptions:
         assert options.max_turns == 20
         assert options.timeout_seconds == 60.0
         assert options.verbose is False
-        assert options.agent_model == "openai/gpt-4o-mini"
-        assert options.simulator_model == "openai/gpt-4o-mini"
-        assert options.judge_model == "openai/gpt-4o-mini"
+        assert options.test_model_precedence is False
+        # Models default to None (not configured)
+        assert options.agent_model is None
+        assert options.simulator_model is None
+        assert options.judge_model is None
 
     def test_custom_options(self):
         from voicetest.models.test_case import RunOptions

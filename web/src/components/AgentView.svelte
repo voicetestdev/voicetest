@@ -41,6 +41,12 @@
   let nameSaved = $state(false);
   let nameInput: HTMLInputElement;
 
+  let editingModel = $state(false);
+  let editedModel = $state("");
+  let savingModel = $state(false);
+  let modelSaved = $state(false);
+  let modelInput: HTMLInputElement;
+
   const platformDisplayNames: Record<string, string> = {
     retell: "Retell",
     vapi: "VAPI",
@@ -311,6 +317,9 @@
     if (e.key === "Escape" && editingName) {
       editingName = false;
     }
+    if (e.key === "Escape" && editingModel) {
+      editingModel = false;
+    }
   }
 
   function startEditingName() {
@@ -333,7 +342,7 @@
     }
     savingName = true;
     try {
-      await api.updateAgent($currentAgentId, editedName.trim());
+      await api.updateAgent($currentAgentId, { name: editedName.trim() });
       await loadAgents();
       editingName = false;
       nameSaved = true;
@@ -347,6 +356,48 @@
   function handleNameKeydown(e: KeyboardEvent) {
     if (e.key === "Enter") {
       saveName();
+    }
+  }
+
+  function startEditingModel() {
+    editedModel = $agentGraph?.default_model || "";
+    editingModel = true;
+    requestAnimationFrame(() => {
+      modelInput?.focus();
+      modelInput?.select();
+    });
+  }
+
+  async function saveModel() {
+    if (!$currentAgentId) {
+      editingModel = false;
+      return;
+    }
+    const newModel = editedModel.trim() || undefined;
+    const currentModel = $agentGraph?.default_model || undefined;
+    if (newModel === currentModel) {
+      editingModel = false;
+      return;
+    }
+    savingModel = true;
+    try {
+      await api.updateAgent($currentAgentId, { default_model: newModel });
+      await loadAgents();
+      if ($agentGraph) {
+        agentGraph.set({ ...$agentGraph, default_model: newModel || null });
+      }
+      editingModel = false;
+      modelSaved = true;
+      setTimeout(() => { modelSaved = false; }, 2000);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    savingModel = false;
+  }
+
+  function handleModelKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      saveModel();
     }
   }
 
@@ -386,6 +437,33 @@
       <div class="info-row">
         <span class="label">Source:</span>
         <span class="tag">{$agentGraph.source_type}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">LLM:</span>
+        <span class="model-value">
+          {#if editingModel}
+            <input
+              type="text"
+              class="model-input"
+              bind:value={editedModel}
+              bind:this={modelInput}
+              onblur={saveModel}
+              onkeydown={handleModelKeydown}
+              disabled={savingModel}
+              placeholder="e.g. openai/gpt-4o"
+            />
+          {:else}
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <span class="editable-model" onclick={startEditingModel} title="Click to edit">
+              {$agentGraph.default_model || "Not set"}
+            </span>
+          {/if}
+          {#if savingModel}
+            <span class="model-save-indicator">Saving...</span>
+          {:else if modelSaved}
+            <span class="model-save-indicator saved">Saved</span>
+          {/if}
+        </span>
       </div>
       <div class="info-row">
         <span class="label">Entry Node:</span>
@@ -642,6 +720,49 @@
   .mono {
     font-family: monospace;
     font-size: 0.85rem;
+  }
+
+  .model-value {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .editable-model {
+    cursor: pointer;
+    padding: 0.15rem 0.4rem;
+    margin: -0.15rem -0.4rem;
+    border-radius: 4px;
+    transition: background 0.15s;
+    font-family: monospace;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+
+  .editable-model:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .model-input {
+    font-family: monospace;
+    font-size: 0.85rem;
+    padding: 0.15rem 0.4rem;
+    border: 1px solid var(--accent-color, #6366f1);
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    outline: none;
+    min-width: 180px;
+  }
+
+  .model-save-indicator {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .model-save-indicator.saved {
+    color: #22c55e;
   }
 
   .actions {

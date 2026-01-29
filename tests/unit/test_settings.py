@@ -11,11 +11,13 @@ class TestSettings:
     def test_default_settings(self):
         settings = Settings()
 
-        assert settings.models.agent == "openai/gpt-4o-mini"
-        assert settings.models.simulator == "openai/gpt-4o-mini"
-        assert settings.models.judge == "openai/gpt-4o-mini"
+        # Models default to None (not configured)
+        assert settings.models.agent is None
+        assert settings.models.simulator is None
+        assert settings.models.judge is None
         assert settings.run.max_turns == 20
         assert settings.run.verbose is False
+        assert settings.run.test_model_precedence is False
         assert settings.env == {}
 
     def test_env_settings(self):
@@ -49,7 +51,7 @@ class TestSettings:
 
         assert settings.models.agent == "ollama/llama3"
         assert settings.models.simulator == "gemini/gemini-1.5-flash"
-        assert settings.models.judge == "openai/gpt-4o-mini"  # default
+        assert settings.models.judge is None  # default is None
         assert settings.run.max_turns == 10
         assert settings.run.verbose is True
 
@@ -76,7 +78,7 @@ class TestSettingsPersistence:
 
         settings = load_settings(settings_file)
 
-        assert settings.models.agent == "openai/gpt-4o-mini"
+        assert settings.models.agent is None  # default is None
         assert settings.run.max_turns == 20
 
     def test_toml_format(self, tmp_path):
@@ -102,7 +104,7 @@ class TestSettingsPersistence:
         settings = load_settings(settings_file)
 
         assert settings.models.agent == "custom/model"
-        assert settings.models.simulator == "openai/gpt-4o-mini"  # default
+        assert settings.models.simulator is None  # default is None
         assert settings.run.max_turns == 20  # default
 
     def test_save_and_load_with_env(self, tmp_path):

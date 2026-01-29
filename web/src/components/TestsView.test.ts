@@ -202,6 +202,7 @@ describe("App - View switching reactivity", () => {
         verbose: false,
         flow_judge: false,
         streaming: false,
+        test_model_precedence: false,
       },
       env: {},
     });

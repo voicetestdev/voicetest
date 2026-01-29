@@ -6,18 +6,30 @@
 
   let localSettings = $state<Settings>({
     models: {
-      agent: "groq/llama-3.1-8b-instant",
-      simulator: "groq/llama-3.1-8b-instant",
-      judge: "groq/llama-3.1-8b-instant",
+      agent: null,
+      simulator: null,
+      judge: null,
     },
     run: {
       max_turns: 20,
       verbose: false,
       flow_judge: false,
       streaming: false,
+      test_model_precedence: false,
     },
     env: {},
   });
+
+  // Helper to handle null model values in inputs
+  function modelValue(value: string | null): string {
+    return value ?? "";
+  }
+
+  function setModel(field: "agent" | "simulator" | "judge", value: string) {
+    const trimmed = value.trim();
+    localSettings.models[field] = trimmed === "" ? null : trimmed;
+    debouncedSave();
+  }
   let loading = $state(false);
   let saving = $state(false);
   let saved = $state(false);
@@ -114,11 +126,11 @@
         <input
           id="agent-model"
           type="text"
-          bind:value={localSettings.models.agent}
-          oninput={debouncedSave}
-          placeholder="groq/llama-3.1-8b-instant"
+          value={modelValue(localSettings.models.agent)}
+          oninput={(e) => setModel("agent", e.currentTarget.value)}
+          placeholder="Leave empty to use agent/test defaults"
         />
-        <span class="hint">Model used to generate agent responses</span>
+        <span class="hint">Model used to generate agent responses. Leave empty to use agent's imported default.</span>
       </div>
 
       <div class="form-group">
@@ -126,11 +138,11 @@
         <input
           id="simulator-model"
           type="text"
-          bind:value={localSettings.models.simulator}
-          oninput={debouncedSave}
-          placeholder="groq/llama-3.1-8b-instant"
+          value={modelValue(localSettings.models.simulator)}
+          oninput={(e) => setModel("simulator", e.currentTarget.value)}
+          placeholder="Leave empty to use test defaults"
         />
-        <span class="hint">Model used to simulate user behavior</span>
+        <span class="hint">Model used to simulate user behavior. Leave empty to use test's llm_model.</span>
       </div>
 
       <div class="form-group">
@@ -138,11 +150,11 @@
         <input
           id="judge-model"
           type="text"
-          bind:value={localSettings.models.judge}
-          oninput={debouncedSave}
-          placeholder="groq/llama-3.1-8b-instant"
+          value={modelValue(localSettings.models.judge)}
+          oninput={(e) => setModel("judge", e.currentTarget.value)}
+          placeholder="Leave empty to use default"
         />
-        <span class="hint">Model used to evaluate test metrics</span>
+        <span class="hint">Model used to evaluate test metrics.</span>
       </div>
     </section>
 
@@ -192,6 +204,17 @@
         />
         <label for="streaming">Streaming</label>
         <span class="hint checkbox-hint">Stream tokens as they are generated (experimental)</span>
+      </div>
+
+      <div class="form-group checkbox">
+        <input
+          id="test-model-precedence"
+          type="checkbox"
+          bind:checked={localSettings.run.test_model_precedence}
+          onchange={saveSettings}
+        />
+        <label for="test-model-precedence">Test/agent models take precedence</label>
+        <span class="hint checkbox-hint">When enabled, agent and test LLM settings override global settings</span>
       </div>
     </section>
 

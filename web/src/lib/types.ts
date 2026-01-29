@@ -29,6 +29,7 @@ export interface AgentGraph {
   entry_node_id: string;
   source_type: string;
   source_metadata: Record<string, unknown>;
+  default_model?: string | null;
 }
 
 export interface Message {
@@ -120,15 +121,16 @@ export interface RunOptions {
 
 export interface Settings {
   models: {
-    agent: string;
-    simulator: string;
-    judge: string;
+    agent: string | null;
+    simulator: string | null;
+    judge: string | null;
   };
   run: {
     max_turns: number;
     verbose: boolean;
     flow_judge: boolean;
     streaming: boolean;
+    test_model_precedence: boolean;
   };
   env: Record<string, string>;
 }

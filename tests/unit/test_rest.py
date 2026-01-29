@@ -271,7 +271,7 @@ class TestSettingsEndpoint:
         settings = response.json()
         assert "models" in settings
         assert "run" in settings
-        assert settings["models"]["agent"] == "openai/gpt-4o-mini"
+        assert settings["models"]["agent"] is None  # default is None
 
     def test_update_settings(self, client, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

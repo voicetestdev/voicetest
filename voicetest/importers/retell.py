@@ -177,11 +177,17 @@ class RetellImporter:
         if retell.default_dynamic_variables:
             source_metadata["default_dynamic_variables"] = retell.default_dynamic_variables
 
+        # Extract default model from model_choice if available
+        default_model = None
+        if retell.model_choice and retell.model_choice.model:
+            default_model = retell.model_choice.model
+
         return AgentGraph(
             nodes=nodes,
             entry_node_id=retell.start_node_id,
             source_type="retell",
             source_metadata=source_metadata,
+            default_model=default_model,
         )
 
     def _load_config(self, path_or_config: str | Path | dict) -> dict[str, Any]:

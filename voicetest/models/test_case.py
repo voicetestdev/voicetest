@@ -17,6 +17,8 @@ class RunOptions(BaseModel):
 
     LLM model strings use LiteLLM format: "provider/model"
     Examples: "groq/llama-3.1-8b-instant", "openai/gpt-4o-mini"
+
+    Model fields are Optional - None means not configured (will use defaults).
     """
 
     max_turns: int = 20
@@ -24,11 +26,12 @@ class RunOptions(BaseModel):
     verbose: bool = False
     flow_judge: bool = False
     streaming: bool = False
+    test_model_precedence: bool = False
 
-    # LLM model configuration
-    agent_model: str = "groq/llama-3.1-8b-instant"
-    simulator_model: str = "groq/llama-3.1-8b-instant"
-    judge_model: str = "groq/llama-3.1-8b-instant"
+    # LLM model configuration (None = not configured, use defaults)
+    agent_model: str | None = None
+    simulator_model: str | None = None
+    judge_model: str | None = None
 
 
 class TestCase(BaseModel):

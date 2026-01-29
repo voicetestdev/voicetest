@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { GlobalMetric, MetricsConfig, MetricResult } from "./types";
+import type { GlobalMetric, MetricsConfig, MetricResult, Settings, AgentGraph } from "./types";
 
 describe("types", () => {
   describe("GlobalMetric", () => {
@@ -130,6 +130,165 @@ describe("types", () => {
 
       expect(result.passed).toBe(false);
       expect(result.score).toBeLessThan(result.threshold!);
+    });
+  });
+
+  describe("Settings", () => {
+    it("should allow creating settings with null models", () => {
+      const settings: Settings = {
+        models: {
+          agent: null,
+          simulator: null,
+          judge: null,
+        },
+        run: {
+          max_turns: 20,
+          verbose: false,
+          flow_judge: false,
+          streaming: false,
+          test_model_precedence: false,
+        },
+        env: {},
+      };
+
+      expect(settings.models.agent).toBeNull();
+      expect(settings.models.simulator).toBeNull();
+      expect(settings.models.judge).toBeNull();
+    });
+
+    it("should allow creating settings with explicit model values", () => {
+      const settings: Settings = {
+        models: {
+          agent: "openai/gpt-4o",
+          simulator: "anthropic/claude-3-haiku",
+          judge: "groq/llama-3.1-8b-instant",
+        },
+        run: {
+          max_turns: 10,
+          verbose: true,
+          flow_judge: true,
+          streaming: true,
+          test_model_precedence: false,
+        },
+        env: {},
+      };
+
+      expect(settings.models.agent).toBe("openai/gpt-4o");
+      expect(settings.models.simulator).toBe("anthropic/claude-3-haiku");
+      expect(settings.models.judge).toBe("groq/llama-3.1-8b-instant");
+    });
+
+    it("should support test_model_precedence toggle", () => {
+      const settingsOff: Settings = {
+        models: { agent: null, simulator: null, judge: null },
+        run: {
+          max_turns: 20,
+          verbose: false,
+          flow_judge: false,
+          streaming: false,
+          test_model_precedence: false,
+        },
+        env: {},
+      };
+
+      const settingsOn: Settings = {
+        models: { agent: null, simulator: null, judge: null },
+        run: {
+          max_turns: 20,
+          verbose: false,
+          flow_judge: false,
+          streaming: false,
+          test_model_precedence: true,
+        },
+        env: {},
+      };
+
+      expect(settingsOff.run.test_model_precedence).toBe(false);
+      expect(settingsOn.run.test_model_precedence).toBe(true);
+    });
+
+    it("should allow mixed null and explicit model values", () => {
+      const settings: Settings = {
+        models: {
+          agent: "openai/gpt-4o",
+          simulator: null,
+          judge: "groq/llama-3.1-8b-instant",
+        },
+        run: {
+          max_turns: 20,
+          verbose: false,
+          flow_judge: false,
+          streaming: false,
+          test_model_precedence: false,
+        },
+        env: {},
+      };
+
+      expect(settings.models.agent).toBe("openai/gpt-4o");
+      expect(settings.models.simulator).toBeNull();
+      expect(settings.models.judge).toBe("groq/llama-3.1-8b-instant");
+    });
+  });
+
+  describe("AgentGraph", () => {
+    it("should allow creating an agent graph without default_model", () => {
+      const graph: AgentGraph = {
+        nodes: {
+          greeting: {
+            id: "greeting",
+            instructions: "Greet the user",
+            tools: [],
+            transitions: [],
+            metadata: {},
+          },
+        },
+        entry_node_id: "greeting",
+        source_type: "test",
+        source_metadata: {},
+      };
+
+      expect(graph.default_model).toBeUndefined();
+    });
+
+    it("should allow creating an agent graph with null default_model", () => {
+      const graph: AgentGraph = {
+        nodes: {
+          greeting: {
+            id: "greeting",
+            instructions: "Greet the user",
+            tools: [],
+            transitions: [],
+            metadata: {},
+          },
+        },
+        entry_node_id: "greeting",
+        source_type: "test",
+        source_metadata: {},
+        default_model: null,
+      };
+
+      expect(graph.default_model).toBeNull();
+    });
+
+    it("should allow creating an agent graph with explicit default_model", () => {
+      const graph: AgentGraph = {
+        nodes: {
+          greeting: {
+            id: "greeting",
+            instructions: "Greet the user",
+            tools: [],
+            transitions: [],
+            metadata: {},
+          },
+        },
+        entry_node_id: "greeting",
+        source_type: "retell-llm",
+        source_metadata: { llm_id: "abc123" },
+        default_model: "openai/gpt-4o",
+      };
+
+      expect(graph.default_model).toBe("openai/gpt-4o");
+      expect(graph.source_type).toBe("retell-llm");
     });
   });
 });

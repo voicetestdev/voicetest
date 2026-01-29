@@ -158,8 +158,8 @@ export const api = {
   createAgentFromPath: (name: string, path: string, source?: string) =>
     post<AgentRecord>("/agents", { name, path, source }),
 
-  updateAgent: (id: string, name: string) =>
-    put<AgentRecord>(`/agents/${id}`, { name }),
+  updateAgent: (id: string, updates: { name?: string; default_model?: string }) =>
+    put<AgentRecord>(`/agents/${id}`, updates),
 
   deleteAgent: (id: string) => del<{ status: string; id: string }>(`/agents/${id}`),
 
