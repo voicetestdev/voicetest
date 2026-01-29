@@ -5,16 +5,13 @@
     initStores,
     agents,
     currentAgentId,
-    expandedAgents,
     selectAgent,
-    selectRun,
-    toggleAgentExpanded,
     testCaseRecords,
     runHistory,
-    expandedRuns,
+    loadRun,
     currentRunId,
   } from "./lib/stores";
-  import type { RunRecord } from "./lib/types";
+  import { get } from "svelte/store";
   import AgentView from "./components/AgentView.svelte";
   import TestsView from "./components/TestsView.svelte";
   import MetricsView from "./components/MetricsView.svelte";
@@ -55,39 +52,15 @@
     }
   });
 
-  function handleAgentClick(agentId: string) {
-    if ($currentAgentId === agentId) {
-      toggleAgentExpanded(agentId);
-    } else {
-      selectAgent(agentId, "config");
+  async function switchView(view: "config" | "tests" | "metrics" | "runs") {
+    currentView.set(view);
+    if (view === "runs") {
+      const runs = get(runHistory);
+      const currentRun = get(currentRunId);
+      if (runs.length > 0 && !currentRun) {
+        await loadRun(runs[0].id);
+      }
     }
-  }
-
-  function handleNavClick(agentId: string, view: "config" | "tests" | "metrics" | "runs") {
-    // selectAgent will automatically load the first run when view is "runs"
-    selectAgent(agentId, view);
-  }
-
-  function toggleRuns(e: Event) {
-    e.stopPropagation();
-    expandedRuns.update((v) => !v);
-  }
-
-  function selectRunFromSidebar(agentId: string, run: RunRecord) {
-    selectRun(agentId, run.id);
-  }
-
-  function formatRelativeTime(dateStr: string): string {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const minutes = Math.floor(diff / 60000);
-    if (minutes < 1) return "just now";
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
   }
 </script>
 
@@ -103,86 +76,18 @@
     </a>
 
     <div class="nav-section">
-      <ul class="agent-tree">
+      <div class="nav-label">Agents</div>
+      <ul class="agent-list">
         {#each $agents as agent}
-          {@const isExpanded = $expandedAgents.has(agent.id)}
           {@const isSelected = $currentAgentId === agent.id}
-          {@const testCount = isSelected ? $testCaseRecords.length : 0}
-          {@const runCount = isSelected ? $runHistory.length : 0}
-          <li class="agent-item">
+          <li>
             <button
-              class="agent-toggle"
-              class:expanded={isExpanded}
+              class="agent-btn"
               class:selected={isSelected}
-              onclick={() => handleAgentClick(agent.id)}
+              onclick={() => selectAgent(agent.id, "config")}
             >
-              <span class="chevron">{isExpanded ? "▼" : "▶"}</span>
               <span class="agent-name">{agent.name}</span>
             </button>
-
-            {#if isExpanded}
-              <ul class="agent-subnav">
-                <li>
-                  <button
-                    class:active={isSelected && $currentView === "config"}
-                    onclick={() => handleNavClick(agent.id, "config")}
-                  >
-                    Config
-                  </button>
-                </li>
-                <li>
-                  <button
-                    class:active={isSelected && $currentView === "metrics"}
-                    onclick={() => handleNavClick(agent.id, "metrics")}
-                  >
-                    Metrics
-                  </button>
-                </li>
-                <li>
-                  <button
-                    class:active={isSelected && $currentView === "tests"}
-                    onclick={() => handleNavClick(agent.id, "tests")}
-                  >
-                    Tests {#if testCount > 0}<span class="count">({testCount})</span>{/if}
-                  </button>
-                </li>
-                <li>
-                  <button
-                    class="runs-btn"
-                    class:active={isSelected && $currentView === "runs"}
-                    onclick={() => handleNavClick(agent.id, "runs")}
-                  >
-                    {#if runCount > 0}
-                      <span
-                        class="runs-chevron"
-                        role="button"
-                        tabindex="0"
-                        onclick={toggleRuns}
-                        onkeydown={(e) => e.key === "Enter" && toggleRuns(e)}
-                      >{$expandedRuns ? "▼" : "▶"}</span>
-                    {/if}
-                    Runs {#if runCount > 0}<span class="count">({runCount})</span>{/if}
-                  </button>
-                  {#if isSelected && $expandedRuns && runCount > 0}
-                    <ul class="run-history-list">
-                      {#each $runHistory.slice(0, 10) as run}
-                        <li>
-                          <button
-                            class:active={$currentView === "runs" && $currentRunId === run.id}
-                            onclick={() => selectRunFromSidebar(agent.id, run)}
-                          >
-                            {formatRelativeTime(run.started_at)}
-                            {#if !run.completed_at}
-                              <span class="mini-spinner"></span>
-                            {/if}
-                          </button>
-                        </li>
-                      {/each}
-                    </ul>
-                  {/if}
-                </li>
-              </ul>
-            {/if}
           </li>
         {/each}
       </ul>
@@ -220,76 +125,142 @@
       <div class="loading">Loading...</div>
     {:else if $currentView === "import"}
       <ImportView />
-    {:else if $currentView === "config"}
-      <AgentView {theme} />
-    {:else if $currentView === "tests"}
-      <TestsView />
-    {:else if $currentView === "metrics"}
-      <MetricsView />
-    {:else if $currentView === "runs"}
-      <RunsView />
     {:else if $currentView === "settings"}
       <SettingsView />
+    {:else if $currentAgentId}
+      <div class="view-tabs">
+        <button
+          class="tab-item"
+          class:active={$currentView === "config"}
+          onclick={() => switchView("config")}
+        >Config</button>
+        <button
+          class="tab-item"
+          class:active={$currentView === "metrics"}
+          onclick={() => switchView("metrics")}
+        >Metrics</button>
+        <button
+          class="tab-item"
+          class:active={$currentView === "tests"}
+          onclick={() => switchView("tests")}
+        >
+          Tests
+          {#if $testCaseRecords.length > 0}
+            <span class="tab-count">{$testCaseRecords.length}</span>
+          {/if}
+        </button>
+        <button
+          class="tab-item"
+          class:active={$currentView === "runs"}
+          onclick={() => switchView("runs")}
+        >
+          Runs
+          {#if $runHistory.length > 0}
+            <span class="tab-count">{$runHistory.length}</span>
+          {/if}
+        </button>
+      </div>
+      <div class="view-content">
+        {#if $currentView === "config"}
+          <AgentView {theme} />
+        {:else if $currentView === "tests"}
+          <TestsView />
+        {:else if $currentView === "metrics"}
+          <MetricsView />
+        {:else if $currentView === "runs"}
+          <RunsView />
+        {/if}
+      </div>
+    {:else}
+      <div class="empty-state">
+        <p>Select an agent from the sidebar or import a new one.</p>
+      </div>
     {/if}
   </main>
 </div>
 
 <style>
   :global(:root) {
-    --bg-primary: #1a1a2e;
-    --bg-secondary: #16213e;
-    --bg-tertiary: #1f2937;
-    --bg-hover: #374151;
-    --bg-input: #16213e;
-    --text-primary: #e8e8e8;
-    --text-secondary: #9ca3af;
-    --text-muted: #6b7280;
-    --border-color: #374151;
-    --accent: #3b82f6;
-    --accent-hover: #2563eb;
-    --color-pass: #4ade80;
-    --color-fail: #f87171;
-    --color-error: #fbbf24;
-    --status-pass-bg: #064e3b;
-    --status-fail-bg: #7f1d1d;
-    --status-error-bg: #78350f;
-    --danger-bg: #7f1d1d;
-    --danger-bg-hover: #991b1b;
-    --danger-text: #fecaca;
+    /* GitHub Dark Theme */
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --bg-hover: #30363d;
+    --bg-input: #0d1117;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --border-color: #30363d;
+    --accent: #238636;
+    --accent-hover: #2ea043;
+    --accent-blue: #1f6feb;
+    --color-pass: #3fb950;
+    --color-fail: #f85149;
+    --color-error: #d29922;
+    --status-pass-bg: rgba(63, 185, 80, 0.15);
+    --status-fail-bg: rgba(248, 81, 73, 0.15);
+    --status-error-bg: rgba(210, 153, 34, 0.15);
+    --danger-bg: transparent;
+    --danger-bg-hover: rgba(248, 81, 73, 0.15);
+    --danger-text: #f85149;
+    --danger-border: #f85149;
+    /* Spacing */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    /* Typography */
+    --text-xs: 12px;
+    --text-sm: 14px;
+    /* Border radius */
+    --radius-sm: 3px;
+    --radius-md: 6px;
+    /* Tab highlight */
+    --tab-highlight: #f78166;
   }
 
   :global([data-theme="light"]) {
-    --bg-primary: #f9fafb;
-    --bg-secondary: #ffffff;
-    --bg-tertiary: #f3f4f6;
-    --bg-hover: #e5e7eb;
+    --bg-primary: #ffffff;
+    --bg-secondary: #f6f8fa;
+    --bg-tertiary: #f6f8fa;
+    --bg-hover: #eaeef2;
     --bg-input: #ffffff;
-    --text-primary: #111827;
-    --text-secondary: #4b5563;
-    --text-muted: #9ca3af;
-    --border-color: #d1d5db;
-    --accent: #3b82f6;
-    --accent-hover: #2563eb;
-    --color-pass: #15803d;
-    --color-fail: #dc2626;
-    --color-error: #d97706;
-    --status-pass-bg: #dcfce7;
-    --status-fail-bg: #fee2e2;
-    --status-error-bg: #fef3c7;
-    --danger-bg: #dc2626;
-    --danger-bg-hover: #b91c1c;
-    --danger-text: #ffffff;
+    --text-primary: #1f2328;
+    --text-secondary: #656d76;
+    --text-muted: #8b949e;
+    --border-color: #d0d7de;
+    --accent: #1f883d;
+    --accent-hover: #1a7f37;
+    --accent-blue: #0969da;
+    --color-pass: #1a7f37;
+    --color-fail: #cf222e;
+    --color-error: #bf8700;
+    --status-pass-bg: rgba(26, 127, 55, 0.15);
+    --status-fail-bg: rgba(207, 34, 46, 0.15);
+    --status-error-bg: rgba(191, 135, 0, 0.15);
+    --danger-bg: transparent;
+    --danger-bg-hover: rgba(207, 34, 46, 0.15);
+    --danger-text: #cf222e;
+    --danger-border: #cf222e;
+    --tab-highlight: #fd8c73;
   }
 
   :global(body) {
     margin: 0;
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    font-size: var(--text-sm);
+    line-height: 1.5;
     background: var(--bg-primary);
     color: var(--text-primary);
+    transition: background 80ms ease-out, color 80ms ease-out;
   }
 
   :global(*) {
     box-sizing: border-box;
+  }
+
+  :global(::selection) {
+    background: rgba(31, 111, 235, 0.3);
   }
 
   .app {
@@ -298,8 +269,9 @@
   }
 
   nav {
-    width: 220px;
+    width: 260px;
     background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -322,47 +294,49 @@
     overflow-y: auto;
   }
 
-  .agent-tree {
+  .nav-label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: var(--space-2) var(--space-2);
+    margin-bottom: var(--space-1);
+  }
+
+  .agent-list {
     list-style: none;
     padding: 0;
     margin: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 2px;
   }
 
-  .agent-item {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .agent-toggle {
+  .agent-btn {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
     width: 100%;
     text-align: left;
-    padding: 0.5rem 0.5rem;
+    padding: var(--space-2) var(--space-3);
     background: transparent;
     border: none;
-    color: var(--text-primary);
+    color: var(--text-secondary);
     cursor: pointer;
-    border-radius: 4px;
-    font-size: 0.9rem;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    transition: background 80ms ease-out, color 80ms ease-out;
   }
 
-  .agent-toggle:hover {
-    background: var(--bg-primary);
+  .agent-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
-  .agent-toggle.selected {
+  .agent-btn.selected {
     background: var(--bg-tertiary);
-  }
-
-  .chevron {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    width: 1rem;
+    color: var(--text-primary);
+    font-weight: 500;
   }
 
   .agent-name {
@@ -372,193 +346,160 @@
     white-space: nowrap;
   }
 
-  .agent-subnav {
-    list-style: none;
-    padding: 0;
-    margin: 0 0 0.5rem 1.1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .agent-subnav button {
-    width: 100%;
-    text-align: left;
-    padding: 0.35rem 0.75rem 0.35rem 1.1rem;
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    border-radius: 4px;
-    font-size: 0.85rem;
-  }
-
-  .agent-subnav button:hover {
-    background: var(--bg-primary);
-    color: var(--text-primary);
-  }
-
-  .agent-subnav button.active {
-    background: var(--accent);
-    color: white;
-  }
-
-  .count {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-  }
-
-  .agent-subnav button.active .count {
-    color: rgba(255, 255, 255, 0.7);
-  }
-
-  .runs-btn {
-    position: relative;
-  }
-
-  .runs-chevron {
-    position: absolute;
-    left: 0.2rem;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 0.6rem;
-    color: var(--text-muted);
-    padding: 0.2rem;
-    cursor: pointer;
-  }
-
-  .runs-chevron:hover {
-    color: var(--text-secondary);
-  }
-
-  .run-history-list {
-    list-style: none;
-    padding: 0;
-    margin: 0.25rem 0 0 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .run-history-list button {
-    width: 100%;
-    text-align: left;
-    padding: 0.25rem 0.5rem;
-    background: transparent;
-    border: none;
-    color: var(--text-muted);
-    cursor: pointer;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .run-history-list button:hover {
-    background: var(--bg-primary);
-    color: var(--text-secondary);
-  }
-
-  .run-history-list button.active {
-    background: var(--accent);
-    color: white;
-  }
-
-  .mini-spinner {
-    width: 10px;
-    height: 10px;
-    border: 1.5px solid var(--border-color);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
 
   .nav-footer {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 2px;
     border-top: 1px solid var(--border-color);
-    padding-top: 1rem;
+    padding-top: var(--space-4);
   }
 
   .nav-footer button {
     width: 100%;
     text-align: left;
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     background: transparent;
     border: none;
-    color: var(--text-primary);
+    color: var(--text-secondary);
     cursor: pointer;
-    border-radius: 4px;
-    font-size: 0.9rem;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    transition: background 80ms ease-out, color 80ms ease-out;
   }
 
   .nav-footer button:hover {
-    background: var(--bg-primary);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .nav-footer button.active {
-    background: var(--accent);
-    color: white;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-weight: 500;
   }
 
   .import-btn {
     color: var(--accent) !important;
   }
 
+  .import-btn:hover {
+    color: var(--accent-hover) !important;
+  }
+
   .import-btn.active {
-    color: white !important;
+    background: var(--accent) !important;
+    color: #ffffff !important;
   }
 
   .theme-toggle {
     display: flex !important;
     align-items: center;
     justify-content: center;
-    padding: 0.5rem 0.75rem !important;
+    padding: var(--space-2) var(--space-3) !important;
     background: transparent !important;
   }
 
   .theme-toggle:hover {
-    background: var(--bg-primary) !important;
+    background: var(--bg-hover) !important;
   }
 
   .toggle-track {
     width: 36px;
     height: 20px;
-    background: var(--bg-hover);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
     border-radius: 10px;
     position: relative;
-    transition: background 0.2s;
+    transition: background 80ms ease-out;
   }
 
   .toggle-thumb {
     position: absolute;
     top: 2px;
     left: 2px;
-    width: 16px;
-    height: 16px;
-    background: var(--text-primary);
+    width: 14px;
+    height: 14px;
+    background: var(--text-secondary);
     border-radius: 50%;
-    transition: transform 0.2s;
+    transition: transform 80ms ease-out, background 80ms ease-out;
   }
 
   :global([data-theme="light"]) .toggle-thumb {
     transform: translateX(16px);
+    background: var(--text-primary);
   }
 
   main {
     flex: 1;
-    padding: 1.5rem;
+    padding: var(--space-4);
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+
+  .view-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: var(--space-4);
+    flex-shrink: 0;
+  }
+
+  .tab-item {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: -1px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    transition: color 80ms ease-out, border-color 80ms ease-out;
+  }
+
+  .tab-item:hover {
+    color: var(--text-primary);
+    background: transparent;
+  }
+
+  .tab-item.active {
+    color: var(--text-primary);
+    font-weight: 600;
+    border-bottom-color: var(--tab-highlight);
+    background: transparent;
+  }
+
+  .tab-count {
+    font-size: var(--text-xs);
+    background: var(--bg-tertiary);
+    padding: 0.1rem 0.4rem;
+    border-radius: 9999px;
+    color: var(--text-muted);
+  }
+
+  .tab-item.active .tab-count {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  .view-content {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-secondary);
   }
 
   .loading {
@@ -576,7 +517,7 @@
     justify-content: center;
     height: 100%;
     gap: 1rem;
-    color: #f87171;
+    color: var(--color-fail);
   }
 
   :global(.pass) {
@@ -590,56 +531,95 @@
   }
 
   :global(button) {
-    background: var(--accent);
-    color: white;
-    border: none;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
     padding: 0.5rem 1rem;
     cursor: pointer;
-    border-radius: 4px;
-    font-size: 0.9rem;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    transition: background 80ms ease-out, border-color 80ms ease-out, color 80ms ease-out;
   }
 
   :global(button:hover) {
-    background: var(--accent-hover);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   :global(button:disabled) {
-    background: var(--bg-hover);
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+    border-color: var(--border-color);
     cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  :global(button.btn-primary),
+  :global(.btn-primary) {
+    background: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+  }
+
+  :global(button.btn-primary:hover),
+  :global(.btn-primary:hover) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  :global(button.btn-danger),
+  :global(.btn-danger) {
+    background: transparent;
+    color: var(--danger-text);
+    border-color: var(--border-color);
+  }
+
+  :global(button.btn-danger:hover),
+  :global(.btn-danger:hover) {
+    background: var(--danger-bg-hover);
+    border-color: var(--danger-border);
   }
 
   :global(textarea),
-  :global(input[type="text"]) {
+  :global(input[type="text"]),
+  :global(input[type="number"]),
+  :global(input[type="password"]),
+  :global(select) {
     background: var(--bg-input);
     border: 1px solid var(--border-color);
     color: var(--text-primary);
-    padding: 0.5rem;
-    border-radius: 4px;
+    padding: var(--space-2);
+    border-radius: var(--radius-md);
     font-family: inherit;
-    font-size: 0.9rem;
+    font-size: var(--text-sm);
+    transition: border-color 80ms ease-out, box-shadow 80ms ease-out;
   }
 
   :global(textarea:focus),
-  :global(input:focus) {
+  :global(input:focus),
+  :global(select:focus) {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.3);
   }
 
   /* Mobile menu button */
   .mobile-menu-btn {
     display: none;
     position: fixed;
-    top: 1rem;
-    left: 1rem;
+    top: var(--space-4);
+    left: var(--space-4);
     z-index: 1001;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    padding: 0.5rem 0.75rem;
+    padding: var(--space-2) var(--space-3);
     font-size: 1.25rem;
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
   }
 
   .mobile-menu-btn:hover {
-    background: var(--bg-tertiary);
+    background: var(--bg-hover);
   }
 
   /* Responsive styles */
@@ -655,7 +635,7 @@
       height: 100vh;
       width: 280px;
       transform: translateX(-100%);
-      transition: transform 0.2s ease;
+      transition: transform 200ms ease;
       z-index: 1000;
       padding-top: 4rem;
     }
@@ -665,8 +645,18 @@
     }
 
     main {
-      padding: 1rem;
+      padding: var(--space-4);
       padding-top: 4rem;
+    }
+
+    .view-tabs {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .tab-item {
+      padding: var(--space-2) var(--space-3);
+      white-space: nowrap;
     }
   }
 
@@ -676,7 +666,7 @@
     }
 
     main {
-      padding: 0.75rem;
+      padding: var(--space-3);
       padding-top: 4rem;
     }
   }

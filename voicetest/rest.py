@@ -167,9 +167,10 @@ class PlatformInfo(BaseModel):
 
 
 class ConfigurePlatformRequest(BaseModel):
-    """Request to configure a platform API key."""
+    """Request to configure platform credentials."""
 
     api_key: str
+    api_secret: str | None = None
 
 
 class ExportToPlatformRequest(BaseModel):
@@ -1189,19 +1190,30 @@ async def get_platform_status(platform: str) -> PlatformStatusResponse:
 async def configure_platform(
     platform: str, request: ConfigurePlatformRequest
 ) -> PlatformStatusResponse:
-    """Configure a platform API key. Returns 409 if already configured."""
+    """Configure platform credentials. Returns 409 if already configured."""
     _validate_platform(platform)
 
     if _is_platform_configured(platform):
         raise HTTPException(
             status_code=409,
-            detail=f"{platform} API key is already configured. Use Settings to change it.",
+            detail=f"{platform} credentials are already configured. Use Settings to change them.",
         )
 
     registry = _get_platform_registry()
-    env_key = registry.get_env_key(platform)
+    required_keys = registry.get_required_env_keys(platform)
     settings = load_settings()
+
+    # Set the primary API key
+    env_key = registry.get_env_key(platform)
     settings.env[env_key] = request.api_key
+
+    # Set the API secret if provided and required
+    if request.api_secret and len(required_keys) > 1:
+        # Find the secret key (usually ends with _SECRET)
+        secret_keys = [k for k in required_keys if k.endswith("_SECRET")]
+        if secret_keys:
+            settings.env[secret_keys[0]] = request.api_secret
+
     save_settings(settings)
     settings.apply_env()
 

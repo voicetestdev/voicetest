@@ -203,8 +203,8 @@ export const api = {
   getPlatformStatus: (platform: Platform) =>
     get<PlatformStatus>(`/platforms/${platform}/status`),
 
-  configurePlatform: (platform: Platform, apiKey: string) =>
-    post<PlatformStatus>(`/platforms/${platform}/configure`, { api_key: apiKey }),
+  configurePlatform: (platform: Platform, apiKey: string, apiSecret?: string) =>
+    post<PlatformStatus>(`/platforms/${platform}/configure`, { api_key: apiKey, api_secret: apiSecret }),
 
   listRemoteAgents: (platform: Platform) =>
     get<RemoteAgentInfo[]>(`/platforms/${platform}/agents`),

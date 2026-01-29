@@ -20,7 +20,12 @@
   let loadingAgents = $state(false);
   let selectedRemoteAgent = $state<RemoteAgentInfo | null>(null);
   let apiKeyInput = $state("");
+  let apiSecretInput = $state("");
   let configuringPlatform = $state(false);
+
+  function platformNeedsSecret(platform: string): boolean {
+    return platform === "livekit";
+  }
 
   const binaryExtensions = [".xlsx", ".xls"];
 
@@ -127,6 +132,7 @@
     error = "";
     selectedRemoteAgent = null;
     apiKeyInput = "";
+    apiSecretInput = "";
 
     if (tab !== "file" && platformStatus[tab]?.configured) {
       loadRemoteAgents(tab);
@@ -140,7 +146,13 @@
       const agents = await api.listRemoteAgents(platform);
       platformAgents[platform] = agents;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      const message = e instanceof Error ? e.message : String(e);
+      // If credentials are missing/invalid, show the setup form instead of error
+      if (message.includes("API_KEY") || message.includes("API_SECRET") || message.includes("credentials") || message.includes("Unauthorized") || message.includes("401")) {
+        platformStatus[platform] = { platform, configured: false };
+      } else {
+        error = message;
+      }
     }
     loadingAgents = false;
   }
@@ -150,12 +162,18 @@
       error = "Please enter an API key";
       return;
     }
+    if (platformNeedsSecret(platform) && !apiSecretInput.trim()) {
+      error = "Please enter an API secret";
+      return;
+    }
     configuringPlatform = true;
     error = "";
     try {
-      const status = await api.configurePlatform(platform, apiKeyInput);
+      const secret = platformNeedsSecret(platform) ? apiSecretInput : undefined;
+      const status = await api.configurePlatform(platform, apiKeyInput, secret);
       platformStatus[platform] = status;
       apiKeyInput = "";
+      apiSecretInput = "";
       await loadRemoteAgents(platform);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
@@ -290,14 +308,22 @@
               placeholder="{displayName} API Key"
               class="api-key-input"
             />
+            {#if platformNeedsSecret(platform)}
+              <input
+                type="password"
+                bind:value={apiSecretInput}
+                placeholder="{displayName} API Secret"
+                class="api-key-input"
+              />
+            {/if}
             <button
               onclick={() => configurePlatform(platform)}
-              disabled={configuringPlatform || !apiKeyInput.trim()}
+              disabled={configuringPlatform || !apiKeyInput.trim() || (platformNeedsSecret(platform) && !apiSecretInput.trim())}
             >
               {configuringPlatform ? "Connecting..." : "Connect"}
             </button>
           </div>
-          <p class="hint">Your API key is stored locally in settings.</p>
+          <p class="hint">Your credentials are stored locally in settings.</p>
         </div>
       {:else}
         <div class="connected-status">
@@ -362,30 +388,32 @@
   }
 
   .demo-section {
-    background: var(--bg-hover);
+    background: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1rem;
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
     margin-bottom: 1.5rem;
   }
 
   .demo-section p {
     margin: 0 0 0.75rem 0;
     color: var(--text-secondary);
+    font-size: var(--text-sm);
   }
 
   .demo-button {
-    background: var(--accent-color, #6366f1);
-    color: white;
-    border: none;
+    background: var(--accent);
+    color: #ffffff;
+    border: 1px solid var(--accent);
     padding: 0.5rem 1.25rem;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     font-weight: 500;
     cursor: pointer;
   }
 
   .demo-button:hover:not(:disabled) {
-    opacity: 0.9;
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
   }
 
   .demo-button:disabled {
@@ -395,32 +423,35 @@
 
   .tabs {
     display: flex;
-    gap: 0.25rem;
+    gap: 0;
     margin-bottom: 1.5rem;
     border-bottom: 1px solid var(--border-color);
-    padding-bottom: 0.5rem;
     flex-wrap: wrap;
   }
 
   .tab {
     background: transparent;
     border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 6px 6px 0 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: -1px;
     cursor: pointer;
     color: var(--text-secondary);
-    font-size: 0.9rem;
+    font-size: var(--text-sm);
+    transition: color 80ms ease-out, border-color 80ms ease-out;
   }
 
   .tab:hover {
-    background: var(--bg-hover);
     color: var(--text-primary);
+    background: transparent;
   }
 
   .tab.active {
-    background: var(--bg-hover);
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: 600;
+    border-bottom-color: var(--tab-highlight);
+    background: transparent;
   }
 
   .importers {
@@ -433,10 +464,11 @@
   }
 
   .tag {
-    background: var(--bg-hover);
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
+    background: var(--bg-tertiary);
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    border: 1px solid var(--border-color);
   }
 
   .form-row {
@@ -551,15 +583,16 @@
   }
 
   .api-key-setup {
-    background: var(--bg-hover);
+    background: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 1.5rem;
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
   }
 
   .api-key-setup p {
     margin: 0 0 1rem 0;
     color: var(--text-secondary);
+    font-size: var(--text-sm);
   }
 
   .api-key-form {
@@ -587,12 +620,13 @@
   }
 
   .connected-badge {
-    background: #166534;
-    color: white;
-    padding: 0.25rem 0.75rem;
+    background: var(--status-pass-bg);
+    color: var(--color-pass);
+    padding: 0.2rem 0.6rem;
     border-radius: 9999px;
-    font-size: 0.8rem;
+    font-size: var(--text-xs);
     font-weight: 500;
+    border: 1px solid rgba(63, 185, 80, 0.3);
   }
 
   .loading {
@@ -621,22 +655,23 @@
     justify-content: space-between;
     align-items: center;
     width: 100%;
-    padding: 0.75rem 1rem;
-    background: var(--bg-hover);
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     margin-bottom: 0.5rem;
     cursor: pointer;
     text-align: left;
+    transition: background 80ms ease-out, border-color 80ms ease-out;
   }
 
   .agent-item:hover {
-    background: var(--border-color);
+    background: var(--bg-hover);
   }
 
   .agent-item.selected {
-    border-color: var(--accent-color, #6366f1);
-    background: var(--bg-tertiary);
+    border-color: var(--accent-blue);
+    background: var(--bg-hover);
   }
 
   .agent-name {

@@ -254,8 +254,9 @@
 
   .settings-form {
     background: var(--bg-secondary);
-    padding: 1.5rem;
-    border-radius: 8px;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
     margin-bottom: 1.5rem;
   }
 
@@ -308,14 +309,15 @@
   }
 
   .metric-item {
-    background: var(--bg-primary);
-    padding: 0.75rem 1rem;
-    border-radius: 6px;
+    background: var(--bg-tertiary);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
+    transition: background 80ms ease-out;
   }
 
   .metric-item.disabled {
-    opacity: 0.6;
+    opacity: 0.5;
   }
 
   .metric-header {
@@ -326,20 +328,24 @@
   }
 
   .toggle-btn {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    font-size: var(--text-xs);
     font-weight: 600;
-    border-radius: 3px;
-    background: #7f1d1d;
+    border-radius: 9999px;
+    background: var(--status-fail-bg);
+    color: var(--color-fail);
+    border: 1px solid rgba(248, 81, 73, 0.3);
     min-width: 36px;
   }
 
   .toggle-btn.enabled {
-    background: #166534;
+    background: var(--status-pass-bg);
+    color: var(--color-pass);
+    border-color: rgba(63, 185, 80, 0.3);
   }
 
   .toggle-btn:hover {
-    opacity: 0.8;
+    opacity: 0.9;
   }
 
   .metric-name {
@@ -382,25 +388,30 @@
   }
 
   .secondary {
-    background: var(--bg-hover);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
   }
 
   .secondary:hover {
-    background: var(--border-color);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .small {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
+    padding: 0.2rem 0.4rem;
+    font-size: var(--text-xs);
   }
 
   .danger {
-    background: var(--danger-bg);
+    background: transparent;
     color: var(--danger-text);
+    border: 1px solid var(--border-color);
   }
 
   .danger:hover {
     background: var(--danger-bg-hover);
+    border-color: var(--danger-border);
   }
 
   .error-message {

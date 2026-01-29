@@ -751,6 +751,25 @@
 
   .run-btn {
     min-width: 100px;
+    background: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+  }
+
+  .run-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  .run-btn.secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+  }
+
+  .run-btn.secondary:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .placeholder {
@@ -766,8 +785,9 @@
 
   .test-list-section {
     background: var(--bg-secondary);
-    padding: 1rem;
-    border-radius: 8px;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
   }
 
   .test-table {
@@ -777,7 +797,7 @@
 
   .test-table th,
   .test-table td {
-    padding: 0.75rem;
+    padding: var(--space-2) var(--space-3);
     text-align: left;
     border-bottom: 1px solid var(--border-color);
   }
@@ -785,11 +805,17 @@
   .test-table th {
     color: var(--text-secondary);
     font-weight: 500;
-    font-size: 0.85rem;
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .test-table tbody tr {
+    transition: background 80ms ease-out;
   }
 
   .test-table tbody tr:hover {
-    background: var(--bg-primary);
+    background: var(--bg-hover);
   }
 
   .test-table tbody tr.selected {
@@ -825,40 +851,51 @@
 
   .tag {
     display: inline-block;
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    background: var(--bg-hover);
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
   }
 
   .tag.llm {
-    background: #3730a3;
+    background: rgba(136, 87, 229, 0.15);
+    color: #a78bfa;
+    border-color: rgba(136, 87, 229, 0.3);
   }
 
   .tag.rule {
-    background: #065f46;
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--color-pass);
+    border-color: rgba(63, 185, 80, 0.3);
   }
 
   .small {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
+    padding: 0.2rem 0.4rem;
+    font-size: var(--text-xs);
   }
 
   .secondary {
-    background: var(--bg-hover);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
   }
 
   .secondary:hover {
-    background: var(--border-color);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .danger {
-    background: var(--danger-bg);
+    background: transparent;
     color: var(--danger-text);
+    border: 1px solid var(--border-color);
   }
 
   .danger:hover {
     background: var(--danger-bg-hover);
+    border-color: var(--danger-border);
   }
 
   .empty {
@@ -881,7 +918,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -890,24 +927,28 @@
 
   .modal {
     background: var(--bg-secondary);
-    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
     width: 90%;
     max-width: 600px;
     max-height: 90vh;
     display: flex;
     flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   }
 
   .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem;
+    padding: var(--space-4);
     border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
   }
 
   .modal-header h3 {
     color: var(--text-primary);
+    font-size: var(--text-sm);
   }
 
   .close-btn {
@@ -925,7 +966,7 @@
   }
 
   .modal-body {
-    padding: 1rem;
+    padding: var(--space-4);
     overflow-y: auto;
     flex: 1;
   }
@@ -933,9 +974,10 @@
   .modal-footer {
     display: flex;
     justify-content: flex-end;
-    gap: 0.5rem;
-    padding: 1rem;
+    gap: var(--space-2);
+    padding: var(--space-4);
     border-top: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
   }
 
   .form-group {

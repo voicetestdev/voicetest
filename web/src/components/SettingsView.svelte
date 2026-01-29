@@ -275,8 +275,9 @@
 
   .settings-form {
     background: var(--bg-secondary);
-    padding: 1.5rem;
-    border-radius: 8px;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
     margin-bottom: 1.5rem;
   }
 
@@ -327,15 +328,18 @@
   }
 
   .secondary {
-    background: var(--bg-hover);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
   }
 
   .secondary:hover {
-    background: var(--border-color);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .error-message {
-    color: #f87171;
+    color: var(--color-fail);
     margin: 0 0 1rem 0;
   }
 
@@ -350,16 +354,17 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    background: var(--bg-primary);
-    padding: 0.5rem 0.75rem;
-    border-radius: 4px;
+    background: var(--bg-tertiary);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
   }
 
   .env-key {
     background: var(--bg-hover);
     padding: 0.2rem 0.5rem;
-    border-radius: 3px;
-    font-size: 0.85rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
     min-width: 180px;
   }
 
@@ -381,16 +386,18 @@
   }
 
   .small {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
+    padding: 0.2rem 0.4rem;
+    font-size: var(--text-xs);
   }
 
   .danger {
-    background: var(--danger-bg);
+    background: transparent;
     color: var(--danger-text);
+    border: 1px solid var(--border-color);
   }
 
   .danger:hover {
     background: var(--danger-bg-hover);
+    border-color: var(--danger-border);
   }
 </style>

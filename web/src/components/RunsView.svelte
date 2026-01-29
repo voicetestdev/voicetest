@@ -6,8 +6,26 @@
     runHistory,
     cancelTest,
     retryStatus,
+    loadRun,
   } from "../lib/stores";
   import type { RunResultRecord, Message, MetricResult, ModelsUsed } from "../lib/types";
+
+  function formatRelativeTime(dateStr: string): string {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return "just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  }
+
+  async function selectRun(runId: string) {
+    await loadRun(runId);
+  }
 
   let selectedResultId = $state<string | null>(null);
   let deleting = $state(false);
@@ -25,9 +43,6 @@
     }
   });
 
-  function formatDate(dateStr: string): string {
-    return new Date(dateStr).toLocaleString();
-  }
 
   function parseTranscript(json: string | null): Message[] {
     if (!json) return [];
@@ -63,10 +78,11 @@
     return status === "pass" ? "pass" : "fail";
   }
 
-  function getRunSummary(results: RunResultRecord[]): { passed: number; failed: number; total: number } {
+  function getRunSummary(results: RunResultRecord[]): { passed: number; failed: number; errors: number; total: number } {
     const passed = results.filter((r) => r.status === "pass").length;
-    const failed = results.filter((r) => r.status !== "pass").length;
-    return { passed, failed, total: results.length };
+    const failed = results.filter((r) => r.status === "fail").length;
+    const errors = results.filter((r) => r.status === "error").length;
+    return { passed, failed, errors, total: results.length };
   }
 
   async function deleteRun() {
@@ -93,25 +109,44 @@
 </script>
 
 <div class="runs-view">
-  {#if !$currentRunWithResults}
+  {#if !$currentRunWithResults && $runHistory.length === 0}
     <div class="empty-state">
-      <p>No run selected</p>
-      <p class="hint">Select a run from the sidebar or run tests from the Tests tab.</p>
+      <p>No runs yet</p>
+      <p class="hint">Run tests from the Tests tab to see results here.</p>
     </div>
   {:else}
     <div class="run-header">
-      <span class="run-date">{formatDate($currentRunWithResults.started_at)}</span>
-      {#if !$currentRunWithResults.completed_at}
-        <span class="status-badge running">
-          <span class="mini-spinner"></span>
-          Running
-        </span>
-      {:else}
-        {@const summary = getRunSummary($currentRunWithResults.results)}
-        <span class="summary">
-          <span class="pass">{summary.passed} passed</span>
-          <span class="fail">{summary.failed} failed</span>
-        </span>
+      {#if $runHistory.length > 0}
+        <select
+          class="run-select"
+          value={$currentRunId || ""}
+          onchange={(e) => selectRun(e.currentTarget.value)}
+        >
+          {#each $runHistory as run}
+            <option value={run.id}>
+              {formatRelativeTime(run.started_at)}{!run.completed_at ? " (running)" : ""}
+            </option>
+          {/each}
+        </select>
+      {/if}
+      {#if $currentRunWithResults}
+        {#if !$currentRunWithResults.completed_at}
+          <span class="status-badge running">
+            <span class="mini-spinner"></span>
+            Running
+          </span>
+        {:else}
+          {@const summary = getRunSummary($currentRunWithResults.results)}
+          <span class="summary">
+            <span class="pass">{summary.passed} passed</span>
+            {#if summary.failed > 0}
+              <span class="fail">{summary.failed} failed</span>
+            {/if}
+            {#if summary.errors > 0}
+              <span class="error">{summary.errors} errors</span>
+            {/if}
+          </span>
+        {/if}
         <button
           class="delete-run-btn"
           onclick={deleteRun}
@@ -123,6 +158,7 @@
       {/if}
     </div>
 
+    {#if $currentRunWithResults}
     <div class="layout">
       <section class="results">
         <ul class="results-list">
@@ -317,6 +353,7 @@
         </section>
       </div>
     {/if}
+  {/if}
 </div>
 
 <style>
@@ -324,6 +361,23 @@
     height: 100%;
     display: flex;
     flex-direction: column;
+  }
+
+  .run-select {
+    min-width: 160px;
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+  }
+
+  .run-select:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.3);
   }
 
   .run-header {
@@ -387,7 +441,8 @@
   .empty-state {
     background: var(--bg-secondary);
     padding: 2rem;
-    border-radius: 8px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
     text-align: center;
   }
 
@@ -398,22 +453,23 @@
 
   .empty-state .hint {
     margin-top: 0.5rem;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
     color: var(--text-muted);
   }
 
   .layout {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
+    grid-template-columns: 280px 1fr;
+    gap: var(--space-4);
     flex: 1;
     min-height: 0;
   }
 
   .results {
     background: var(--bg-secondary);
-    padding: 1rem;
-    border-radius: 8px;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
     overflow-y: auto;
   }
 
@@ -450,17 +506,19 @@
   }
 
   .results-list li {
-    background: var(--bg-primary);
-    border-radius: 4px;
-    border: 1px solid transparent;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    transition: background 80ms ease-out;
   }
 
   .results-list li:hover {
-    border-color: var(--border-color);
+    background: var(--bg-hover);
   }
 
   .results-list li.selected {
-    border-color: var(--accent);
+    border-color: var(--accent-blue);
+    background: var(--bg-hover);
   }
 
   .result-select-btn {
@@ -487,31 +545,36 @@
   }
 
   .status {
-    font-size: 0.75rem;
+    font-size: var(--text-xs);
     font-weight: 600;
-    padding: 0.2rem 0.4rem;
-    border-radius: 3px;
-    background: var(--bg-hover);
+    padding: 0.15rem 0.4rem;
+    border-radius: 9999px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
   }
 
   .status.pass {
     background: var(--status-pass-bg);
     color: var(--color-pass);
+    border-color: rgba(63, 185, 80, 0.3);
   }
 
   .status.fail {
     background: var(--status-fail-bg);
     color: var(--color-fail);
+    border-color: rgba(248, 81, 73, 0.3);
   }
 
   .status.error {
     background: var(--status-error-bg);
     color: var(--color-error);
+    border-color: rgba(210, 153, 34, 0.3);
   }
 
   .status.cancelled {
-    background: var(--bg-hover);
+    background: var(--bg-tertiary);
     color: var(--text-secondary);
+    border-color: var(--border-color);
   }
 
   .test-name {
@@ -544,8 +607,9 @@
 
   .detail {
     background: var(--bg-secondary);
-    padding: 1rem;
-    border-radius: 8px;
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
     overflow-y: auto;
   }
 
@@ -629,17 +693,18 @@
   }
 
   .message {
-    padding: 0.5rem;
-    border-radius: 4px;
-    background: var(--bg-primary);
+    padding: var(--space-3);
+    border-radius: var(--radius-md);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
   }
 
   .message.user {
-    border-left: 3px solid #3b82f6;
+    border-left: 3px solid var(--accent-blue);
   }
 
   .message.assistant {
-    border-left: 3px solid #10b981;
+    border-left: 3px solid var(--color-pass);
   }
 
   .role {
@@ -806,10 +871,21 @@
     font-size: 0.8rem;
   }
 
+  @media (max-width: 900px) {
+    .layout {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+    }
+
+    .results {
+      max-height: 200px;
+    }
+  }
+
   @media (max-width: 768px) {
     .run-header {
-      grid-template-columns: 1fr;
-      gap: 0.5rem;
+      flex-wrap: wrap;
+      gap: var(--space-2);
     }
   }
 </style>

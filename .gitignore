@@ -20,3 +20,6 @@ node_modules/
 
 # wt copy
 .voicetest.toml
+
+# Demo temp
+docs/demos/test-results
