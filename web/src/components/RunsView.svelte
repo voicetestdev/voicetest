@@ -29,6 +29,8 @@
 
   let selectedResultId = $state<string | null>(null);
   let deleting = $state(false);
+  let detailContainer: HTMLElement;
+  let prevMessageCount = 0;
 
   // Auto-select the first running test so user can see streaming transcript
   $effect(() => {
@@ -106,6 +108,29 @@
   const selectedResult = $derived(
     $currentRunWithResults?.results.find((r) => r.id === selectedResultId) ?? null
   );
+
+  // Auto-scroll detail view to bottom only when NEW messages arrive
+  $effect(() => {
+    const result = selectedResult;
+    if (result?.transcript_json && detailContainer) {
+      const messages = parseTranscript(result.transcript_json);
+      const messageCount = messages.length;
+
+      // Only scroll if message count increased (new message arrived)
+      if (messageCount > prevMessageCount) {
+        prevMessageCount = messageCount;
+        requestAnimationFrame(() => {
+          detailContainer.scrollTop = detailContainer.scrollHeight;
+        });
+      }
+    }
+  });
+
+  // Reset message count when switching results
+  $effect(() => {
+    selectedResultId;
+    prevMessageCount = 0;
+  });
 </script>
 
 <div class="runs-view">
@@ -196,7 +221,7 @@
         </ul>
       </section>
 
-        <section class="detail">
+        <section class="detail" bind:this={detailContainer}>
           <h3>Detail View</h3>
           {#if !selectedResult}
             <p class="empty">Select a result to view details</p>
@@ -611,6 +636,7 @@
     border-radius: var(--radius-md);
     border: 1px solid var(--border-color);
     overflow-y: auto;
+    scroll-behavior: smooth;
   }
 
   .result-detail {
