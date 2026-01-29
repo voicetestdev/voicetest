@@ -35,7 +35,7 @@ jobs:
       - name: Run frontend tests
         run: |
           cd web
-          mise exec -- bun test
+          mise exec -- bunx vitest run
 
       - name: Run TypeScript linting
         run: |

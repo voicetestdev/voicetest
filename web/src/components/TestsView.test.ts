@@ -1,6 +1,44 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/svelte";
 import { get } from "svelte/store";
+
+// Mock the API module completely
+vi.mock("../lib/api", () => ({
+  api: {
+    listAgents: () => Promise.resolve([]),
+    getAgentGraph: () => Promise.resolve({ nodes: [], edges: [] }),
+    listTestsForAgent: () => Promise.resolve([]),
+    listRunsForAgent: () => Promise.resolve([]),
+    getSettings: () => Promise.resolve({
+      agent_model: "test-model",
+      simulator_model: "test-model",
+      judge_model: "test-model",
+      max_turns: 10,
+      streaming: false,
+    }),
+    startRun: () => Promise.resolve({
+      id: "run-123",
+      agent_id: "agent-1",
+      started_at: new Date().toISOString(),
+    }),
+    listImporters: () => Promise.resolve([]),
+    listExporters: () => Promise.resolve([]),
+    listPlatforms: () => Promise.resolve([]),
+  },
+}));
+
+// Mock WebSocket-related store functions
+vi.mock("../lib/stores", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/stores")>();
+  return {
+    ...actual,
+    startRun: () => Promise.resolve("run-123"),
+    connectRunWebSocket: () => {},
+    disconnectRunWebSocket: () => {},
+    initStores: () => Promise.resolve(undefined),
+  };
+});
+
 import {
   currentView,
   currentAgentId,
@@ -14,44 +52,6 @@ import {
 } from "../lib/stores";
 import TestsView from "./TestsView.svelte";
 import App from "../App.svelte";
-
-// Mock the API module completely
-vi.mock("../lib/api", () => ({
-  api: {
-    listAgents: vi.fn().mockResolvedValue([]),
-    getAgentGraph: vi.fn().mockResolvedValue({ nodes: [], edges: [] }),
-    listTestsForAgent: vi.fn().mockResolvedValue([]),
-    listRunsForAgent: vi.fn().mockResolvedValue([]),
-    getSettings: vi.fn().mockResolvedValue({
-      agent_model: "test-model",
-      simulator_model: "test-model",
-      judge_model: "test-model",
-      max_turns: 10,
-      streaming: false,
-    }),
-    startRun: vi.fn().mockResolvedValue({
-      id: "run-123",
-      agent_id: "agent-1",
-      started_at: new Date().toISOString(),
-    }),
-    listImporters: vi.fn().mockResolvedValue([]),
-    listExporters: vi.fn().mockResolvedValue([]),
-    listPlatforms: vi.fn().mockResolvedValue([]),
-  },
-}));
-
-// Mock WebSocket-related store functions
-vi.mock("../lib/stores", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../lib/stores")>();
-  return {
-    ...actual,
-    startRun: vi.fn().mockResolvedValue("run-123"),
-    connectRunWebSocket: vi.fn(),
-    disconnectRunWebSocket: vi.fn(),
-    // Override initStores to do nothing (we set up state manually)
-    initStores: vi.fn().mockResolvedValue(undefined),
-  };
-});
 
 describe("TestsView - Run Selected", () => {
   beforeEach(() => {
