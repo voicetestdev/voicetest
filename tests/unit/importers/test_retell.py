@@ -62,10 +62,10 @@ class TestRetellImporter:
         graph = importer.import_agent(sample_retell_config)
 
         greeting = graph.nodes["greeting"]
-        assert "Greet the customer" in greeting.instructions
+        assert "Greet the customer" in greeting.state_prompt
 
         billing = graph.nodes["billing"]
-        assert "billing inquiry" in billing.instructions
+        assert "billing inquiry" in billing.state_prompt
 
     def test_transitions_imported(self, sample_retell_config):
         from voicetest.importers.retell import RetellImporter
@@ -163,15 +163,19 @@ class TestRetellImporterComplex:
         assert "full_name" in lookup_tool.parameters["properties"]
         assert "date_of_birth" in lookup_tool.parameters["properties"]
 
-    def test_global_prompt_combined_with_node_instruction(self, sample_retell_config_complex):
+    def test_global_prompt_stored_separately(self, sample_retell_config_complex):
         from voicetest.importers.retell import RetellImporter
 
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_complex)
 
         greeting = graph.nodes["greeting"]
-        assert "professional medical receptionist" in greeting.instructions
-        assert "Greet the caller warmly" in greeting.instructions
+        # state_prompt has only node-specific instructions
+        assert "Greet the caller warmly" in greeting.state_prompt
+        # general_prompt stored in source_metadata (not merged)
+        assert "professional medical receptionist" in graph.source_metadata.get(
+            "general_prompt", ""
+        )
 
     def test_source_metadata_includes_model_settings(self, sample_retell_config_complex):
         from voicetest.importers.retell import RetellImporter

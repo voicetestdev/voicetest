@@ -172,7 +172,7 @@
           x: rect.left + rect.width / 2,
           y: rect.top - 8,
           title: matchedId,
-          text: nodeData.instructions,
+          text: nodeData.state_prompt,
         };
       });
       node.addEventListener("mouseleave", () => {
@@ -829,7 +829,8 @@
 
   .mermaid-container {
     overflow: auto;
-    max-height: 600px;
+    height: calc(100vh - 280px);
+    min-height: 400px;
   }
 
   .mermaid-content {

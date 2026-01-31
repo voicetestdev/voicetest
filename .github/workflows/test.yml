@@ -42,6 +42,11 @@ jobs:
           cd web
           mise exec -- bun run check
 
+      - name: Run TypeScript type check
+        run: |
+          cd web
+          mise exec -- bunx tsc --noEmit
+
       - name: Build frontend
         run: |
           cd web

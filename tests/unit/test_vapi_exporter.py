@@ -20,7 +20,7 @@ class TestVapiExporterBasic:
             nodes={
                 "main": AgentNode(
                     id="main",
-                    instructions="You are a helpful assistant.",
+                    state_prompt="You are a helpful assistant.",
                     tools=[],
                     transitions=[],
                 )
@@ -42,7 +42,7 @@ class TestVapiExporterBasic:
             nodes={
                 "main": AgentNode(
                     id="main",
-                    instructions="You are a helpful assistant.",
+                    state_prompt="You are a helpful assistant.",
                     tools=[
                         ToolDefinition(
                             name="get_weather",
@@ -78,7 +78,7 @@ class TestVapiExporterBasic:
             nodes={
                 "main": AgentNode(
                     id="main",
-                    instructions="You are a helpful assistant.",
+                    state_prompt="You are a helpful assistant.",
                     tools=[],
                     transitions=[],
                 )
@@ -123,13 +123,13 @@ class TestVapiExporterMultiNode:
             nodes={
                 "greeting": AgentNode(
                     id="greeting",
-                    instructions="Greet the user warmly.",
+                    state_prompt="Greet the user warmly.",
                     tools=[],
                     transitions=[],
                 ),
                 "help": AgentNode(
                     id="help",
-                    instructions="Provide helpful assistance.",
+                    state_prompt="Provide helpful assistance.",
                     tools=[],
                     transitions=[],
                 ),
@@ -161,13 +161,13 @@ class TestVapiExporterMultiNode:
             nodes={
                 "node1": AgentNode(
                     id="node1",
-                    instructions="Node 1",
+                    state_prompt="Node 1",
                     tools=[ToolDefinition(name="tool1", description="Tool 1", parameters={})],
                     transitions=[],
                 ),
                 "node2": AgentNode(
                     id="node2",
-                    instructions="Node 2",
+                    state_prompt="Node 2",
                     tools=[ToolDefinition(name="tool2", description="Tool 2", parameters={})],
                     transitions=[],
                 ),
@@ -197,13 +197,13 @@ class TestVapiExporterMultiNode:
             nodes={
                 "node1": AgentNode(
                     id="node1",
-                    instructions="Node 1",
+                    state_prompt="Node 1",
                     tools=[],
                     transitions=[],
                 ),
                 "entry": AgentNode(
                     id="entry",
-                    instructions="Entry node",
+                    state_prompt="Entry node",
                     tools=[],
                     transitions=[],
                 ),
@@ -228,7 +228,7 @@ class TestVapiSquadExport:
             nodes={
                 "greeting": AgentNode(
                     id="greeting",
-                    instructions="Greet the user.",
+                    state_prompt="Greet the user.",
                     tools=[],
                     transitions=[
                         Transition(
@@ -242,7 +242,7 @@ class TestVapiSquadExport:
                 ),
                 "help": AgentNode(
                     id="help",
-                    instructions="Help the user.",
+                    state_prompt="Help the user.",
                     tools=[],
                     transitions=[],
                 ),
@@ -267,7 +267,7 @@ class TestVapiSquadExport:
             nodes={
                 "node1": AgentNode(
                     id="node1",
-                    instructions="Node 1",
+                    state_prompt="Node 1",
                     tools=[],
                     transitions=[
                         Transition(
@@ -279,7 +279,7 @@ class TestVapiSquadExport:
                 ),
                 "node2": AgentNode(
                     id="node2",
-                    instructions="Node 2",
+                    state_prompt="Node 2",
                     tools=[],
                     transitions=[],
                 ),

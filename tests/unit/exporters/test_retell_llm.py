@@ -18,7 +18,7 @@ def simple_graph() -> AgentGraph:
         nodes={
             "greeting": AgentNode(
                 id="greeting",
-                instructions="Greet the user warmly.",
+                state_prompt="Greet the user warmly.",
                 transitions=[
                     Transition(
                         target_node_id="help",
@@ -31,7 +31,7 @@ def simple_graph() -> AgentGraph:
             ),
             "help": AgentNode(
                 id="help",
-                instructions="Help the user with their request.",
+                state_prompt="Help the user with their request.",
                 transitions=[
                     Transition(
                         target_node_id="closing",
@@ -44,7 +44,7 @@ def simple_graph() -> AgentGraph:
             ),
             "closing": AgentNode(
                 id="closing",
-                instructions="Thank the user and end the conversation.",
+                state_prompt="Thank the user and end the conversation.",
                 transitions=[],
             ),
         },
@@ -76,7 +76,7 @@ def graph_with_tools() -> AgentGraph:
         nodes={
             "greeting": AgentNode(
                 id="greeting",
-                instructions="Greet the user.",
+                state_prompt="Greet the user.",
                 tools=[end_call_tool],
                 transitions=[
                     Transition(
@@ -90,7 +90,7 @@ def graph_with_tools() -> AgentGraph:
             ),
             "lookup": AgentNode(
                 id="lookup",
-                instructions="Look up the user's account.",
+                state_prompt="Look up the user's account.",
                 tools=[lookup_tool, end_call_tool],
                 transitions=[],
             ),
@@ -107,7 +107,7 @@ def graph_with_metadata() -> AgentGraph:
         nodes={
             "main": AgentNode(
                 id="main",
-                instructions="You are a helpful assistant.",
+                state_prompt="You are a helpful assistant.",
                 transitions=[],
             ),
         },

@@ -54,7 +54,7 @@ def sample_graph():
             "greeting": AgentNode(
                 id="greeting",
                 name="Greeting",
-                instructions="Say hello",
+                state_prompt="Say hello",
                 transitions=[],
             )
         },

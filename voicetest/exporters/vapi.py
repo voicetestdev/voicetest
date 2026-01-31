@@ -85,10 +85,15 @@ def _export_assistant(graph: AgentGraph) -> dict[str, Any]:
     # Build model configuration
     model_config = _build_model_config(graph)
 
-    # Build system prompt from node instructions
+    # Build system prompt from general_prompt + state_prompt (VAPI uses single system message)
     node = list(graph.nodes.values())[0] if graph.nodes else None
     if node:
-        model_config["messages"] = [{"role": "system", "content": node.instructions}]
+        general_prompt = graph.source_metadata.get("general_prompt", "")
+        if general_prompt and node.state_prompt:
+            full_prompt = f"{general_prompt}\n\n{node.state_prompt}"
+        else:
+            full_prompt = node.state_prompt or general_prompt
+        model_config["messages"] = [{"role": "system", "content": full_prompt}]
 
     result["model"] = model_config
 
@@ -138,26 +143,36 @@ def _export_squad(graph: AgentGraph) -> dict[str, Any]:
         if node_id != graph.entry_node_id:
             ordered_nodes.append(node)
 
-    # Convert each node to a squad member
-    for node in ordered_nodes:
-        member = _convert_node_to_member(node, graph)
+    # Convert each node to a squad member (only entry node gets general_prompt)
+    for i, node in enumerate(ordered_nodes):
+        is_entry = i == 0
+        member = _convert_node_to_member(node, graph, is_entry=is_entry)
         members.append(member)
 
     result["members"] = members
     return result
 
 
-def _convert_node_to_member(node: AgentNode, graph: AgentGraph) -> dict[str, Any]:
+def _convert_node_to_member(
+    node: AgentNode, graph: AgentGraph, is_entry: bool = False
+) -> dict[str, Any]:
     """Convert an AgentNode to a VAPI squad member."""
     assistant: dict[str, Any] = {
         "name": node.id,
     }
 
+    # Only add general_prompt to entry node
+    general_prompt = graph.source_metadata.get("general_prompt", "") if is_entry else ""
+    if general_prompt and node.state_prompt:
+        full_prompt = f"{general_prompt}\n\n{node.state_prompt}"
+    else:
+        full_prompt = node.state_prompt or general_prompt
+
     # Build model config
     model_config: dict[str, Any] = {
         "provider": "openai",
         "model": "gpt-4o",
-        "messages": [{"role": "system", "content": node.instructions}],
+        "messages": [{"role": "system", "content": full_prompt}],
     }
 
     # Add tools (regular tools + handoff tools for transitions)

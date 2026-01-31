@@ -71,10 +71,10 @@ class TestLiveKitImporter:
         graph = importer.import_agent(sample_livekit_agent_path)
 
         greeting = graph.nodes["greeting"]
-        assert "Greet the user warmly" in greeting.instructions
+        assert "Greet the user warmly" in greeting.state_prompt
 
         billing = graph.nodes["billing"]
-        assert "billing" in billing.instructions.lower()
+        assert "billing" in billing.state_prompt.lower()
 
     def test_transitions_imported(self, sample_livekit_agent_path):
         from voicetest.importers.livekit import LiveKitImporter
@@ -151,7 +151,7 @@ class TestLiveKitImporterSimple:
         graph = importer.import_agent(sample_livekit_simple_path)
 
         node = graph.nodes["GreetingAgent"]
-        assert "friendly assistant" in node.instructions
+        assert "friendly assistant" in node.state_prompt
 
     def test_simple_agent_tools(self, sample_livekit_simple_path):
         from voicetest.importers.livekit import LiveKitImporter

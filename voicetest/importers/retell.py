@@ -147,13 +147,9 @@ class RetellImporter:
         for retell_node in retell.nodes:
             transitions = [self._convert_edge(edge) for edge in retell_node.edges]
 
-            instructions = retell_node.instruction.text
-            if retell.global_prompt:
-                instructions = f"{retell.global_prompt}\n\n{instructions}"
-
             nodes[retell_node.id] = AgentNode(
                 id=retell_node.id,
-                instructions=instructions,
+                state_prompt=retell_node.instruction.text,  # State-specific only
                 tools=global_tools if global_tools else [],
                 transitions=transitions,
                 metadata={"retell_type": retell_node.type},
@@ -161,6 +157,7 @@ class RetellImporter:
 
         source_metadata: dict[str, Any] = {
             "conversation_flow_id": retell.conversation_flow_id,
+            "general_prompt": retell.global_prompt or "",  # Stored separately
         }
         if retell.version is not None:
             source_metadata["version"] = retell.version

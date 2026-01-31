@@ -247,7 +247,11 @@ async def run_test(
 
         # Setup components
         runner = ConversationRunner(
-            graph, options, mock_mode=_mock_mode, dynamic_variables=dynamic_vars
+            graph,
+            options,
+            mock_mode=_mock_mode,
+            dynamic_variables=dynamic_vars,
+            use_cot_transitions=options.cot_transitions,
         )
         simulator = UserSimulator(user_prompt, options.simulator_model)
         metric_judge = MetricJudge(options.judge_model)

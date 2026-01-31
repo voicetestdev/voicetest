@@ -144,17 +144,17 @@ class XLSFormImporter:
             if q_type in ("calculate", "hidden", "start", "end", "deviceid", "today"):
                 continue
 
-            # Build instructions for this node
-            instructions = self._build_node_instructions(
+            # Build state prompt for this node
+            state_prompt = self._build_node_instructions(
                 q_type, q_name, q_label, q_hint, q_required, choices
             )
 
-            if not instructions:
+            if not state_prompt:
                 continue
 
             nodes[q_name] = AgentNode(
                 id=q_name,
-                instructions=instructions,
+                state_prompt=state_prompt,
                 tools=[],
                 transitions=[],
                 metadata={
@@ -203,7 +203,7 @@ class XLSFormImporter:
         # Add end node
         nodes["__end__"] = AgentNode(
             id="__end__",
-            instructions=(
+            state_prompt=(
                 "Thank the user for completing the survey. "
                 "Summarize their responses if appropriate and end the conversation politely."
             ),
@@ -221,6 +221,7 @@ class XLSFormImporter:
             source_metadata={
                 "form_name": settings.get("form_title", form_name),
                 "form_id": settings.get("form_id", form_name),
+                "general_prompt": "",  # XLSForm surveys don't have separate general prompt
             },
         )
 

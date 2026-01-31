@@ -1,20 +1,17 @@
 """Conversation session management.
 
-Wraps the execution of conversations using generated agents.
+Wraps the execution of conversations using DSPy modules.
 """
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-import dspy
-
-from voicetest.engine.agent_gen import GeneratedAgent, generate_agent_classes
+from voicetest.engine.modules import ConversationModule, RunContext
 from voicetest.llm import call_llm
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message, ToolCall
 from voicetest.models.test_case import RunOptions
 from voicetest.retry import OnErrorCallback
-from voicetest.utils import substitute_variables
 
 
 # Callback type for turn updates: receives transcript after each turn
@@ -60,7 +57,7 @@ class ConversationRunner:
     """Runs simulated conversations.
 
     This class orchestrates the conversation loop, managing:
-    - Agent class instantiation
+    - ConversationModule instantiation
     - Turn-by-turn execution
     - State tracking
     """
@@ -71,12 +68,15 @@ class ConversationRunner:
         options: RunOptions | None = None,
         mock_mode: bool = False,
         dynamic_variables: dict | None = None,
+        use_cot_transitions: bool = False,
     ):
         self.graph = graph
         self.options = options or RunOptions()
-        self.agent_classes = generate_agent_classes(graph)
         self._mock_mode = mock_mode
         self._dynamic_variables = dynamic_variables or {}
+        self._conversation_module = ConversationModule(
+            graph, use_cot_transitions=use_cot_transitions
+        )
 
     async def run(
         self,
@@ -108,7 +108,7 @@ class ConversationRunner:
 
         # Start at entry node
         node_tracker.record(self.graph.entry_node_id)
-        current_agent = self.agent_classes[self.graph.entry_node_id]()
+        current_node_id = self.graph.entry_node_id
 
         for _turn in range(self.options.max_turns):
             # Get simulated user input
@@ -138,9 +138,9 @@ class ConversationRunner:
             )
             await notify()
 
-            # Process with current agent
-            response, new_agent = await self._process_turn(
-                current_agent,
+            # Process with current state module
+            response, new_node_id = await self._process_turn(
+                current_node_id,
                 sim_response.message,
                 state,
                 node_tracker,
@@ -159,13 +159,13 @@ class ConversationRunner:
                 await notify()
 
             # Handle node transition
-            if new_agent is not None:
-                current_agent = new_agent
+            if new_node_id is not None:
+                current_node_id = new_node_id
 
             state.turn_count += 1
 
             # Check for agent-initiated end
-            if self._should_end_conversation(current_agent, state):
+            if state.end_call_invoked:
                 state.end_reason = "agent_ended"
                 break
         else:
@@ -176,75 +176,83 @@ class ConversationRunner:
 
     async def _process_turn(
         self,
-        agent: GeneratedAgent,
+        node_id: str,
         user_message: str,
         state: ConversationState,
         node_tracker: NodeTracker,
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
-    ) -> tuple[str, GeneratedAgent | None]:
+    ) -> tuple[str, str | None]:
         """Process a single conversation turn.
 
-        Uses DSPy to generate agent responses and handle transitions.
+        Uses the ConversationModule to generate responses and handle transitions.
 
         Args:
-            agent: The current agent instance.
+            node_id: The current node ID.
             user_message: The user's message to respond to.
             state: Current conversation state.
             node_tracker: Tracks visited nodes.
             on_token: Optional callback for streaming tokens.
+            on_error: Optional callback for error handling.
 
         Returns:
-            Tuple of (response text, new agent if transition occurred).
+            Tuple of (response text, new node ID if transition occurred).
         """
         # Mock mode for testing without LLM calls
         if self._mock_mode:
-            return self._mock_response(agent, user_message), None
+            return f"[Mock response from {node_id}]", None
 
-        # Build available tools description
-        tools_desc = self._format_tools(agent)
+        # Build context for state execution
+        ctx = RunContext(
+            conversation_history=self._format_transcript(state.transcript),
+            user_message=user_message,
+            dynamic_variables=self._dynamic_variables,
+            available_transitions=self._conversation_module.format_transitions(node_id),
+            general_instructions=self._conversation_module.instructions,
+        )
 
-        class AgentResponseSignature(dspy.Signature):
-            """Generate agent response in a voice conversation."""
-
-            agent_instructions: str = dspy.InputField(desc="System instructions for the agent")
-            available_transitions: str = dspy.InputField(
-                desc="Available transitions to other agents/nodes"
-            )
-            conversation_history: str = dspy.InputField(desc="Conversation so far")
-            user_message: str = dspy.InputField(desc="Latest user message to respond to")
-
-            response: str = dspy.OutputField(desc="Agent's spoken response to the user")
-            transition_to: str = dspy.OutputField(
-                desc="Node ID to transition to, or 'none' to stay"
-            )
-
-        agent_instructions = substitute_variables(agent.instructions, self._dynamic_variables)
-        conversation_history = self._format_transcript(state.transcript)
+        # Get the state module and its signature
+        state_module = self._conversation_module.get_state_module(node_id)
+        if state_module is None:
+            raise ValueError(f"Unknown node: {node_id}")
 
         # Wrap on_token to add source="agent"
         async def agent_token_callback(token: str) -> None:
             if on_token:
                 await _invoke_callback(on_token, token, "agent")
 
+        # Call LLM with the state module's signature
         result = await call_llm(
             self.options.agent_model,
-            AgentResponseSignature,
+            state_module._response_signature,
             on_token=agent_token_callback if on_token else None,
             stream_field="response" if on_token else None,
             on_error=on_error,
-            agent_instructions=agent_instructions,
-            available_transitions=tools_desc,
-            conversation_history=conversation_history,
-            user_message=user_message,
+            general_instructions=ctx.general_instructions,
+            conversation_history=ctx.conversation_history,
+            user_message=ctx.user_message,
+            **(
+                {"available_transitions": ctx.available_transitions}
+                if state_module.transitions
+                else {}
+            ),
         )
 
         # Handle transition
-        new_agent = None
-        transition_target = result.transition_to.strip().lower()
+        new_node_id = None
+        transition_target = getattr(result, "transition_to", "none")
+        if transition_target:
+            transition_target = transition_target.strip().lower()
+
         if transition_target and transition_target != "none":
             # Check for end_call
-            if transition_target == "end_call" and agent._has_end_call:
+            current_node = self.graph.nodes.get(node_id)
+            has_end_call = current_node and any(
+                t.name == "end_call" or getattr(t, "type", "") == "end_call"
+                for t in current_node.tools
+            )
+
+            if transition_target == "end_call" and has_end_call:
                 state.end_call_invoked = True
                 state.tools_called.append(
                     ToolCall(
@@ -253,40 +261,18 @@ class ConversationRunner:
                         result="call_ended",
                     )
                 )
-            else:
-                # Find matching transition
-                for tool in agent._transition_tools:
-                    if tool.__name__ == f"route_to_{transition_target}":
-                        node_tracker.record(transition_target)
-                        state.tools_called.append(
-                            ToolCall(
-                                name=tool.__name__,
-                                arguments={},
-                                result=transition_target,
-                            )
-                        )
-                        if transition_target in self.agent_classes:
-                            new_agent = self.agent_classes[transition_target]()
-                        break
+            elif transition_target in self.graph.nodes:
+                node_tracker.record(transition_target)
+                state.tools_called.append(
+                    ToolCall(
+                        name=f"route_to_{transition_target}",
+                        arguments={},
+                        result=transition_target,
+                    )
+                )
+                new_node_id = transition_target
 
-        return result.response, new_agent
-
-    def _format_tools(self, agent: GeneratedAgent) -> str:
-        """Format available transition tools for LLM."""
-        lines = []
-
-        for tool in agent._transition_tools:
-            target = tool.__name__.replace("route_to_", "")
-            condition = tool.__doc__ or "No condition specified"
-            lines.append(f"- {target}: {condition}")
-
-        if agent._has_end_call:
-            lines.append(f"- end_call: {agent._end_call_description}")
-
-        if not lines:
-            return "(no transitions available - stay in current state)"
-
-        return "\n".join(lines)
+        return result.response, new_node_id
 
     def _format_transcript(self, transcript: list[Message]) -> str:
         """Format transcript for LLM input."""
@@ -297,16 +283,3 @@ class ConversationRunner:
         for msg in transcript:
             lines.append(f"{msg.role.upper()}: {msg.content}")
         return "\n".join(lines)
-
-    def _mock_response(self, agent: GeneratedAgent, user_message: str) -> str:
-        """Generate mock response for testing."""
-        return f"[Mock response from {agent._node_id}]"
-
-    def _should_end_conversation(
-        self,
-        agent: GeneratedAgent,
-        state: ConversationState,
-    ) -> bool:
-        """Check if the agent has signaled conversation end."""
-        # Only end when agent explicitly invokes end_call
-        return state.end_call_invoked

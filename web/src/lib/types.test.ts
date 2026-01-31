@@ -236,7 +236,7 @@ describe("types", () => {
         nodes: {
           greeting: {
             id: "greeting",
-            instructions: "Greet the user",
+            state_prompt: "Greet the user",
             tools: [],
             transitions: [],
             metadata: {},
@@ -255,7 +255,7 @@ describe("types", () => {
         nodes: {
           greeting: {
             id: "greeting",
-            instructions: "Greet the user",
+            state_prompt: "Greet the user",
             tools: [],
             transitions: [],
             metadata: {},
@@ -275,7 +275,7 @@ describe("types", () => {
         nodes: {
           greeting: {
             id: "greeting",
-            instructions: "Greet the user",
+            state_prompt: "Greet the user",
             tools: [],
             transitions: [],
             metadata: {},

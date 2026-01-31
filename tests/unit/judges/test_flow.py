@@ -26,7 +26,7 @@ class TestFlowJudge:
         nodes = {
             "greeting": AgentNode(
                 id="greeting",
-                instructions="Greet the user",
+                state_prompt="Greet the user",
                 transitions=[],
             )
         }
@@ -51,7 +51,7 @@ class TestFlowJudge:
         nodes = {
             "greeting": AgentNode(
                 id="greeting",
-                instructions="Greet the user",
+                state_prompt="Greet the user",
                 transitions=[
                     Transition(
                         target_node_id="verify",
@@ -61,8 +61,8 @@ class TestFlowJudge:
                     )
                 ],
             ),
-            "verify": AgentNode(id="verify", instructions="Verify identity", transitions=[]),
-            "billing": AgentNode(id="billing", instructions="Handle billing", transitions=[]),
+            "verify": AgentNode(id="verify", state_prompt="Verify identity", transitions=[]),
+            "billing": AgentNode(id="billing", state_prompt="Handle billing", transitions=[]),
         }
         transcript = [
             Message(role="assistant", content="Hello!"),

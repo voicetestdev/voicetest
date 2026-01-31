@@ -1,0 +1,29 @@
+{
+  "source_type": "custom",
+  "entry_node_id": "greeting",
+  "nodes": {
+    "greeting": {
+      "id": "greeting",
+      "state_prompt": "Greet the user warmly and ask how you can help.",
+      "transitions": [
+        {
+          "target_node_id": "farewell",
+          "condition": {
+            "type": "llm_prompt",
+            "value": "User wants to leave"
+          }
+        }
+      ],
+      "tools": [],
+      "metadata": {}
+    },
+    "farewell": {
+      "id": "farewell",
+      "state_prompt": "Say goodbye politely.",
+      "transitions": [],
+      "tools": [],
+      "metadata": {}
+    }
+  },
+  "source_metadata": {}
+}

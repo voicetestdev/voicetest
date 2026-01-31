@@ -68,9 +68,10 @@ class TestRetellLLMImporter:
         graph = importer.import_agent(sample_retell_llm_config)
 
         greeting = graph.nodes["greeting"]
-        # Should contain both general_prompt and state_prompt
-        assert "medical receptionist" in greeting.instructions
-        assert "Greet the patient" in greeting.instructions
+        # state_prompt contains just the state-specific prompt
+        assert "Greet the patient" in greeting.state_prompt
+        # general_prompt stored in source_metadata
+        assert "medical receptionist" in graph.source_metadata.get("general_prompt", "")
 
     def test_transitions_imported(self, sample_retell_llm_config):
         from voicetest.importers.retell_llm import RetellLLMImporter
@@ -167,7 +168,7 @@ class TestRetellLLMImporter:
         assert graph.entry_node_id == "main"
         assert len(graph.nodes) == 1
         assert "main" in graph.nodes
-        assert "helpful assistant" in graph.nodes["main"].instructions
+        assert "helpful assistant" in graph.nodes["main"].state_prompt
         assert len(graph.nodes["main"].tools) == 1
 
     def test_tool_parameters_imported(self, sample_retell_llm_config):

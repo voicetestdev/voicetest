@@ -26,7 +26,7 @@ class TestImporterRegistry:
 
             def import_agent(self, path_or_config) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", instructions="test")},
+                    nodes={"n": AgentNode(id="n", state_prompt="test")},
                     entry_node_id="n",
                     source_type="mock",
                 )
@@ -57,7 +57,7 @@ class TestImporterRegistry:
 
             def import_agent(self, path_or_config) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", instructions="t1")},
+                    nodes={"n": AgentNode(id="n", state_prompt="t1")},
                     entry_node_id="n",
                     source_type="type1",
                 )
@@ -75,7 +75,7 @@ class TestImporterRegistry:
 
             def import_agent(self, path_or_config) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", instructions="t2")},
+                    nodes={"n": AgentNode(id="n", state_prompt="t2")},
                     entry_node_id="n",
                     source_type="type2",
                 )
@@ -116,7 +116,7 @@ class TestImporterRegistry:
 
             def import_agent(self, path_or_config) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", instructions="imported")},
+                    nodes={"n": AgentNode(id="n", state_prompt="imported")},
                     entry_node_id="n",
                     source_type="test",
                 )
@@ -146,7 +146,7 @@ class TestImporterRegistry:
 
             def import_agent(self, path_or_config) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", instructions="auto")},
+                    nodes={"n": AgentNode(id="n", state_prompt="auto")},
                     entry_node_id="n",
                     source_type="auto",
                 )
@@ -192,7 +192,7 @@ class TestImporterRegistry:
 
             def import_agent(self, p) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", instructions="")},
+                    nodes={"n": AgentNode(id="n", state_prompt="")},
                     entry_node_id="n",
                     source_type="imp1",
                 )
@@ -210,7 +210,7 @@ class TestImporterRegistry:
 
             def import_agent(self, p) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", instructions="")},
+                    nodes={"n": AgentNode(id="n", state_prompt="")},
                     entry_node_id="n",
                     source_type="imp2",
                 )

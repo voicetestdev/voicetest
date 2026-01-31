@@ -420,6 +420,15 @@ cd web && mise exec -- bun run build
 </script>
 ```
 
+**When to Add Libraries:**
+
+The frontend uses minimal dependencies by design. Consider adding a library when:
+
+- Table features: Need filtering, pagination, virtual scrolling, or column resizing (→ `@tanstack/svelte-table`)
+- Forms: Complex validation, multi-step wizards, or field arrays (→ `superforms` + `zod`)
+- Charts: Need data visualization beyond simple metrics (→ `layerchart` or `pancake`)
+- State: Cross-component state becomes unwieldy with stores (→ evaluate if architecture needs rethinking first)
+
 ## Project Structure
 
 ```

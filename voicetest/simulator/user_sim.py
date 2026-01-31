@@ -162,7 +162,12 @@ class UserSimulator:
             """Generate next user message in a simulated conversation."""
 
             persona: str = dspy.InputField(desc="User persona (identity, goal, personality)")
-            conversation: str = dspy.InputField(desc="Conversation history")
+            conversation_history: str = dspy.InputField(
+                desc="Prior conversation (excluding latest agent message)"
+            )
+            current_agent_message: str = dspy.InputField(
+                desc="The agent's most recent message to respond to"
+            )
             turn_number: int = dspy.InputField(desc="Current turn number")
 
             should_continue: bool = dspy.OutputField(
@@ -174,8 +179,16 @@ class UserSimulator:
             reasoning: str = dspy.OutputField(desc="Why the user said this or ended")
 
         user_prompt = self.user_prompt
-        conversation = self._format_transcript(transcript)
         turn_number = len([m for m in transcript if m.role == "user"]) + 1
+
+        # Split transcript into history and current agent message
+        current_agent_message = ""
+        history_transcript = transcript
+        if transcript and transcript[-1].role == "assistant":
+            current_agent_message = transcript[-1].content
+            history_transcript = transcript[:-1]
+
+        conversation_history = self._format_transcript(history_transcript)
 
         # Wrap on_token to add source="user"
         async def user_token_callback(token: str) -> None:
@@ -188,7 +201,8 @@ class UserSimulator:
             stream_field="message" if on_token else None,
             on_error=on_error,
             persona=user_prompt,
-            conversation=conversation,
+            conversation_history=conversation_history,
+            current_agent_message=current_agent_message or "(agent has not spoken yet)",
             turn_number=turn_number,
         )
 

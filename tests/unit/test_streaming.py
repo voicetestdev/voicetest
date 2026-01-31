@@ -21,7 +21,7 @@ def simple_graph():
         nodes={
             "main": AgentNode(
                 id="main",
-                instructions="You are a helpful assistant. Respond briefly.",
+                state_prompt="You are a helpful assistant. Respond briefly.",
                 tools=[],
                 transitions=[],
             )

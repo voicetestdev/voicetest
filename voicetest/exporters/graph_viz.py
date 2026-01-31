@@ -35,15 +35,17 @@ def export_mermaid(graph: AgentGraph) -> str:
     # Track nodes with end_call tool
     nodes_with_end_call: list[tuple[str, str]] = []
 
-    # Add nodes
+    # Add nodes with truncated state prompts
     for node_id, node in graph.nodes.items():
-        # Truncate long instructions
-        label = node.instructions[:50]
-        if len(node.instructions) > 50:
+        # Truncate long state prompts
+        label = node.state_prompt[:50]
+        if len(node.state_prompt) > 50:
             label += "..."
         # Escape quotes for Mermaid
         label = label.replace('"', "'").replace("\n", " ")
-        lines.append(f'    {node_id}["{node_id}<br/>{label}"]')
+        # Also escape node_id inside the label
+        escaped_node_id = node_id.replace('"', "'")
+        lines.append(f'    {node_id}["{escaped_node_id}<br/>{label}"]')
 
         # Check for end_call tool
         if node.tools:

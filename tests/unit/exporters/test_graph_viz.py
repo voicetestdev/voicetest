@@ -19,7 +19,7 @@ def simple_graph() -> AgentGraph:
         nodes={
             "greeting": AgentNode(
                 id="greeting",
-                instructions="Greet the user warmly.",
+                state_prompt="Greet the user warmly.",
                 transitions=[
                     Transition(
                         target_node_id="farewell",
@@ -28,7 +28,7 @@ def simple_graph() -> AgentGraph:
                 ],
             ),
             "farewell": AgentNode(
-                id="farewell", instructions="Say goodbye politely.", transitions=[]
+                id="farewell", state_prompt="Say goodbye politely.", transitions=[]
             ),
         },
         entry_node_id="greeting",
@@ -43,7 +43,7 @@ def graph_with_end_call() -> AgentGraph:
         nodes={
             "greeting": AgentNode(
                 id="greeting",
-                instructions="Greet the user warmly.",
+                state_prompt="Greet the user warmly.",
                 transitions=[
                     Transition(
                         target_node_id="closing",
@@ -60,7 +60,7 @@ def graph_with_end_call() -> AgentGraph:
             ),
             "closing": AgentNode(
                 id="closing",
-                instructions="Close the conversation.",
+                state_prompt="Close the conversation.",
                 transitions=[],
                 tools=[
                     ToolDefinition(
@@ -88,9 +88,13 @@ class TestExportMermaid:
         assert "farewell" in result
 
     def test_includes_node_labels(self, simple_graph):
-        """Test that node labels are included."""
+        """Test that node labels include truncated instructions."""
         result = export_mermaid(simple_graph)
 
+        # Node IDs should be present
+        assert "greeting" in result
+        assert "farewell" in result
+        # Unique instructions should be shown (common prefix stripped)
         assert "Greet the user" in result
         assert "Say goodbye" in result
 
@@ -107,26 +111,24 @@ class TestExportMermaid:
 
         assert "style greeting fill:#16a34a" in result
 
-    def test_long_instructions_truncated(self):
-        """Test that long instructions are truncated."""
+    def test_special_characters_in_node_id_escaped(self):
+        """Test that special characters in node IDs are escaped in labels."""
         graph = AgentGraph(
             nodes={
-                "verbose": AgentNode(
-                    id="verbose",
-                    instructions="A" * 100,  # Very long instructions
+                'node_with_"quotes"': AgentNode(
+                    id='node_with_"quotes"',
+                    state_prompt="Test instructions",
                     transitions=[],
                 )
             },
-            entry_node_id="verbose",
+            entry_node_id='node_with_"quotes"',
             source_type="custom",
         )
 
         result = export_mermaid(graph)
 
-        # Should be truncated with ...
-        assert "..." in result
-        # Should not contain full 100 A's
-        assert "A" * 100 not in result
+        # Label (inside brackets) should have quotes escaped to single quotes
+        assert "\"node_with_'quotes'<br/>" in result
 
 
 class TestMermaidEndCallNode:

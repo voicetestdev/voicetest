@@ -14,7 +14,7 @@ def simple_agent_graph() -> AgentGraph:
         nodes={
             "greeting": AgentNode(
                 id="greeting",
-                instructions="Greet the customer warmly and ask how you can help.",
+                state_prompt="Greet the customer warmly and ask how you can help.",
                 transitions=[
                     Transition(
                         target_node_id="help",
@@ -26,7 +26,7 @@ def simple_agent_graph() -> AgentGraph:
             ),
             "help": AgentNode(
                 id="help",
-                instructions="Help the customer with their request.",
+                state_prompt="Help the customer with their request.",
                 transitions=[
                     Transition(
                         target_node_id="end",
@@ -38,7 +38,7 @@ def simple_agent_graph() -> AgentGraph:
             ),
             "end": AgentNode(
                 id="end",
-                instructions="Thank the customer and end the call politely.",
+                state_prompt="Thank the customer and end the call politely.",
                 transitions=[],
             ),
         },

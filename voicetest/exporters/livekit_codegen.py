@@ -57,8 +57,17 @@ def export_livekit_code(graph: AgentGraph) -> str:
 
 def _generate_agent_class(node: AgentNode, graph: AgentGraph) -> list[str]:
     """Generate code for a single agent class."""
-    # Escape the instructions for use in a triple-quoted string
-    instructions = node.instructions.replace('"""', '\\"\\"\\"')
+    # Only add general_prompt to entry node
+    is_entry = node.id == graph.entry_node_id
+    general_prompt = graph.source_metadata.get("general_prompt", "") if is_entry else ""
+
+    if general_prompt and node.state_prompt:
+        full_instructions = f"{general_prompt}\n\n{node.state_prompt}"
+    else:
+        full_instructions = node.state_prompt or general_prompt
+
+    # Escape for triple-quoted string
+    instructions = full_instructions.replace('"""', '\\"\\"\\"')
 
     lines = [
         f"class Agent_{node.id}(Agent):",

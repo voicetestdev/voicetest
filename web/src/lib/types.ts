@@ -18,7 +18,7 @@ export interface ToolDefinition {
 
 export interface AgentNode {
   id: string;
-  instructions: string;
+  state_prompt: string;
   tools?: ToolDefinition[];
   transitions: Transition[];
   metadata: Record<string, unknown>;

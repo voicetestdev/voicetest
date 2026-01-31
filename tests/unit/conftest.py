@@ -16,10 +16,7 @@ def reset_di_container():
     reset_container()
 
 
-@pytest.fixture
-def fixtures_dir() -> Path:
-    """Return path to test fixtures directory."""
-    return Path(__file__).parent / "fixtures"
+# fixtures_dir is inherited from tests/conftest.py
 
 
 @pytest.fixture
@@ -154,3 +151,198 @@ def sample_livekit_simple_path(livekit_fixtures_dir: Path) -> Path:
 def sample_livekit_simple_code(sample_livekit_simple_path: Path) -> str:
     """Load simple LiveKit agent Python code."""
     return sample_livekit_simple_path.read_text()
+
+
+# Common AgentGraph fixtures for testing
+
+
+@pytest.fixture
+def simple_graph():
+    """Simple two-node graph with greeting and farewell nodes."""
+    from voicetest.models.agent import (
+        AgentGraph,
+        AgentNode,
+        Transition,
+        TransitionCondition,
+    )
+
+    return AgentGraph(
+        nodes={
+            "greeting": AgentNode(
+                id="greeting",
+                state_prompt="Greet the user warmly.",
+                transitions=[
+                    Transition(
+                        target_node_id="farewell",
+                        condition=TransitionCondition(
+                            type="llm_prompt", value="User wants to leave"
+                        ),
+                    )
+                ],
+            ),
+            "farewell": AgentNode(
+                id="farewell",
+                state_prompt="Say goodbye politely.",
+                transitions=[],
+            ),
+        },
+        entry_node_id="greeting",
+        source_type="custom",
+    )
+
+
+@pytest.fixture
+def single_node_graph():
+    """Single-node graph for basic testing."""
+    from voicetest.models.agent import AgentGraph, AgentNode
+
+    return AgentGraph(
+        nodes={
+            "main": AgentNode(
+                id="main",
+                state_prompt="You are a helpful assistant.",
+                transitions=[],
+            ),
+        },
+        entry_node_id="main",
+        source_type="custom",
+    )
+
+
+@pytest.fixture
+def graph_with_tools():
+    """Graph with tools attached to nodes."""
+    from voicetest.models.agent import (
+        AgentGraph,
+        AgentNode,
+        ToolDefinition,
+        Transition,
+        TransitionCondition,
+    )
+
+    lookup_tool = ToolDefinition(
+        name="lookup_user",
+        description="Look up user in database",
+        parameters={
+            "type": "object",
+            "properties": {
+                "user_id": {"type": "string", "description": "User ID"},
+            },
+            "required": ["user_id"],
+        },
+    )
+    end_call_tool = ToolDefinition(
+        name="end_call",
+        description="End the call",
+        parameters={},
+    )
+
+    return AgentGraph(
+        nodes={
+            "greeting": AgentNode(
+                id="greeting",
+                state_prompt="Greet the user.",
+                tools=[end_call_tool],
+                transitions=[
+                    Transition(
+                        target_node_id="lookup",
+                        condition=TransitionCondition(
+                            type="llm_prompt", value="User wants to check their account"
+                        ),
+                    )
+                ],
+            ),
+            "lookup": AgentNode(
+                id="lookup",
+                state_prompt="Look up the user's account.",
+                tools=[lookup_tool, end_call_tool],
+                transitions=[],
+            ),
+        },
+        entry_node_id="greeting",
+        source_type="custom",
+    )
+
+
+@pytest.fixture
+def multi_node_graph():
+    """Multi-node graph with branching transitions."""
+    from voicetest.models.agent import (
+        AgentGraph,
+        AgentNode,
+        Transition,
+        TransitionCondition,
+    )
+
+    return AgentGraph(
+        nodes={
+            "greeting": AgentNode(
+                id="greeting",
+                state_prompt="Greet the customer warmly and ask how you can help.",
+                transitions=[
+                    Transition(
+                        target_node_id="billing",
+                        condition=TransitionCondition(
+                            type="llm_prompt", value="User has billing question"
+                        ),
+                    ),
+                    Transition(
+                        target_node_id="support",
+                        condition=TransitionCondition(
+                            type="llm_prompt", value="User needs technical support"
+                        ),
+                    ),
+                ],
+            ),
+            "billing": AgentNode(
+                id="billing",
+                state_prompt="Help the customer with billing inquiries.",
+                transitions=[
+                    Transition(
+                        target_node_id="end",
+                        condition=TransitionCondition(type="llm_prompt", value="Billing resolved"),
+                    )
+                ],
+            ),
+            "support": AgentNode(
+                id="support",
+                state_prompt="Provide technical support.",
+                transitions=[
+                    Transition(
+                        target_node_id="end",
+                        condition=TransitionCondition(type="llm_prompt", value="Support complete"),
+                    )
+                ],
+            ),
+            "end": AgentNode(
+                id="end",
+                state_prompt="Thank the customer and end the call politely.",
+                transitions=[],
+            ),
+        },
+        entry_node_id="greeting",
+        source_type="custom",
+    )
+
+
+@pytest.fixture
+def graph_with_metadata():
+    """Graph with source metadata set."""
+    from voicetest.models.agent import AgentGraph, AgentNode
+
+    return AgentGraph(
+        nodes={
+            "main": AgentNode(
+                id="main",
+                state_prompt="You are a helpful assistant.",
+                transitions=[],
+            ),
+        },
+        entry_node_id="main",
+        source_type="retell",
+        source_metadata={
+            "general_prompt": "You are a professional assistant.",
+            "llm_id": "llm_test123",
+            "model": "gpt-4o",
+        },
+    )

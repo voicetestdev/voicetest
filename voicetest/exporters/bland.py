@@ -27,8 +27,8 @@ class BlandExporter:
 def export_bland_config(graph: AgentGraph) -> dict[str, Any]:
     """Export AgentGraph to Bland AI inbound number configuration format.
 
-    Bland AI uses a single prompt with tools, so multi-node graphs
-    have their instructions merged.
+    Bland AI uses a single prompt, so multi-node graphs are serialized
+    as structured text instructions describing the conversation flow.
 
     Args:
         graph: The agent graph to export.
@@ -38,20 +38,13 @@ def export_bland_config(graph: AgentGraph) -> dict[str, Any]:
     """
     result: dict[str, Any] = {}
 
-    # Get the entry node (or first node if no entry specified)
-    node = None
-    if graph.entry_node_id and graph.entry_node_id in graph.nodes:
-        node = graph.nodes[graph.entry_node_id]
-    elif graph.nodes:
-        node = list(graph.nodes.values())[0]
+    # Build prompt from graph (serializes entire flow as text)
+    result["prompt"] = _graph_to_prompt(graph)
 
-    # Build prompt from node instructions
-    if node:
-        result["prompt"] = node.instructions
-
-        # Convert tools to Bland format
-        if node.tools:
-            result["tools"] = [_convert_tool(t) for t in node.tools]
+    # Collect all tools from all nodes
+    all_tools = _collect_all_tools(graph)
+    if all_tools:
+        result["tools"] = [_convert_tool(t) for t in all_tools]
 
     # Restore metadata from source
     if graph.source_metadata:
@@ -76,11 +69,78 @@ def export_bland_config(graph: AgentGraph) -> dict[str, Any]:
         if "interruption_threshold" in graph.source_metadata:
             result["interruption_threshold"] = graph.source_metadata["interruption_threshold"]
 
-    # Check node metadata for first_sentence
-    if node and node.metadata and "first_sentence" in node.metadata:
-        result["first_sentence"] = node.metadata["first_sentence"]
+    # Check entry node metadata for first_sentence
+    entry_node = graph.nodes.get(graph.entry_node_id)
+    if entry_node and entry_node.metadata and "first_sentence" in entry_node.metadata:
+        result["first_sentence"] = entry_node.metadata["first_sentence"]
 
     return result
+
+
+def _graph_to_prompt(graph: AgentGraph) -> str:
+    """Convert entire graph to a text prompt describing the conversation flow.
+
+    For single-node graphs, returns just the prompt.
+    For multi-node graphs, generates structured instructions.
+    """
+    general_prompt = graph.source_metadata.get("general_prompt", "")
+
+    # Empty graph: return general prompt or empty string
+    if len(graph.nodes) == 0:
+        return general_prompt or ""
+
+    # Single node: just combine general + state prompt
+    if len(graph.nodes) == 1:
+        node = list(graph.nodes.values())[0]
+        if general_prompt and node.state_prompt:
+            return f"{general_prompt}\n\n{node.state_prompt}"
+        return node.state_prompt or general_prompt
+
+    # Multi-node: serialize as structured flow
+    parts = []
+
+    if general_prompt:
+        parts.append(general_prompt)
+
+    parts.append("\n## Conversation Flow\n")
+    parts.append(f"Start at: **{graph.entry_node_id}**\n")
+
+    # Build ordered list starting with entry node
+    ordered_nodes = []
+    if graph.entry_node_id in graph.nodes:
+        ordered_nodes.append((graph.entry_node_id, graph.nodes[graph.entry_node_id]))
+    for node_id, node in graph.nodes.items():
+        if node_id != graph.entry_node_id:
+            ordered_nodes.append((node_id, node))
+
+    for node_id, node in ordered_nodes:
+        parts.append(f"### State: {node_id}")
+        if node.state_prompt:
+            parts.append(node.state_prompt)
+
+        if node.transitions:
+            parts.append("\nTransitions:")
+            for transition in node.transitions:
+                condition = transition.condition.value or "always"
+                parts.append(f"  - When: {condition} → go to **{transition.target_node_id}**")
+
+        parts.append("")
+
+    return "\n".join(parts)
+
+
+def _collect_all_tools(graph: AgentGraph) -> list[ToolDefinition]:
+    """Collect and deduplicate all tools from all nodes."""
+    seen_names: set[str] = set()
+    tools: list[ToolDefinition] = []
+
+    for node in graph.nodes.values():
+        for tool in node.tools:
+            if tool.name not in seen_names:
+                tools.append(tool)
+                seen_names.add(tool.name)
+
+    return tools
 
 
 def _convert_tool(tool: ToolDefinition) -> dict[str, Any]:

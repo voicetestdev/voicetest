@@ -45,6 +45,11 @@ def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
         "model_choice": metadata.get("model_choice", {"type": "cascading", "model": "gpt-4o"}),
     }
 
+    # Add global_prompt if present
+    general_prompt = metadata.get("general_prompt", "")
+    if general_prompt:
+        result["global_prompt"] = general_prompt
+
     all_tools = _collect_all_tools(graph)
     if all_tools:
         result["tools"] = [_convert_tool(t) for t in all_tools]
@@ -79,7 +84,7 @@ def _convert_node(node: AgentNode) -> dict[str, Any]:
         "type": node_type,
         "instruction": {
             "type": "prompt",
-            "text": node.instructions,
+            "text": node.state_prompt,
         },
         "edges": [_convert_transition_to_edge(t, i) for i, t in enumerate(node.transitions)],
     }

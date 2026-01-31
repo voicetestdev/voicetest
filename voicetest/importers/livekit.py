@@ -104,7 +104,7 @@ class LiveKitImporter:
         if not nodes:
             nodes["main"] = AgentNode(
                 id="main",
-                instructions="LiveKit agent (no agent classes found)",
+                state_prompt="LiveKit agent (no agent classes found)",
                 tools=[],
                 transitions=[],
                 metadata={"livekit_raw": True},
@@ -115,7 +115,10 @@ class LiveKitImporter:
             nodes=nodes,
             entry_node_id=entry_node_id or list(nodes.keys())[0],
             source_type="livekit",
-            source_metadata={"original_code_hash": hash(content)},
+            source_metadata={
+                "original_code_hash": hash(content),
+                "general_prompt": "",  # LiveKit agents don't have separate general prompt
+            },
         )
 
     def _is_agent_class(self, class_def: ast.ClassDef) -> bool:
@@ -150,7 +153,7 @@ class LiveKitImporter:
 
         return AgentNode(
             id=node_id,
-            instructions=instructions,
+            state_prompt=instructions,
             tools=tools,
             transitions=transitions,
             metadata={"livekit_class": class_def.name},

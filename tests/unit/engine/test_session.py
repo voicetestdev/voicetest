@@ -2,38 +2,8 @@
 
 import pytest
 
-from voicetest.models.agent import (
-    AgentGraph,
-    AgentNode,
-    Transition,
-    TransitionCondition,
-)
 
-
-@pytest.fixture
-def simple_graph() -> AgentGraph:
-    """Create a simple two-node graph for testing."""
-    return AgentGraph(
-        nodes={
-            "greeting": AgentNode(
-                id="greeting",
-                instructions="Greet the user warmly.",
-                transitions=[
-                    Transition(
-                        target_node_id="farewell",
-                        condition=TransitionCondition(
-                            type="llm_prompt", value="User wants to end the conversation"
-                        ),
-                    )
-                ],
-            ),
-            "farewell": AgentNode(
-                id="farewell", instructions="Say goodbye politely.", transitions=[]
-            ),
-        },
-        entry_node_id="greeting",
-        source_type="custom",
-    )
+# simple_graph fixture is imported from conftest.py
 
 
 class TestConversationState:
@@ -79,13 +49,17 @@ class TestConversationRunner:
         assert runner.graph is simple_graph
         assert runner.options is not None
 
-    def test_runner_generates_agent_classes(self, simple_graph):
+    def test_runner_has_conversation_module(self, simple_graph):
         from voicetest.engine.session import ConversationRunner
 
         runner = ConversationRunner(simple_graph)
 
-        assert "greeting" in runner.agent_classes
-        assert "farewell" in runner.agent_classes
+        # Check conversation module has state modules for each node
+        assert runner._conversation_module is not None
+        # State modules stored as _state_modules internally
+        assert hasattr(runner._conversation_module, "_state_modules")
+        assert "greeting" in runner._conversation_module._state_modules
+        assert "farewell" in runner._conversation_module._state_modules
 
     def test_runner_with_custom_options(self, simple_graph):
         from voicetest.engine.session import ConversationRunner

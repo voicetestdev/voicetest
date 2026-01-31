@@ -115,7 +115,7 @@ class BlandImporter:
         nodes = {
             node_id: AgentNode(
                 id=node_id,
-                instructions=config.prompt,
+                state_prompt=config.prompt,
                 tools=tools,
                 transitions=[],
                 metadata={"first_sentence": config.first_sentence} if config.first_sentence else {},
@@ -147,7 +147,9 @@ class BlandImporter:
 
     def _build_metadata(self, config: BlandInboundConfig) -> dict[str, Any]:
         """Build source metadata from Bland config."""
-        metadata: dict[str, Any] = {}
+        metadata: dict[str, Any] = {
+            "general_prompt": "",  # Bland has no separate general prompt
+        }
 
         if config.phone_number:
             metadata["phone_number"] = config.phone_number

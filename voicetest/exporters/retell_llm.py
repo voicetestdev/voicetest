@@ -105,7 +105,7 @@ def _convert_node_to_state(node: AgentNode, general_tool_names: set[str]) -> dic
     """Convert an AgentNode to a Retell LLM state."""
     state: dict[str, Any] = {
         "name": node.id,
-        "state_prompt": node.instructions,
+        "state_prompt": node.state_prompt,
         "edges": [_convert_transition_to_edge(t) for t in node.transitions],
     }
 

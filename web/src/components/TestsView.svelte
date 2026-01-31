@@ -42,6 +42,55 @@
   let exporting = $state(false);
   let exportError = $state("");
 
+  // Import progress tracking
+  let importProgress = $state<{ current: number; total: number } | null>(null);
+
+  // Sorting state
+  type SortColumn = "id" | "name" | "type" | "prompt";
+  type SortDirection = "asc" | "desc";
+  let sortColumn = $state<SortColumn>("id");
+  let sortDirection = $state<SortDirection>("asc");
+
+  let sortedRecords = $derived.by(() => {
+    const records = [...$testCaseRecords];
+    records.sort((a, b) => {
+      let aVal: string;
+      let bVal: string;
+      switch (sortColumn) {
+        case "id":
+          aVal = a.id;
+          bVal = b.id;
+          break;
+        case "name":
+          aVal = a.name.toLowerCase();
+          bVal = b.name.toLowerCase();
+          break;
+        case "type":
+          aVal = a.type || "";
+          bVal = b.type || "";
+          break;
+        case "prompt":
+          aVal = a.user_prompt.toLowerCase();
+          bVal = b.user_prompt.toLowerCase();
+          break;
+        default:
+          return 0;
+      }
+      const cmp = aVal.localeCompare(bVal);
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+    return records;
+  });
+
+  function handleSort(column: SortColumn) {
+    if (sortColumn === column) {
+      sortDirection = sortDirection === "asc" ? "desc" : "asc";
+    } else {
+      sortColumn = column;
+      sortDirection = "asc";
+    }
+  }
+
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       if (showNewTestModal) {
@@ -171,6 +220,22 @@
     }
   }
 
+  async function deleteSelectedTests() {
+    if (selectedTestIds.length === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedTestIds.length} tests?`)) return;
+
+    const idsToDelete = [...selectedTestIds];
+    for (const id of idsToDelete) {
+      try {
+        await api.deleteTestCase(id);
+      } catch (e) {
+        console.error("Failed to delete test:", id, e);
+      }
+    }
+    selectedTestIds = [];
+    await refreshTests();
+  }
+
   function resetForm() {
     newTest = {
       name: "",
@@ -220,71 +285,63 @@
     if (!$currentAgentId) return;
 
     importError = "";
-    saving = true;
     try {
       const parsed = JSON.parse(jsonImport);
       const tests = Array.isArray(parsed) ? parsed : [parsed];
 
-      for (const test of tests) {
-        await api.createTestCase($currentAgentId, {
-          name: test.name,
-          user_prompt: test.user_prompt,
-          metrics: test.metrics || [],
-          dynamic_variables: test.dynamic_variables || {},
-          tool_mocks: test.tool_mocks || [],
-          type: normalizeTestType(test.type),
-          llm_model: test.llm_model,
-          includes: test.includes || [],
-          excludes: test.excludes || [],
-          patterns: test.patterns || [],
-        });
-      }
-
-      await refreshTests();
+      // Close modal immediately and start import with progress
       closeImportModal();
+      await importTestsWithProgress(tests);
     } catch (e) {
       importError = e instanceof Error ? e.message : String(e);
     }
-    saving = false;
+  }
+
+  async function importTestsWithProgress(tests: Record<string, unknown>[]) {
+    if (!$currentAgentId) return;
+
+    importProgress = { current: 0, total: tests.length };
+
+    for (const test of tests) {
+      try {
+        await api.createTestCase($currentAgentId, {
+          name: test.name as string,
+          user_prompt: test.user_prompt as string,
+          metrics: (test.metrics as string[]) || [],
+          dynamic_variables: (test.dynamic_variables as Record<string, string>) || {},
+          tool_mocks: (test.tool_mocks as Record<string, unknown>[]) || [],
+          type: normalizeTestType(test.type as string),
+          llm_model: test.llm_model as string | undefined,
+          includes: (test.includes as string[]) || [],
+          excludes: (test.excludes as string[]) || [],
+          patterns: (test.patterns as string[]) || [],
+        });
+        // Refresh after each test to show incremental progress
+        await refreshTests();
+      } catch (e) {
+        console.error("Failed to import test:", test.name, e);
+      }
+      importProgress = { current: importProgress.current + 1, total: tests.length };
+    }
+
+    importProgress = null;
   }
 
   async function handleFileUpload(event: Event) {
-    if (!$currentAgentId) return;
-
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
 
     importError = "";
-    saving = true;
 
     try {
       const content = await file.text();
-      const parsed = JSON.parse(content);
-      const tests = Array.isArray(parsed) ? parsed : [parsed];
-
-      for (const test of tests) {
-        await api.createTestCase($currentAgentId, {
-          name: test.name,
-          user_prompt: test.user_prompt,
-          metrics: test.metrics || [],
-          dynamic_variables: test.dynamic_variables || {},
-          tool_mocks: test.tool_mocks || [],
-          type: normalizeTestType(test.type),
-          llm_model: test.llm_model,
-          includes: test.includes || [],
-          excludes: test.excludes || [],
-          patterns: test.patterns || [],
-        });
-      }
-
-      await refreshTests();
-      closeImportModal();
+      // Just load into textarea, don't auto-import
+      jsonImport = content;
       input.value = "";
     } catch (e) {
       importError = e instanceof Error ? e.message : String(e);
     }
-    saving = false;
   }
 
   function toggleTestSelection(id: string) {
@@ -303,7 +360,7 @@
     }
   }
 
-  function truncatePrompt(prompt: string, maxLength: number = 60): string {
+  function truncatePrompt(prompt: string, maxLength: number = 150): string {
     if (prompt.length <= maxLength) return prompt;
     return prompt.substring(0, maxLength) + "...";
   }
@@ -403,9 +460,28 @@
           onclick={openExportModal}
           disabled={$testCaseRecords.length === 0}
         >Export</button>
+        {#if selectedTestIds.length > 1}
+          <button class="danger" onclick={deleteSelectedTests}>
+            Delete ({selectedTestIds.length})
+          </button>
+        {/if}
       </div>
     {/if}
   </div>
+
+  {#if importProgress}
+    <div class="import-progress">
+      <div class="progress-text">
+        Importing tests... {importProgress.current} / {importProgress.total}
+      </div>
+      <div class="progress-bar">
+        <div
+          class="progress-fill"
+          style="width: {(importProgress.current / importProgress.total) * 100}%"
+        ></div>
+      </div>
+    </div>
+  {/if}
 
   {#if !$currentAgentId}
     <p class="placeholder">No agent selected.</p>
@@ -418,21 +494,37 @@
           <table class="test-table">
             <thead>
               <tr>
-                <th class="col-select">
+                <th class="col-select sortable" onclick={() => handleSort("id")}>
                   <input
                     type="checkbox"
                     checked={selectedTestIds.length === $testCaseRecords.length && $testCaseRecords.length > 0}
                     onchange={selectAllTests}
+                    onclick={(e) => e.stopPropagation()}
                   />
                 </th>
-                <th class="col-name">Name</th>
-                <th class="col-type">Type</th>
-                <th class="col-prompt">Prompt</th>
+                <th class="col-name sortable" onclick={() => handleSort("name")}>
+                  Name
+                  {#if sortColumn === "name"}
+                    <span class="sort-indicator">{sortDirection === "asc" ? "▲" : "▼"}</span>
+                  {/if}
+                </th>
+                <th class="col-type sortable" onclick={() => handleSort("type")}>
+                  Type
+                  {#if sortColumn === "type"}
+                    <span class="sort-indicator">{sortDirection === "asc" ? "▲" : "▼"}</span>
+                  {/if}
+                </th>
+                <th class="col-prompt sortable" onclick={() => handleSort("prompt")}>
+                  Prompt
+                  {#if sortColumn === "prompt"}
+                    <span class="sort-indicator">{sortDirection === "asc" ? "▲" : "▼"}</span>
+                  {/if}
+                </th>
                 <th class="col-actions">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {#each $testCaseRecords as record}
+              {#each sortedRecords as record}
                 <tr class:selected={selectedTestIds.includes(record.id)}>
                   <td class="col-select">
                     <input
@@ -802,6 +894,22 @@
     letter-spacing: 0.05em;
   }
 
+  .test-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .test-table th.sortable:hover {
+    color: var(--text-primary);
+  }
+
+  .sort-indicator {
+    margin-left: 0.25rem;
+    font-size: 0.6rem;
+    opacity: 0.7;
+  }
+
   .test-table tbody tr {
     transition: background 80ms ease-out;
   }
@@ -819,12 +927,12 @@
   }
 
   .col-name {
-    width: 25%;
+    width: 180px;
     font-weight: 500;
   }
 
   .col-type {
-    width: 80px;
+    width: 70px;
   }
 
   .col-prompt {
@@ -832,13 +940,14 @@
   }
 
   .col-actions {
-    width: 140px;
+    width: 120px;
     text-align: right;
   }
 
   .prompt-preview {
     color: var(--text-secondary);
     font-size: 0.85rem;
+    word-break: break-word;
   }
 
   .tag {
@@ -1077,6 +1186,34 @@
   .file-hint {
     color: var(--text-muted);
     font-size: 0.85rem;
+  }
+
+  /* Import progress bar */
+  .import-progress {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: 1rem;
+  }
+
+  .progress-text {
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    margin-bottom: var(--space-2);
+  }
+
+  .progress-bar {
+    height: 4px;
+    background: var(--bg-tertiary);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 150ms ease-out;
   }
 
   @media (max-width: 768px) {

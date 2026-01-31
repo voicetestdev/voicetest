@@ -45,11 +45,12 @@ class AgentNode(BaseModel):
     """Single node (state) in the agent workflow graph.
 
     Each node represents a distinct conversational state with its own
-    system instructions, available tools, and possible transitions.
+    state-specific prompt, available tools, and possible transitions.
+    The general_prompt is stored separately in AgentGraph.source_metadata.
     """
 
     id: str
-    instructions: str
+    state_prompt: str
     tools: list[ToolDefinition] = Field(default_factory=list)
     transitions: list[Transition] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)

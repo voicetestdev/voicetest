@@ -87,7 +87,7 @@ class TestBlandImporter:
         graph = importer.import_agent(sample_bland_config)
 
         node = graph.nodes["main"]
-        assert node.instructions == sample_bland_config["prompt"]
+        assert node.state_prompt == sample_bland_config["prompt"]
 
     def test_tools_imported(self):
         from voicetest.importers.bland import BlandImporter
@@ -172,7 +172,7 @@ class TestBlandImporterEdgeCases:
         graph = importer.import_agent(config)
 
         assert graph.source_type == "bland"
-        assert graph.nodes["main"].instructions == "Hello"
+        assert graph.nodes["main"].state_prompt == "Hello"
         assert graph.nodes["main"].tools == []
 
     def test_transfer_list_preserved(self):

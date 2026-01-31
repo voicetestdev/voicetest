@@ -14,7 +14,7 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  # TypeScript/JavaScript - svelte-check
+  # TypeScript/JavaScript - svelte-check and tsc
   - repo: local
     hooks:
       - id: svelte-check
@@ -22,6 +22,12 @@ repos:
         entry: bash -c 'cd web && npx svelte-check --tsconfig ./tsconfig.json'
         language: system
         files: ^web/src/.*\.(ts|svelte)$
+        pass_filenames: false
+      - id: tsc-check
+        name: tsc-check
+        entry: bash -c 'cd web && npx tsc --noEmit'
+        language: system
+        files: ^web/src/.*\.ts$
         pass_filenames: false
 
   # Markdown - mdformat

@@ -9,15 +9,9 @@ from voicetest.importers.xlsform import XLSFormImporter
 
 
 @pytest.fixture
-def xlsform_fixtures_dir() -> Path:
-    """Return path to XLSForm test fixtures."""
-    return Path(__file__).parent.parent / "fixtures" / "xlsform"
-
-
-@pytest.fixture
-def sample_xlsform(xlsform_fixtures_dir: Path) -> Path:
+def sample_xlsform(fixtures_dir: Path) -> Path:
     """Return path to sample XLSForm."""
-    return xlsform_fixtures_dir / "sample_survey.xlsx"
+    return fixtures_dir / "xlsform" / "sample_survey.xlsx"
 
 
 @pytest.fixture
@@ -109,7 +103,7 @@ class TestXLSFormImporterBasic:
 
     def test_node_instructions_contain_label(self, importer, minimal_xlsform):
         graph = importer.import_agent(minimal_xlsform)
-        assert "What is your name?" in graph.nodes["q1"].instructions
+        assert "What is your name?" in graph.nodes["q1"].state_prompt
 
     def test_nodes_have_transitions(self, importer, minimal_xlsform):
         graph = importer.import_agent(minimal_xlsform)
@@ -136,7 +130,7 @@ class TestXLSFormImporterSample:
 
     def test_select_one_includes_options(self, importer, sample_xlsform):
         graph = importer.import_agent(sample_xlsform)
-        instructions = graph.nodes["has_appointment"].instructions
+        instructions = graph.nodes["has_appointment"].state_prompt
         assert "Yes" in instructions
         assert "No" in instructions
 
@@ -149,11 +143,11 @@ class TestXLSFormImporterSample:
 
     def test_required_field_noted_in_instructions(self, importer, sample_xlsform):
         graph = importer.import_agent(sample_xlsform)
-        assert "required" in graph.nodes["name"].instructions.lower()
+        assert "required" in graph.nodes["name"].state_prompt.lower()
 
     def test_integer_type_noted_in_instructions(self, importer, sample_xlsform):
         graph = importer.import_agent(sample_xlsform)
-        assert "number" in graph.nodes["age"].instructions.lower()
+        assert "number" in graph.nodes["age"].state_prompt.lower()
 
 
 class TestXLSFormImporterChoices:
@@ -176,7 +170,7 @@ class TestXLSFormImporterChoices:
         wb.save(path)
 
         graph = importer.import_agent(path)
-        instructions = graph.nodes["fav_color"].instructions
+        instructions = graph.nodes["fav_color"].state_prompt
 
         assert "Red" in instructions
         assert "Blue" in instructions
@@ -198,7 +192,7 @@ class TestXLSFormImporterChoices:
         wb.save(path)
 
         graph = importer.import_agent(path)
-        instructions = graph.nodes["symptoms"].instructions
+        instructions = graph.nodes["symptoms"].state_prompt
 
         assert "multiple" in instructions.lower()
 
@@ -296,7 +290,7 @@ class TestXLSFormImporterEdgeCases:
 
         graph = importer.import_agent(path)
         assert "welcome" in graph.nodes
-        assert "Welcome" in graph.nodes["welcome"].instructions
+        assert "Welcome" in graph.nodes["welcome"].state_prompt
 
     def test_import_raises_for_dict_input(self, importer):
         with pytest.raises(ValueError, match="requires a file path"):

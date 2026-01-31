@@ -57,7 +57,7 @@ def sample_graph():
         "nodes": {
             "greeting": {
                 "id": "greeting",
-                "instructions": "Greet the user warmly and ask how you can help.",
+                "state_prompt": "Greet the user warmly and ask how you can help.",
                 "transitions": [],
                 "tools": [],
                 "metadata": {},
@@ -119,7 +119,7 @@ class TestLiveKitImportFromCode:
         assert "greeting" in graph["nodes"]
 
     def test_import_extracts_instructions(self, client, sample_livekit_code):
-        """Import extracts instructions from agent class."""
+        """Import extracts state_prompt from agent class."""
         response = client.post(
             "/api/agents/import",
             json={"config": {"code": sample_livekit_code}, "source": "livekit"},
@@ -128,7 +128,7 @@ class TestLiveKitImportFromCode:
         assert response.status_code == 200
         graph = response.json()
         node = graph["nodes"]["greeting"]
-        assert "Greet the user warmly" in node["instructions"]
+        assert "Greet the user warmly" in node["state_prompt"]
 
 
 class TestLiveKitExportFormat:

@@ -128,30 +128,22 @@ class RetellLLMImporter:
                 # Add general tools to each state
                 tools.extend([self._convert_tool(t) for t in llm_config.general_tools])
 
-                # Combine general_prompt with state_prompt
-                instructions = llm_config.general_prompt
-                if state.state_prompt:
-                    if instructions:
-                        instructions = f"{instructions}\n\n{state.state_prompt}"
-                    else:
-                        instructions = state.state_prompt
-
                 nodes[state.name] = AgentNode(
                     id=state.name,
-                    instructions=instructions,
+                    state_prompt=state.state_prompt,  # State-specific only, NOT merged
                     transitions=transitions,
-                    tools=tools if tools else None,
+                    tools=tools or [],
                     metadata={"state_index": i},
                 )
 
             entry_node_id = llm_config.states[0].name
         else:
-            # Single-prompt: create one node
+            # Single-prompt: create one node (general_prompt becomes state_prompt)
             tools = [self._convert_tool(t) for t in llm_config.general_tools]
             nodes["main"] = AgentNode(
                 id="main",
-                instructions=llm_config.general_prompt,
-                tools=tools if tools else None,
+                state_prompt=llm_config.general_prompt,
+                tools=tools or [],
                 transitions=[],
             )
             entry_node_id = "main"
@@ -164,6 +156,7 @@ class RetellLLMImporter:
                 "llm_id": llm_config.llm_id,
                 "model": llm_config.model,
                 "begin_message": llm_config.begin_message,
+                "general_prompt": llm_config.general_prompt,  # Stored separately
             },
             default_model=llm_config.model,
         )

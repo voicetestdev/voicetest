@@ -36,6 +36,10 @@ class RunSettings(BaseModel):
         default=False,
         description="When enabled, test-specific llm_model overrides global settings",
     )
+    cot_transitions: bool = Field(
+        default=False,
+        description="Use Chain-of-Thought reasoning for state transitions (debugging)",
+    )
 
 
 class Settings(BaseModel):
@@ -101,6 +105,7 @@ def _to_toml(settings: Settings) -> str:
     lines.append(f"flow_judge = {str(settings.run.flow_judge).lower()}")
     lines.append(f"streaming = {str(settings.run.streaming).lower()}")
     lines.append(f"test_model_precedence = {str(settings.run.test_model_precedence).lower()}")
+    lines.append(f"cot_transitions = {str(settings.run.cot_transitions).lower()}")
     lines.append("")
 
     if settings.env:

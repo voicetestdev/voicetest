@@ -92,9 +92,9 @@ class TestAgentNode:
     def test_create_basic_node(self):
         from voicetest.models.agent import AgentNode
 
-        node = AgentNode(id="greeting", instructions="Greet the customer warmly.")
+        node = AgentNode(id="greeting", state_prompt="Greet the customer warmly.")
         assert node.id == "greeting"
-        assert node.instructions == "Greet the customer warmly."
+        assert node.state_prompt == "Greet the customer warmly."
         assert node.tools == []
         assert node.transitions == []
         assert node.metadata == {}
@@ -104,7 +104,7 @@ class TestAgentNode:
 
         node = AgentNode(
             id="greeting",
-            instructions="Greet the customer.",
+            state_prompt="Greet the customer.",
             transitions=[
                 Transition(
                     target_node_id="billing",
@@ -129,7 +129,7 @@ class TestAgentNode:
 
         node = AgentNode(
             id="lookup",
-            instructions="Look up the customer's information.",
+            state_prompt="Look up the customer's information.",
             tools=[
                 ToolDefinition(
                     name="get_account",
@@ -146,7 +146,7 @@ class TestAgentNode:
 
         node = AgentNode(
             id="greeting",
-            instructions="Greet",
+            state_prompt="Greet",
             metadata={"retell_type": "conversation", "custom_field": 123},
         )
         assert node.metadata["retell_type"] == "conversation"
@@ -160,8 +160,8 @@ class TestAgentGraph:
         from voicetest.models.agent import AgentGraph, AgentNode
 
         nodes = {
-            "greeting": AgentNode(id="greeting", instructions="Hello!"),
-            "end": AgentNode(id="end", instructions="Goodbye!"),
+            "greeting": AgentNode(id="greeting", state_prompt="Hello!"),
+            "end": AgentNode(id="end", state_prompt="Goodbye!"),
         }
         graph = AgentGraph(nodes=nodes, entry_node_id="greeting", source_type="custom")
         assert len(graph.nodes) == 2
@@ -173,32 +173,32 @@ class TestAgentGraph:
         from voicetest.models.agent import AgentGraph, AgentNode
 
         nodes = {
-            "start": AgentNode(id="start", instructions="Start here"),
-            "end": AgentNode(id="end", instructions="End here"),
+            "start": AgentNode(id="start", state_prompt="Start here"),
+            "end": AgentNode(id="end", state_prompt="End here"),
         }
         graph = AgentGraph(nodes=nodes, entry_node_id="start", source_type="retell")
         entry = graph.get_entry_node()
         assert entry.id == "start"
-        assert entry.instructions == "Start here"
+        assert entry.state_prompt == "Start here"
 
     def test_get_node(self):
         from voicetest.models.agent import AgentGraph, AgentNode
 
         nodes = {
-            "a": AgentNode(id="a", instructions="Node A"),
-            "b": AgentNode(id="b", instructions="Node B"),
+            "a": AgentNode(id="a", state_prompt="Node A"),
+            "b": AgentNode(id="b", state_prompt="Node B"),
         }
         graph = AgentGraph(nodes=nodes, entry_node_id="a", source_type="custom")
 
-        assert graph.get_node("a").instructions == "Node A"
-        assert graph.get_node("b").instructions == "Node B"
+        assert graph.get_node("a").state_prompt == "Node A"
+        assert graph.get_node("b").state_prompt == "Node B"
         assert graph.get_node("nonexistent") is None
 
     def test_graph_with_source_metadata(self):
         from voicetest.models.agent import AgentGraph, AgentNode
 
         graph = AgentGraph(
-            nodes={"n": AgentNode(id="n", instructions="Test")},
+            nodes={"n": AgentNode(id="n", state_prompt="Test")},
             entry_node_id="n",
             source_type="retell",
             source_metadata={"conversation_flow_id": "flow-123", "version": 2},
@@ -218,7 +218,7 @@ class TestAgentGraph:
             nodes={
                 "start": AgentNode(
                     id="start",
-                    instructions="Hello",
+                    state_prompt="Hello",
                     transitions=[
                         Transition(
                             target_node_id="end",
@@ -226,7 +226,7 @@ class TestAgentGraph:
                         )
                     ],
                 ),
-                "end": AgentNode(id="end", instructions="Bye"),
+                "end": AgentNode(id="end", state_prompt="Bye"),
             },
             entry_node_id="start",
             source_type="custom",

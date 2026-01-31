@@ -57,23 +57,7 @@ def client():
     return TestClient(app)
 
 
-@pytest.fixture
-def sample_graph():
-    """Sample agent graph for testing exports."""
-    return {
-        "source_type": "custom",
-        "entry_node_id": "greeting",
-        "nodes": {
-            "greeting": {
-                "id": "greeting",
-                "instructions": "Greet the user warmly and ask how you can help.",
-                "transitions": [],
-                "tools": [],
-                "metadata": {},
-            }
-        },
-        "source_metadata": {},
-    }
+# sample_graph_dict_dict fixture is inherited from tests/conftest.py
 
 
 # Skip entire module if no platforms are configured
@@ -165,14 +149,14 @@ class TestPlatformExportAgent:
     """Tests for POST /platforms/{platform}/export endpoint."""
 
     @pytest.mark.parametrize("platform", PLATFORMS_SUPPORT_CREATE)
-    def test_export_creates_agent(self, client, platform, sample_graph):
+    def test_export_creates_agent(self, client, platform, sample_graph_dict):
         """Export creates an agent and returns expected response structure."""
         if not platform_available(platform):
             pytest.skip(f"{platform} not configured")
 
         response = client.post(
             f"/api/platforms/{platform}/export",
-            json={"graph": sample_graph, "name": f"voicetest-integration-{platform}"},
+            json={"graph": sample_graph_dict, "name": f"voicetest-integration-{platform}"},
         )
 
         assert response.status_code == 200
@@ -190,7 +174,7 @@ class TestPlatformExportAgent:
         _cleanup_agent(platform, data["id"])
 
     @pytest.mark.parametrize("platform", PLATFORMS_SUPPORT_CREATE)
-    def test_export_uses_provided_name(self, client, platform, sample_graph):
+    def test_export_uses_provided_name(self, client, platform, sample_graph_dict):
         """Export uses the name provided in the request."""
         if not platform_available(platform):
             pytest.skip(f"{platform} not configured")
@@ -198,7 +182,7 @@ class TestPlatformExportAgent:
         test_name = f"voicetest-named-{platform}"
         response = client.post(
             f"/api/platforms/{platform}/export",
-            json={"graph": sample_graph, "name": test_name},
+            json={"graph": sample_graph_dict, "name": test_name},
         )
 
         assert response.status_code == 200
@@ -213,7 +197,7 @@ class TestPlatformRoundtrip:
     """Tests for export then import roundtrip."""
 
     @pytest.mark.parametrize("platform", PLATFORMS_SUPPORT_ROUNDTRIP)
-    def test_roundtrip_preserves_structure(self, client, platform, sample_graph):
+    def test_roundtrip_preserves_structure(self, client, platform, sample_graph_dict):
         """Exported agent can be imported back with structure preserved."""
         if not platform_available(platform):
             pytest.skip(f"{platform} not configured")
@@ -221,7 +205,7 @@ class TestPlatformRoundtrip:
         # Export
         export_response = client.post(
             f"/api/platforms/{platform}/export",
-            json={"graph": sample_graph, "name": f"voicetest-roundtrip-{platform}"},
+            json={"graph": sample_graph_dict, "name": f"voicetest-roundtrip-{platform}"},
         )
         assert export_response.status_code == 200
         agent_id = export_response.json()["id"]
@@ -246,7 +230,7 @@ class TestPlatformRoundtrip:
             # Verify nodes have required fields
             for _node_id, node in graph["nodes"].items():
                 assert "id" in node
-                assert "instructions" in node
+                assert "state_prompt" in node
                 assert "transitions" in node
                 assert "tools" in node
 

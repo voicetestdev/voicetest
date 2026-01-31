@@ -62,8 +62,8 @@ class TestVapiImporterConversion:
         graph = importer.import_agent(sample_vapi_assistant)
 
         node = graph.nodes["main"]
-        assert "medical receptionist" in node.instructions.lower()
-        assert "Acme Healthcare" in node.instructions
+        assert "medical receptionist" in node.state_prompt.lower()
+        assert "Acme Healthcare" in node.state_prompt
 
     def test_import_extracts_tools(self, sample_vapi_assistant: dict):
         """Tools are extracted from VAPI format."""
@@ -133,7 +133,7 @@ class TestVapiImporterConversion:
 
         assert len(graph.nodes) == 1
         node = graph.nodes["main"]
-        assert "friendly greeter" in node.instructions.lower()
+        assert "friendly greeter" in node.state_prompt.lower()
         assert len(node.tools) == 0
 
     def test_import_from_path(self, sample_vapi_assistant_path: Path):

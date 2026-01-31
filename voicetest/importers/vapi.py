@@ -230,7 +230,7 @@ class VapiImporter:
         nodes = {
             "main": AgentNode(
                 id="main",
-                instructions=system_prompt,
+                state_prompt=system_prompt,
                 tools=tools,
                 transitions=transitions,
             )
@@ -238,6 +238,7 @@ class VapiImporter:
 
         # Build source metadata
         source_metadata = self._build_assistant_metadata(assistant)
+        source_metadata["general_prompt"] = ""  # VAPI has no separate general prompt
 
         return AgentGraph(
             nodes=nodes,
@@ -296,7 +297,7 @@ class VapiImporter:
 
             nodes[node_id] = AgentNode(
                 id=node_id,
-                instructions=system_prompt,
+                state_prompt=system_prompt,
                 tools=tools,
                 transitions=transitions,
                 metadata={"first_message": assistant.first_message}
@@ -315,7 +316,10 @@ class VapiImporter:
                     transition.target_node_id = assistant_names[transition.target_node_id]
 
         # Build source metadata
-        source_metadata: dict[str, Any] = {"is_squad": True}
+        source_metadata: dict[str, Any] = {
+            "is_squad": True,
+            "general_prompt": "",  # VAPI has no separate general prompt
+        }
         if squad.id:
             source_metadata["squad_id"] = squad.id
         if squad.name:

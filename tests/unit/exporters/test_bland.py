@@ -67,8 +67,8 @@ class TestBlandExporter:
 
         result = export_bland_config(graph)
         assert isinstance(result, dict)
-        # No prompt field if no nodes
-        assert "prompt" not in result or result.get("prompt") is None
+        # Empty graph should have empty or no prompt
+        assert "prompt" not in result or result.get("prompt") in (None, "")
 
     def test_export_node_metadata_first_sentence(self):
         from voicetest.exporters.bland import export_bland_config
@@ -77,7 +77,7 @@ class TestBlandExporter:
             nodes={
                 "main": AgentNode(
                     id="main",
-                    instructions="Hello",
+                    state_prompt="Hello",
                     tools=[],
                     transitions=[],
                     metadata={"first_sentence": "Hi there!"},
@@ -117,7 +117,7 @@ def sample_graph():
         nodes={
             "main": AgentNode(
                 id="main",
-                instructions="You are a helpful assistant.",
+                state_prompt="You are a helpful assistant.",
                 tools=[],
                 transitions=[],
                 metadata={},
@@ -136,7 +136,7 @@ def sample_graph_with_tools():
         nodes={
             "main": AgentNode(
                 id="main",
-                instructions="You are a helpful assistant.",
+                state_prompt="You are a helpful assistant.",
                 tools=[
                     ToolDefinition(
                         name="get_info",
@@ -164,7 +164,7 @@ def sample_graph_with_metadata():
         nodes={
             "main": AgentNode(
                 id="main",
-                instructions="Hello",
+                state_prompt="Hello",
                 tools=[],
                 transitions=[],
                 metadata={},
