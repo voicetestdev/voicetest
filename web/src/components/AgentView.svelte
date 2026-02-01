@@ -381,10 +381,15 @@
     }
     savingModel = true;
     try {
-      await api.updateAgent($currentAgentId, { default_model: newModel });
+      // Send the updated graph to handle both file-based and stored agents
+      const updatedGraph = $agentGraph ? { ...$agentGraph, default_model: newModel || null } : null;
+      await api.updateAgent($currentAgentId, {
+        default_model: newModel,
+        graph_json: updatedGraph ? JSON.stringify(updatedGraph) : undefined,
+      });
       await loadAgents();
-      if ($agentGraph) {
-        agentGraph.set({ ...$agentGraph, default_model: newModel || null });
+      if (updatedGraph) {
+        agentGraph.set(updatedGraph);
       }
       editingModel = false;
       modelSaved = true;

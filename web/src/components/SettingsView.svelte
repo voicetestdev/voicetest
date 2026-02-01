@@ -168,6 +168,7 @@
           type="number"
           bind:value={localSettings.run.max_turns}
           oninput={debouncedSave}
+          onchange={saveSettings}
           min={1}
           max={100}
         />

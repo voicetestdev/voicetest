@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from voicetest import api
-from voicetest.container import get_container
+from voicetest.container import get_container, get_db_connection
 from voicetest.demo import get_demo_agent, get_demo_tests
 from voicetest.exporters.test_cases import export_tests
 from voicetest.models.agent import AgentGraph, GlobalMetric, MetricsConfig
@@ -32,7 +32,7 @@ from voicetest.models.test_case import RunOptions, TestCase
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.retry import RetryError
 from voicetest.settings import Settings, load_settings, save_settings
-from voicetest.storage.db import get_connection, init_schema
+from voicetest.storage.db import init_schema
 from voicetest.storage.repositories import (
     AgentRepository,
     RunRepository,
@@ -50,7 +50,7 @@ def init_storage() -> None:
     """Initialize storage and register linked agents."""
     global _initialized
 
-    conn = get_connection()
+    conn = get_db_connection()
     init_schema(conn)
     _initialized = True
 
@@ -232,6 +232,7 @@ class UpdateAgentRequest(BaseModel):
 
     name: str | None = None
     default_model: str | None = None
+    graph_json: str | None = None
 
 
 class UpdateMetricsConfigRequest(BaseModel):
@@ -547,10 +548,10 @@ async def update_agent(agent_id: str, request: UpdateAgentRequest) -> dict:
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    graph_json = None
-    if request.default_model is not None and agent.get("graph_json"):
+    graph_json = request.graph_json
+    if graph_json is None and request.default_model is not None and agent.get("graph_json"):
+        # Update default_model in existing stored graph
         graph_data = json.loads(agent["graph_json"])
-        # Empty string means clear the model (set to None)
         graph_data["default_model"] = request.default_model if request.default_model else None
         graph_json = json.dumps(graph_data)
 

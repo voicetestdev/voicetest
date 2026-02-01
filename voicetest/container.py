@@ -1,5 +1,6 @@
 """Dependency injection container using Punq."""
 
+import duckdb
 import punq
 
 from voicetest.exporters.bland import BlandExporter
@@ -22,7 +23,7 @@ from voicetest.platforms.livekit import LiveKitPlatformClient
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.platforms.retell import RetellPlatformClient
 from voicetest.platforms.vapi import VapiPlatformClient
-from voicetest.storage.db import get_connection
+from voicetest.storage.db import create_connection
 from voicetest.storage.repositories import AgentRepository, RunRepository, TestCaseRepository
 
 
@@ -66,7 +67,14 @@ def create_container() -> punq.Container:
     """Create and configure the DI container."""
     container = punq.Container()
 
-    # Register singletons
+    # Database connection (singleton ensures data visibility across repositories)
+    container.register(
+        duckdb.DuckDBPyConnection,
+        factory=create_connection,
+        scope=punq.Scope.singleton,
+    )
+
+    # Registries (singletons)
     container.register(
         ImporterRegistry, factory=_create_importer_registry, scope=punq.Scope.singleton
     )
@@ -77,19 +85,10 @@ def create_container() -> punq.Container:
         PlatformRegistry, factory=_create_platform_registry, scope=punq.Scope.singleton
     )
 
-    # Register repositories (new instance per resolve, sharing connection)
-    container.register(
-        AgentRepository,
-        factory=lambda: AgentRepository(get_connection()),
-    )
-    container.register(
-        TestCaseRepository,
-        factory=lambda: TestCaseRepository(get_connection()),
-    )
-    container.register(
-        RunRepository,
-        factory=lambda: RunRepository(get_connection()),
-    )
+    # Repositories (punq auto-injects the connection)
+    container.register(AgentRepository)
+    container.register(TestCaseRepository)
+    container.register(RunRepository)
 
     return container
 
@@ -107,9 +106,17 @@ def get_container() -> punq.Container:
 
 
 def reset_container() -> None:
-    """Reset the container (for testing)."""
+    """Reset the container (for testing).
+
+    This also resets the database connection since it's managed by the container.
+    """
     global _container
     _container = None
+
+
+def get_db_connection() -> duckdb.DuckDBPyConnection:
+    """Get the database connection from the DI container."""
+    return get_container().resolve(duckdb.DuckDBPyConnection)
 
 
 def get_importer_registry() -> ImporterRegistry:

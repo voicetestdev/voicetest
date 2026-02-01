@@ -4,10 +4,11 @@ from datetime import UTC, datetime
 
 import pytest
 
+from voicetest.container import get_db_connection
 from voicetest.models.agent import AgentGraph, AgentNode
 from voicetest.models.results import Message, MetricResult, TestResult, TestRun
 from voicetest.models.test_case import TestCase
-from voicetest.storage.db import get_connection, init_schema
+from voicetest.storage.db import init_schema
 from voicetest.storage.repositories import (
     AgentRepository,
     RunRepository,
@@ -20,10 +21,9 @@ def db_conn(tmp_path, monkeypatch):
     """Create a fresh database connection with schema."""
     db_path = tmp_path / "test.duckdb"
     monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
-    conn = get_connection()
+    conn = get_db_connection()
     init_schema(conn)
     yield conn
-    conn.close()
 
 
 @pytest.fixture

@@ -186,6 +186,22 @@ export async function loadAgents(): Promise<void> {
 }
 
 export async function selectAgent(agentId: string, view: NavView = "config", runId: string | null = null): Promise<void> {
+  // If same agent is already selected, just switch view without refetching
+  if (agentId === currentAgentIdValue) {
+    hashUpdateEnabled = false;
+    currentView.set(view);
+    if (runId) {
+      currentRunId.set(runId);
+    }
+    hashUpdateEnabled = true;
+    updateHash(agentId, view, runId);
+
+    if (view === "runs" && runId) {
+      await loadRun(runId);
+    }
+    return;
+  }
+
   // Batch the state updates to prevent intermediate hash corruption
   hashUpdateEnabled = false;
   currentAgentId.set(agentId);

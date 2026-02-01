@@ -1,6 +1,7 @@
 """Storage module for DuckDB persistence."""
 
-from voicetest.storage.db import get_connection, get_db_path, init_schema
+from voicetest.config import get_db_path
+from voicetest.storage.db import init_schema
 from voicetest.storage.repositories import (
     AgentRepository,
     RunRepository,
@@ -9,7 +10,6 @@ from voicetest.storage.repositories import (
 
 
 __all__ = [
-    "get_connection",
     "get_db_path",
     "init_schema",
     "AgentRepository",

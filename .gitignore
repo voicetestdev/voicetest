@@ -23,3 +23,6 @@ node_modules/
 
 # Demo temp
 docs/demos/test-results
+
+# Test results
+web/test-results

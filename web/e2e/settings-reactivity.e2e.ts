@@ -140,7 +140,11 @@ test.describe("Agent Config Reactivity", () => {
   });
 
   test("agent LLM edit updates correctly", async ({ page }) => {
-    // Wait for the agent info section
+    // Select the Demo Healthcare Agent explicitly to ensure consistency
+    await page.locator(".agent-list button", { hasText: "Demo Healthcare Agent" }).click();
+
+    // Wait for the agent to load
+    await expect(page.locator("h2")).toContainText("Demo Healthcare Agent");
     await expect(page.locator(".agent-info")).toBeVisible();
 
     // Find and click the LLM field to edit
@@ -161,14 +165,17 @@ test.describe("Agent Config Reactivity", () => {
     await modelInput.fill("openai/gpt-4o");
     await modelInput.blur();
 
-    // Verify the change
+    // Verify the change (wait for span to appear with new value)
     await expect(page.locator(".editable-model")).toContainText("openai/gpt-4o");
 
+    // Wait a bit for the save to complete on the backend
+    await page.waitForTimeout(500);
+
     // Navigate to tests and back to verify persistence
-    await page.click("button:has-text('Tests')");
+    await page.locator(".view-tabs button:has-text('Tests')").click();
     await expect(page.locator("h2:has-text('Tests')")).toBeVisible();
 
-    await page.click("button:has-text('Config')");
+    await page.locator(".view-tabs button:has-text('Config')").click();
     await expect(page.locator(".agent-info")).toBeVisible();
 
     // Verify still shows the value (store reactivity)

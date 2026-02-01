@@ -7,8 +7,12 @@ import duckdb
 from voicetest.config import get_db_path
 
 
-def get_connection() -> duckdb.DuckDBPyConnection:
-    """Get a DuckDB connection, creating the database if needed."""
+def create_connection() -> duckdb.DuckDBPyConnection:
+    """Create a DuckDB connection.
+
+    Use the DI container to get the singleton connection instance.
+    This function is registered as a factory in container.py.
+    """
     db_path = get_db_path()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     return duckdb.connect(str(db_path))

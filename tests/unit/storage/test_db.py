@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-from voicetest.storage.db import get_connection, get_db_path, init_schema
+from voicetest.config import get_db_path
+from voicetest.container import get_db_connection
+from voicetest.storage.db import create_connection, init_schema
 
 
 class TestGetDbPath:
@@ -36,26 +38,37 @@ class TestGetDbPath:
         assert path == custom_path
 
 
-class TestGetConnection:
-    """Tests for database connection."""
+class TestCreateConnection:
+    """Tests for database connection factory."""
 
     def test_creates_db_file(self, tmp_path, monkeypatch):
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        conn = get_connection()
+        create_connection()
 
         assert db_path.exists()
-        conn.close()
 
     def test_creates_parent_directories(self, tmp_path, monkeypatch):
         db_path = tmp_path / "nested" / "dirs" / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        conn = get_connection()
+        create_connection()
 
         assert db_path.parent.exists()
-        conn.close()
+
+
+class TestGetDbConnection:
+    """Tests for singleton connection from container."""
+
+    def test_returns_same_connection(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+
+        conn1 = get_db_connection()
+        conn2 = get_db_connection()
+
+        assert conn1 is conn2
 
 
 class TestInitSchema:
@@ -65,7 +78,7 @@ class TestInitSchema:
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        conn = get_connection()
+        conn = get_db_connection()
         init_schema(conn)
 
         result = conn.execute(
@@ -82,13 +95,12 @@ class TestInitSchema:
         assert "metrics_config" in columns
         assert "created_at" in columns
         assert "updated_at" in columns
-        conn.close()
 
     def test_creates_test_cases_table(self, tmp_path, monkeypatch):
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        conn = get_connection()
+        conn = get_db_connection()
         init_schema(conn)
 
         result = conn.execute(
@@ -102,13 +114,12 @@ class TestInitSchema:
         assert "name" in columns
         assert "user_prompt" in columns
         assert "metrics" in columns
-        conn.close()
 
     def test_creates_runs_table(self, tmp_path, monkeypatch):
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        conn = get_connection()
+        conn = get_db_connection()
         init_schema(conn)
 
         result = conn.execute(
@@ -121,13 +132,12 @@ class TestInitSchema:
         assert "agent_id" in columns
         assert "started_at" in columns
         assert "completed_at" in columns
-        conn.close()
 
     def test_creates_results_table(self, tmp_path, monkeypatch):
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        conn = get_connection()
+        conn = get_db_connection()
         init_schema(conn)
 
         result = conn.execute(
@@ -141,13 +151,12 @@ class TestInitSchema:
         assert "test_case_id" in columns
         assert "status" in columns
         assert "transcript_json" in columns
-        conn.close()
 
     def test_idempotent(self, tmp_path, monkeypatch):
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        conn = get_connection()
+        conn = get_db_connection()
         init_schema(conn)
         init_schema(conn)
 
@@ -156,4 +165,3 @@ class TestInitSchema:
         ).fetchall()
 
         assert len(tables) >= 4
-        conn.close()

@@ -81,29 +81,32 @@ class FlowJudge:
             given what was said in the conversation.
             """
 
-            nodes: dict[str, AgentNode] = dspy.InputField(
-                desc="Agent graph nodes with instructions and transitions"
+            graph_structure: str = dspy.InputField(
+                desc="Agent graph: nodes with their instructions and valid transitions"
             )
             transcript: str = dspy.InputField(desc="Conversation between user and agent")
             nodes_visited: list[str] = dspy.InputField(
-                desc="Sequence of node IDs the agent traversed"
+                desc="Sequence of node IDs the agent traversed, in order"
             )
 
             flow_valid: bool = dspy.OutputField(
                 desc="True if all transitions were logical given the conversation"
             )
             issues: list[str] = dspy.OutputField(
-                desc="Specific flow issues found, empty list if valid"
+                desc="List of specific flow issues found (empty list if valid)"
             )
-            reasoning: str = dspy.OutputField(desc="Explanation of the evaluation")
+            reasoning: str = dspy.OutputField(
+                desc="Step-by-step explanation of why each transition was or wasn't appropriate"
+            )
 
         formatted_transcript = self._format_transcript(transcript)
+        formatted_graph = self._format_graph(nodes)
 
         result = await call_llm(
             self.model,
             FlowValidationSignature,
             on_error=on_error,
-            nodes=nodes,
+            graph_structure=formatted_graph,
             transcript=formatted_transcript,
             nodes_visited=nodes_visited,
         )
@@ -119,4 +122,17 @@ class FlowJudge:
         lines = []
         for msg in transcript:
             lines.append(f"{msg.role.upper()}: {msg.content}")
+        return "\n".join(lines)
+
+    def _format_graph(self, nodes: dict[str, AgentNode]) -> str:
+        """Format agent graph nodes as a string for LLM input."""
+        lines = []
+        for node_id, node in nodes.items():
+            lines.append(f"[{node_id}]")
+            lines.append(f"  Instructions: {node.state_prompt[:200]}...")
+            if node.transitions:
+                lines.append("  Transitions:")
+                for t in node.transitions:
+                    condition = t.condition.value or "unconditional"
+                    lines.append(f"    -> {t.target_node_id}: {condition}")
         return "\n".join(lines)
