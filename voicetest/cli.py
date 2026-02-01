@@ -12,14 +12,13 @@ from rich.table import Table
 import uvicorn
 
 from voicetest import api
-from voicetest.container import get_db_connection
+from voicetest.container import get_session
 from voicetest.demo import get_demo_agent, get_demo_tests
 from voicetest.formatting import format_run
 from voicetest.models.test_case import RunOptions, TestCase
 from voicetest.retry import RetryError
 from voicetest.runner import TestRunContext
 from voicetest.settings import load_settings
-from voicetest.storage.db import init_schema
 from voicetest.storage.repositories import AgentRepository, TestCaseRepository
 from voicetest.tui import VoicetestApp, VoicetestShell
 
@@ -313,11 +312,10 @@ def demo(serve: bool, host: str, port: int):
     demo_tests = get_demo_tests()
 
     if serve:
-        conn = get_db_connection()
-        init_schema(conn)
+        session = get_session()
 
-        agent_repo = AgentRepository(conn)
-        test_repo = TestCaseRepository(conn)
+        agent_repo = AgentRepository(session)
+        test_repo = TestCaseRepository(session)
 
         graph = asyncio.run(api.import_agent(demo_agent_config))
 

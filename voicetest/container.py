@@ -1,7 +1,10 @@
 """Dependency injection container using Punq."""
 
-import duckdb
+import os
+
 import punq
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from voicetest.exporters.bland import BlandExporter
 from voicetest.exporters.graph_viz import MermaidExporter
@@ -23,7 +26,7 @@ from voicetest.platforms.livekit import LiveKitPlatformClient
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.platforms.retell import RetellPlatformClient
 from voicetest.platforms.vapi import VapiPlatformClient
-from voicetest.storage.db import create_connection
+from voicetest.storage.engine import create_db_engine, get_session_factory
 from voicetest.storage.repositories import AgentRepository, RunRepository, TestCaseRepository
 
 
@@ -67,10 +70,24 @@ def create_container() -> punq.Container:
     """Create and configure the DI container."""
     container = punq.Container()
 
-    # Database connection (singleton ensures data visibility across repositories)
+    # Engine (singleton)
     container.register(
-        duckdb.DuckDBPyConnection,
-        factory=create_connection,
+        Engine,
+        factory=lambda: create_db_engine(os.environ.get("DATABASE_URL")),
+        scope=punq.Scope.singleton,
+    )
+
+    # Session factory (singleton)
+    container.register(
+        sessionmaker,
+        factory=lambda: get_session_factory(container.resolve(Engine)),
+        scope=punq.Scope.singleton,
+    )
+
+    # Session (singleton for CLI, per-request for REST API)
+    container.register(
+        Session,
+        factory=lambda: container.resolve(sessionmaker)(),
         scope=punq.Scope.singleton,
     )
 
@@ -85,7 +102,7 @@ def create_container() -> punq.Container:
         PlatformRegistry, factory=_create_platform_registry, scope=punq.Scope.singleton
     )
 
-    # Repositories (punq auto-injects the connection)
+    # Repositories (punq auto-injects the session)
     container.register(AgentRepository)
     container.register(TestCaseRepository)
     container.register(RunRepository)
@@ -114,9 +131,9 @@ def reset_container() -> None:
     _container = None
 
 
-def get_db_connection() -> duckdb.DuckDBPyConnection:
-    """Get the database connection from the DI container."""
-    return get_container().resolve(duckdb.DuckDBPyConnection)
+def get_session() -> Session:
+    """Get the database session from the DI container."""
+    return get_container().resolve(Session)
 
 
 def get_importer_registry() -> ImporterRegistry:

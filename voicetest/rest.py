@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from voicetest import api
-from voicetest.container import get_container, get_db_connection
+from voicetest.container import get_container, get_session
 from voicetest.demo import get_demo_agent, get_demo_tests
 from voicetest.exporters.test_cases import export_tests
 from voicetest.models.agent import AgentGraph, GlobalMetric, MetricsConfig
@@ -32,7 +32,6 @@ from voicetest.models.test_case import RunOptions, TestCase
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.retry import RetryError
 from voicetest.settings import Settings, load_settings, save_settings
-from voicetest.storage.db import init_schema
 from voicetest.storage.repositories import (
     AgentRepository,
     RunRepository,
@@ -50,8 +49,7 @@ def init_storage() -> None:
     """Initialize storage and register linked agents."""
     global _initialized
 
-    conn = get_db_connection()
-    init_schema(conn)
+    get_session()
     _initialized = True
 
     linked_agents = os.environ.get("VOICETEST_LINKED_AGENTS", "")

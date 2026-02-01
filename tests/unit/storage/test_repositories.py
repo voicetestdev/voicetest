@@ -3,12 +3,13 @@
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
-from voicetest.container import get_db_connection
 from voicetest.models.agent import AgentGraph, AgentNode
 from voicetest.models.results import Message, MetricResult, TestResult, TestRun
 from voicetest.models.test_case import TestCase
-from voicetest.storage.db import init_schema
+from voicetest.storage.models import Base
 from voicetest.storage.repositories import (
     AgentRepository,
     RunRepository,
@@ -17,31 +18,37 @@ from voicetest.storage.repositories import (
 
 
 @pytest.fixture
-def db_conn(tmp_path, monkeypatch):
-    """Create a fresh database connection with schema."""
+def engine(tmp_path):
+    """Create a fresh database engine with schema."""
     db_path = tmp_path / "test.duckdb"
-    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
-    conn = get_db_connection()
-    init_schema(conn)
-    yield conn
+    engine = create_engine(f"duckdb:///{db_path}")
+    Base.metadata.create_all(engine)
+    return engine
 
 
 @pytest.fixture
-def agent_repo(db_conn):
+def session(engine):
+    """Create a session for testing."""
+    with Session(engine) as session:
+        yield session
+
+
+@pytest.fixture
+def agent_repo(session):
     """Create agent repository."""
-    return AgentRepository(db_conn)
+    return AgentRepository(session)
 
 
 @pytest.fixture
-def test_case_repo(db_conn):
+def test_case_repo(session):
     """Create test case repository."""
-    return TestCaseRepository(db_conn)
+    return TestCaseRepository(session)
 
 
 @pytest.fixture
-def run_repo(db_conn):
+def run_repo(session):
     """Create run repository."""
-    return RunRepository(db_conn)
+    return RunRepository(session)
 
 
 @pytest.fixture
@@ -467,3 +474,126 @@ class TestRunRepository:
 
         runs = run_repo.list_all()
         assert len(runs) == 0
+
+    def test_create_pending_result(self, run_repo, agent_repo):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+
+        result_id = run_repo.create_pending_result(run_record["id"], "tc-1", "Pending Test")
+
+        assert result_id is not None
+        run = run_repo.get_with_results(run_record["id"])
+        assert len(run["results"]) == 1
+        assert run["results"][0]["status"] == "running"
+        assert run["results"][0]["test_name"] == "Pending Test"
+        assert run["results"][0]["transcript_json"] == []
+
+    def test_update_transcript(self, run_repo, agent_repo):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+        result_id = run_repo.create_pending_result(run_record["id"], "tc-1", "Test")
+
+        transcript = [
+            Message(role="assistant", content="Hello"),
+            Message(role="user", content="Hi there"),
+        ]
+        run_repo.update_transcript(result_id, transcript)
+
+        run = run_repo.get_with_results(run_record["id"])
+        assert len(run["results"][0]["transcript_json"]) == 2
+        assert run["results"][0]["transcript_json"][0]["content"] == "Hello"
+
+    def test_mark_result_error(self, run_repo, agent_repo):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+        result_id = run_repo.create_pending_result(run_record["id"], "tc-1", "Test")
+
+        run_repo.mark_result_error(result_id, "Connection timeout")
+
+        run = run_repo.get_with_results(run_record["id"])
+        assert run["results"][0]["status"] == "error"
+        assert run["results"][0]["error_message"] == "Connection timeout"
+
+    def test_mark_result_cancelled(self, run_repo, agent_repo):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+        result_id = run_repo.create_pending_result(run_record["id"], "tc-1", "Test")
+
+        run_repo.mark_result_cancelled(result_id)
+
+        run = run_repo.get_with_results(run_record["id"])
+        assert run["results"][0]["status"] == "cancelled"
+        assert run["results"][0]["error_message"] == "Cancelled before starting"
+
+    def test_complete_result(self, run_repo, agent_repo, sample_run):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+        result_id = run_repo.create_pending_result(run_record["id"], "tc-1", "Test")
+
+        result = sample_run.results[0]
+        run_repo.complete_result(result_id, result)
+
+        run = run_repo.get_with_results(run_record["id"])
+        assert run["results"][0]["status"] == "pass"
+        assert run["results"][0]["duration_ms"] == 1500
+        assert run["results"][0]["turn_count"] == 3
+        assert len(run["results"][0]["transcript_json"]) == 2
+
+
+class TestAgentRepositoryEdgeCases:
+    """Edge case tests for AgentRepository."""
+
+    def test_load_graph_no_source_raises(self, agent_repo):
+        record = agent_repo.create(
+            name="Empty Agent",
+            source_type="test",
+        )
+
+        with pytest.raises(ValueError, match="has neither source_path nor graph_json"):
+            agent_repo.load_graph(record)
+
+    def test_get_metrics_config_nonexistent_agent(self, agent_repo):
+        config = agent_repo.get_metrics_config("nonexistent-id")
+
+        assert config is not None
+        assert config.threshold == 0.7
+        assert config.global_metrics == []
+
+    def test_update_nonexistent_agent(self, agent_repo):
+        result = agent_repo.update("nonexistent-id", name="New Name")
+        assert result is None
+
+    def test_update_metrics_config_nonexistent_agent(self, agent_repo):
+        from voicetest.models.agent import MetricsConfig
+
+        result = agent_repo.update_metrics_config("nonexistent-id", MetricsConfig())
+        assert result is None
+
+
+class TestTestCaseRepositoryEdgeCases:
+    """Edge case tests for TestCaseRepository."""
+
+    def test_get_nonexistent(self, test_case_repo):
+        found = test_case_repo.get("nonexistent-id")
+        assert found is None
+
+    def test_update_nonexistent(self, test_case_repo, sample_test_case):
+        result = test_case_repo.update("nonexistent-id", sample_test_case)
+        assert result is None
+
+    def test_delete_nonexistent(self, test_case_repo):
+        test_case_repo.delete("nonexistent-id")
+
+
+class TestRunRepositoryEdgeCases:
+    """Edge case tests for RunRepository."""
+
+    def test_get_with_results_nonexistent(self, run_repo):
+        result = run_repo.get_with_results("nonexistent-id")
+        assert result is None
+
+    def test_complete_nonexistent(self, run_repo):
+        run_repo.complete("nonexistent-id")
+
+    def test_delete_nonexistent(self, run_repo):
+        run_repo.delete("nonexistent-id")

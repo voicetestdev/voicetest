@@ -39,6 +39,8 @@ dependencies = [
     "bland>=0.3.0",
     "retell-sdk>=5.0",
     "vapi-server-sdk>=0.2",
+    "sqlalchemy>=2.0",
+    "duckdb-engine>=0.13",
 ]
 
 [project.urls]
@@ -53,6 +55,9 @@ dev = [
     "ruff>=0.8",
     "httpx>=0.28",
     "pre-commit>=4.0",
+]
+postgres = [
+    "psycopg[binary]>=3.0",
 ]
 
 [project.scripts]

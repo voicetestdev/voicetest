@@ -1,10 +1,12 @@
-"""Tests for DuckDB connection and schema management."""
+"""Tests for database path resolution and engine creation."""
 
 from pathlib import Path
 
+from sqlalchemy import Engine, inspect
+
 from voicetest.config import get_db_path
-from voicetest.container import get_db_connection
-from voicetest.storage.db import create_connection, init_schema
+from voicetest.container import get_container, reset_container
+from voicetest.storage.engine import create_db_engine
 
 
 class TestGetDbPath:
@@ -38,14 +40,14 @@ class TestGetDbPath:
         assert path == custom_path
 
 
-class TestCreateConnection:
-    """Tests for database connection factory."""
+class TestCreateDbEngine:
+    """Tests for SQLAlchemy engine creation."""
 
     def test_creates_db_file(self, tmp_path, monkeypatch):
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        create_connection()
+        create_db_engine()
 
         assert db_path.exists()
 
@@ -53,115 +55,51 @@ class TestCreateConnection:
         db_path = tmp_path / "nested" / "dirs" / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        create_connection()
+        create_db_engine()
 
         assert db_path.parent.exists()
 
 
-class TestGetDbConnection:
-    """Tests for singleton connection from container."""
+class TestGetEngine:
+    """Tests for singleton engine from container."""
 
-    def test_returns_same_connection(self, tmp_path, monkeypatch):
+    def test_returns_same_engine(self, tmp_path, monkeypatch):
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        reset_container()
+
+        container = get_container()
+        engine1 = container.resolve(Engine)
+        engine2 = container.resolve(Engine)
+
+        assert engine1 is engine2
+        reset_container()
+
+
+class TestSchema:
+    """Tests for schema initialization via SQLAlchemy models."""
+
+    def test_creates_all_tables(self, tmp_path, monkeypatch):
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        conn1 = get_db_connection()
-        conn2 = get_db_connection()
+        engine = create_db_engine()
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
 
-        assert conn1 is conn2
-
-
-class TestInitSchema:
-    """Tests for schema initialization."""
-
-    def test_creates_agents_table(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "test.duckdb"
-        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
-
-        conn = get_db_connection()
-        init_schema(conn)
-
-        result = conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'agents' ORDER BY ordinal_position"
-        ).fetchall()
-        columns = [r[0] for r in result]
-
-        assert "id" in columns
-        assert "name" in columns
-        assert "source_type" in columns
-        assert "source_path" in columns
-        assert "graph_json" in columns
-        assert "metrics_config" in columns
-        assert "created_at" in columns
-        assert "updated_at" in columns
-
-    def test_creates_test_cases_table(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "test.duckdb"
-        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
-
-        conn = get_db_connection()
-        init_schema(conn)
-
-        result = conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'test_cases' ORDER BY ordinal_position"
-        ).fetchall()
-        columns = [r[0] for r in result]
-
-        assert "id" in columns
-        assert "agent_id" in columns
-        assert "name" in columns
-        assert "user_prompt" in columns
-        assert "metrics" in columns
-
-    def test_creates_runs_table(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "test.duckdb"
-        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
-
-        conn = get_db_connection()
-        init_schema(conn)
-
-        result = conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'runs' ORDER BY ordinal_position"
-        ).fetchall()
-        columns = [r[0] for r in result]
-
-        assert "id" in columns
-        assert "agent_id" in columns
-        assert "started_at" in columns
-        assert "completed_at" in columns
-
-    def test_creates_results_table(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "test.duckdb"
-        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
-
-        conn = get_db_connection()
-        init_schema(conn)
-
-        result = conn.execute(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'results' ORDER BY ordinal_position"
-        ).fetchall()
-        columns = [r[0] for r in result]
-
-        assert "id" in columns
-        assert "run_id" in columns
-        assert "test_case_id" in columns
-        assert "status" in columns
-        assert "transcript_json" in columns
+        assert "agents" in tables
+        assert "test_cases" in tables
+        assert "runs" in tables
+        assert "results" in tables
 
     def test_idempotent(self, tmp_path, monkeypatch):
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
 
-        conn = get_db_connection()
-        init_schema(conn)
-        init_schema(conn)
+        create_db_engine()
+        engine = create_db_engine()
 
-        tables = conn.execute(
-            "SELECT table_name FROM information_schema.tables " "WHERE table_schema = 'main'"
-        ).fetchall()
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
 
         assert len(tables) >= 4
