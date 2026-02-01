@@ -24,10 +24,33 @@ import type {
   TestRun,
 } from "./types";
 
-const BASE_URL = "/api";
+export interface ApiClientConfig {
+  baseUrl?: string;
+  getHeaders?: () => Record<string, string> | Promise<Record<string, string>>;
+}
+
+let globalConfig: ApiClientConfig = {
+  baseUrl: "/api",
+};
+
+export function configureApi(config: ApiClientConfig): void {
+  globalConfig = { ...globalConfig, ...config };
+}
+
+export function getApiConfig(): ApiClientConfig {
+  return globalConfig;
+}
+
+async function getHeaders(): Promise<Record<string, string>> {
+  if (globalConfig.getHeaders) {
+    return globalConfig.getHeaders();
+  }
+  return {};
+}
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`);
+  const headers = await getHeaders();
+  const res = await fetch(`${globalConfig.baseUrl}${path}`, { headers });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || res.statusText);
@@ -36,9 +59,10 @@ async function get<T>(path: string): Promise<T> {
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const headers = await getHeaders();
+  const res = await fetch(`${globalConfig.baseUrl}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -49,9 +73,10 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function put<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const headers = await getHeaders();
+  const res = await fetch(`${globalConfig.baseUrl}${path}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -62,8 +87,10 @@ async function put<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function del<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const headers = await getHeaders();
+  const res = await fetch(`${globalConfig.baseUrl}${path}`, {
     method: "DELETE",
+    headers,
   });
   if (!res.ok) {
     const text = await res.text();
@@ -73,13 +100,15 @@ async function del<T>(path: string): Promise<T> {
 }
 
 async function postFile<T>(path: string, file: File, source?: string): Promise<T> {
+  const headers = await getHeaders();
   const formData = new FormData();
   formData.append("file", file);
   if (source) {
     formData.append("source", source);
   }
-  const res = await fetch(`${BASE_URL}${path}`, {
+  const res = await fetch(`${globalConfig.baseUrl}${path}`, {
     method: "POST",
+    headers,
     body: formData,
   });
   if (!res.ok) {
@@ -102,21 +131,22 @@ export const api = {
   importAgentFile: (file: File, source?: string) =>
     postFile<AgentGraph>("/agents/import-file", file, source),
 
-  createAgentFromFile: (file: File, name?: string, source?: string) => {
+  createAgentFromFile: async (file: File, name?: string, source?: string) => {
+    const headers = await getHeaders();
     const formData = new FormData();
     formData.append("file", file);
     if (name) formData.append("name", name);
     if (source) formData.append("source", source);
-    return fetch(`${BASE_URL}/agents/upload`, {
+    const res = await fetch(`${globalConfig.baseUrl}/agents/upload`, {
       method: "POST",
+      headers,
       body: formData,
-    }).then(async (res) => {
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || res.statusText);
-      }
-      return res.json() as Promise<AgentRecord>;
     });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text || res.statusText);
+    }
+    return res.json() as Promise<AgentRecord>;
   },
 
   exportAgent: (graph: AgentGraph, format: string) =>
@@ -214,4 +244,18 @@ export const api = {
 
   exportToPlatform: (platform: Platform, graph: AgentGraph, name?: string) =>
     post<ExportToPlatformResponse>(`/platforms/${platform}/export`, { graph, name }),
+
+  getWebSocketUrl: (path: string): string => {
+    const baseUrl = globalConfig.baseUrl || "/api";
+    if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
+      const url = new URL(baseUrl);
+      const protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${url.host}${url.pathname}${path}`;
+    }
+    if (typeof window !== "undefined") {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${window.location.host}${baseUrl}${path}`;
+    }
+    return `ws://localhost:8000${baseUrl}${path}`;
+  },
 };

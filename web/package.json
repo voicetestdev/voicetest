@@ -3,6 +3,13 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "exports": {
+    ".": "./src/lib/index.ts",
+    "./api": "./src/lib/api.ts",
+    "./types": "./src/lib/types.ts",
+    "./stores": "./src/lib/stores.ts",
+    "./components/*": "./src/components/*"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

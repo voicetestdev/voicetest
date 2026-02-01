@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { api } from "./api";
+import { api, configureApi } from "./api";
 import type { MetricsConfig } from "./types";
 
 describe("api", () => {
@@ -7,6 +7,7 @@ describe("api", () => {
 
   beforeEach(() => {
     global.fetch = vi.fn();
+    configureApi({ baseUrl: "/api", getHeaders: undefined });
   });
 
   afterEach(() => {
@@ -33,7 +34,7 @@ describe("api", () => {
 
       const result = await api.getMetricsConfig("agent-123");
 
-      expect(global.fetch).toHaveBeenCalledWith("/api/agents/agent-123/metrics-config");
+      expect(global.fetch).toHaveBeenCalledWith("/api/agents/agent-123/metrics-config", { headers: {} });
       expect(result).toEqual(mockConfig);
     });
 
@@ -107,7 +108,7 @@ describe("api", () => {
 
       expect(global.fetch).toHaveBeenCalledWith(
         "/api/runs/run-123",
-        expect.objectContaining({ method: "DELETE" })
+        expect.objectContaining({ method: "DELETE", headers: {} })
       );
       expect(result).toEqual({ status: "deleted", id: "run-123" });
     });

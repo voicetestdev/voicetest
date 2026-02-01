@@ -347,8 +347,7 @@ let pollInterval: ReturnType<typeof setInterval> | null = null;
 export function connectRunWebSocket(runId: string): void {
   disconnectRunWebSocket();
 
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${protocol}//${window.location.host}/api/runs/${runId}/ws`;
+  const wsUrl = api.getWebSocketUrl(`/runs/${runId}/ws`);
   const ws = new WebSocket(wsUrl);
 
   // Poll API as fallback for missed WebSocket messages
