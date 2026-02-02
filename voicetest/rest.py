@@ -25,6 +25,7 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 from voicetest import api
 from voicetest.container import get_container, get_session
 from voicetest.demo import get_demo_agent, get_demo_tests
+from voicetest.executor import RunJob, get_executor_factory
 from voicetest.exporters.test_cases import export_tests
 from voicetest.models.agent import AgentGraph, GlobalMetric, MetricsConfig
 from voicetest.models.results import Message, MetricResult, TestResult, TestRun
@@ -1080,6 +1081,24 @@ async def run_websocket(websocket: WebSocket, run_id: str):
             _active_runs[run_id]["websockets"].discard(websocket)
 
 
+class BackgroundTaskExecutor:
+    """Default executor using FastAPI BackgroundTasks."""
+
+    def __init__(self, background_tasks: BackgroundTasks):
+        self.background_tasks = background_tasks
+
+    def submit(self, job: RunJob) -> None:
+        """Submit job to run in background."""
+        self.background_tasks.add_task(
+            _execute_run,
+            job.run_id,
+            job.agent_id,
+            job.test_records,
+            job.result_ids,
+            job.options,
+        )
+
+
 @router.post("/agents/{agent_id}/runs")
 async def start_run(
     agent_id: str,
@@ -1128,7 +1147,23 @@ async def start_run(
         "message_queue": [],
     }
 
-    background_tasks.add_task(_execute_run, run["id"], agent_id, test_records, result_ids, options)
+    # Create job and submit to executor
+    job = RunJob(
+        run_id=run["id"],
+        agent_id=agent_id,
+        test_records=test_records,
+        result_ids=result_ids,
+        options=options,
+    )
+
+    # Use custom executor if configured, otherwise default to BackgroundTasks
+    executor_factory = get_executor_factory()
+    if executor_factory:
+        executor = executor_factory()
+        executor.submit(job)
+    else:
+        executor = BackgroundTaskExecutor(background_tasks)
+        executor.submit(job)
 
     return {
         "id": run["id"],
