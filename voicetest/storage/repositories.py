@@ -25,15 +25,22 @@ class AgentRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def list_all(self) -> list[dict]:
-        """List all agents."""
-        agents = self.session.query(Agent).order_by(Agent.created_at.desc()).all()
+    def list_all(self, user_id: str | None = None) -> list[dict]:
+        """List all agents, optionally filtered by user_id."""
+        query = self.session.query(Agent)
+        if user_id is not None:
+            query = query.filter(Agent.user_id == user_id)
+        agents = query.order_by(Agent.created_at.desc()).all()
         return [self._to_dict(a) for a in agents]
 
-    def get(self, agent_id: str) -> dict | None:
-        """Get agent by ID."""
+    def get(self, agent_id: str, user_id: str | None = None) -> dict | None:
+        """Get agent by ID, optionally checking ownership."""
         agent = self.session.get(Agent, agent_id)
-        return self._to_dict(agent) if agent else None
+        if not agent:
+            return None
+        if user_id is not None and agent.user_id != user_id:
+            return None
+        return self._to_dict(agent)
 
     def create(
         self,
@@ -42,6 +49,7 @@ class AgentRepository:
         source_path: str | None = None,
         graph_json: str | None = None,
         metrics_config: MetricsConfig | None = None,
+        user_id: str | None = None,
     ) -> dict:
         """Create a new agent."""
         agent_id = str(uuid4())
@@ -49,6 +57,7 @@ class AgentRepository:
 
         agent = Agent(
             id=agent_id,
+            user_id=user_id,
             name=name,
             source_type=source_type,
             source_path=source_path,
@@ -160,6 +169,7 @@ class AgentRepository:
 
         return {
             "id": agent.id,
+            "user_id": agent.user_id,
             "name": agent.name,
             "source_type": agent.source_type,
             "source_path": agent.source_path,
@@ -300,39 +310,44 @@ class RunRepository:
             "models": result.models_used.model_dump() if result.models_used else None,
         }
 
-    def list_all(self, limit: int = 50) -> list[dict]:
-        """List all runs."""
-        runs = self.session.query(Run).order_by(Run.started_at.desc()).limit(limit).all()
+    def list_all(self, limit: int = 50, user_id: str | None = None) -> list[dict]:
+        """List all runs, optionally filtered by user_id."""
+        query = self.session.query(Run)
+        if user_id is not None:
+            query = query.filter(Run.user_id == user_id)
+        runs = query.order_by(Run.started_at.desc()).limit(limit).all()
         return [self._run_to_dict(r) for r in runs]
 
-    def list_for_agent(self, agent_id: str, limit: int = 50) -> list[dict]:
-        """List runs for a specific agent."""
-        runs = (
-            self.session.query(Run)
-            .filter(Run.agent_id == agent_id)
-            .order_by(Run.started_at.desc())
-            .limit(limit)
-            .all()
-        )
+    def list_for_agent(
+        self, agent_id: str, limit: int = 50, user_id: str | None = None
+    ) -> list[dict]:
+        """List runs for a specific agent, optionally filtered by user_id."""
+        query = self.session.query(Run).filter(Run.agent_id == agent_id)
+        if user_id is not None:
+            query = query.filter(Run.user_id == user_id)
+        runs = query.order_by(Run.started_at.desc()).limit(limit).all()
         return [self._run_to_dict(r) for r in runs]
 
-    def get_with_results(self, run_id: str) -> dict | None:
-        """Get a run with all its results."""
+    def get_with_results(self, run_id: str, user_id: str | None = None) -> dict | None:
+        """Get a run with all its results, optionally checking ownership."""
         run = self.session.get(Run, run_id)
         if not run:
+            return None
+        if user_id is not None and run.user_id != user_id:
             return None
 
         result = self._run_to_dict(run)
         result["results"] = [self._result_to_dict(r) for r in run.results]
         return result
 
-    def create(self, agent_id: str) -> dict:
+    def create(self, agent_id: str, user_id: str | None = None) -> dict:
         """Create a new run."""
         run_id = str(uuid4())
         now = datetime.now(UTC)
 
         run = Run(
             id=run_id,
+            user_id=user_id,
             agent_id=agent_id,
             started_at=now,
             completed_at=None,
@@ -342,6 +357,7 @@ class RunRepository:
 
         return {
             "id": run_id,
+            "user_id": user_id,
             "agent_id": agent_id,
             "started_at": now,
             "completed_at": None,
@@ -457,6 +473,7 @@ class RunRepository:
         """Convert Run model to dictionary."""
         return {
             "id": run.id,
+            "user_id": run.user_id,
             "agent_id": run.agent_id,
             "started_at": _serialize_datetime(run.started_at),
             "completed_at": _serialize_datetime(run.completed_at),

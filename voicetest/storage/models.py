@@ -19,6 +19,7 @@ class Agent(Base):
     __tablename__ = "agents"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     source_type: Mapped[str] = mapped_column(String, nullable=False)
     source_path: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -34,6 +35,7 @@ class Agent(Base):
         """Convert model to dictionary for API responses."""
         return {
             "id": self.id,
+            "user_id": self.user_id,
             "name": self.name,
             "source_type": self.source_type,
             "source_path": self.source_path,
@@ -92,6 +94,7 @@ class Run(Base):
     __tablename__ = "runs"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    user_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -105,6 +108,7 @@ class Run(Base):
         """Convert model to dictionary for API responses."""
         return {
             "id": self.id,
+            "user_id": self.user_id,
             "agent_id": self.agent_id,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
