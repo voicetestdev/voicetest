@@ -103,20 +103,29 @@
     }
   }
 
+  function safeJsonParse<T>(value: string | T | null | undefined, fallback: T): T {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value !== "string") return value;
+    try {
+      return JSON.parse(value);
+    } catch {
+      console.warn(`Failed to parse JSON: ${value.slice(0, 50)}`);
+      return fallback;
+    }
+  }
+
   function parseRecord(record: TestCaseRecord): TestCase {
     return {
       name: record.name,
       user_prompt: record.user_prompt,
-      metrics: record.metrics ? JSON.parse(record.metrics) : [],
-      dynamic_variables: record.dynamic_variables
-        ? JSON.parse(record.dynamic_variables)
-        : {},
-      tool_mocks: record.tool_mocks ? JSON.parse(record.tool_mocks) : [],
+      metrics: safeJsonParse(record.metrics, []),
+      dynamic_variables: safeJsonParse(record.dynamic_variables, {}),
+      tool_mocks: safeJsonParse(record.tool_mocks, []),
       type: record.type || "llm",
       llm_model: record.llm_model ?? undefined,
-      includes: record.includes ? JSON.parse(record.includes) : [],
-      excludes: record.excludes ? JSON.parse(record.excludes) : [],
-      patterns: record.patterns ? JSON.parse(record.patterns) : [],
+      includes: safeJsonParse(record.includes, []),
+      excludes: safeJsonParse(record.excludes, []),
+      patterns: safeJsonParse(record.patterns, []),
     };
   }
 

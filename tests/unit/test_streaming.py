@@ -110,6 +110,18 @@ class TestStreamingPredictor:
             on_token=on_token,
         )
 
+        # Handle rate limit errors gracefully - external API issue, not our code
+        err = (result.error_message or "").lower()
+        if result.status == "error" and "rate" in err and "limit" in err:
+            import warnings
+
+            warnings.warn(
+                f"RATE LIMITED - Test skipped: {result.error_message[:100]}",
+                UserWarning,
+                stacklevel=1,
+            )
+            pytest.skip("Rate limited by external API")
+
         # Should complete without error
         assert result.status in ("pass", "fail"), f"Got error: {result.error_message}"
         assert len(result.transcript) > 0

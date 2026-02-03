@@ -163,20 +163,29 @@ export const runSummary = derived(currentRun, ($run) => {
   };
 });
 
+function safeJsonParse<T>(value: string | T | null | undefined, fallback: T): T {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    console.warn(`Failed to parse JSON: ${value.slice(0, 50)}`);
+    return fallback;
+  }
+}
+
 function parseTestCaseRecord(record: TestCaseRecord): TestCase {
   return {
     name: record.name,
     user_prompt: record.user_prompt,
-    metrics: record.metrics ? JSON.parse(record.metrics) : [],
-    dynamic_variables: record.dynamic_variables
-      ? JSON.parse(record.dynamic_variables)
-      : {},
-    tool_mocks: record.tool_mocks ? JSON.parse(record.tool_mocks) : [],
+    metrics: safeJsonParse(record.metrics, []),
+    dynamic_variables: safeJsonParse(record.dynamic_variables, {}),
+    tool_mocks: safeJsonParse(record.tool_mocks, []),
     type: record.type || "llm",
     llm_model: record.llm_model ?? undefined,
-    includes: record.includes ? JSON.parse(record.includes) : [],
-    excludes: record.excludes ? JSON.parse(record.excludes) : [],
-    patterns: record.patterns ? JSON.parse(record.patterns) : [],
+    includes: safeJsonParse(record.includes, []),
+    excludes: safeJsonParse(record.excludes, []),
+    patterns: safeJsonParse(record.patterns, []),
   };
 }
 
@@ -356,14 +365,28 @@ export function connectRunWebSocket(runId: string): void {
       const current = get(currentRunWithResults);
       if (current && current.id === runId && !current.completed_at) {
         const fresh = await api.getRun(runId);
-        // Merge: keep running results from current that aren't in server state
+        // Build map of local results for quick lookup
+        const localResultsMap = new Map(current.results.map(r => [r.id, r]));
+
+        // Merge server results with local running state (preserve transcript for running tests)
+        const mergedResults = fresh.results.map((serverResult: RunWithResults["results"][0]) => {
+          const localResult = localResultsMap.get(serverResult.id);
+          // Preserve local transcript_json for running tests (local is more up-to-date)
+          if (localResult?.status === "running" && localResult.transcript_json) {
+            return { ...serverResult, transcript_json: localResult.transcript_json };
+          }
+          return serverResult;
+        });
+
+        // Keep running results that aren't in server state yet
         const serverResultIds = new Set(fresh.results.map((r: RunWithResults["results"][0]) => r.id));
         const runningResultsToKeep = current.results.filter(
           (r) => r.status === "running" && !serverResultIds.has(r.id)
         );
+
         currentRunWithResults.set({
           ...fresh,
-          results: [...fresh.results, ...runningResultsToKeep],
+          results: [...mergedResults, ...runningResultsToKeep],
         });
       }
     } catch (e) {
@@ -387,14 +410,28 @@ export function connectRunWebSocket(runId: string): void {
         if (!current || current.id !== data.run.id) {
           return data.run;
         }
-        // Merge: keep running results from current that aren't in server state
+        // Build map of local results for quick lookup
+        const localResultsMap = new Map(current.results.map(r => [r.id, r]));
+
+        // Merge server results with local running state (preserve transcript for running tests)
+        const mergedResults = data.run.results.map((serverResult: RunResultRecord) => {
+          const localResult = localResultsMap.get(serverResult.id);
+          // Preserve local transcript_json for running tests (local is more up-to-date)
+          if (localResult?.status === "running" && localResult.transcript_json) {
+            return { ...serverResult, transcript_json: localResult.transcript_json };
+          }
+          return serverResult;
+        });
+
+        // Keep running results that aren't in server state yet
         const serverResultIds = new Set(data.run.results.map((r: RunResultRecord) => r.id));
         const runningResultsToKeep = current.results.filter(
           (r) => r.status === "running" && !serverResultIds.has(r.id)
         );
+
         return {
           ...data.run,
-          results: [...data.run.results, ...runningResultsToKeep],
+          results: [...mergedResults, ...runningResultsToKeep],
         };
       });
     } else if (data.type === "test_started") {
@@ -460,14 +497,28 @@ export function connectRunWebSocket(runId: string): void {
       api.getRun(runId).then((fresh) => {
         currentRunWithResults.update((current) => {
           if (!current || current.id !== runId) return current;
-          // Merge: keep running results from current that aren't in server state
+          // Build map of local results for quick lookup
+          const localResultsMap = new Map(current.results.map(r => [r.id, r]));
+
+          // Merge server results with local running state (preserve transcript for running tests)
+          const mergedResults = fresh.results.map((serverResult: RunWithResults["results"][0]) => {
+            const localResult = localResultsMap.get(serverResult.id);
+            // Preserve local transcript_json for running tests (local is more up-to-date)
+            if (localResult?.status === "running" && localResult.transcript_json) {
+              return { ...serverResult, transcript_json: localResult.transcript_json };
+            }
+            return serverResult;
+          });
+
+          // Keep running results that aren't in server state yet
           const serverResultIds = new Set(fresh.results.map((r: RunWithResults["results"][0]) => r.id));
           const runningResultsToKeep = current.results.filter(
             (r) => r.status === "running" && !serverResultIds.has(r.id)
           );
+
           return {
             ...fresh,
-            results: [...fresh.results, ...runningResultsToKeep],
+            results: [...mergedResults, ...runningResultsToKeep],
           };
         });
       }).catch((e) => console.error("[ws] Error refreshing run:", e));

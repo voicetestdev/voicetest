@@ -26,6 +26,7 @@ class RunContext:
     dynamic_variables: dict[str, Any]
     available_transitions: str
     general_instructions: str
+    state_instructions: str
 
 
 @dataclass
@@ -83,14 +84,14 @@ class StateModule(dspy.Module):
         Args:
             include_transitions: Whether to include transition fields in the signature
         """
-        docstring = (
-            "Generate a natural spoken response as a voice agent.\n\n"
-            f"State instructions: {self.instructions[:500]}"
-        )
+        docstring = "Generate a natural spoken response as a voice agent."
 
         attrs: dict[str, Any] = {
             "__doc__": docstring,
             "general_instructions": dspy.InputField(desc="Overall agent instructions and context"),
+            "state_instructions": dspy.InputField(
+                desc="Current state-specific instructions for this conversation node"
+            ),
             "conversation_history": dspy.InputField(desc="Conversation so far"),
             "user_message": dspy.InputField(desc="Latest user message to respond to"),
             "response": dspy.OutputField(desc="Agent's spoken response to the user"),
@@ -123,6 +124,7 @@ class StateModule(dspy.Module):
         if self.transitions:
             result = self.response_predictor(
                 general_instructions=ctx.general_instructions,
+                state_instructions=ctx.state_instructions,
                 conversation_history=ctx.conversation_history,
                 user_message=ctx.user_message,
                 available_transitions=ctx.available_transitions,
@@ -133,6 +135,7 @@ class StateModule(dspy.Module):
         else:
             result = self.response_predictor(
                 general_instructions=ctx.general_instructions,
+                state_instructions=ctx.state_instructions,
                 conversation_history=ctx.conversation_history,
                 user_message=ctx.user_message,
             )
@@ -147,6 +150,7 @@ class StateModule(dspy.Module):
         """Response-only mode: just generate response, no transition detection."""
         result = self.response_predictor(
             general_instructions=ctx.general_instructions,
+            state_instructions=ctx.state_instructions,
             conversation_history=ctx.conversation_history,
             user_message=ctx.user_message,
         )

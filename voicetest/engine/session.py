@@ -12,6 +12,7 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message, ToolCall
 from voicetest.models.test_case import RunOptions
 from voicetest.retry import OnErrorCallback
+from voicetest.utils import substitute_variables
 
 
 # Callback type for turn updates: receives transcript after each turn
@@ -202,19 +203,28 @@ class ConversationRunner:
         if self._mock_mode:
             return f"[Mock response from {node_id}]", None
 
+        # Get the state module and its signature
+        state_module = self._conversation_module.get_state_module(node_id)
+        if state_module is None:
+            raise ValueError(f"Unknown node: {node_id}")
+
+        # Apply dynamic variable substitution to instructions
+        general_instructions = substitute_variables(
+            self._conversation_module.instructions, self._dynamic_variables
+        )
+        state_instructions = substitute_variables(
+            state_module.instructions, self._dynamic_variables
+        )
+
         # Build context for state execution
         ctx = RunContext(
             conversation_history=self._format_transcript(state.transcript),
             user_message=user_message,
             dynamic_variables=self._dynamic_variables,
             available_transitions=self._conversation_module.format_transitions(node_id),
-            general_instructions=self._conversation_module.instructions,
+            general_instructions=general_instructions,
+            state_instructions=state_instructions,
         )
-
-        # Get the state module and its signature
-        state_module = self._conversation_module.get_state_module(node_id)
-        if state_module is None:
-            raise ValueError(f"Unknown node: {node_id}")
 
         # Wrap on_token to add source="agent"
         async def agent_token_callback(token: str) -> None:
@@ -229,6 +239,7 @@ class ConversationRunner:
             stream_field="response" if on_token else None,
             on_error=on_error,
             general_instructions=ctx.general_instructions,
+            state_instructions=ctx.state_instructions,
             conversation_history=ctx.conversation_history,
             user_message=ctx.user_message,
             **(

@@ -26,6 +26,8 @@
   let renderCounter = 0;
   let mermaidContainer: HTMLDivElement;
   let tooltip = $state({ show: false, x: 0, y: 0, text: "", title: "" });
+  let tooltipHideTimer: ReturnType<typeof setTimeout> | null = null;
+  const TOOLTIP_HIDE_DELAY = 200;
   let zoomLevel = $state(1);
   let panX = $state(0);
   let panY = $state(0);
@@ -158,6 +160,31 @@
     }
   }
 
+  function showTooltip(x: number, y: number, title: string, text: string) {
+    if (tooltipHideTimer) {
+      clearTimeout(tooltipHideTimer);
+      tooltipHideTimer = null;
+    }
+    tooltip = { show: true, x, y, title, text };
+  }
+
+  function scheduleHideTooltip() {
+    if (tooltipHideTimer) {
+      clearTimeout(tooltipHideTimer);
+    }
+    tooltipHideTimer = setTimeout(() => {
+      tooltip = { ...tooltip, show: false };
+      tooltipHideTimer = null;
+    }, TOOLTIP_HIDE_DELAY);
+  }
+
+  function cancelHideTooltip() {
+    if (tooltipHideTimer) {
+      clearTimeout(tooltipHideTimer);
+      tooltipHideTimer = null;
+    }
+  }
+
   function setupTooltips() {
     if (!mermaidContainer || !$agentGraph) return;
 
@@ -194,16 +221,15 @@
 
       node.addEventListener("mouseenter", (e) => {
         const rect = (e.target as Element).getBoundingClientRect();
-        tooltip = {
-          show: true,
-          x: rect.left + rect.width / 2,
-          y: rect.top - 8,
-          title: matchedId,
-          text: nodeData.state_prompt,
-        };
+        showTooltip(
+          rect.left + rect.width / 2,
+          rect.top - 8,
+          matchedId,
+          nodeData.state_prompt
+        );
       });
       node.addEventListener("mouseleave", () => {
-        tooltip = { ...tooltip, show: false };
+        scheduleHideTooltip();
       });
     });
 
@@ -228,16 +254,15 @@
 
       label.addEventListener("mouseenter", (e) => {
         const rect = (e.target as Element).getBoundingClientRect();
-        tooltip = {
-          show: true,
-          x: rect.left + rect.width / 2,
-          y: rect.top - 8,
-          title: "Transition",
-          text: fullCondition,
-        };
+        showTooltip(
+          rect.left + rect.width / 2,
+          rect.top - 8,
+          "Transition",
+          fullCondition
+        );
       });
       label.addEventListener("mouseleave", () => {
-        tooltip = { ...tooltip, show: false };
+        scheduleHideTooltip();
       });
     });
   }
@@ -258,7 +283,7 @@
 
   function handleWheel(e: WheelEvent) {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    const delta = e.deltaY > 0 ? -0.04 : 0.04;
     const newZoom = Math.max(0.25, Math.min(3, zoomLevel + delta));
 
     // Zoom towards cursor position
@@ -810,9 +835,12 @@
     </section>
 
     {#if tooltip.show}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="node-tooltip"
         style="left: {tooltip.x}px; top: {tooltip.y}px;"
+        onmouseenter={cancelHideTooltip}
+        onmouseleave={scheduleHideTooltip}
       >
         {#if tooltip.title}
           <div class="tooltip-title">{tooltip.title}</div>
@@ -1080,10 +1108,13 @@
   .mermaid-content {
     display: inline-block;
     min-width: 100%;
+    height: 100%;
   }
 
   .mermaid-content :global(svg) {
     display: block;
+    min-height: 100%;
+    width: auto;
   }
 
   .mermaid-container :global(.node) {
@@ -1109,7 +1140,6 @@
     white-space: pre-wrap;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 100;
-    pointer-events: none;
   }
 
   .tooltip-title {

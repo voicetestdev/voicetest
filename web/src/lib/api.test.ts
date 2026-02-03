@@ -29,7 +29,7 @@ describe("api", () => {
 
       (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve(mockConfig),
+        text: () => Promise.resolve(JSON.stringify(mockConfig)),
       });
 
       const result = await api.getMetricsConfig("agent-123");
@@ -65,7 +65,7 @@ describe("api", () => {
 
       (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve(inputConfig),
+        text: () => Promise.resolve(JSON.stringify(inputConfig)),
       });
 
       const result = await api.updateMetricsConfig("agent-456", inputConfig);
@@ -101,7 +101,7 @@ describe("api", () => {
     it("should delete a run", async () => {
       (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ status: "deleted", id: "run-123" }),
+        text: () => Promise.resolve(JSON.stringify({ status: "deleted", id: "run-123" })),
       });
 
       const result = await api.deleteRun("run-123");

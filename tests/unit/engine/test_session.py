@@ -150,3 +150,107 @@ class TestMessageNodeMetadata:
             assert "node_id" in msg.metadata
             # Should be one of our node IDs
             assert msg.metadata["node_id"] in ["greeting", "farewell"]
+
+
+class TestDynamicVariableSubstitution:
+    """Tests for dynamic variable substitution in prompts."""
+
+    @pytest.mark.asyncio
+    async def test_dynamic_variables_substituted_in_prompts(self, graph_with_dynamic_variables):
+        """Test that dynamic variables are substituted in both general and state prompts.
+
+        This test verifies that {{variable}} placeholders in general_prompt and state_prompt
+        are replaced with actual values from dynamic_variables before being passed to the LLM.
+        """
+        from unittest.mock import patch
+
+        from voicetest.engine.session import ConversationRunner, ConversationState, NodeTracker
+
+        dynamic_vars = {
+            "customer_name": "Alice",
+            "account_status": "active",
+            "company_name": "Acme Corp",
+        }
+        runner = ConversationRunner(graph_with_dynamic_variables, dynamic_variables=dynamic_vars)
+
+        # Mock call_llm to capture what gets passed
+        captured_kwargs = {}
+
+        async def mock_call_llm(model, signature, **kwargs):
+            captured_kwargs.update(kwargs)
+
+            # Return a mock result with expected attributes
+            class MockResult:
+                response = "Hello Alice!"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.session.call_llm", side_effect=mock_call_llm):
+            state = ConversationState()
+            node_tracker = NodeTracker()
+            node_tracker.record("main")
+
+            await runner._process_turn(
+                "main",
+                "Hello",
+                state,
+                node_tracker,
+            )
+
+        # Verify general_instructions has substituted variables
+        assert "general_instructions" in captured_kwargs
+        assert "Acme Corp" in captured_kwargs["general_instructions"]
+        assert "{{company_name}}" not in captured_kwargs["general_instructions"]
+
+        # Verify state_instructions has substituted variables
+        assert "state_instructions" in captured_kwargs
+        assert "Alice" in captured_kwargs["state_instructions"]
+        assert "active" in captured_kwargs["state_instructions"]
+        assert "{{customer_name}}" not in captured_kwargs["state_instructions"]
+        assert "{{account_status}}" not in captured_kwargs["state_instructions"]
+
+    @pytest.mark.asyncio
+    async def test_unknown_variables_remain_unchanged(self, graph_with_dynamic_variables):
+        """Test that unknown variables are left as-is (graceful degradation)."""
+        from unittest.mock import patch
+
+        from voicetest.engine.session import ConversationRunner, ConversationState, NodeTracker
+
+        # Only provide some variables, not all
+        dynamic_vars = {
+            "customer_name": "Bob",
+            # company_name and account_status are NOT provided
+        }
+        runner = ConversationRunner(graph_with_dynamic_variables, dynamic_variables=dynamic_vars)
+
+        captured_kwargs = {}
+
+        async def mock_call_llm(model, signature, **kwargs):
+            captured_kwargs.update(kwargs)
+
+            class MockResult:
+                response = "Hello Bob!"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.session.call_llm", side_effect=mock_call_llm):
+            state = ConversationState()
+            node_tracker = NodeTracker()
+            node_tracker.record("main")
+
+            await runner._process_turn(
+                "main",
+                "Hello",
+                state,
+                node_tracker,
+            )
+
+        # customer_name should be substituted
+        assert "Bob" in captured_kwargs["state_instructions"]
+        assert "{{customer_name}}" not in captured_kwargs["state_instructions"]
+
+        # Unknown variables should remain as placeholders
+        assert "{{account_status}}" in captured_kwargs["state_instructions"]
+        assert "{{company_name}}" in captured_kwargs["general_instructions"]

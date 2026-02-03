@@ -1,0 +1,16 @@
+{
+  "nodes": {
+    "main": {
+      "id": "main",
+      "state_prompt": "Hello {{customer_name}}, your account is {{account_status}}.",
+      "transitions": [],
+      "tools": [],
+      "metadata": {}
+    }
+  },
+  "entry_node_id": "main",
+  "source_type": "custom",
+  "source_metadata": {
+    "general_prompt": "You are an assistant for {{company_name}}. Always be helpful."
+  }
+}

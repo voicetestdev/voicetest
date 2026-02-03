@@ -346,3 +346,12 @@ def graph_with_metadata():
             "model": "gpt-4o",
         },
     )
+
+
+@pytest.fixture
+def graph_with_dynamic_variables(fixtures_dir: Path):
+    """Graph with {{variable}} placeholders in prompts."""
+    from voicetest.models.agent import AgentGraph
+
+    config_path = fixtures_dir / "graphs" / "graph_with_dynamic_variables.json"
+    return AgentGraph.model_validate_json(config_path.read_text())

@@ -66,7 +66,12 @@ async function get<T>(path: string): Promise<T> {
     const text = await res.text();
     throw new Error(parseErrorMessage(text, res.statusText));
   }
-  return res.json();
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Invalid JSON from ${path}: ${text.slice(0, 100)}`);
+  }
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -80,7 +85,12 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     const text = await res.text();
     throw new Error(parseErrorMessage(text, res.statusText));
   }
-  return res.json();
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Invalid JSON from POST ${path}: ${text.slice(0, 100)}`);
+  }
 }
 
 async function put<T>(path: string, body: unknown): Promise<T> {
@@ -94,7 +104,12 @@ async function put<T>(path: string, body: unknown): Promise<T> {
     const text = await res.text();
     throw new Error(parseErrorMessage(text, res.statusText));
   }
-  return res.json();
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Invalid JSON from PUT ${path}: ${text.slice(0, 100)}`);
+  }
 }
 
 async function del<T>(path: string): Promise<T> {
@@ -107,7 +122,12 @@ async function del<T>(path: string): Promise<T> {
     const text = await res.text();
     throw new Error(parseErrorMessage(text, res.statusText));
   }
-  return res.json();
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Invalid JSON from DELETE ${path}: ${text.slice(0, 100)}`);
+  }
 }
 
 async function postFile<T>(path: string, file: File, source?: string): Promise<T> {
@@ -126,7 +146,12 @@ async function postFile<T>(path: string, file: File, source?: string): Promise<T
     const text = await res.text();
     throw new Error(parseErrorMessage(text, res.statusText));
   }
-  return res.json();
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Invalid JSON from POST ${path}: ${text.slice(0, 100)}`);
+  }
 }
 
 export const api = {
