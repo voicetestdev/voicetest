@@ -101,7 +101,7 @@ The web UI provides:
 
 - Agent import and graph visualization
 - Export agents to multiple formats (Mermaid, LiveKit, Retell, VAPI, Bland)
-- Platform integration: import agents from and push agents to Retell, VAPI, Bland, LiveKit
+- Platform integration: import agents from, push agents to, and sync changes back to Retell, VAPI, LiveKit
 - Test case management with persistence
 - Export tests to platform formats (Retell)
 - Global metrics configuration (compliance checks that run on all tests)
@@ -163,6 +163,12 @@ curl -X POST http://localhost:8000/api/platforms/retell/agents/{id}/import  # Im
 curl -X POST http://localhost:8000/api/platforms/retell/export \      # Push agent to platform
   -H "Content-Type: application/json" \
   -d '{"agent_id": "local-agent-id"}'
+
+# Sync agent back to source platform (for imported agents)
+curl http://localhost:8000/api/agents/{id}/sync-status               # Check if sync available
+curl -X POST http://localhost:8000/api/agents/{id}/sync \            # Sync changes to source
+  -H "Content-Type: application/json" \
+  -d '{"graph": {...}}'
 ```
 
 WebSocket messages:
@@ -226,7 +232,7 @@ Test cases follow the Retell export format:
 - **Format conversion**: Convert between Retell, VAPI, Bland, LiveKit, and other formats
 - **Unified IR**: AgentGraph representation for any voice agent
 - **Multi-format export**: Mermaid diagrams, LiveKit Python, Retell LLM, Retell CF, VAPI, Bland
-- **Platform integration**: Import from and push agents to Retell, VAPI, Bland, LiveKit via API
+- **Platform integration**: Import, push, and sync agents with Retell, VAPI, Bland, LiveKit via API
 - **Configurable LLMs**: Separate models for agent, simulator, and judge
 - **DSPy-based evaluation**: LLM judges with reasoning and 0-1 scores
 - **Global metrics**: Define compliance checks that run on all tests for an agent
@@ -265,12 +271,12 @@ voicetest can connect directly to voice platforms to import and push agent confi
 
 ### Supported Platforms
 
-| Platform | Import | Push | API Key Env Var                          |
-| -------- | ------ | ---- | ---------------------------------------- |
-| Retell   | ✓      | ✓    | `RETELL_API_KEY`                         |
-| VAPI     | ✓      | ✓    | `VAPI_API_KEY`                           |
-| Bland    | ✓      | ✓    | `BLAND_API_KEY`                          |
-| LiveKit  | ✓      | ✓    | `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` |
+| Platform | Import | Push | Sync | API Key Env Var                          |
+| -------- | ------ | ---- | ---- | ---------------------------------------- |
+| Retell   | ✓      | ✓    | ✓    | `RETELL_API_KEY`                         |
+| VAPI     | ✓      | ✓    | ✓    | `VAPI_API_KEY`                           |
+| Bland    | ✓      | ✓    |      | `BLAND_API_KEY`                          |
+| LiveKit  | ✓      | ✓    | ✓    | `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` |
 
 ### Usage
 
@@ -280,6 +286,7 @@ In the Web UI, go to the "Platforms" tab to:
 1. **Browse** - List agents on the remote platform
 1. **Import** - Pull an agent config into voicetest for testing
 1. **Push** - Deploy a local agent to the platform
+1. **Sync** - Push local changes back to the source platform (for imported agents)
 
 API keys can also be set via environment variables or in the Settings page.
 
