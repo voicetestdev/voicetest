@@ -207,6 +207,26 @@ class BlandPlatformClient:
         )
         response.raise_for_status()
 
+    @property
+    def supports_update(self) -> bool:
+        """Bland does not support updating agents in place."""
+        return False
+
+    @property
+    def remote_id_key(self) -> None:
+        """Bland does not track remote agent IDs."""
+        return None
+
+    def update_agent(
+        self, client: BlandAI, agent_id: str, config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Not supported for Bland AI.
+
+        Raises:
+            NotImplementedError: Always, as Bland doesn't support updates.
+        """
+        raise NotImplementedError("Bland AI does not support updating agents in place")
+
 
 def get_client(api_key: str | None = None) -> BlandAI:
     """Get a configured Bland AI SDK client.

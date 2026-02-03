@@ -187,6 +187,31 @@ class ExportToPlatformResponse(BaseModel):
     platform: str
 
 
+class SyncStatusResponse(BaseModel):
+    """Response from sync status check."""
+
+    can_sync: bool
+    reason: str | None = None
+    platform: str | None = None
+    remote_id: str | None = None
+    needs_configuration: bool = False
+
+
+class SyncToPlatformRequest(BaseModel):
+    """Request to sync an agent to its source platform."""
+
+    graph: AgentGraph
+
+
+class SyncToPlatformResponse(BaseModel):
+    """Response from syncing an agent to a platform."""
+
+    id: str
+    name: str
+    platform: str
+    synced: bool
+
+
 class ExportRequest(BaseModel):
     """Request to export an agent graph."""
 
@@ -1202,6 +1227,28 @@ def _get_platform_api_key(platform: str) -> str | None:
     return registry.get_api_key(platform, settings)
 
 
+def _get_configured_platform_client(platform: str) -> tuple[Any, Any]:
+    """Get validated, configured platform client and SDK client.
+
+    Args:
+        platform: Platform identifier.
+
+    Returns:
+        Tuple of (PlatformClient, SDK client).
+
+    Raises:
+        HTTPException: If platform invalid or not configured.
+    """
+    _validate_platform(platform)
+    if not _is_platform_configured(platform):
+        raise HTTPException(status_code=400, detail=f"{platform} API key not configured")
+    api_key = _get_platform_api_key(platform)
+    registry = _get_platform_registry()
+    platform_client = registry.get(platform)
+    client = platform_client.get_client(api_key)
+    return platform_client, client
+
+
 @router.get("/platforms", response_model=list[PlatformInfo])
 async def list_platforms() -> list[PlatformInfo]:
     """List all available platforms and their configuration status."""
@@ -1267,15 +1314,9 @@ async def configure_platform(
 @router.get("/platforms/{platform}/agents", response_model=list[RemoteAgentInfo])
 async def list_platform_agents(platform: str) -> list[RemoteAgentInfo]:
     """List agents from any supported platform."""
-    _validate_platform(platform)
-    if not _is_platform_configured(platform):
-        raise HTTPException(status_code=400, detail=f"{platform} API key not configured")
+    platform_client, client = _get_configured_platform_client(platform)
 
     try:
-        api_key = _get_platform_api_key(platform)
-        registry = _get_platform_registry()
-        platform_client = registry.get(platform)
-        client = platform_client.get_client(api_key)
         agents = platform_client.list_agents(client)
         return [RemoteAgentInfo(**a) for a in agents]
     except Exception as e:
@@ -1287,15 +1328,10 @@ async def list_platform_agents(platform: str) -> list[RemoteAgentInfo]:
 @router.post("/platforms/{platform}/agents/{agent_id}/import", response_model=AgentGraph)
 async def import_platform_agent(platform: str, agent_id: str) -> AgentGraph:
     """Import an agent from any supported platform by ID."""
-    _validate_platform(platform)
-    if not _is_platform_configured(platform):
-        raise HTTPException(status_code=400, detail=f"{platform} API key not configured")
+    platform_client, client = _get_configured_platform_client(platform)
 
     try:
-        api_key = _get_platform_api_key(platform)
         registry = _get_platform_registry()
-        platform_client = registry.get(platform)
-        client = platform_client.get_client(api_key)
         config = platform_client.get_agent(client, agent_id)
         importer = registry.get_importer(platform)
         if not importer:
@@ -1312,16 +1348,10 @@ async def export_to_platform(
     platform: str, request: ExportToPlatformRequest
 ) -> ExportToPlatformResponse:
     """Export an agent graph to any supported platform."""
-    _validate_platform(platform)
-    if not _is_platform_configured(platform):
-        raise HTTPException(status_code=400, detail=f"{platform} API key not configured")
+    platform_client, client = _get_configured_platform_client(platform)
 
     try:
-        api_key = _get_platform_api_key(platform)
         registry = _get_platform_registry()
-        platform_client = registry.get(platform)
-        client = platform_client.get_client(api_key)
-
         exporter = registry.get_exporter(platform)
         if not exporter:
             raise ValueError(f"No exporter for platform: {platform}")
@@ -1336,6 +1366,124 @@ async def export_to_platform(
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to export to {platform}: {e}"
+        ) from None
+
+
+@router.get("/agents/{agent_id}/sync-status", response_model=SyncStatusResponse)
+async def get_sync_status(agent_id: str) -> SyncStatusResponse:
+    """Check if an agent can be synced to its source platform."""
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    try:
+        graph = repo.load_graph(agent)
+    except (FileNotFoundError, ValueError):
+        return SyncStatusResponse(
+            can_sync=False,
+            reason="Agent graph not available",
+        )
+
+    source_metadata = graph.source_metadata or {}
+    source_type = graph.source_type
+
+    registry = _get_platform_registry()
+    if not registry.has_platform(source_type):
+        return SyncStatusResponse(
+            can_sync=False,
+            reason=f"Source '{source_type}' is not a supported platform",
+        )
+
+    if not registry.supports_update(source_type):
+        return SyncStatusResponse(
+            can_sync=False,
+            reason=f"{source_type} does not support syncing",
+            platform=source_type,
+        )
+
+    remote_id_key = registry.get_remote_id_key(source_type)
+    if not remote_id_key:
+        return SyncStatusResponse(
+            can_sync=False,
+            reason=f"{source_type} does not track remote IDs",
+            platform=source_type,
+        )
+
+    remote_id = source_metadata.get(remote_id_key)
+    if not remote_id:
+        return SyncStatusResponse(
+            can_sync=False,
+            reason=f"No remote ID found (missing {remote_id_key} in source_metadata)",
+            platform=source_type,
+        )
+
+    if not _is_platform_configured(source_type):
+        return SyncStatusResponse(
+            can_sync=False,
+            reason=f"{source_type} API key not configured",
+            platform=source_type,
+            remote_id=remote_id,
+            needs_configuration=True,
+        )
+
+    return SyncStatusResponse(
+        can_sync=True,
+        platform=source_type,
+        remote_id=remote_id,
+    )
+
+
+@router.post("/agents/{agent_id}/sync", response_model=SyncToPlatformResponse)
+async def sync_to_platform(agent_id: str, request: SyncToPlatformRequest) -> SyncToPlatformResponse:
+    """Sync an agent to its source platform."""
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    graph = request.graph
+    source_metadata = graph.source_metadata or {}
+    source_type = graph.source_type
+
+    registry = _get_platform_registry()
+    if not registry.has_platform(source_type):
+        raise HTTPException(
+            status_code=400, detail=f"Source '{source_type}' is not a supported platform"
+        )
+
+    if not registry.supports_update(source_type):
+        raise HTTPException(status_code=400, detail=f"{source_type} does not support syncing")
+
+    remote_id_key = registry.get_remote_id_key(source_type)
+    if not remote_id_key:
+        raise HTTPException(status_code=400, detail=f"{source_type} does not track remote IDs")
+
+    remote_id = source_metadata.get(remote_id_key)
+    if not remote_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No remote ID found (missing {remote_id_key} in source_metadata)",
+        )
+
+    platform_client, client = _get_configured_platform_client(source_type)
+
+    try:
+        exporter = registry.get_exporter(source_type)
+        if not exporter:
+            raise ValueError(f"No exporter for platform: {source_type}")
+        config = exporter(graph)
+
+        result = platform_client.update_agent(client, remote_id, config)
+        return SyncToPlatformResponse(
+            id=result["id"],
+            name=result["name"],
+            platform=source_type,
+            synced=True,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to sync to {source_type}: {e}"
         ) from None
 
 

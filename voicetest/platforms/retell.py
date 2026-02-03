@@ -126,6 +126,34 @@ class RetellPlatformClient:
         """
         client.conversation_flow.delete(agent_id)
 
+    @property
+    def supports_update(self) -> bool:
+        """Retell supports updating conversation flows."""
+        return True
+
+    @property
+    def remote_id_key(self) -> str:
+        """Key in source_metadata for Retell flow ID."""
+        return "conversation_flow_id"
+
+    def update_agent(self, client: Retell, agent_id: str, config: dict[str, Any]) -> dict[str, Any]:
+        """Update an existing conversation flow in Retell.
+
+        Args:
+            client: Retell SDK client.
+            agent_id: Conversation flow ID.
+            config: Flow configuration (from export_retell_cf).
+
+        Returns:
+            Dict with id, name, and platform fields.
+        """
+        flow = client.conversation_flow.update(agent_id, **config)
+        return {
+            "id": flow.conversation_flow_id,
+            "name": getattr(flow, "conversation_flow_name", None) or flow.conversation_flow_id,
+            "platform": self.platform_name,
+        }
+
 
 def get_client(api_key: str | None = None) -> Retell:
     """Get a configured Retell SDK client.

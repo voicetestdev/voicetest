@@ -126,6 +126,34 @@ class VapiPlatformClient:
         """
         client.assistants.delete(agent_id)
 
+    @property
+    def supports_update(self) -> bool:
+        """VAPI supports updating assistants."""
+        return True
+
+    @property
+    def remote_id_key(self) -> str:
+        """Key in source_metadata for VAPI assistant ID."""
+        return "assistant_id"
+
+    def update_agent(self, client: Vapi, agent_id: str, config: dict[str, Any]) -> dict[str, Any]:
+        """Update an existing assistant in VAPI.
+
+        Args:
+            client: VAPI SDK client.
+            agent_id: Assistant ID.
+            config: Assistant configuration (from export_vapi_assistant).
+
+        Returns:
+            Dict with id, name, and platform fields.
+        """
+        assistant = client.assistants.update(agent_id, **config)
+        return {
+            "id": assistant.id,
+            "name": assistant.name or assistant.id,
+            "platform": self.platform_name,
+        }
+
 
 def get_client(api_key: str | None = None) -> Vapi:
     """Get a configured VAPI SDK client.

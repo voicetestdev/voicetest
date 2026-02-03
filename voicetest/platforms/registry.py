@@ -159,3 +159,31 @@ class PlatformRegistry:
             ValueError: If platform is not registered.
         """
         return self.get(platform).get_exporter()
+
+    def supports_update(self, platform: str) -> bool:
+        """Check if a platform supports updating agents in place.
+
+        Args:
+            platform: Platform identifier.
+
+        Returns:
+            True if platform supports updates.
+
+        Raises:
+            ValueError: If platform is not registered.
+        """
+        return self.get(platform).supports_update
+
+    def get_remote_id_key(self, platform: str) -> str | None:
+        """Get the source_metadata key for remote agent ID.
+
+        Args:
+            platform: Platform identifier.
+
+        Returns:
+            Metadata key string, or None if platform doesn't track remote IDs.
+
+        Raises:
+            ValueError: If platform is not registered.
+        """
+        return self.get(platform).remote_id_key

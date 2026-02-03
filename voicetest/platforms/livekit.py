@@ -218,6 +218,34 @@ class LiveKitPlatformClient:
         if result.returncode != 0:
             raise ValueError(f"Failed to delete agent {agent_id}: {result.stderr}")
 
+    @property
+    def supports_update(self) -> bool:
+        """LiveKit supports updating agents (deploy is upsert)."""
+        return True
+
+    @property
+    def remote_id_key(self) -> str:
+        """Key in source_metadata for LiveKit agent ID."""
+        return "agent_id"
+
+    def update_agent(
+        self, client: dict[str, str], agent_id: str, config: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Update an existing agent in LiveKit Cloud.
+
+        LiveKit deploy is an upsert operation, so we use create_agent
+        with the same name to update.
+
+        Args:
+            client: Credentials dict from get_client().
+            agent_id: Agent identifier (used as name).
+            config: Dict containing 'code' or 'graph'.
+
+        Returns:
+            Dict with id, name, platform, and code_path fields.
+        """
+        return self.create_agent(client, config, name=agent_id)
+
 
 def get_client(api_key: str | None = None) -> dict[str, str]:
     """Get LiveKit credentials.

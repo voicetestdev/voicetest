@@ -132,3 +132,39 @@ class PlatformClient(Protocol):
             agent_id: Platform-specific agent identifier.
         """
         ...
+
+    @property
+    def supports_update(self) -> bool:
+        """Whether this platform supports updating agents in place.
+
+        Returns:
+            True if update_agent() is implemented, False otherwise.
+        """
+        ...
+
+    @property
+    def remote_id_key(self) -> str | None:
+        """Key in source_metadata that holds the remote agent ID.
+
+        For example, 'conversation_flow_id' for Retell, 'assistant_id' for VAPI.
+
+        Returns:
+            Metadata key string, or None if platform doesn't track remote IDs.
+        """
+        ...
+
+    def update_agent(self, client: Any, agent_id: str, config: dict[str, Any]) -> dict[str, Any]:
+        """Update an existing agent on the platform.
+
+        Args:
+            client: SDK client from get_client().
+            agent_id: Platform-specific agent identifier.
+            config: Agent configuration (from exporter).
+
+        Returns:
+            Dict with at least {"id": ..., "name": ...}.
+
+        Raises:
+            NotImplementedError: If platform doesn't support updates.
+        """
+        ...

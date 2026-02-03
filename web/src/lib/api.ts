@@ -18,6 +18,8 @@ import type {
   RunWithResults,
   Settings,
   StartRunResponse,
+  SyncStatus,
+  SyncToPlatformResponse,
   TestCase,
   TestCaseRecord,
   TestResult,
@@ -244,6 +246,12 @@ export const api = {
 
   exportToPlatform: (platform: Platform, graph: AgentGraph, name?: string) =>
     post<ExportToPlatformResponse>(`/platforms/${platform}/export`, { graph, name }),
+
+  getSyncStatus: (agentId: string) =>
+    get<SyncStatus>(`/agents/${agentId}/sync-status`),
+
+  syncToPlatform: (agentId: string, graph: AgentGraph) =>
+    post<SyncToPlatformResponse>(`/agents/${agentId}/sync`, { graph }),
 
   getWebSocketUrl: (path: string): string => {
     const baseUrl = globalConfig.baseUrl || "/api";

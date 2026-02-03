@@ -271,3 +271,18 @@ export interface RetryInfo {
   max_attempts: number;
   retry_after: number;
 }
+
+export interface SyncStatus {
+  can_sync: boolean;
+  reason: string | null;
+  platform: string | null;
+  remote_id: string | null;
+  needs_configuration?: boolean;
+}
+
+export interface SyncToPlatformResponse {
+  id: string;
+  name: string;
+  platform: string;
+  synced: boolean;
+}
