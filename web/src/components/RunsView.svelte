@@ -46,8 +46,9 @@
   });
 
 
-  function parseTranscript(json: string | null): Message[] {
+  function parseTranscript(json: string | Message[] | null): Message[] {
     if (!json) return [];
+    if (Array.isArray(json)) return json;
     try {
       return JSON.parse(json);
     } catch {
@@ -55,8 +56,9 @@
     }
   }
 
-  function parseMetrics(json: string | null): MetricResult[] {
+  function parseMetrics(json: string | MetricResult[] | null): MetricResult[] {
     if (!json) return [];
+    if (Array.isArray(json)) return json;
     try {
       return JSON.parse(json);
     } catch {
@@ -64,8 +66,9 @@
     }
   }
 
-  function parseModelsUsed(json: string | null): ModelsUsed | null {
+  function parseModelsUsed(json: string | ModelsUsed | null): ModelsUsed | null {
     if (!json) return null;
+    if (typeof json === "object") return json;
     try {
       return JSON.parse(json);
     } catch {

@@ -91,16 +91,25 @@ class MetricJudge:
         """Evaluate using LLM."""
 
         class MetricJudgeSignature(dspy.Signature):
-            """Evaluate how well a conversation meets a success criterion."""
+            """Evaluate if a conversation transcript meets a success criterion.
+
+            For criteria with multiple requirements, evaluate EACH requirement separately.
+            Quote specific parts of the transcript as evidence for each judgment.
+            """
 
             transcript: str = dspy.InputField(desc="Full conversation transcript")
-            criterion: str = dspy.InputField(desc="Success criterion to evaluate")
-
-            score: float = dspy.OutputField(
-                desc="Score from 0.0 to 1.0 indicating how well the criterion was met"
+            criterion: str = dspy.InputField(
+                desc="Success criterion - may contain multiple requirements separated by periods"
             )
-            reasoning: str = dspy.OutputField(desc="Explanation of the judgment")
-            confidence: float = dspy.OutputField(desc="Confidence in the assessment 0.0-1.0")
+
+            analysis: str = dspy.OutputField(
+                desc="Break down criterion into requirements, evaluate each with transcript quotes"
+            )
+            score: float = dspy.OutputField(
+                desc="0.0-1.0 based on fraction of requirements met (e.g., 2/3 met = 0.67)"
+            )
+            reasoning: str = dspy.OutputField(desc="Summary: which requirements passed/failed")
+            confidence: float = dspy.OutputField(desc="Confidence in assessment 0.0-1.0")
 
         formatted_transcript = self._format_transcript(transcript)
 
