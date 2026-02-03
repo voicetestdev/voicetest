@@ -400,6 +400,10 @@ def _build_run_options(settings: Settings, request_options: RunOptions | None) -
         ),
         streaming=settings.run.streaming,
         test_model_precedence=settings.run.test_model_precedence,
+        cot_transitions=(
+            (request_options.cot_transitions if request_options else False)
+            or settings.run.cot_transitions
+        ),
     )
 
 
