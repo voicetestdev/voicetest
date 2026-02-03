@@ -379,8 +379,7 @@ class VoicetestShell(App):
             matches = difflib.get_close_matches(cmd, COMMANDS, n=1, cutoff=0.6)
             if matches:
                 self._log(
-                    f"[red]Unknown command: {cmd}[/red]. "
-                    f"Did you mean '[cyan]{matches[0]}[/cyan]'?"
+                    f"[red]Unknown command: {cmd}[/red]. Did you mean '[cyan]{matches[0]}[/cyan]'?"
                 )
             else:
                 self._log(f"[red]Unknown command: {cmd}[/red]. Type 'help' for available commands.")

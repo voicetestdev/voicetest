@@ -13,6 +13,7 @@ from voicetest.exporters.registry import ExporterRegistry
 from voicetest.exporters.retell_cf import RetellCFExporter
 from voicetest.exporters.retell_llm import RetellLLMExporter
 from voicetest.exporters.vapi import VAPIAssistantExporter, VAPISquadExporter
+from voicetest.importers.agentgraph import AgentGraphImporter
 from voicetest.importers.bland import BlandImporter
 from voicetest.importers.custom import CustomImporter
 from voicetest.importers.livekit import LiveKitImporter
@@ -40,6 +41,7 @@ def _create_importer_registry() -> ImporterRegistry:
     registry.register(BlandImporter())
     registry.register(XLSFormImporter())
     registry.register(CustomImporter())
+    registry.register(AgentGraphImporter())
     return registry
 
 

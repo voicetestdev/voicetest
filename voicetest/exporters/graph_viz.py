@@ -4,6 +4,11 @@ from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph
 
 
+def _escape_mermaid_text(text: str) -> str:
+    """Escape special characters for Mermaid labels."""
+    return text.replace('"', "'").replace("\n", " ").replace("_", "#95;")
+
+
 class MermaidExporter:
     """Exports AgentGraph to Mermaid flowchart format."""
 
@@ -41,10 +46,9 @@ def export_mermaid(graph: AgentGraph) -> str:
         label = node.state_prompt[:50]
         if len(node.state_prompt) > 50:
             label += "..."
-        # Escape quotes for Mermaid
-        label = label.replace('"', "'").replace("\n", " ")
-        # Also escape node_id inside the label
-        escaped_node_id = node_id.replace('"', "'")
+        # Escape special characters for Mermaid
+        label = _escape_mermaid_text(label)
+        escaped_node_id = _escape_mermaid_text(node_id)
         lines.append(f'    {node_id}["{escaped_node_id}<br/>{label}"]')
 
         # Check for end_call tool
@@ -54,7 +58,7 @@ def export_mermaid(graph: AgentGraph) -> str:
                     desc = tool.description[:30] if tool.description else "End call"
                     if len(tool.description) > 30:
                         desc += "..."
-                    desc = desc.replace('"', "'").replace("\n", " ")
+                    desc = _escape_mermaid_text(desc)
                     nodes_with_end_call.append((node_id, desc))
                     break
 
@@ -65,7 +69,7 @@ def export_mermaid(graph: AgentGraph) -> str:
             condition_label = transition.condition.value[:30]
             if len(transition.condition.value) > 30:
                 condition_label += "..."
-            condition_label = condition_label.replace('"', "'").replace("\n", " ")
+            condition_label = _escape_mermaid_text(condition_label)
             lines.append(f'    {node_id} -->|"{condition_label}"| {transition.target_node_id}')
 
     # Add end_call node and edges if any nodes have end_call tool

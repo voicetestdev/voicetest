@@ -50,12 +50,21 @@ async function getHeaders(): Promise<Record<string, string>> {
   return {};
 }
 
+function parseErrorMessage(text: string, fallback: string): string {
+  try {
+    const json = JSON.parse(text);
+    return json.detail || json.message || json.error || text;
+  } catch {
+    return text || fallback;
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
   const headers = await getHeaders();
   const res = await fetch(`${globalConfig.baseUrl}${path}`, { headers });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    throw new Error(parseErrorMessage(text, res.statusText));
   }
   return res.json();
 }
@@ -69,7 +78,7 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    throw new Error(parseErrorMessage(text, res.statusText));
   }
   return res.json();
 }
@@ -83,7 +92,7 @@ async function put<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    throw new Error(parseErrorMessage(text, res.statusText));
   }
   return res.json();
 }
@@ -96,7 +105,7 @@ async function del<T>(path: string): Promise<T> {
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    throw new Error(parseErrorMessage(text, res.statusText));
   }
   return res.json();
 }
@@ -115,7 +124,7 @@ async function postFile<T>(path: string, file: File, source?: string): Promise<T
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    throw new Error(parseErrorMessage(text, res.statusText));
   }
   return res.json();
 }

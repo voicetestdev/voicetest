@@ -127,7 +127,7 @@ class VoicetestApp(App):
 
         self._running = False
         self._update_status(
-            f"Complete: {self.context.passed_count} passed, " f"{self.context.failed_count} failed"
+            f"Complete: {self.context.passed_count} passed, {self.context.failed_count} failed"
         )
 
     def action_next_test(self) -> None:

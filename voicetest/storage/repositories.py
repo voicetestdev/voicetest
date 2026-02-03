@@ -144,20 +144,23 @@ class AgentRepository:
             self.session.delete(agent)
             self.session.commit()
 
-    def load_graph(self, agent: dict) -> AgentGraph:
+    def load_graph(self, agent: dict) -> AgentGraph | Path:
         """Load the AgentGraph for an agent.
 
-        For linked agents (source_path set), reads from disk.
+        For linked agents (source_path set), returns Path for caller to import.
         For imported agents (graph_json set), parses the stored JSON.
+
+        Returns:
+            AgentGraph if graph_json is stored, or Path for linked files.
         """
+        if agent.get("graph_json"):
+            return AgentGraph.model_validate_json(agent["graph_json"])
+
         if agent.get("source_path"):
             path = Path(agent["source_path"])
             if not path.exists():
                 raise FileNotFoundError(f"Agent file not found: {path}")
-            return AgentGraph.model_validate_json(path.read_text())
-
-        if agent.get("graph_json"):
-            return AgentGraph.model_validate_json(agent["graph_json"])
+            return path
 
         raise ValueError(f"Agent {agent['id']} has neither source_path nor graph_json")
 

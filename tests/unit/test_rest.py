@@ -1034,9 +1034,9 @@ class TestWebSocketStateMessage:
                     "metrics": [],
                 },
             )
-            assert (
-                test_response.status_code == 200
-            ), f"Failed to create test: {test_response.json()}"
+            assert test_response.status_code == 200, (
+                f"Failed to create test: {test_response.json()}"
+            )
             test_ids.append(test_response.json()["id"])
 
         return {"agent_id": agent_id, "test_ids": test_ids}
@@ -1078,9 +1078,9 @@ class TestWebSocketStateMessage:
 
             # Results should exist (created by start_run)
             results = run_data["results"]
-            assert len(results) == len(
-                test_ids
-            ), f"Expected {len(test_ids)} results, got {len(results)}"
+            assert len(results) == len(test_ids), (
+                f"Expected {len(test_ids)} results, got {len(results)}"
+            )
 
             # Verify each result has required fields (status may vary due to race)
             for result in results:
@@ -1118,9 +1118,9 @@ class TestWebSocketStateMessage:
             run_data = data["run"]
             assert isinstance(run_data["started_at"], str), "started_at should be ISO string"
             if run_data.get("completed_at"):
-                assert isinstance(
-                    run_data["completed_at"], str
-                ), "completed_at should be ISO string"
+                assert isinstance(run_data["completed_at"], str), (
+                    "completed_at should be ISO string"
+                )
 
             for result in run_data["results"]:
                 assert isinstance(result["created_at"], str), "created_at should be ISO string"

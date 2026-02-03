@@ -576,7 +576,12 @@
 
   .error-message {
     color: #f87171;
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1rem;
     margin: 1rem 0 0 0;
+    font-size: var(--text-sm);
   }
 
   .platform-section {

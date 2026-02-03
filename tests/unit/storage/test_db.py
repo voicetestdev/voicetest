@@ -103,3 +103,42 @@ class TestSchema:
         tables = inspector.get_table_names()
 
         assert len(tables) >= 4
+
+    def test_model_columns_match_schema(self, tmp_path, monkeypatch):
+        """Verify SQLAlchemy model columns match the database schema.
+
+        This catches mismatches between models.py and db.py schema definitions.
+        """
+        from sqlalchemy import text
+
+        from voicetest.storage.models import Agent, Result, Run
+        from voicetest.storage.models import TestCase as TestCaseModel
+
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+
+        engine = create_db_engine()
+
+        models = {
+            "agents": Agent,
+            "test_cases": TestCaseModel,
+            "runs": Run,
+            "results": Result,
+        }
+
+        with engine.connect() as conn:
+            for table_name, model in models.items():
+                result = conn.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = :table_name"
+                    ),
+                    {"table_name": table_name},
+                ).fetchall()
+                db_columns = {row[0] for row in result}
+                model_columns = {col.name for col in model.__table__.columns}
+
+                missing_in_db = model_columns - db_columns
+                assert not missing_in_db, (
+                    f"Table '{table_name}' missing columns defined in model: {missing_in_db}"
+                )

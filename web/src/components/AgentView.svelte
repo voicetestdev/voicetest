@@ -27,6 +27,11 @@
   let mermaidContainer: HTMLDivElement;
   let tooltip = $state({ show: false, x: 0, y: 0, text: "", title: "" });
   let zoomLevel = $state(1);
+  let panX = $state(0);
+  let panY = $state(0);
+  let isPanning = $state(false);
+  let panStart = { x: 0, y: 0, panX: 0, panY: 0 };
+  let touchState = { distance: 0, centerX: 0, centerY: 0, initialZoom: 1, initialPanX: 0, initialPanY: 0 };
 
   let platforms = $state<PlatformInfo[]>([]);
   let platformStatus = $state<Record<string, PlatformStatus>>({});
@@ -247,6 +252,110 @@
 
   function resetZoom() {
     zoomLevel = 1;
+    panX = 0;
+    panY = 0;
+  }
+
+  function handleWheel(e: WheelEvent) {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    const newZoom = Math.max(0.25, Math.min(3, zoomLevel + delta));
+
+    // Zoom towards cursor position
+    if (mermaidContainer) {
+      const rect = mermaidContainer.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+
+      // Adjust pan to zoom towards cursor
+      const zoomRatio = newZoom / zoomLevel;
+      panX = cursorX - (cursorX - panX) * zoomRatio;
+      panY = cursorY - (cursorY - panY) * zoomRatio;
+    }
+
+    zoomLevel = newZoom;
+  }
+
+  function handleMouseDown(e: MouseEvent) {
+    if (e.button !== 0) return; // Only left click
+    isPanning = true;
+    panStart = { x: e.clientX, y: e.clientY, panX, panY };
+    e.preventDefault();
+  }
+
+  function handleMouseMove(e: MouseEvent) {
+    if (!isPanning) return;
+    panX = panStart.panX + (e.clientX - panStart.x);
+    panY = panStart.panY + (e.clientY - panStart.y);
+  }
+
+  function handleMouseUp() {
+    isPanning = false;
+  }
+
+  function getTouchDistance(touches: TouchList): number {
+    return Math.hypot(
+      touches[1].clientX - touches[0].clientX,
+      touches[1].clientY - touches[0].clientY
+    );
+  }
+
+  function getTouchCenter(touches: TouchList): { x: number; y: number } {
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2,
+    };
+  }
+
+  function handleTouchStart(e: TouchEvent) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const distance = getTouchDistance(e.touches);
+      const center = getTouchCenter(e.touches);
+      touchState = {
+        distance,
+        centerX: center.x,
+        centerY: center.y,
+        initialZoom: zoomLevel,
+        initialPanX: panX,
+        initialPanY: panY,
+      };
+    } else if (e.touches.length === 1) {
+      isPanning = true;
+      panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, panX, panY };
+    }
+  }
+
+  function handleTouchMove(e: TouchEvent) {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      const distance = getTouchDistance(e.touches);
+      const center = getTouchCenter(e.touches);
+
+      // Calculate zoom
+      const scale = distance / touchState.distance;
+      const newZoom = Math.max(0.25, Math.min(3, touchState.initialZoom * scale));
+
+      // Adjust pan to zoom towards pinch center
+      if (mermaidContainer) {
+        const rect = mermaidContainer.getBoundingClientRect();
+        const centerX = center.x - rect.left;
+        const centerY = center.y - rect.top;
+
+        const zoomRatio = newZoom / touchState.initialZoom;
+        panX = centerX - (centerX - touchState.initialPanX) * zoomRatio;
+        panY = centerY - (centerY - touchState.initialPanY) * zoomRatio;
+      }
+
+      zoomLevel = newZoom;
+    } else if (e.touches.length === 1 && isPanning) {
+      panX = panStart.panX + (e.touches[0].clientX - panStart.x);
+      panY = panStart.panY + (e.touches[0].clientY - panStart.y);
+    }
+  }
+
+  function handleTouchEnd() {
+    isPanning = false;
   }
 
   function getExportFilename(exp: ExporterInfo): string {
@@ -680,8 +789,21 @@
           <button onclick={resetZoom} title="Reset zoom">Reset</button>
         </div>
       </div>
-      <div class="mermaid-container" bind:this={mermaidContainer}>
-        <div class="mermaid-content" style="transform: scale({zoomLevel}); transform-origin: top left;">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="mermaid-container"
+        class:panning={isPanning}
+        bind:this={mermaidContainer}
+        onwheel={handleWheel}
+        onmousedown={handleMouseDown}
+        onmousemove={handleMouseMove}
+        onmouseup={handleMouseUp}
+        onmouseleave={handleMouseUp}
+        ontouchstart={handleTouchStart}
+        ontouchmove={handleTouchMove}
+        ontouchend={handleTouchEnd}
+      >
+        <div class="mermaid-content" style="transform: translate({panX}px, {panY}px) scale({zoomLevel}); transform-origin: 0 0;">
           {@html mermaidSvg}
         </div>
       </div>
@@ -896,7 +1018,12 @@
 
   .error-message {
     color: #f87171;
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1rem;
     margin: 0 0 1rem 0;
+    font-size: var(--text-sm);
   }
 
   .graph-section {
@@ -938,9 +1065,16 @@
   }
 
   .mermaid-container {
-    overflow: auto;
+    overflow: hidden;
     height: 100vh;
     min-height: 400px;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+  }
+
+  .mermaid-container.panning {
+    cursor: grabbing;
   }
 
   .mermaid-content {

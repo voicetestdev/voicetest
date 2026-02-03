@@ -58,6 +58,9 @@ jobs:
       - name: Run linting
         run: uv run ruff check voicetest/ tests/
 
+      - name: Check formatting
+        run: uv run ruff format --check voicetest/ tests/
+
       - name: Run Python unit tests
         run: uv run pytest tests/unit -v --tb=short
 

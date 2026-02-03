@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from voicetest import api
-from voicetest.container import get_container, get_session
+from voicetest.container import get_container, get_importer_registry, get_session
 from voicetest.demo import get_demo_agent, get_demo_tests
 from voicetest.executor import RunJob, get_executor_factory
 from voicetest.exporters.test_cases import export_tests
@@ -481,7 +481,10 @@ async def get_agent_graph(agent_id: str) -> AgentGraph:
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     try:
-        return repo.load_graph(agent)
+        result = repo.load_graph(agent)
+        if isinstance(result, Path):
+            return get_importer_registry().import_agent(result)
+        return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
 
@@ -875,7 +878,8 @@ async def _execute_run(
         return
 
     try:
-        graph = agent_repo.load_graph(agent)
+        result = agent_repo.load_graph(agent)
+        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
     except (FileNotFoundError, ValueError):
         return
 
@@ -1378,7 +1382,8 @@ async def get_sync_status(agent_id: str) -> SyncStatusResponse:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     try:
-        graph = repo.load_graph(agent)
+        result = repo.load_graph(agent)
+        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
     except (FileNotFoundError, ValueError):
         return SyncStatusResponse(
             can_sync=False,

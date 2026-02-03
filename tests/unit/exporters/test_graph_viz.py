@@ -127,8 +127,8 @@ class TestExportMermaid:
 
         result = export_mermaid(graph)
 
-        # Label (inside brackets) should have quotes escaped to single quotes
-        assert "\"node_with_'quotes'<br/>" in result
+        # Label should have quotes escaped to single quotes and underscores to #95;
+        assert "node#95;with#95;'quotes'" in result
 
 
 class TestMermaidEndCallNode:

@@ -202,20 +202,23 @@ class TestAgentRepository:
         assert graph.source_type == "test"
         assert graph.entry_node_id == "greeting"
 
-    def test_load_graph_linked(self, agent_repo, sample_graph, tmp_path):
+    def test_load_graph_linked_returns_path(self, agent_repo, sample_graph, tmp_path):
+        """Linked files always return Path for import via registry."""
+        from pathlib import Path
+
         agent_file = tmp_path / "agent.json"
         agent_file.write_text(sample_graph.model_dump_json())
 
         record = agent_repo.create(
             name="Linked",
-            source_type="custom",
+            source_type="agentgraph",
             source_path=str(agent_file),
         )
 
-        graph = agent_repo.load_graph(record)
+        result = agent_repo.load_graph(record)
 
-        assert graph is not None
-        assert graph.source_type == "test"
+        assert isinstance(result, Path)
+        assert result == agent_file
 
     def test_load_graph_missing_file(self, agent_repo, tmp_path):
         missing_file = tmp_path / "missing.json"
