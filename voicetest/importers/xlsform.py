@@ -53,7 +53,7 @@ class XLSFormImporter:
             survey_sheet = wb["survey"]
             headers = [cell.value for cell in next(survey_sheet.iter_rows(max_row=1))]
             required_cols = {"type", "name", "label"}
-            return required_cols.issubset(set(h.lower() if h else "" for h in headers))
+            return required_cols.issubset({h.lower() if h else "" for h in headers})
         except Exception:
             return False
 

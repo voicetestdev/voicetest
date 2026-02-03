@@ -1,7 +1,5 @@
 """DuckDB connection and schema management."""
 
-import contextlib
-
 import duckdb
 
 from voicetest.config import get_db_path
@@ -23,6 +21,7 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS agents (
             id TEXT PRIMARY KEY,
+            user_id TEXT,
             name TEXT NOT NULL,
             source_type TEXT NOT NULL,
             source_path TEXT,
@@ -32,10 +31,6 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-
-    # Migration: add metrics_config column if it doesn't exist (for existing databases)
-    with contextlib.suppress(duckdb.CatalogException):
-        conn.execute("ALTER TABLE agents ADD COLUMN metrics_config TEXT")
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS test_cases (
@@ -56,14 +51,10 @@ def init_schema(conn: duckdb.DuckDBPyConnection) -> None:
         )
     """)
 
-    # Migration: add new columns if they don't exist (for existing databases)
-    for col in ["includes", "excludes", "patterns"]:
-        with contextlib.suppress(duckdb.CatalogException):
-            conn.execute(f"ALTER TABLE test_cases ADD COLUMN {col} TEXT")
-
     conn.execute("""
         CREATE TABLE IF NOT EXISTS runs (
             id TEXT PRIMARY KEY,
+            user_id TEXT,
             agent_id TEXT NOT NULL,
             started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             completed_at TIMESTAMP
