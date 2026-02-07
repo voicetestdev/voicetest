@@ -142,22 +142,20 @@ API-based testing framework.
 
 **Limitation:** Turn-by-turn scripting, not autonomous simulation.
 
-**Implementation (v0.1):** VAPI importer and exporter added:
+**Implementation:** Importers and exporters for all major platforms:
 
-- `voicetest/importers/vapi.py` — Imports VAPI assistant JSON
-- `voicetest/exporters/vapi.py` — Exports AgentGraph to VAPI format
+| Platform    | Importer | Exporter | Notes                                      |
+| ----------- | -------- | -------- | ------------------------------------------ |
+| **Retell**  | Yes      | Yes      | Both LLM and Conversation Flow formats     |
+| **Vapi**    | Yes      | Yes      | Single-node assistants                     |
+| **LiveKit** | Yes      | Yes      | Code generation for Python agents          |
+| **Bland**   | Yes      | Yes      | Pathway-based workflows                    |
+| **XLSForm** | Yes      | —        | Survey/form definitions as agent workflows |
 
-VAPI assistants are single-node (no multi-state workflow like Retell CF). The importer extracts:
+Additional exporters:
 
-- System prompt from `model.messages`
-- Tools from the function-style tool array
-- Voice/transcriber configuration as metadata
-
-Key format differences from Retell:
-
-- Tools use `{type: "function", function: {name, description, parameters}}` structure
-- System prompt in `model.messages` array vs `general_prompt` field
-- No state machine support (single assistant per config)
+- `graph_viz` — Mermaid flowchart for documentation and visualization
+- `test_cases` — Export test cases in portable format
 
 ______________________________________________________________________
 
@@ -242,6 +240,7 @@ All three platforms use LLM-based transition evaluation:
 | **Retell**  | LLM evaluates edge condition prompts                      |
 | **Vapi**    | LLM decides tool calls / squad transfers                  |
 | **LiveKit** | LLM calls tools that return `(Agent, str)` handoff tuples |
+| **Bland**   | LLM evaluates pathway conditions                          |
 
 **Implication:** Can model all as "LLM decides when to call transition tool" → unified execution via LiveKit AgentSession with generated tools per transition.
 
@@ -355,6 +354,35 @@ Benefits:
 - Nuanced evaluation (0.65 vs 0.35 both "fail" but very different)
 - Configurable per-agent and per-metric thresholds
 - Better visibility into near-misses
+
+### Compound Criteria Handling
+
+MetricJudge signature includes an `analysis` field that forces breakdown of multi-requirement criteria:
+
+```python
+class MetricJudgeSignature(dspy.Signature):
+    """Evaluate if a conversation transcript meets a success criterion.
+
+    For criteria with multiple requirements, evaluate EACH requirement separately.
+    Quote specific parts of the transcript as evidence for each judgment.
+    """
+
+    transcript: str = dspy.InputField(desc="Full conversation transcript")
+    criterion: str = dspy.InputField(
+        desc="Success criterion - may contain multiple requirements separated by periods"
+    )
+
+    analysis: str = dspy.OutputField(
+        desc="Break down criterion into requirements, evaluate each with transcript quotes"
+    )
+    score: float = dspy.OutputField(
+        desc="0.0-1.0 based on fraction of requirements met (e.g., 2/3 met = 0.67)"
+    )
+    reasoning: str = dspy.OutputField(desc="Summary: which requirements passed/failed")
+    confidence: float = dspy.OutputField(desc="Confidence in assessment 0.0-1.0")
+```
+
+The `analysis` field prevents contradictory reasoning by requiring explicit per-requirement evaluation before scoring.
 
 ### Global Metrics Architecture
 
