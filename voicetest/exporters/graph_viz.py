@@ -6,7 +6,7 @@ from voicetest.models.agent import AgentGraph
 
 def _escape_mermaid_text(text: str) -> str:
     """Escape special characters for Mermaid labels."""
-    return text.replace('"', "'").replace("\n", " ").replace("_", "#95;")
+    return text.replace('"', "'").replace("\n", " ")
 
 
 class MermaidExporter:

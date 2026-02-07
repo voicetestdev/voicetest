@@ -111,8 +111,8 @@ class TestExportMermaid:
 
         assert "style greeting fill:#16a34a" in result
 
-    def test_special_characters_in_node_id_escaped(self):
-        """Test that special characters in node IDs are escaped in labels."""
+    def test_quotes_escaped_in_labels(self):
+        """Test that quotes in node IDs are escaped in labels."""
         graph = AgentGraph(
             nodes={
                 'node_with_"quotes"': AgentNode(
@@ -127,8 +127,41 @@ class TestExportMermaid:
 
         result = export_mermaid(graph)
 
-        # Label should have quotes escaped to single quotes and underscores to #95;
-        assert "node#95;with#95;'quotes'" in result
+        # Quotes should be escaped to single quotes
+        assert "node_with_'quotes'" in result
+
+    def test_underscores_preserved_in_labels(self):
+        """Test that underscores in node IDs are preserved correctly."""
+        graph = AgentGraph(
+            nodes={
+                "step_one_start": AgentNode(
+                    id="step_one_start",
+                    state_prompt="Begin the first step",
+                    transitions=[
+                        Transition(
+                            target_node_id="step_two_continue",
+                            condition=TransitionCondition(type="llm_prompt", value="user confirms"),
+                        )
+                    ],
+                ),
+                "step_two_continue": AgentNode(
+                    id="step_two_continue",
+                    state_prompt="Continue to next step",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="step_one_start",
+            source_type="custom",
+        )
+
+        result = export_mermaid(graph)
+
+        # Node IDs with underscores should appear in the output
+        assert "step_one_start" in result
+        assert "step_two_continue" in result
+        # The label inside quotes should contain the full node ID
+        assert '["step_one_start<br/>' in result
+        assert '["step_two_continue<br/>' in result
 
 
 class TestMermaidEndCallNode:

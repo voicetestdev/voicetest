@@ -188,27 +188,35 @@
   function setupTooltips() {
     if (!mermaidContainer || !$agentGraph) return;
 
-    // Build a map of known node IDs for matching
     const knownNodeIds = new Set(Object.keys($agentGraph.nodes));
 
     // Setup node tooltips
     const nodes = mermaidContainer.querySelectorAll(".node");
     nodes.forEach((node) => {
-      const textEl = node.querySelector(".nodeLabel");
-      if (!textEl) return;
-
-      // Extract node ID from the label text (format: "node_id<br/>...")
-      const labelText = textEl.textContent || "";
-      const nodeId = labelText.split(/\s/)[0]; // First word is the node ID
-
-      // Try to find matching node - check exact match first, then prefix match
+      // Mermaid creates IDs like "flowchart-nodeId-123"
+      // Split by "-" and find exact match for a known node ID
+      const elementId = node.id || "";
+      const segments = elementId.split("-");
       let matchedId: string | null = null;
-      if (knownNodeIds.has(nodeId)) {
-        matchedId = nodeId;
-      } else {
-        // Try to match by checking if any known ID is a prefix
+
+      for (const segment of segments) {
+        if (knownNodeIds.has(segment)) {
+          matchedId = segment;
+          break;
+        }
+      }
+
+      // Fallback: check if element ID contains a known node ID as exact segment
+      // (handles IDs with underscores that might span multiple dash-segments)
+      if (!matchedId) {
         for (const knownId of knownNodeIds) {
-          if (labelText.startsWith(knownId)) {
+          // Check for exact match with dash boundaries
+          if (
+            elementId === knownId ||
+            elementId.startsWith(knownId + "-") ||
+            elementId.endsWith("-" + knownId) ||
+            elementId.includes("-" + knownId + "-")
+          ) {
             matchedId = knownId;
             break;
           }
@@ -239,25 +247,29 @@
       const labelText = label.textContent?.trim() || "";
       if (!labelText) return;
 
-      // Find the full transition condition by matching truncated text
+      // Find the full transition condition and target node by matching truncated text
       let fullCondition = labelText;
+      let targetNodeId = "";
       for (const node of Object.values($agentGraph?.nodes || {})) {
         for (const transition of node.transitions) {
           const condValue = transition.condition.value;
           if (condValue.startsWith(labelText.replace("...", "")) ||
               labelText.replace("...", "") === condValue.slice(0, labelText.length - 3)) {
             fullCondition = condValue;
+            targetNodeId = transition.target_node_id;
             break;
           }
         }
+        if (targetNodeId) break;
       }
 
       label.addEventListener("mouseenter", (e) => {
         const rect = (e.target as Element).getBoundingClientRect();
+        const title = targetNodeId ? `Destination: ${targetNodeId}` : "Transition";
         showTooltip(
           rect.left + rect.width / 2,
           rect.top - 8,
-          "Transition",
+          title,
           fullCondition
         );
       });

@@ -32,16 +32,21 @@
   let detailContainer: HTMLElement;
   let prevMessageCount = 0;
 
-  // Auto-select the first running test so user can see streaming transcript
+  // Auto-select: running test takes priority, otherwise first result
   $effect(() => {
     const results = $currentRunWithResults?.results ?? [];
+    if (results.length === 0) return;
+
     const runningResult = results.find((r) => r.status === "running");
     if (runningResult && selectedResultId !== runningResult.id) {
-      // Only auto-select if nothing is selected or current selection is completed
+      // Running test takes priority
       const currentSelection = results.find((r) => r.id === selectedResultId);
       if (!currentSelection || currentSelection.status !== "running") {
         selectedResultId = runningResult.id;
       }
+    } else if (!selectedResultId || !results.find((r) => r.id === selectedResultId)) {
+      // Nothing selected or selection no longer exists - select first result
+      selectedResultId = results[0].id;
     }
   });
 
