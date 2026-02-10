@@ -49,13 +49,6 @@ Repository = "https://github.com/voicetestdev/voicetest"
 Issues = "https://github.com/voicetestdev/voicetest/issues"
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-    "ruff>=0.8",
-    "httpx>=0.28",
-    "pre-commit>=4.0",
-]
 postgres = [
     "psycopg[binary]>=3.0",
 ]
@@ -120,6 +113,15 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "httpx>=0.28",
+    "pre-commit>=4.0",
 ]
 
 [tool.uv]

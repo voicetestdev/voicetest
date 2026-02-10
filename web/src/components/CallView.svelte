@@ -38,22 +38,18 @@
 </script>
 
 {#if state.status === "idle" || state.status === "ended"}
-  {#if lkStatus.checking}
-    <button class="btn-primary" disabled>
-      <span class="spinner"></span>
-    </button>
-  {:else if !lkStatus.available}
-    <button class="btn-primary unavailable" disabled title={lkStatus.error || "LiveKit unavailable"}>
-      Talk to Agent
-    </button>
-    <button class="btn-sm retry-btn" onclick={() => checkLiveKitStatus()} title="Retry connection">
-      ↻
-    </button>
-  {:else}
-    <button class="btn-primary" onclick={handleStartCall} disabled={!agentId}>
-      Talk to Agent
-    </button>
-  {/if}
+  <button
+    class="btn-primary"
+    class:unavailable={!lkStatus.available}
+    disabled={lkStatus.available && !agentId}
+    onclick={!lkStatus.checking && !lkStatus.available ? () => checkLiveKitStatus() : handleStartCall}
+    title={!lkStatus.checking && !lkStatus.available ? (lkStatus.error || "LiveKit unavailable") : undefined}
+  >
+    Talk to Agent
+    {#if !lkStatus.available}
+      <span class="btn-icon" class:spinning={lkStatus.checking}>↻</span>
+    {/if}
+  </button>
 {:else if state.status === "connecting"}
   <button class="connecting" disabled>
     <span class="spinner"></span>
@@ -105,15 +101,23 @@
     gap: 0.5rem;
   }
 
-  .unavailable {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1em;
+    height: 1em;
+    vertical-align: text-top;
+    margin-left: 0.4em;
+    line-height: 1;
   }
 
-  .retry-btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 1rem;
-    line-height: 1;
+  .btn-icon.spinning {
+    animation: spin 1s linear infinite;
+  }
+
+  .unavailable {
+    opacity: 0.5;
   }
 
   .spinner {

@@ -43,6 +43,8 @@ voicetest demo
 voicetest demo --serve
 ```
 
+> **Tip:** If you have [Claude Code](https://claude.ai/claude-code) installed, you can skip API key setup entirely and use `claudecode/sonnet` as your model. See [Claude Code Passthrough](#claude-code-passthrough) for details.
+
 The demo includes a healthcare receptionist agent with 8 test cases covering appointment scheduling, identity verification, and more.
 
 ![CLI Demo](docs/demos/cli-demo.gif)
@@ -409,7 +411,7 @@ If you prefer running services manually (e.g., for debugging):
 # Clone and install
 git clone https://github.com/voicetestdev/voicetest
 cd voicetest
-uv sync --all-extras
+uv sync
 
 # Run unit tests
 uv run pytest tests/unit
@@ -521,7 +523,6 @@ voicetest/
 │   ├── unit/            # Unit tests
 │   └── integration/     # Integration tests (Ollama)
 └── docs/
-    └── M2_SPEC.md       # Future roadmap
 ```
 
 ## License

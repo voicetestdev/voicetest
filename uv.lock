@@ -4458,7 +4458,7 @@ wheels = [
 
 [[package]]
 name = "voicetest"
-version = "0.14"
+version = "0.16"
 source = { editable = "." }
 dependencies = [
     { name = "bland" },
@@ -4470,7 +4470,6 @@ dependencies = [
     { name = "livekit-agents" },
     { name = "livekit-plugins-openai" },
     { name = "livekit-plugins-silero" },
-    { name = "mlx-audio" },
     { name = "openpyxl" },
     { name = "punq" },
     { name = "pyarrow" },
@@ -4485,19 +4484,21 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "httpx" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
 macos = [
     { name = "misaki", extra = ["en"] },
     { name = "mlx-audio" },
 ]
 postgres = [
     { name = "psycopg", extra = ["binary"] },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pre-commit" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -4508,31 +4509,34 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.4.3" },
     { name = "duckdb-engine", specifier = ">=0.13" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28" },
     { name = "livekit-agents", specifier = ">=1.0,<2.0" },
     { name = "livekit-plugins-openai", specifier = ">=1.0,<2.0" },
     { name = "livekit-plugins-silero", specifier = ">=1.0,<2.0" },
     { name = "misaki", extras = ["en"], marker = "extra == 'macos'", specifier = ">=0.1" },
-    { name = "mlx-audio", specifier = ">=0.2.10" },
     { name = "mlx-audio", marker = "extra == 'macos'", specifier = ">=0.3" },
     { name = "openpyxl", specifier = ">=3.1.5" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = ">=3.0" },
     { name = "punq", specifier = ">=0.7.0" },
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "pydantic", specifier = ">=2.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "python-multipart", specifier = ">=0.0.21" },
     { name = "retell-sdk", specifier = ">=5.0" },
     { name = "rich", specifier = ">=13.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "textual", specifier = ">=7.2.0" },
     { name = "uvicorn", specifier = ">=0.32" },
     { name = "vapi-server-sdk", specifier = ">=0.2" },
 ]
-provides-extras = ["dev", "postgres", "macos"]
+provides-extras = ["postgres", "macos"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "pre-commit", specifier = ">=4.0" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "ruff", specifier = ">=0.8" },
+]
 
 [[package]]
 name = "wasabi"
