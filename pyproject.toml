@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "0.15"
+version = "0.16"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -41,7 +41,6 @@ dependencies = [
     "vapi-server-sdk>=0.2",
     "sqlalchemy>=2.0",
     "duckdb-engine>=0.13",
-    "mlx-audio>=0.2.10",
 ]
 
 [project.urls]
