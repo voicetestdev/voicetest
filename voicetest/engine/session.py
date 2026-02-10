@@ -1,18 +1,18 @@
 """Conversation session management.
 
-Wraps the execution of conversations using DSPy modules.
+Wraps the execution of conversations using the ConversationEngine.
 """
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from voicetest.engine.modules import ConversationModule, RunContext
-from voicetest.llm import call_llm
+from voicetest.engine.conversation import ConversationEngine
+from voicetest.engine.modules import ConversationModule
+from voicetest.llm import _invoke_callback
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message, ToolCall
 from voicetest.models.test_case import RunOptions
 from voicetest.retry import OnErrorCallback
-from voicetest.utils import substitute_variables
 
 
 # Callback type for turn updates: receives transcript after each turn
@@ -20,13 +20,6 @@ OnTurnCallback = Callable[[list[Message]], Awaitable[None] | None]
 
 # Callback type for token updates: receives token string and source ("agent" or "user")
 OnTokenCallback = Callable[[str, str], Awaitable[None] | None]
-
-
-async def _invoke_callback(callback: Callable, *args) -> None:
-    """Invoke callback, handling both sync and async."""
-    result = callback(*args)
-    if result is not None and hasattr(result, "__await__"):
-        await result
 
 
 @dataclass
@@ -57,10 +50,8 @@ class NodeTracker:
 class ConversationRunner:
     """Runs simulated conversations.
 
-    This class orchestrates the conversation loop, managing:
-    - ConversationModule instantiation
-    - Turn-by-turn execution
-    - State tracking
+    This class orchestrates the conversation loop, delegating turn processing
+    to ConversationEngine for consistent behavior between tests and live calls.
     """
 
     def __init__(
@@ -75,9 +66,29 @@ class ConversationRunner:
         self.options = options or RunOptions()
         self._mock_mode = mock_mode
         self._dynamic_variables = dynamic_variables or {}
+
+        # Keep _conversation_module for backward compatibility with tests
+        # that access it directly
         self._conversation_module = ConversationModule(
             graph, use_cot_transitions=use_cot_transitions
         )
+
+        # Engine for actual turn processing (not used in mock mode)
+        self._engine: ConversationEngine | None = None
+        if not mock_mode:
+            # Apply cot_transitions setting to options
+            effective_options = RunOptions(
+                **{
+                    **self.options.model_dump(),
+                    "cot_transitions": use_cot_transitions,
+                }
+            )
+            self._engine = ConversationEngine(
+                graph=graph,
+                model=self.options.agent_model,
+                options=effective_options,
+                dynamic_variables=dynamic_variables,
+            )
 
     async def run(
         self,
@@ -186,7 +197,7 @@ class ConversationRunner:
     ) -> tuple[str, str | None]:
         """Process a single conversation turn.
 
-        Uses the ConversationModule to generate responses and handle transitions.
+        Delegates to ConversationEngine for consistent behavior with live calls.
 
         Args:
             node_id: The current node ID.
@@ -203,94 +214,43 @@ class ConversationRunner:
         if self._mock_mode:
             return f"[Mock response from {node_id}]", None
 
-        # Get the state module and its signature
-        state_module = self._conversation_module.get_state_module(node_id)
-        if state_module is None:
-            raise ValueError(f"Unknown node: {node_id}")
-
-        # Apply dynamic variable substitution to instructions
-        general_instructions = substitute_variables(
-            self._conversation_module.instructions, self._dynamic_variables
-        )
-        state_instructions = substitute_variables(
-            state_module.instructions, self._dynamic_variables
-        )
-
-        # Build context for state execution
-        ctx = RunContext(
-            conversation_history=self._format_transcript(state.transcript),
-            user_message=user_message,
-            dynamic_variables=self._dynamic_variables,
-            available_transitions=self._conversation_module.format_transitions(node_id),
-            general_instructions=general_instructions,
-            state_instructions=state_instructions,
-        )
-
         # Wrap on_token to add source="agent"
         async def agent_token_callback(token: str) -> None:
             if on_token:
                 await _invoke_callback(on_token, token, "agent")
 
-        # Call LLM with the state module's signature
-        result = await call_llm(
-            self.options.agent_model,
-            state_module._response_signature,
+        # Use the engine for turn processing (same logic as live calls)
+        # But we need to sync the engine's state with our state tracking
+        # The engine manages its own transcript, so we need to sync carefully
+
+        # Sync engine to current node if needed
+        if self._engine._current_node != node_id:
+            self._engine._current_node = node_id
+
+        # Sync transcript to engine (excluding the user message we just added to state)
+        # The engine maintains its own transcript, but we need to keep them in sync
+        # for the context to be correct
+        self._engine._transcript = [
+            msg for msg in state.transcript if msg.role != "user" or msg.content != user_message
+        ]
+
+        # Process turn through engine
+        result = await self._engine.process_turn(
+            user_message,
             on_token=agent_token_callback if on_token else None,
-            stream_field="response" if on_token else None,
             on_error=on_error,
-            general_instructions=ctx.general_instructions,
-            state_instructions=ctx.state_instructions,
-            conversation_history=ctx.conversation_history,
-            user_message=ctx.user_message,
-            **(
-                {"available_transitions": ctx.available_transitions}
-                if state_module.transitions
-                else {}
-            ),
         )
 
-        # Handle transition
+        # Sync state from engine result
         new_node_id = None
-        transition_target = getattr(result, "transition_to", "none")
-        if transition_target:
-            transition_target = transition_target.strip().lower()
+        if result.transitioned_to:
+            node_tracker.record(result.transitioned_to)
+            new_node_id = result.transitioned_to
 
-        if transition_target and transition_target != "none":
-            # Check for end_call
-            current_node = self.graph.nodes.get(node_id)
-            has_end_call = current_node and any(
-                t.name == "end_call" or getattr(t, "type", "") == "end_call"
-                for t in current_node.tools
-            )
+        if result.end_call_invoked:
+            state.end_call_invoked = True
 
-            if transition_target == "end_call" and has_end_call:
-                state.end_call_invoked = True
-                state.tools_called.append(
-                    ToolCall(
-                        name="end_call",
-                        arguments={},
-                        result="call_ended",
-                    )
-                )
-            elif transition_target in self.graph.nodes:
-                node_tracker.record(transition_target)
-                state.tools_called.append(
-                    ToolCall(
-                        name=f"route_to_{transition_target}",
-                        arguments={},
-                        result=transition_target,
-                    )
-                )
-                new_node_id = transition_target
+        # Add tool calls from engine to state
+        state.tools_called.extend(result.tool_calls)
 
         return result.response, new_node_id
-
-    def _format_transcript(self, transcript: list[Message]) -> str:
-        """Format transcript for LLM input."""
-        if not transcript:
-            return "(conversation just started)"
-
-        lines = []
-        for msg in transcript:
-            lines.append(f"{msg.role.upper()}: {msg.content}")
-        return "\n".join(lines)

@@ -186,7 +186,7 @@ class TestDynamicVariableSubstitution:
 
             return MockResult()
 
-        with patch("voicetest.engine.session.call_llm", side_effect=mock_call_llm):
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
             state = ConversationState()
             node_tracker = NodeTracker()
             node_tracker.record("main")
@@ -235,7 +235,7 @@ class TestDynamicVariableSubstitution:
 
             return MockResult()
 
-        with patch("voicetest.engine.session.call_llm", side_effect=mock_call_llm):
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
             state = ConversationState()
             node_tracker = NodeTracker()
             node_tracker.record("main")

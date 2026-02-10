@@ -215,8 +215,9 @@ class MlxKokoroChunkedStream(tts.ChunkedStream):
         voice: str,
         speed: float,
         lang_code: str,
+        conn_options: APIConnectOptions = _DEFAULT_CONN_OPTIONS,
     ):
-        super().__init__(tts=tts, input_text=text)
+        super().__init__(tts=tts, input_text=text, conn_options=conn_options)
         self._model = model
         self._voice = voice
         self._speed = speed
@@ -279,8 +280,9 @@ class MlxKokoroSynthesizeStream(tts.SynthesizeStream):
         voice: str,
         speed: float,
         lang_code: str,
+        conn_options: APIConnectOptions = _DEFAULT_CONN_OPTIONS,
     ):
-        super().__init__(tts=tts)
+        super().__init__(tts=tts, conn_options=conn_options)
         self._model = model
         self._voice = voice
         self._speed = speed

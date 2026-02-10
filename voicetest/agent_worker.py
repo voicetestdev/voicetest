@@ -3,6 +3,9 @@
 This module runs as a subprocess that connects to a LiveKit room and runs
 the voice agent. Transcript updates are streamed to stdout as JSON lines.
 
+IMPORTANT: This uses the same ConversationEngine as the test runner to
+ensure tests and live calls behave identically.
+
 Usage:
     python -m voicetest.agent_worker --room ROOM --url URL --token TOKEN
     python -m voicetest.agent_worker --room ROOM --url URL --token TOKEN --backend local
@@ -20,6 +23,8 @@ from livekit import rtc
 from livekit.agents.voice import Agent, AgentSession
 from livekit.plugins import openai, silero
 
+from voicetest.engine.conversation import ConversationEngine
+from voicetest.engine.livekit_llm import VoicetestLLM
 from voicetest.models.agent import AgentGraph
 
 
@@ -57,26 +62,12 @@ def output_status(status: str) -> None:
     print(json.dumps(msg), flush=True)
 
 
-def build_system_prompt(graph: AgentGraph) -> str:
-    """Build a system prompt from the agent graph.
+def get_general_prompt(graph: AgentGraph) -> str:
+    """Get the general prompt from the agent graph.
 
-    Combines all node prompts into a comprehensive system prompt.
+    Returns the general_prompt from source_metadata, or a default.
     """
-    prompts = []
-
-    if graph.entry_node_id in graph.nodes:
-        entry_node = graph.nodes[graph.entry_node_id]
-        if entry_node.state_prompt:
-            prompts.append(entry_node.state_prompt)
-
-    for node_id, node in graph.nodes.items():
-        if node_id != graph.entry_node_id and node.state_prompt:
-            prompts.append(f"[State: {node_id}]\n{node.state_prompt}")
-
-    if not prompts:
-        return "You are a helpful voice assistant."
-
-    return "\n\n".join(prompts)
+    return graph.source_metadata.get("general_prompt", "You are a helpful voice assistant.")
 
 
 def main() -> None:
@@ -131,13 +122,18 @@ def main() -> None:
             output_status("connected")
             print("[agent-worker] connected to room", file=sys.stderr, flush=True)
 
-            system_prompt = build_system_prompt(graph)
             model_name = graph.default_model or "gpt-4o-mini"
             print(
                 f"[agent-worker] backend={args.backend}, model={model_name}",
                 file=sys.stderr,
                 flush=True,
             )
+
+            # Create ConversationEngine - same logic as test runner
+            engine = ConversationEngine(graph=graph, model=f"openai/{model_name}")
+
+            # Create VoicetestLLM that wraps the engine
+            voicetest_llm = VoicetestLLM(engine)
 
             # Configure the voice pipeline based on backend choice
             if args.backend == "local":
@@ -149,16 +145,15 @@ def main() -> None:
                     file=sys.stderr,
                     flush=True,
                 )
+                # Update engine to use Ollama model
+                engine.model = f"ollama/{ollama_model}"
                 session = AgentSession(
                     stt=openai.STT(
                         base_url=args.whisper_url,
                         api_key="not-needed",
                         model="Systran/faster-whisper-base.en",
                     ),
-                    llm=openai.LLM.with_ollama(
-                        model=ollama_model,
-                        base_url=args.ollama_url,
-                    ),
+                    llm=voicetest_llm,
                     tts=openai.TTS(
                         base_url=args.kokoro_url,
                         api_key="not-needed",
@@ -174,12 +169,10 @@ def main() -> None:
                     sys.exit(1)
 
                 ollama_model = model_name if ":" in model_name else "qwen2.5:0.5b"
+                engine.model = f"ollama/{ollama_model}"
                 session = AgentSession(
                     stt=MlxWhisperSTT(),
-                    llm=openai.LLM.with_ollama(
-                        model=ollama_model,
-                        base_url=args.ollama_url,
-                    ),
+                    llm=voicetest_llm,
                     tts=MlxKokoroTTS(),
                     vad=silero.VAD.load(),
                 )
@@ -187,12 +180,14 @@ def main() -> None:
                 # OpenAI backend
                 session = AgentSession(
                     stt=openai.STT(),
-                    llm=openai.LLM(model=model_name),
+                    llm=voicetest_llm,
                     tts=openai.TTS(),
                     vad=silero.VAD.load(),
                 )
 
-            agent = Agent(instructions=system_prompt)
+            # Get instructions from graph for Agent
+            instructions = get_general_prompt(graph)
+            agent = Agent(instructions=instructions)
 
             # Listen for user input transcriptions
             @session.on("user_input_transcribed")
