@@ -147,6 +147,11 @@ class TestStreamifyIntegration:
         if not has_llm_key:
             pytest.skip("No LLM API key configured")
 
+        # claudecode/ models use subprocess, not litellm - can't stream via DSPy
+        model = _settings.models.agent
+        if model and model.startswith("claudecode/"):
+            pytest.skip("claudecode/ models don't support litellm streaming")
+
         import dspy
         from dspy.streaming import StreamListener, streamify
 

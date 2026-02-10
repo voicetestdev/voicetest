@@ -120,7 +120,8 @@ class TestMlxPluginsIntegration:
     """Integration tests requiring model loading (slower)."""
 
     @pytest.mark.slow
-    def test_tts_synthesize_returns_chunked_stream(self):
+    @pytest.mark.asyncio
+    async def test_tts_synthesize_returns_chunked_stream(self):
         """Test that synthesize returns a ChunkedStream."""
         from livekit.agents import tts
 
@@ -132,7 +133,8 @@ class TestMlxPluginsIntegration:
         assert isinstance(stream, tts.ChunkedStream)
 
     @pytest.mark.slow
-    def test_tts_stream_returns_synthesize_stream(self):
+    @pytest.mark.asyncio
+    async def test_tts_stream_returns_synthesize_stream(self):
         """Test that stream returns a SynthesizeStream."""
         from livekit.agents import tts
 

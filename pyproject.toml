@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "0.14"
+version = "0.15"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -62,6 +62,7 @@ postgres = [
 ]
 macos = [
     "mlx-audio>=0.3",
+    "misaki[en]>=0.1",
 ]
 
 [project.scripts]
