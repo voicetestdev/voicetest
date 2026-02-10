@@ -15,7 +15,16 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, FastAPI, HTTPException, UploadFile, WebSocket
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    FastAPI,
+    Header,
+    HTTPException,
+    Response,
+    UploadFile,
+    WebSocket,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +32,7 @@ from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from voicetest import api
+from voicetest.calls import get_call_manager
 from voicetest.container import get_container, get_importer_registry, get_session
 from voicetest.demo import get_demo_agent, get_demo_tests
 from voicetest.executor import RunJob, get_executor_factory
@@ -35,6 +45,7 @@ from voicetest.retry import RetryError
 from voicetest.settings import Settings, load_settings, save_settings
 from voicetest.storage.repositories import (
     AgentRepository,
+    CallRepository,
     RunRepository,
     TestCaseRepository,
 )
@@ -95,6 +106,13 @@ def get_run_repo() -> RunRepository:
     if not _initialized:
         init_storage()
     return get_container().resolve(RunRepository)
+
+
+def get_call_repo() -> CallRepository:
+    """Get the call repository from the DI container."""
+    if not _initialized:
+        init_storage()
+    return get_container().resolve(CallRepository)
 
 
 def _find_web_dist() -> Path | None:
@@ -295,6 +313,27 @@ class ExportTestsRequest(BaseModel):
     test_ids: list[str] | None = None  # None means all tests
 
 
+class StartCallResponse(BaseModel):
+    """Response from starting a call."""
+
+    call_id: str
+    room_name: str
+    livekit_url: str
+    token: str
+
+
+class CallStatusResponse(BaseModel):
+    """Response with call status."""
+
+    id: str
+    agent_id: str
+    room_name: str
+    status: str
+    transcript: list[dict]
+    started_at: str
+    ended_at: str | None = None
+
+
 class ImporterInfo(BaseModel):
     """Importer information for API response."""
 
@@ -477,17 +516,56 @@ async def get_agent(agent_id: str) -> dict:
     return agent
 
 
-@router.get("/agents/{agent_id}/graph", response_model=AgentGraph)
-async def get_agent_graph(agent_id: str) -> AgentGraph:
-    """Get the AgentGraph for an agent."""
+@router.get("/agents/{agent_id}/graph", response_model=None)
+async def get_agent_graph(
+    agent_id: str,
+    response: Response,
+    if_none_match: str | None = Header(default=None),
+) -> AgentGraph | Response:
+    """Get the AgentGraph for an agent.
+
+    For linked agents (source_path), uses file mtime for ETag-based caching.
+    Returns 304 Not Modified if the file hasn't changed.
+    """
     repo = get_agent_repo()
     agent = repo.get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+    # For linked agents, use file mtime for caching
+    source_path = agent.get("source_path")
+    if source_path:
+        path = Path(source_path)
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"Agent file not found: {path}")
+
+        mtime = path.stat().st_mtime
+        etag = f'"{agent_id}-{mtime}"'
+
+        # Check if client has current version
+        if if_none_match and if_none_match == etag:
+            return Response(status_code=304)
+
+        response.headers["ETag"] = etag
+        response.headers["Cache-Control"] = "private, must-revalidate"
+
+        return get_importer_registry().import_agent(path)
+
+    # For non-linked agents, use updated_at for caching
     try:
         result = repo.load_graph(agent)
         if isinstance(result, Path):
             return get_importer_registry().import_agent(result)
+
+        updated_at = agent.get("updated_at", "")
+        etag = f'"{agent_id}-{updated_at}"'
+
+        if if_none_match and if_none_match == etag:
+            return Response(status_code=304)
+
+        response.headers["ETag"] = etag
+        response.headers["Cache-Control"] = "private, must-revalidate"
+
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
@@ -1204,6 +1282,151 @@ async def start_run(
         "started_at": run["started_at"],
         "test_count": len(test_records),
     }
+
+
+# Live call endpoints
+
+
+class LiveKitStatusResponse(BaseModel):
+    """Response from LiveKit health check."""
+
+    available: bool
+    error: str | None = None
+
+
+@router.get("/livekit/status", response_model=LiveKitStatusResponse)
+async def get_livekit_status() -> LiveKitStatusResponse:
+    """Check if LiveKit server is reachable."""
+    call_manager = get_call_manager()
+
+    try:
+        # Try to create and immediately delete a test room
+        test_room = f"health-check-{int(datetime.now(UTC).timestamp())}"
+        await call_manager.create_room(test_room)
+        return LiveKitStatusResponse(available=True)
+    except Exception as e:
+        error_msg = str(e)
+        # Clean up the error message for display
+        if "Connect call failed" in error_msg or "Cannot connect to host" in error_msg:
+            error_msg = "LiveKit server not reachable"
+        return LiveKitStatusResponse(available=False, error=error_msg)
+
+
+@router.post("/agents/{agent_id}/calls/start", response_model=StartCallResponse)
+async def start_call(agent_id: str) -> StartCallResponse:
+    """Start a live voice call with an agent.
+
+    Creates a LiveKit room and spawns an agent worker subprocess.
+    Returns connection info including a token for the browser to join.
+    """
+    agent_repo = get_agent_repo()
+    agent = agent_repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    try:
+        result = agent_repo.load_graph(agent)
+        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
+
+    call_repo = get_call_repo()
+    call_manager = get_call_manager()
+
+    try:
+        call_info = await call_manager.start_call(agent_id, graph, call_repo)
+        return StartCallResponse(**call_info)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start call: {e}") from None
+
+
+@router.get("/calls/{call_id}", response_model=CallStatusResponse)
+async def get_call(call_id: str) -> CallStatusResponse:
+    """Get call status and transcript."""
+    call_repo = get_call_repo()
+    call = call_repo.get(call_id)
+    if not call:
+        raise HTTPException(status_code=404, detail="Call not found")
+
+    call_manager = get_call_manager()
+    active_call = call_manager.get_active_call(call_id)
+
+    transcript = call.get("transcript_json", [])
+    if active_call:
+        transcript = active_call.transcript
+
+    return CallStatusResponse(
+        id=call["id"],
+        agent_id=call["agent_id"],
+        room_name=call["room_name"],
+        status=call["status"],
+        transcript=transcript,
+        started_at=call["started_at"],
+        ended_at=call.get("ended_at"),
+    )
+
+
+@router.post("/calls/{call_id}/end")
+async def end_call(call_id: str) -> dict:
+    """End a live call."""
+    call_repo = get_call_repo()
+    call = call_repo.get(call_id)
+    if not call:
+        raise HTTPException(status_code=404, detail="Call not found")
+
+    call_manager = get_call_manager()
+
+    try:
+        await call_manager.end_call(call_id, call_repo)
+        return {"status": "ended", "call_id": call_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to end call: {e}") from None
+
+
+@router.websocket("/calls/{call_id}/ws")
+async def call_websocket(websocket: WebSocket, call_id: str):
+    """WebSocket for streaming call updates (transcript, status)."""
+    try:
+        await websocket.accept()
+    except Exception:
+        return
+
+    call_repo = get_call_repo()
+    call = call_repo.get(call_id)
+    if not call:
+        await websocket.send_json({"type": "error", "message": "Call not found"})
+        await websocket.close(code=1008)
+        return
+
+    call_manager = get_call_manager()
+
+    try:
+        state_msg = {
+            "type": "state",
+            "call": {
+                "id": call["id"],
+                "status": call["status"],
+                "transcript": call.get("transcript_json", []),
+            },
+        }
+        await websocket.send_json(state_msg)
+
+        queued_messages = call_manager.register_websocket(call_id, websocket)
+
+        for msg in queued_messages:
+            await websocket.send_text(msg)
+
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "end_call":
+                await call_manager.end_call(call_id, call_repo)
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        call_manager.unregister_websocket(call_id, websocket)
 
 
 # Platform integration endpoints

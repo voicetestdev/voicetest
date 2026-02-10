@@ -11,11 +11,22 @@ import dspy
 from dspy.adapters.baml_adapter import BAMLAdapter
 from dspy.streaming import StreamListener, streamify
 
+from voicetest.llm.claudecode import ClaudeCodeLM
 from voicetest.retry import OnErrorCallback, with_retry
 
 
 # Callback type for token updates: receives token string
 OnTokenCallback = Callable[[str], Awaitable[None] | None]
+
+
+def _create_lm(model: str) -> dspy.LM:
+    """Create an LM instance for the given model string.
+
+    Handles custom providers like claudecode/ prefix.
+    """
+    if model.startswith("claudecode/"):
+        return ClaudeCodeLM(model)
+    return dspy.LM(model)
 
 
 async def _invoke_callback(callback: Callable, *args) -> None:
@@ -85,7 +96,7 @@ async def _call_llm_sync(
     **kwargs,
 ) -> dspy.Prediction:
     """Non-streaming LLM call with BAMLAdapter for better structured output."""
-    lm = dspy.LM(model)
+    lm = _create_lm(model)
     adapter = BAMLAdapter()
 
     def run_predictor():
@@ -111,7 +122,7 @@ async def _call_llm_streaming(
     """Streaming LLM call with token callbacks."""
 
     async def stream():
-        lm = dspy.LM(model)
+        lm = _create_lm(model)
         predictor = dspy.Predict(signature_class)
         stream_listeners = [StreamListener(signature_field_name=stream_field)]
 

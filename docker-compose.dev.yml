@@ -1,0 +1,64 @@
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --dev --bind 0.0.0.0 --node-ip 127.0.0.1
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cpu
+    ports:
+      - "8001:8000"
+    environment:
+      - WHISPER__MODEL=Systran/faster-whisper-base.en
+
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    ports:
+      - "8002:8880"
+
+  backend:
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/.venv
+      - backend-cache:/root/.cache/uv
+      - ${HOME}:${HOME}:ro
+    ports:
+      - "8000:8000"
+    environment:
+      - LIVEKIT_URL=ws://livekit:7880
+      - LIVEKIT_PUBLIC_URL=ws://localhost:7880
+      - LIVEKIT_API_KEY=devkey
+      - LIVEKIT_API_SECRET=secret
+      - VOICETEST_BACKEND=local
+      - OLLAMA_URL=http://host.docker.internal:11434/v1
+      - WHISPER_URL=http://whisper:8000/v1
+      - KOKORO_URL=http://kokoro:8880/v1
+    command: >
+      sh -c "uv sync && uv run voicetest serve --reload --host 0.0.0.0"
+    depends_on:
+      - livekit
+      - whisper
+      - kokoro
+
+  frontend:
+    image: oven/bun:latest
+    working_dir: /app/web
+    volumes:
+      - ./web:/app/web
+      - frontend-node-modules:/app/web/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_TARGET=http://backend:8000
+    command: sh -c "bun install && bun run dev --host 0.0.0.0"
+    depends_on:
+      - backend
+
+volumes:
+  backend-cache:
+  frontend-node-modules:

@@ -286,3 +286,27 @@ export interface SyncToPlatformResponse {
   platform: string;
   synced: boolean;
 }
+
+export type CallStatus = "pending" | "connecting" | "active" | "ended" | "error";
+
+export interface CallTranscriptMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface CallRecord {
+  id: string;
+  agent_id: string;
+  room_name: string;
+  status: CallStatus;
+  transcript: CallTranscriptMessage[];
+  started_at: string;
+  ended_at: string | null;
+}
+
+export interface StartCallResponse {
+  call_id: string;
+  room_name: string;
+  livekit_url: string;
+  token: string;
+}

@@ -9,6 +9,7 @@
     currentView,
   } from "../lib/stores";
   import type { ExporterInfo, Platform, PlatformInfo, PlatformStatus, SyncStatus } from "../lib/types";
+  import CallView from "./CallView.svelte";
 
   interface Props {
     theme?: "light" | "dark";
@@ -670,8 +671,9 @@
     </section>
 
     <div class="actions">
+      <CallView />
       <button
-        class="export-btn primary"
+        class="btn-primary"
         onclick={() => (showExportModal = true)}
         disabled={exporting}
       >
@@ -1041,20 +1043,6 @@
     padding: 0.5rem 0;
   }
 
-  .export-btn {
-    background: var(--bg-hover);
-    padding: 0.5rem 1rem;
-    font-size: 0.85rem;
-  }
-
-  .export-btn:hover {
-    background: var(--border-color);
-  }
-
-  .export-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
 
   .error-message {
     color: #f87171;
@@ -1186,18 +1174,6 @@
   .danger:hover {
     background: var(--danger-bg-hover);
     border-color: var(--danger-border);
-  }
-
-  .export-btn.primary {
-    background: var(--accent);
-    color: #ffffff;
-    border-color: var(--accent);
-    padding: 0.6rem 1.2rem;
-  }
-
-  .export-btn.primary:hover {
-    background: var(--accent-hover);
-    border-color: var(--accent-hover);
   }
 
   .modal-backdrop {

@@ -115,6 +115,34 @@ class Run(Base):
         }
 
 
+class Call(Base):
+    """Call model representing a live voice call session."""
+
+    __tablename__ = "calls"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), nullable=False)
+    room_name: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    transcript_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    agent: Mapped["Agent"] = relationship()
+
+    def to_dict(self) -> dict:
+        """Convert model to dictionary for API responses."""
+        return {
+            "id": self.id,
+            "agent_id": self.agent_id,
+            "room_name": self.room_name,
+            "status": self.status,
+            "transcript_json": self.transcript_json,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "ended_at": self.ended_at.isoformat() if self.ended_at else None,
+        }
+
+
 class Result(Base):
     """Result model representing an individual test result."""
 

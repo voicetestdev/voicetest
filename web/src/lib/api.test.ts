@@ -29,6 +29,8 @@ describe("api", () => {
 
       (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
+        status: 200,
+        headers: new Headers(),
         text: () => Promise.resolve(JSON.stringify(mockConfig)),
       });
 

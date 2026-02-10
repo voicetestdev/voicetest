@@ -28,7 +28,12 @@ from voicetest.platforms.registry import PlatformRegistry
 from voicetest.platforms.retell import RetellPlatformClient
 from voicetest.platforms.vapi import VapiPlatformClient
 from voicetest.storage.engine import create_db_engine, get_session_factory
-from voicetest.storage.repositories import AgentRepository, RunRepository, TestCaseRepository
+from voicetest.storage.repositories import (
+    AgentRepository,
+    CallRepository,
+    RunRepository,
+    TestCaseRepository,
+)
 
 
 def _create_importer_registry() -> ImporterRegistry:
@@ -108,6 +113,7 @@ def create_container() -> punq.Container:
     container.register(AgentRepository)
     container.register(TestCaseRepository)
     container.register(RunRepository)
+    container.register(CallRepository)
 
     return container
 

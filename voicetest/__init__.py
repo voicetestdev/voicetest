@@ -1,12 +1,12 @@
 """voicetest - A generic test harness for voice agent workflows."""
 
-from voicetest import api
+__version__ = "0.1.0"
+
+# Lightweight imports only - heavy dependencies are imported lazily
 from voicetest.models.agent import AgentGraph, AgentNode, Transition, TransitionCondition
 from voicetest.models.results import Message, MetricResult, TestResult, TestRun, ToolCall
 from voicetest.models.test_case import RunOptions, TestCase
 
-
-__version__ = "0.1.0"
 
 __all__ = [
     "AgentGraph",
@@ -20,5 +20,4 @@ __all__ = [
     "ToolCall",
     "Transition",
     "TransitionCondition",
-    "api",
 ]

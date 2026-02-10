@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from voicetest.models.agent import AgentGraph, MetricsConfig
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import TestCase
-from voicetest.storage.models import Agent, Result, Run
+from voicetest.storage.models import Agent, Call, Result, Run
 from voicetest.storage.models import TestCase as TestCaseModel
 
 
@@ -500,4 +500,93 @@ class RunRepository:
             "tools_called": result.tools_called,
             "models_used": result.models_used,
             "created_at": _serialize_datetime(result.created_at),
+        }
+
+
+class CallRepository:
+    """CRUD operations for live calls."""
+
+    def __init__(self, session: Session):
+        self.session = session
+
+    def get(self, call_id: str) -> dict | None:
+        """Get call by ID."""
+        call = self.session.get(Call, call_id)
+        return self._to_dict(call) if call else None
+
+    def list_for_agent(self, agent_id: str, limit: int = 50) -> list[dict]:
+        """List calls for a specific agent."""
+        calls = (
+            self.session.query(Call)
+            .filter(Call.agent_id == agent_id)
+            .order_by(Call.started_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [self._to_dict(c) for c in calls]
+
+    def create(self, agent_id: str, room_name: str) -> dict:
+        """Create a new call."""
+        call_id = str(uuid4())
+        now = datetime.now(UTC)
+
+        call = Call(
+            id=call_id,
+            agent_id=agent_id,
+            room_name=room_name,
+            status="pending",
+            transcript_json=[],
+            started_at=now,
+            ended_at=None,
+        )
+        self.session.add(call)
+        self.session.commit()
+
+        return self.get(call_id)
+
+    def update_status(self, call_id: str, status: str) -> dict | None:
+        """Update call status."""
+        call = self.session.get(Call, call_id)
+        if not call:
+            return None
+
+        call.status = status
+        self.session.commit()
+        return self.get(call_id)
+
+    def update_transcript(self, call_id: str, transcript: list) -> None:
+        """Update the transcript for a call."""
+        call = self.session.get(Call, call_id)
+        if call:
+            call.transcript_json = transcript
+            self.session.commit()
+
+    def end_call(self, call_id: str) -> dict | None:
+        """Mark a call as ended."""
+        call = self.session.get(Call, call_id)
+        if not call:
+            return None
+
+        call.status = "ended"
+        call.ended_at = datetime.now(UTC)
+        self.session.commit()
+        return self.get(call_id)
+
+    def delete(self, call_id: str) -> None:
+        """Delete a call."""
+        call = self.session.get(Call, call_id)
+        if call:
+            self.session.delete(call)
+            self.session.commit()
+
+    def _to_dict(self, call: Call) -> dict:
+        """Convert Call model to dictionary."""
+        return {
+            "id": call.id,
+            "agent_id": call.agent_id,
+            "room_name": call.room_name,
+            "status": call.status,
+            "transcript_json": call.transcript_json,
+            "started_at": _serialize_datetime(call.started_at),
+            "ended_at": _serialize_datetime(call.ended_at),
         }

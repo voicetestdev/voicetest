@@ -1,6 +1,7 @@
 import type {
   AgentGraph,
   AgentRecord,
+  CallRecord,
   ExporterInfo,
   ExportToPlatformResponse,
   GalleryItem,
@@ -17,6 +18,7 @@ import type {
   RunRecord,
   RunWithResults,
   Settings,
+  StartCallResponse,
   StartRunResponse,
   SyncStatus,
   SyncToPlatformResponse,
@@ -50,6 +52,8 @@ async function getHeaders(): Promise<Record<string, string>> {
   return {};
 }
 
+import { etagCache } from "./etag-cache";
+
 function parseErrorMessage(text: string, fallback: string): string {
   try {
     const json = JSON.parse(text);
@@ -60,18 +64,34 @@ function parseErrorMessage(text: string, fallback: string): string {
 }
 
 async function get<T>(path: string): Promise<T> {
-  const headers = await getHeaders();
+  const baseHeaders = await getHeaders();
+  const headers = etagCache.buildHeaders(path, baseHeaders);
+
   const res = await fetch(`${globalConfig.baseUrl}${path}`, { headers });
+
+  // Check for cached response on 304
+  const cached = etagCache.handleResponse<T>(path, res);
+  if (cached !== null) {
+    return cached;
+  }
+
   if (!res.ok) {
     const text = await res.text();
     throw new Error(parseErrorMessage(text, res.statusText));
   }
+
   const text = await res.text();
+  let data: T;
   try {
-    return JSON.parse(text);
+    data = JSON.parse(text);
   } catch (e) {
     throw new Error(`Invalid JSON from ${path}: ${text.slice(0, 100)}`);
   }
+
+  // Cache if response has ETag
+  etagCache.cacheResponse(path, res, data);
+
+  return data;
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
@@ -287,6 +307,15 @@ export const api = {
   syncToPlatform: (agentId: string, graph: AgentGraph) =>
     post<SyncToPlatformResponse>(`/agents/${agentId}/sync`, { graph }),
 
+  getLiveKitStatus: () => get<{ available: boolean; error: string | null }>("/livekit/status"),
+
+  startCall: (agentId: string) =>
+    post<StartCallResponse>(`/agents/${agentId}/calls/start`, {}),
+
+  getCall: (callId: string) => get<CallRecord>(`/calls/${callId}`),
+
+  endCall: (callId: string) => post<{ status: string; call_id: string }>(`/calls/${callId}/end`, {}),
+
   getWebSocketUrl: (path: string): string => {
     const baseUrl = globalConfig.baseUrl || "/api";
     if (baseUrl.startsWith("http://") || baseUrl.startsWith("https://")) {
@@ -295,8 +324,11 @@ export const api = {
       return `${protocol}//${url.host}${url.pathname}${path}`;
     }
     if (typeof window !== "undefined") {
+      // In development, connect directly to backend on port 8000
+      // Vite proxy doesn't handle WebSocket upgrade reliably
+      const host = window.location.hostname;
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      return `${protocol}//${window.location.host}${baseUrl}${path}`;
+      return `${protocol}//${host}:8000${baseUrl}${path}`;
     }
     return `ws://localhost:8000${baseUrl}${path}`;
   },

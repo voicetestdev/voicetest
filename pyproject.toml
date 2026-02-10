@@ -41,6 +41,7 @@ dependencies = [
     "vapi-server-sdk>=0.2",
     "sqlalchemy>=2.0",
     "duckdb-engine>=0.13",
+    "mlx-audio>=0.2.10",
 ]
 
 [project.urls]
@@ -58,6 +59,9 @@ dev = [
 ]
 postgres = [
     "psycopg[binary]>=3.0",
+]
+macos = [
+    "mlx-audio>=0.3",
 ]
 
 [project.scripts]
@@ -114,3 +118,9 @@ ban-relative-imports = "parents"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.uv]
+prerelease = "allow"

@@ -350,7 +350,60 @@ In the shell:
 > set simulator_model ollama_chat/qwen2.5:0.5b
 ```
 
+### Claude Code Passthrough
+
+If you have [Claude Code](https://claude.ai/claude-code) installed, you can use it as your LLM backend without configuring API keys:
+
+```toml
+# .voicetest/settings.toml
+[models]
+agent = "claudecode/sonnet"
+simulator = "claudecode/haiku"
+judge = "claudecode/sonnet"
+```
+
+Available model strings:
+
+- `claudecode/sonnet` - Claude Sonnet
+- `claudecode/opus` - Claude Opus
+- `claudecode/haiku` - Claude Haiku
+
+This invokes the `claude` CLI via subprocess, using your existing Claude Code authentication.
+
 ## Development
+
+### Docker Development (Recommended)
+
+The easiest way to get a full development environment running is with Docker Compose:
+
+```bash
+# Clone and start all services
+git clone https://github.com/voicetestdev/voicetest
+cd voicetest
+docker compose -f docker-compose.dev.yml up
+```
+
+This starts three services:
+
+| Service    | URL                   | Description                              |
+| ---------- | --------------------- | ---------------------------------------- |
+| `livekit`  | ws://localhost:7880   | LiveKit server for real-time voice calls |
+| `backend`  | http://localhost:8000 | FastAPI backend with hot reload          |
+| `frontend` | http://localhost:5173 | Vite dev server with hot reload          |
+
+Open http://localhost:5173 to access the web UI. Changes to Python or TypeScript files trigger automatic reloads.
+
+**Linked Agents:** The compose file mounts your home directory (`$HOME`) read-only so linked agents with absolute paths work inside the container. On macOS, you may need to grant Docker Desktop access to your home directory in Settings → Resources → File Sharing.
+
+To stop all services:
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
+### Manual Development
+
+If you prefer running services manually (e.g., for debugging):
 
 ```bash
 # Clone and install
@@ -384,7 +437,9 @@ Tests that require the CLI will skip automatically if it's not installed.
 
 ### Frontend Development
 
-The web UI is built with Bun + Svelte + Vite. Uses [mise](https://mise.jdx.dev/) for version management.
+The web UI is built with Bun + Svelte + Vite. The recommended approach is to use Docker Compose (see above), which handles all services automatically.
+
+For manual frontend development, uses [mise](https://mise.jdx.dev/) for version management:
 
 ```bash
 # Terminal 1 - Frontend dev server with hot reload
@@ -394,6 +449,9 @@ mise exec -- bun run dev   # http://localhost:5173
 
 # Terminal 2 - Backend API
 uv run voicetest serve --reload   # http://localhost:8000
+
+# Terminal 3 - LiveKit server (for live voice calls)
+docker run --rm -p 7880:7880 -p 7881:7881 -p 7882:7882/udp livekit/livekit-server --dev
 ```
 
 The Vite dev server proxies `/api/*` to the FastAPI backend.
