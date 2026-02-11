@@ -82,6 +82,8 @@ describe("TestsView - Run Selected", () => {
       patterns: null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      source_path: null,
+      source_index: null,
     };
     testCaseRecords.set([testRecord]);
     testCases.set([
@@ -178,6 +180,7 @@ describe("App - View switching reactivity", () => {
         name: "Test Agent",
         source_type: "custom",
         source_path: null,
+        tests_paths: null,
         graph_json: null,
         metrics_config: null,
         created_at: new Date().toISOString(),

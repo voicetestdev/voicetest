@@ -165,6 +165,7 @@ export interface AgentRecord {
   name: string;
   source_type: string;
   source_path: string | null;
+  tests_paths: string[] | null;
   graph_json: string | null;
   metrics_config?: string | null;
   created_at: string;
@@ -186,6 +187,8 @@ export interface TestCaseRecord {
   patterns: string | null;
   created_at: string;
   updated_at: string;
+  source_path: string | null;
+  source_index: number | null;
 }
 
 export interface GalleryItem {

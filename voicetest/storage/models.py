@@ -23,6 +23,7 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     source_type: Mapped[str] = mapped_column(String, nullable=False)
     source_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    tests_paths: Mapped[list | None] = mapped_column(JSON, nullable=True)
     graph_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     metrics_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
@@ -39,6 +40,7 @@ class Agent(Base):
             "name": self.name,
             "source_type": self.source_type,
             "source_path": self.source_path,
+            "tests_paths": self.tests_paths,
             "graph_json": self.graph_json,
             "metrics_config": self.metrics_config,
             "created_at": self.created_at.isoformat() if self.created_at else None,

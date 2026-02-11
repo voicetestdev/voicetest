@@ -1,6 +1,8 @@
 """Tests for repository classes."""
 
 from datetime import UTC, datetime
+import json
+from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 from sqlalchemy import create_engine
@@ -586,6 +588,220 @@ class TestTestCaseRepositoryEdgeCases:
 
     def test_delete_nonexistent(self, test_case_repo):
         test_case_repo.delete("nonexistent-id")
+
+
+class TestLinkedTests:
+    """Tests for file-based linked test case operations."""
+
+    @pytest.fixture
+    def tests_file(self, tmp_path):
+        """Create a test file with sample test cases."""
+        f = tmp_path / "tests.json"
+        data = [
+            {
+                "name": "Greeting Test",
+                "user_prompt": "Say hello",
+                "metrics": ["Greets user"],
+                "type": "llm",
+            },
+            {
+                "name": "Billing Test",
+                "user_prompt": "Ask about billing",
+                "metrics": ["Provides billing info"],
+                "type": "llm",
+                "dynamic_variables": {"account": "12345"},
+            },
+        ]
+        f.write_text(json.dumps(data, indent=2))
+        return f
+
+    @pytest.fixture
+    def agent_with_tests(self, agent_repo, tests_file):
+        """Create an agent linked to a test file."""
+        return agent_repo.create(
+            name="Linked Agent",
+            source_type="linked",
+            tests_paths=[str(tests_file)],
+        )
+
+    def test_list_for_agent_with_linked_merges_db_and_file(
+        self, test_case_repo, agent_repo, agent_with_tests, tests_file
+    ):
+        db_test = TestCase(name="DB Test", user_prompt="from database")
+        test_case_repo.create(agent_with_tests["id"], db_test)
+
+        results = test_case_repo.list_for_agent_with_linked(
+            agent_with_tests["id"], [str(tests_file)]
+        )
+
+        names = [t["name"] for t in results]
+        assert "DB Test" in names
+        assert "Greeting Test" in names
+        assert "Billing Test" in names
+        assert len(results) == 3
+
+    def test_linked_tests_have_deterministic_ids(
+        self, test_case_repo, agent_with_tests, tests_file
+    ):
+        results1 = test_case_repo.list_for_agent_with_linked(
+            agent_with_tests["id"], [str(tests_file)]
+        )
+        results2 = test_case_repo.list_for_agent_with_linked(
+            agent_with_tests["id"], [str(tests_file)]
+        )
+
+        ids1 = [t["id"] for t in results1]
+        ids2 = [t["id"] for t in results2]
+        assert ids1 == ids2
+
+    def test_linked_tests_have_source_path_and_index(
+        self, test_case_repo, agent_with_tests, tests_file
+    ):
+        results = test_case_repo.list_for_agent_with_linked(
+            agent_with_tests["id"], [str(tests_file)]
+        )
+
+        linked = [t for t in results if t.get("source_path")]
+        assert len(linked) == 2
+        assert linked[0]["source_path"] == str(tests_file)
+        assert linked[0]["source_index"] == 0
+        assert linked[1]["source_index"] == 1
+
+    def test_linked_tests_id_uses_uuid5(self, test_case_repo, agent_with_tests, tests_file):
+        results = test_case_repo.list_for_agent_with_linked(
+            agent_with_tests["id"], [str(tests_file)]
+        )
+
+        linked = [t for t in results if t.get("source_path")]
+        expected_id = str(uuid5(NAMESPACE_URL, f"{tests_file}:Greeting Test"))
+        assert linked[0]["id"] == expected_id
+
+    def test_list_with_empty_tests_paths(self, test_case_repo, agent_repo):
+        agent = agent_repo.create(name="No Links", source_type="test", graph_json="{}")
+        db_test = TestCase(name="Only DB", user_prompt="hi")
+        test_case_repo.create(agent["id"], db_test)
+
+        results = test_case_repo.list_for_agent_with_linked(agent["id"], [])
+
+        assert len(results) == 1
+        assert results[0]["name"] == "Only DB"
+
+    def test_list_with_none_tests_paths(self, test_case_repo, agent_repo):
+        agent = agent_repo.create(name="No Links", source_type="test", graph_json="{}")
+
+        results = test_case_repo.list_for_agent_with_linked(agent["id"], None)
+
+        assert len(results) == 0
+
+    def test_list_with_missing_file_skips(self, test_case_repo, agent_repo, tmp_path):
+        agent = agent_repo.create(name="Bad Link", source_type="test", graph_json="{}")
+        missing = str(tmp_path / "missing.json")
+
+        results = test_case_repo.list_for_agent_with_linked(agent["id"], [missing])
+
+        assert len(results) == 0
+
+    def test_update_linked(self, test_case_repo, agent_with_tests, tests_file):
+        results = test_case_repo.list_for_agent_with_linked(
+            agent_with_tests["id"], [str(tests_file)]
+        )
+        linked = [t for t in results if t.get("source_path")]
+        test_id = linked[0]["id"]
+
+        updated_case = TestCase(
+            name="Updated Greeting",
+            user_prompt="Say hi differently",
+            metrics=["Greets user warmly"],
+        )
+        updated = test_case_repo.update_linked(test_id, updated_case, str(tests_file), 0)
+
+        assert updated["name"] == "Updated Greeting"
+        assert updated["user_prompt"] == "Say hi differently"
+
+        file_data = json.loads(tests_file.read_text())
+        assert file_data[0]["name"] == "Updated Greeting"
+        assert file_data[1]["name"] == "Billing Test"
+
+    def test_delete_linked(self, test_case_repo, agent_with_tests, tests_file):
+        results = test_case_repo.list_for_agent_with_linked(
+            agent_with_tests["id"], [str(tests_file)]
+        )
+        linked = [t for t in results if t.get("source_path")]
+        test_id = linked[0]["id"]
+
+        test_case_repo.delete_linked(test_id, str(tests_file), 0)
+
+        file_data = json.loads(tests_file.read_text())
+        assert len(file_data) == 1
+        assert file_data[0]["name"] == "Billing Test"
+
+    def test_create_in_file(self, test_case_repo, agent_with_tests, tests_file):
+        new_test = TestCase(
+            name="Transfer Test",
+            user_prompt="Transfer me to billing",
+            metrics=["Transfers correctly"],
+        )
+
+        result = test_case_repo.create_in_file(str(tests_file), agent_with_tests["id"], new_test)
+
+        assert result["name"] == "Transfer Test"
+        assert result["source_path"] == str(tests_file)
+        assert result["source_index"] == 2
+
+        file_data = json.loads(tests_file.read_text())
+        assert len(file_data) == 3
+        assert file_data[2]["name"] == "Transfer Test"
+
+    def test_linked_tests_include_all_fields(self, test_case_repo, agent_with_tests, tests_file):
+        results = test_case_repo.list_for_agent_with_linked(
+            agent_with_tests["id"], [str(tests_file)]
+        )
+
+        linked = [t for t in results if t.get("source_path")]
+        billing = next(t for t in linked if t["name"] == "Billing Test")
+
+        assert billing["dynamic_variables"] == {"account": "12345"}
+        assert billing["type"] == "llm"
+        assert billing["metrics"] == ["Provides billing info"]
+
+
+class TestAgentRepositoryTestsPaths:
+    """Tests for tests_paths field on Agent."""
+
+    def test_create_with_tests_paths(self, agent_repo, tmp_path):
+        tests_file = tmp_path / "tests.json"
+        tests_file.write_text("[]")
+
+        record = agent_repo.create(
+            name="Agent",
+            source_type="linked",
+            tests_paths=[str(tests_file)],
+        )
+
+        assert record["tests_paths"] == [str(tests_file)]
+
+    def test_create_without_tests_paths(self, agent_repo):
+        record = agent_repo.create(
+            name="Agent",
+            source_type="test",
+            graph_json="{}",
+        )
+
+        assert record["tests_paths"] is None
+
+    def test_update_tests_paths(self, agent_repo, tmp_path):
+        record = agent_repo.create(
+            name="Agent",
+            source_type="test",
+            graph_json="{}",
+        )
+
+        tests_file = tmp_path / "tests.json"
+        tests_file.write_text("[]")
+
+        updated = agent_repo.update(record["id"], tests_paths=[str(tests_file)])
+
+        assert updated["tests_paths"] == [str(tests_file)]
 
 
 class TestRunRepositoryEdgeCases:

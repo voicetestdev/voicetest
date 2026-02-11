@@ -2,16 +2,21 @@
 
 from datetime import UTC, datetime
 import json
+import logging
 from pathlib import Path
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy.orm import Session
 
 from voicetest.models.agent import AgentGraph, MetricsConfig
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import TestCase
+from voicetest.storage.linked_file import read_json, write_json
 from voicetest.storage.models import Agent, Call, Result, Run
 from voicetest.storage.models import TestCase as TestCaseModel
+
+
+logger = logging.getLogger(__name__)
 
 
 def _serialize_datetime(dt: datetime | None) -> str | None:
@@ -47,6 +52,7 @@ class AgentRepository:
         name: str,
         source_type: str,
         source_path: str | None = None,
+        tests_paths: list[str] | None = None,
         graph_json: str | None = None,
         metrics_config: MetricsConfig | None = None,
         user_id: str | None = None,
@@ -61,6 +67,7 @@ class AgentRepository:
             name=name,
             source_type=source_type,
             source_path=source_path,
+            tests_paths=tests_paths,
             graph_json=graph_json,
             metrics_config=None,
             created_at=now,
@@ -79,6 +86,7 @@ class AgentRepository:
         agent_id: str,
         name: str | None = None,
         source_path: str | None = None,
+        tests_paths: list[str] | None = None,
         graph_json: str | None = None,
     ) -> dict | None:
         """Update an agent."""
@@ -90,6 +98,8 @@ class AgentRepository:
             agent.name = name
         if source_path is not None:
             agent.source_path = source_path
+        if tests_paths is not None:
+            agent.tests_paths = tests_paths
         if graph_json is not None:
             agent.graph_json = graph_json
 
@@ -176,6 +186,7 @@ class AgentRepository:
             "name": agent.name,
             "source_type": agent.source_type,
             "source_path": agent.source_path,
+            "tests_paths": agent.tests_paths,
             "graph_json": agent.graph_json,
             "metrics_config": metrics_json,
             "created_at": _serialize_datetime(agent.created_at),
@@ -273,6 +284,137 @@ class TestCaseRepository:
             excludes=record["excludes"] if record.get("excludes") else [],
             patterns=record["patterns"] if record.get("patterns") else [],
         )
+
+    def list_for_agent_with_linked(
+        self, agent_id: str, tests_paths: list[str] | None
+    ) -> list[dict]:
+        """List all test cases for an agent, merging DB and file-based tests.
+
+        File-based tests get deterministic IDs via uuid5(NAMESPACE_URL, "{path}:{name}")
+        and include source_path and source_index fields.
+        """
+        db_tests = self.list_for_agent(agent_id)
+
+        if not tests_paths:
+            return db_tests
+
+        linked_tests = []
+        for path in tests_paths:
+            try:
+                entries = read_json(path)
+            except (FileNotFoundError, json.JSONDecodeError):
+                logger.warning("Skipping unreadable tests file: %s", path)
+                continue
+
+            if not isinstance(entries, list):
+                logger.warning("Tests file is not a JSON array: %s", path)
+                continue
+
+            for index, entry in enumerate(entries):
+                test_id = str(uuid5(NAMESPACE_URL, f"{path}:{entry.get('name', index)}"))
+                linked_tests.append(
+                    self._linked_entry_to_dict(entry, test_id, agent_id, path, index)
+                )
+
+        return db_tests + linked_tests
+
+    def update_linked(
+        self,
+        test_id: str,
+        test_case: TestCase,
+        source_path: str,
+        source_index: int,
+    ) -> dict:
+        """Update a test case in a linked JSON file by index."""
+        entries = read_json(source_path)
+        entries[source_index] = self._test_case_to_file_entry(test_case)
+        write_json(source_path, entries)
+
+        return self._linked_entry_to_dict(
+            entries[source_index], test_id, "", source_path, source_index
+        )
+
+    def delete_linked(
+        self,
+        test_id: str,
+        source_path: str,
+        source_index: int,
+    ) -> None:
+        """Delete a test case from a linked JSON file by index."""
+        entries = read_json(source_path)
+        entries.pop(source_index)
+        write_json(source_path, entries)
+
+    def create_in_file(
+        self,
+        source_path: str,
+        agent_id: str,
+        test_case: TestCase,
+    ) -> dict:
+        """Append a test case to a linked JSON file."""
+        try:
+            entries = read_json(source_path)
+        except FileNotFoundError:
+            entries = []
+
+        entry = self._test_case_to_file_entry(test_case)
+        entries.append(entry)
+        write_json(source_path, entries)
+
+        source_index = len(entries) - 1
+        test_id = str(uuid5(NAMESPACE_URL, f"{source_path}:{test_case.name}"))
+        return self._linked_entry_to_dict(entry, test_id, agent_id, source_path, source_index)
+
+    def _test_case_to_file_entry(self, test_case: TestCase) -> dict:
+        """Convert a TestCase model to a file-storable dict."""
+        entry = {
+            "name": test_case.name,
+            "user_prompt": test_case.user_prompt,
+            "type": test_case.type,
+        }
+        if test_case.metrics:
+            entry["metrics"] = test_case.metrics
+        if test_case.dynamic_variables:
+            entry["dynamic_variables"] = test_case.dynamic_variables
+        if test_case.tool_mocks:
+            entry["tool_mocks"] = test_case.tool_mocks
+        if test_case.llm_model:
+            entry["llm_model"] = test_case.llm_model
+        if test_case.includes:
+            entry["includes"] = test_case.includes
+        if test_case.excludes:
+            entry["excludes"] = test_case.excludes
+        if test_case.patterns:
+            entry["patterns"] = test_case.patterns
+        return entry
+
+    def _linked_entry_to_dict(
+        self,
+        entry: dict,
+        test_id: str,
+        agent_id: str,
+        source_path: str,
+        source_index: int,
+    ) -> dict:
+        """Convert a file-based test entry to the standard API dict format."""
+        return {
+            "id": test_id,
+            "agent_id": agent_id,
+            "name": entry.get("name", ""),
+            "user_prompt": entry.get("user_prompt", ""),
+            "metrics": entry.get("metrics"),
+            "dynamic_variables": entry.get("dynamic_variables"),
+            "tool_mocks": entry.get("tool_mocks"),
+            "type": entry.get("type", "llm"),
+            "llm_model": entry.get("llm_model"),
+            "includes": entry.get("includes"),
+            "excludes": entry.get("excludes"),
+            "patterns": entry.get("patterns"),
+            "created_at": None,
+            "updated_at": None,
+            "source_path": source_path,
+            "source_index": source_index,
+        }
 
     def _to_dict(self, tc: TestCaseModel) -> dict:
         """Convert TestCase model to dictionary for API responses."""

@@ -43,6 +43,7 @@ from voicetest.models.test_case import RunOptions, TestCase
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.retry import RetryError
 from voicetest.settings import Settings, load_settings, save_settings
+from voicetest.storage.linked_file import check_file, compute_etag
 from voicetest.storage.repositories import (
     AgentRepository,
     CallRepository,
@@ -65,18 +66,38 @@ def init_storage() -> None:
     _initialized = True
 
     linked_agents = os.environ.get("VOICETEST_LINKED_AGENTS", "")
+    linked_tests_raw = os.environ.get("VOICETEST_LINKED_TESTS", "")
+
+    # Parse linked tests: "agent_path=test1,test2;agent_path2=test3"
+    tests_by_agent: dict[str, list[str]] = {}
+    if linked_tests_raw:
+        for pair in linked_tests_raw.split(";"):
+            pair = pair.strip()
+            if "=" not in pair:
+                continue
+            agent_path, test_paths_str = pair.split("=", 1)
+            agent_path = agent_path.strip()
+            test_paths = [p.strip() for p in test_paths_str.split(",") if p.strip()]
+            if agent_path and test_paths:
+                tests_by_agent[agent_path] = test_paths
+
     if linked_agents:
         for agent_path in linked_agents.split(","):
-            if agent_path.strip():
-                _register_linked_agent(Path(agent_path.strip()))
+            agent_path = agent_path.strip()
+            if agent_path:
+                tests_paths = tests_by_agent.get(agent_path)
+                _register_linked_agent(Path(agent_path), tests_paths=tests_paths)
 
 
-def _register_linked_agent(path: Path) -> None:
+def _register_linked_agent(path: Path, tests_paths: list[str] | None = None) -> None:
     """Register a linked agent from filesystem if not already registered."""
     repo = get_agent_repo()
     existing = repo.list_all()
     for agent in existing:
         if agent.get("source_path") == str(path):
+            # Update tests_paths if they changed
+            if tests_paths and agent.get("tests_paths") != tests_paths:
+                repo.update(agent["id"], tests_paths=tests_paths)
             return
 
     name = path.stem
@@ -84,6 +105,7 @@ def _register_linked_agent(path: Path) -> None:
         name=name,
         source_type="linked",
         source_path=str(path),
+        tests_paths=tests_paths,
     )
 
 
@@ -113,6 +135,26 @@ def get_call_repo() -> CallRepository:
     if not _initialized:
         init_storage()
     return get_container().resolve(CallRepository)
+
+
+def _find_linked_test(test_id: str) -> dict | None:
+    """Search all agents' linked test files for a test with the given ID.
+
+    Returns the matching test dict (with source_path/source_index) or None.
+    """
+    agent_repo = get_agent_repo()
+    test_repo = get_test_case_repo()
+
+    for agent in agent_repo.list_all():
+        tests_paths = agent.get("tests_paths")
+        if not tests_paths:
+            continue
+        linked = test_repo.list_for_agent_with_linked(agent["id"], tests_paths)
+        for t in linked:
+            if t["id"] == test_id and t.get("source_path"):
+                return t
+
+    return None
 
 
 def _find_web_dist() -> Path | None:
@@ -535,21 +577,20 @@ async def get_agent_graph(
     # For linked agents, use file mtime for caching
     source_path = agent.get("source_path")
     if source_path:
-        path = Path(source_path)
-        if not path.exists():
-            raise HTTPException(status_code=404, detail=f"Agent file not found: {path}")
+        try:
+            _mtime, etag = check_file(source_path, agent_id)
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404, detail=f"Agent file not found: {source_path}"
+            ) from None
 
-        mtime = path.stat().st_mtime
-        etag = f'"{agent_id}-{mtime}"'
-
-        # Check if client has current version
         if if_none_match and if_none_match == etag:
             return Response(status_code=304)
 
         response.headers["ETag"] = etag
         response.headers["Cache-Control"] = "private, must-revalidate"
 
-        return get_importer_registry().import_agent(path)
+        return get_importer_registry().import_agent(Path(source_path))
 
     # For non-linked agents, use updated_at for caching
     try:
@@ -558,7 +599,7 @@ async def get_agent_graph(
             return get_importer_registry().import_agent(result)
 
         updated_at = agent.get("updated_at", "")
-        etag = f'"{agent_id}-{updated_at}"'
+        etag = compute_etag(agent_id, updated_at)
 
         if if_none_match and if_none_match == etag:
             return Response(status_code=304)
@@ -709,8 +750,13 @@ async def update_metrics_config(agent_id: str, request: UpdateMetricsConfigReque
 
 @router.get("/agents/{agent_id}/tests")
 async def list_tests_for_agent(agent_id: str) -> list[dict]:
-    """List all test cases for an agent."""
-    return get_test_case_repo().list_for_agent(agent_id)
+    """List all test cases for an agent, including file-based linked tests."""
+    agent = get_agent_repo().get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    tests_paths = agent.get("tests_paths")
+    return get_test_case_repo().list_for_agent_with_linked(agent_id, tests_paths)
 
 
 @router.post("/agents/{agent_id}/tests/export")
@@ -736,7 +782,11 @@ async def export_tests_for_agent(agent_id: str, request: ExportTestsRequest) -> 
 
 @router.post("/agents/{agent_id}/tests")
 async def create_test_case(agent_id: str, request: CreateTestCaseRequest) -> dict:
-    """Create a test case for an agent."""
+    """Create a test case for an agent.
+
+    If the agent has linked test files, the test is appended to the first file.
+    Otherwise it is stored in the database.
+    """
     test_case = TestCase(
         name=request.name,
         user_prompt=request.user_prompt,
@@ -749,16 +799,22 @@ async def create_test_case(agent_id: str, request: CreateTestCaseRequest) -> dic
         excludes=request.excludes,
         patterns=request.patterns,
     )
-    return get_test_case_repo().create(agent_id, test_case)
+
+    repo = get_test_case_repo()
+    agent = get_agent_repo().get(agent_id)
+    tests_paths = agent.get("tests_paths") if agent else None
+
+    if tests_paths:
+        return repo.create_in_file(tests_paths[0], agent_id, test_case)
+
+    return repo.create(agent_id, test_case)
 
 
 @router.put("/tests/{test_id}")
 async def update_test_case(test_id: str, request: CreateTestCaseRequest) -> dict:
-    """Update a test case."""
+    """Update a test case (DB or linked file)."""
     repo = get_test_case_repo()
     test = repo.get(test_id)
-    if not test:
-        raise HTTPException(status_code=404, detail="Test case not found")
 
     test_case = TestCase(
         name=request.name,
@@ -772,19 +828,34 @@ async def update_test_case(test_id: str, request: CreateTestCaseRequest) -> dict
         excludes=request.excludes,
         patterns=request.patterns,
     )
-    return repo.update(test_id, test_case)
+
+    if test:
+        return repo.update(test_id, test_case)
+
+    # Check linked files for this test ID
+    linked = _find_linked_test(test_id)
+    if linked:
+        return repo.update_linked(test_id, test_case, linked["source_path"], linked["source_index"])
+
+    raise HTTPException(status_code=404, detail="Test case not found")
 
 
 @router.delete("/tests/{test_id}")
 async def delete_test_case(test_id: str) -> dict:
-    """Delete a test case."""
+    """Delete a test case (DB or linked file)."""
     repo = get_test_case_repo()
     test = repo.get(test_id)
-    if not test:
-        raise HTTPException(status_code=404, detail="Test case not found")
 
-    repo.delete(test_id)
-    return {"status": "deleted", "id": test_id}
+    if test:
+        repo.delete(test_id)
+        return {"status": "deleted", "id": test_id}
+
+    linked = _find_linked_test(test_id)
+    if linked:
+        repo.delete_linked(test_id, linked["source_path"], linked["source_index"])
+        return {"status": "deleted", "id": test_id}
+
+    raise HTTPException(status_code=404, detail="Test case not found")
 
 
 class LoadDemoResponse(BaseModel):
@@ -1223,12 +1294,14 @@ async def start_run(
         raise HTTPException(status_code=404, detail="Agent not found")
 
     test_case_repo = get_test_case_repo()
+    tests_paths = agent.get("tests_paths")
+    all_tests = test_case_repo.list_for_agent_with_linked(agent_id, tests_paths)
+
     if request.test_ids:
-        test_records = [
-            test_case_repo.get(tid) for tid in request.test_ids if test_case_repo.get(tid)
-        ]
+        tests_by_id = {t["id"]: t for t in all_tests}
+        test_records = [tests_by_id[tid] for tid in request.test_ids if tid in tests_by_id]
     else:
-        test_records = test_case_repo.list_for_agent(agent_id)
+        test_records = all_tests
 
     if not test_records:
         raise HTTPException(status_code=400, detail="No test cases to run")

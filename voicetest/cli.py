@@ -429,14 +429,38 @@ async def _smoke_test(max_turns: int) -> None:
     type=click.Path(exists=True, path_type=Path),
     help="Agent definition file(s) to link",
 )
-def serve(host: str, port: int, reload: bool, agent: tuple[Path, ...]):
-    """Start the REST API server."""
+@click.option(
+    "--tests",
+    "-t",
+    multiple=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Test file(s) to link (paired with preceding --agent)",
+)
+def serve(host: str, port: int, reload: bool, agent: tuple[Path, ...], tests: tuple[Path, ...]):
+    """Start the REST API server.
+
+    Use --agent to link agent files, and --tests to link test files.
+    Test files are associated with the last specified --agent.
+    If multiple agents need different tests, specify them in order:
+      --agent a1.json --tests t1.json --agent a2.json --tests t2.json
+    """
     os.environ["VOICETEST_LINKED_AGENTS"] = ",".join(str(p) for p in agent)
+
+    # Build VOICETEST_LINKED_TESTS mapping: "agent_path=test1,test2;..."
+    if tests and agent:
+        # Associate all test files with the last agent
+        last_agent = str(agent[-1])
+        tests_str = ",".join(str(t) for t in tests)
+        os.environ["VOICETEST_LINKED_TESTS"] = f"{last_agent}={tests_str}"
 
     if agent:
         console.print(f"  Linked agents: {len(agent)}")
         for a in agent:
             console.print(f"    - {a}")
+    if tests:
+        console.print(f"  Linked tests: {len(tests)}")
+        for t in tests:
+            console.print(f"    - {t}")
 
     _start_server(host, port, reload)
 
