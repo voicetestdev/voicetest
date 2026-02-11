@@ -1,10 +1,18 @@
 """SQLAlchemy ORM models for voicetest storage."""
 
-from datetime import UTC, datetime
+from datetime import UTC
+from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime
+from sqlalchemy import ForeignKey
+from sqlalchemy import Integer
+from sqlalchemy import String
+from sqlalchemy import Text
 from sqlalchemy.dialects.sqlite import JSON
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import relationship
 
 
 class Base(DeclarativeBase):

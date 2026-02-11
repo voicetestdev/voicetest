@@ -8,7 +8,8 @@ import os
 from pathlib import Path
 import tomllib
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from pydantic import Field
 
 from voicetest.config import get_settings_path
 

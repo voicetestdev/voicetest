@@ -1,8 +1,12 @@
 """Textual widgets for voicetest TUI."""
 
-from textual.widgets import ListItem, ListView, Static
+from textual.widgets import ListItem
+from textual.widgets import ListView
+from textual.widgets import Static
 
-from voicetest.formatting import format_flow, status_color, status_icon
+from voicetest.formatting import format_flow
+from voicetest.formatting import status_color
+from voicetest.formatting import status_icon
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import TestCase
 

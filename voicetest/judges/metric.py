@@ -3,7 +3,8 @@
 import dspy
 
 from voicetest.llm import call_llm
-from voicetest.models.results import Message, MetricResult
+from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
 from voicetest.retry import OnErrorCallback
 
 

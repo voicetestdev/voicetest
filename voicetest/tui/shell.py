@@ -5,17 +5,26 @@ import difflib
 import os
 from pathlib import Path
 
-from textual.app import App, ComposeResult
+from textual.app import App
+from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal
+from textual.containers import Vertical
 from textual.suggester import SuggestFromList
-from textual.widgets import Footer, Header, Input, RichLog, Static
+from textual.widgets import Footer
+from textual.widgets import Header
+from textual.widgets import Input
+from textual.widgets import RichLog
+from textual.widgets import Static
 
 from voicetest import api
 from voicetest.config import get_settings_path
-from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
 from voicetest.runner import load_test_cases
-from voicetest.settings import Settings, load_settings, save_settings
+from voicetest.settings import Settings
+from voicetest.settings import load_settings
+from voicetest.settings import save_settings
 
 
 COMMANDS = [

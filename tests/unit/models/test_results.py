@@ -117,7 +117,9 @@ class TestTestResult:
     """Tests for TestResult model."""
 
     def test_create_passed_result(self):
-        from voicetest.models.results import Message, MetricResult, TestResult
+        from voicetest.models.results import Message
+        from voicetest.models.results import MetricResult
+        from voicetest.models.results import TestResult
 
         result = TestResult(
             test_id="test-001",
@@ -156,7 +158,8 @@ class TestTestResult:
         assert result.transcript == []
 
     def test_result_json_serialization(self):
-        from voicetest.models.results import Message, TestResult
+        from voicetest.models.results import Message
+        from voicetest.models.results import TestResult
 
         result = TestResult(
             test_id="t1",
@@ -178,7 +181,8 @@ class TestTestRun:
     """Tests for TestRun model."""
 
     def test_create_test_run(self):
-        from voicetest.models.results import TestResult, TestRun
+        from voicetest.models.results import TestResult
+        from voicetest.models.results import TestRun
 
         now = datetime.now()
         run = TestRun(
@@ -215,7 +219,8 @@ class TestTestRun:
         assert len(run.results) == 3
 
     def test_passed_count(self):
-        from voicetest.models.results import TestResult, TestRun
+        from voicetest.models.results import TestResult
+        from voicetest.models.results import TestRun
 
         run = TestRun(
             run_id="run-002",
@@ -250,7 +255,8 @@ class TestTestRun:
         assert run.passed_count == 2
 
     def test_failed_count(self):
-        from voicetest.models.results import TestResult, TestRun
+        from voicetest.models.results import TestResult
+        from voicetest.models.results import TestRun
 
         run = TestRun(
             run_id="run-003",

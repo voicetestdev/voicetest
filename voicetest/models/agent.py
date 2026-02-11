@@ -4,9 +4,11 @@ These models define the source-agnostic representation that all importers
 convert to. The AgentGraph captures the complete workflow structure.
 """
 
-from typing import Any, Literal
+from typing import Any
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from pydantic import Field
 
 
 class TransitionCondition(BaseModel):

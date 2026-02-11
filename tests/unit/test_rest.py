@@ -311,7 +311,8 @@ class TestAgentsCRUD:
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
         monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
-        from voicetest.rest import app, init_storage
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
 
         init_storage()
 
@@ -570,7 +571,8 @@ class TestTestCasesCRUD:
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
         monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
-        from voicetest.rest import app, init_storage
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
 
         init_storage()
 
@@ -673,7 +675,8 @@ class TestGalleryEndpoint:
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
         monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
-        from voicetest.rest import app, init_storage
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
 
         init_storage()
 
@@ -695,7 +698,8 @@ class TestRunWebSocket:
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
         monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
-        from voicetest.rest import app, init_storage
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
 
         init_storage()
 
@@ -831,7 +835,8 @@ class TestOrphanedRunDetection:
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
         monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
-        from voicetest.rest import app, init_storage
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
 
         init_storage()
 
@@ -840,7 +845,8 @@ class TestOrphanedRunDetection:
     @pytest.fixture
     def orphaned_run(self, db_client, sample_retell_config):
         """Create an orphaned run (not in _active_runs, not completed)."""
-        from voicetest.rest import _active_runs, get_run_repo
+        from voicetest.rest import _active_runs
+        from voicetest.rest import get_run_repo
 
         # Create agent
         agent_response = db_client.post(
@@ -891,7 +897,8 @@ class TestOrphanedRunDetection:
         """GET /runs/{id} should NOT mark active runs as orphaned."""
         import asyncio
 
-        from voicetest.rest import _active_runs, get_run_repo
+        from voicetest.rest import _active_runs
+        from voicetest.rest import get_run_repo
 
         # Create agent
         agent_response = db_client.post(
@@ -933,7 +940,8 @@ class TestRunDeletion:
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
         monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
-        from voicetest.rest import app, init_storage
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
 
         init_storage()
 
@@ -971,7 +979,8 @@ class TestRunDeletion:
         """DELETE /runs/{id} should not allow deleting an active run."""
         import asyncio
 
-        from voicetest.rest import _active_runs, get_run_repo
+        from voicetest.rest import _active_runs
+        from voicetest.rest import get_run_repo
 
         agent_response = db_client.post(
             "/api/agents",
@@ -1008,7 +1017,8 @@ class TestWebSocketStateMessage:
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
         monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
-        from voicetest.rest import app, init_storage
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
 
         init_storage()
 
@@ -1191,7 +1201,8 @@ class TestPlatformEndpoints:
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".voicetest").mkdir()
 
-        from voicetest.rest import app, init_storage
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
 
         init_storage()
 
@@ -1477,7 +1488,8 @@ class TestSyncToPlatform:
         monkeypatch.chdir(tmp_path)
         (tmp_path / ".voicetest").mkdir()
 
-        from voicetest.rest import app, init_storage
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
 
         init_storage()
 
@@ -1496,7 +1508,8 @@ class TestSyncToPlatform:
 
     def test_sync_status_no_platform_source(self, db_client):
         """Sync status returns can_sync=False for non-platform agents."""
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={
@@ -1521,7 +1534,8 @@ class TestSyncToPlatform:
 
     def test_sync_status_platform_no_remote_id(self, db_client):
         """Sync status returns can_sync=False when agent has no remote ID."""
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={
@@ -1548,7 +1562,8 @@ class TestSyncToPlatform:
 
     def test_sync_status_platform_not_configured(self, db_client):
         """Sync status returns needs_configuration=True when platform not configured."""
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={
@@ -1577,7 +1592,8 @@ class TestSyncToPlatform:
 
     def test_sync_status_can_sync(self, db_client, monkeypatch):
         """Sync status returns can_sync=True when all conditions met."""
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         monkeypatch.setenv("RETELL_API_KEY", "test-key")
 
@@ -1606,7 +1622,8 @@ class TestSyncToPlatform:
 
     def test_sync_status_bland_not_supported(self, db_client, monkeypatch):
         """Sync status returns can_sync=False for Bland (doesn't support updates)."""
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         monkeypatch.setenv("BLAND_API_KEY", "test-key")
 
@@ -1637,7 +1654,8 @@ class TestSyncToPlatform:
         """Sync returns 404 for non-existent agent."""
         import json
 
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={
@@ -1661,7 +1679,8 @@ class TestSyncToPlatform:
         """Sync returns 400 for non-platform source."""
         import json
 
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={
@@ -1689,7 +1708,8 @@ class TestSyncToPlatform:
         """Sync returns 400 when agent has no remote ID."""
         import json
 
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         monkeypatch.setenv("RETELL_API_KEY", "test-key")
 
@@ -1721,7 +1741,8 @@ class TestSyncToPlatform:
         import json
         from unittest.mock import MagicMock
 
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
         from voicetest.platforms.retell import RetellPlatformClient
 
         monkeypatch.setenv("RETELL_API_KEY", "test-key")
@@ -1771,7 +1792,8 @@ class TestSyncToPlatform:
         import json
         from unittest.mock import MagicMock
 
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
         from voicetest.platforms.vapi import VapiPlatformClient
 
         monkeypatch.setenv("VAPI_API_KEY", "test-key")

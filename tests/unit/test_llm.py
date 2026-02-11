@@ -6,7 +6,8 @@ import dspy
 import litellm
 import pytest
 
-from voicetest.llm import _invoke_callback, call_llm
+from voicetest.llm import _invoke_callback
+from voicetest.llm import call_llm
 from voicetest.retry import RetryError
 
 

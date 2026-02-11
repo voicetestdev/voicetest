@@ -131,7 +131,8 @@ class TestMessageNodeMetadata:
         """Test that messages include node_id in their metadata."""
         from voicetest.engine.session import ConversationRunner
         from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
+        from voicetest.simulator.user_sim import SimulatorResponse
+        from voicetest.simulator.user_sim import UserSimulator
 
         runner = ConversationRunner(simple_graph, mock_mode=True)
         test_case = TestCase(name="test", user_prompt="Say hello")
@@ -164,7 +165,9 @@ class TestDynamicVariableSubstitution:
         """
         from unittest.mock import patch
 
-        from voicetest.engine.session import ConversationRunner, ConversationState, NodeTracker
+        from voicetest.engine.session import ConversationRunner
+        from voicetest.engine.session import ConversationState
+        from voicetest.engine.session import NodeTracker
 
         dynamic_vars = {
             "customer_name": "Alice",
@@ -215,7 +218,9 @@ class TestDynamicVariableSubstitution:
         """Test that unknown variables are left as-is (graceful degradation)."""
         from unittest.mock import patch
 
-        from voicetest.engine.session import ConversationRunner, ConversationState, NodeTracker
+        from voicetest.engine.session import ConversationRunner
+        from voicetest.engine.session import ConversationState
+        from voicetest.engine.session import NodeTracker
 
         # Only provide some variables, not all
         dynamic_vars = {

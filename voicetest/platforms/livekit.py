@@ -12,7 +12,8 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from typing import Any
 
 from voicetest.exporters.livekit_codegen import export_livekit_code
 from voicetest.importers.livekit import LiveKitImporter

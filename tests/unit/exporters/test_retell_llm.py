@@ -2,13 +2,11 @@
 
 import pytest
 
-from voicetest.models.agent import (
-    AgentGraph,
-    AgentNode,
-    ToolDefinition,
-    Transition,
-    TransitionCondition,
-)
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.models.agent import ToolDefinition
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
 
 
 @pytest.fixture

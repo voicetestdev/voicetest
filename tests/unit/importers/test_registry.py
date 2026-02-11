@@ -9,7 +9,8 @@ class TestImporterRegistry:
     def test_register_and_get_importer(self):
         from voicetest.importers.base import ImporterInfo
         from voicetest.importers.registry import ImporterRegistry
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         registry = ImporterRegistry()
 
@@ -40,7 +41,8 @@ class TestImporterRegistry:
     def test_auto_detect(self):
         from voicetest.importers.base import ImporterInfo
         from voicetest.importers.registry import ImporterRegistry
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         registry = ImporterRegistry()
 
@@ -99,7 +101,8 @@ class TestImporterRegistry:
     def test_import_agent_with_explicit_source(self):
         from voicetest.importers.base import ImporterInfo
         from voicetest.importers.registry import ImporterRegistry
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         registry = ImporterRegistry()
 
@@ -129,7 +132,8 @@ class TestImporterRegistry:
     def test_import_agent_with_auto_detect(self):
         from voicetest.importers.base import ImporterInfo
         from voicetest.importers.registry import ImporterRegistry
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         registry = ImporterRegistry()
 
@@ -175,7 +179,8 @@ class TestImporterRegistry:
     def test_list_importers(self):
         from voicetest.importers.base import ImporterInfo
         from voicetest.importers.registry import ImporterRegistry
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         registry = ImporterRegistry()
 

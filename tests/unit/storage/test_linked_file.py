@@ -4,7 +4,10 @@ import json
 
 import pytest
 
-from voicetest.storage.linked_file import check_file, compute_etag, read_json, write_json
+from voicetest.storage.linked_file import check_file
+from voicetest.storage.linked_file import compute_etag
+from voicetest.storage.linked_file import read_json
+from voicetest.storage.linked_file import write_json
 
 
 class TestComputeEtag:

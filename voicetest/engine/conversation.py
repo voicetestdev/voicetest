@@ -4,12 +4,16 @@ This module provides ConversationEngine, used by BOTH the test runner AND live c
 If tests pass, real calls behave the same.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field
 
-from voicetest.engine.modules import ConversationModule, RunContext
-from voicetest.llm import OnTokenCallback, call_llm
+from voicetest.engine.modules import ConversationModule
+from voicetest.engine.modules import RunContext
+from voicetest.llm import OnTokenCallback
+from voicetest.llm import call_llm
 from voicetest.models.agent import AgentGraph
-from voicetest.models.results import Message, ToolCall
+from voicetest.models.results import Message
+from voicetest.models.results import ToolCall
 from voicetest.models.test_case import RunOptions
 from voicetest.retry import OnErrorCallback
 from voicetest.utils import substitute_variables

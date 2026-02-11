@@ -1,6 +1,7 @@
 """Shared formatting utilities for CLI, TUI, and shell."""
 
-from voicetest.models.results import TestResult, TestRun
+from voicetest.models.results import TestResult
+from voicetest.models.results import TestRun
 
 
 def status_icon(status: str) -> str:

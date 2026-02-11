@@ -62,7 +62,8 @@ class TestWithRetry:
         assert call_count == 3
 
     async def test_on_error_callback_called(self):
-        from voicetest.retry import RetryError, with_retry
+        from voicetest.retry import RetryError
+        from voicetest.retry import with_retry
 
         errors_received: list[RetryError] = []
 
@@ -163,7 +164,8 @@ class TestWithRetrySync:
 
     def test_on_error_callback_called(self):
         """on_error callback should be invoked on each retry attempt."""
-        from voicetest.retry import RetryError, with_retry_sync
+        from voicetest.retry import RetryError
+        from voicetest.retry import with_retry_sync
 
         errors_received: list[RetryError] = []
 
@@ -255,7 +257,8 @@ class TestRetryableExceptions:
 
     async def test_on_error_reports_correct_type_for_timeout(self):
         """on_error should report correct error_type for different exceptions."""
-        from voicetest.retry import RetryError, with_retry
+        from voicetest.retry import RetryError
+        from voicetest.retry import with_retry
 
         errors_received: list[RetryError] = []
 

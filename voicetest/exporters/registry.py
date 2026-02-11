@@ -1,6 +1,7 @@
 """Exporter registry for discovering and selecting exporters."""
 
-from voicetest.exporters.base import Exporter, ExporterInfo
+from voicetest.exporters.base import Exporter
+from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph
 
 

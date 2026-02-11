@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from voicetest.importers.base import ImporterInfo, SourceImporter
+from voicetest.importers.base import ImporterInfo
+from voicetest.importers.base import SourceImporter
 from voicetest.models.agent import AgentGraph
 
 

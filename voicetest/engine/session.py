@@ -3,14 +3,17 @@
 Wraps the execution of conversations using the ConversationEngine.
 """
 
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from collections.abc import Awaitable
+from collections.abc import Callable
+from dataclasses import dataclass
+from dataclasses import field
 
 from voicetest.engine.conversation import ConversationEngine
 from voicetest.engine.modules import ConversationModule
 from voicetest.llm import _invoke_callback
 from voicetest.models.agent import AgentGraph
-from voicetest.models.results import Message, ToolCall
+from voicetest.models.results import Message
+from voicetest.models.results import ToolCall
 from voicetest.models.test_case import RunOptions
 from voicetest.retry import OnErrorCallback
 

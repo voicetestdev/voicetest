@@ -2,14 +2,20 @@
 
 from pathlib import Path
 
-from textual.app import App, ComposeResult
+from textual.app import App
+from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Vertical
-from textual.widgets import Footer, Header, Static
+from textual.containers import Container
+from textual.containers import Vertical
+from textual.widgets import Footer
+from textual.widgets import Header
+from textual.widgets import Static
 
 from voicetest.models.test_case import RunOptions
 from voicetest.runner import TestRunContext
-from voicetest.tui.widgets import ResultsPanel, TestList, TranscriptViewer
+from voicetest.tui.widgets import ResultsPanel
+from voicetest.tui.widgets import TestList
+from voicetest.tui.widgets import TranscriptViewer
 
 
 class VoicetestApp(App):

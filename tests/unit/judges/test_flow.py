@@ -2,8 +2,11 @@
 
 import pytest
 
-from voicetest.judges.flow import FlowJudge, FlowResult
-from voicetest.models.agent import AgentNode, Transition, TransitionCondition
+from voicetest.judges.flow import FlowJudge
+from voicetest.judges.flow import FlowResult
+from voicetest.models.agent import AgentNode
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
 from voicetest.models.results import Message
 
 

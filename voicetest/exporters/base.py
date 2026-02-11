@@ -1,7 +1,8 @@
 """Base protocol and types for exporters."""
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Protocol
+from typing import runtime_checkable
 
 from voicetest.models.agent import AgentGraph
 

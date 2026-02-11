@@ -159,12 +159,10 @@ def sample_livekit_simple_code(sample_livekit_simple_path: Path) -> str:
 @pytest.fixture
 def simple_graph():
     """Simple two-node graph with greeting and farewell nodes."""
-    from voicetest.models.agent import (
-        AgentGraph,
-        AgentNode,
-        Transition,
-        TransitionCondition,
-    )
+    from voicetest.models.agent import AgentGraph
+    from voicetest.models.agent import AgentNode
+    from voicetest.models.agent import Transition
+    from voicetest.models.agent import TransitionCondition
 
     return AgentGraph(
         nodes={
@@ -194,7 +192,8 @@ def simple_graph():
 @pytest.fixture
 def single_node_graph():
     """Single-node graph for basic testing."""
-    from voicetest.models.agent import AgentGraph, AgentNode
+    from voicetest.models.agent import AgentGraph
+    from voicetest.models.agent import AgentNode
 
     return AgentGraph(
         nodes={
@@ -212,13 +211,11 @@ def single_node_graph():
 @pytest.fixture
 def graph_with_tools():
     """Graph with tools attached to nodes."""
-    from voicetest.models.agent import (
-        AgentGraph,
-        AgentNode,
-        ToolDefinition,
-        Transition,
-        TransitionCondition,
-    )
+    from voicetest.models.agent import AgentGraph
+    from voicetest.models.agent import AgentNode
+    from voicetest.models.agent import ToolDefinition
+    from voicetest.models.agent import Transition
+    from voicetest.models.agent import TransitionCondition
 
     lookup_tool = ToolDefinition(
         name="lookup_user",
@@ -267,12 +264,10 @@ def graph_with_tools():
 @pytest.fixture
 def multi_node_graph():
     """Multi-node graph with branching transitions."""
-    from voicetest.models.agent import (
-        AgentGraph,
-        AgentNode,
-        Transition,
-        TransitionCondition,
-    )
+    from voicetest.models.agent import AgentGraph
+    from voicetest.models.agent import AgentNode
+    from voicetest.models.agent import Transition
+    from voicetest.models.agent import TransitionCondition
 
     return AgentGraph(
         nodes={
@@ -328,7 +323,8 @@ def multi_node_graph():
 @pytest.fixture
 def graph_with_metadata():
     """Graph with source metadata set."""
-    from voicetest.models.agent import AgentGraph, AgentNode
+    from voicetest.models.agent import AgentGraph
+    from voicetest.models.agent import AgentNode
 
     return AgentGraph(
         nodes={

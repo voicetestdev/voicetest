@@ -1,22 +1,26 @@
 """Tests for repository classes."""
 
-from datetime import UTC, datetime
+from datetime import UTC
+from datetime import datetime
 import json
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL
+from uuid import uuid5
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from voicetest.models.agent import AgentGraph, AgentNode
-from voicetest.models.results import Message, MetricResult, TestResult, TestRun
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
+from voicetest.models.results import TestResult
+from voicetest.models.results import TestRun
 from voicetest.models.test_case import TestCase
 from voicetest.storage.models import Base
-from voicetest.storage.repositories import (
-    AgentRepository,
-    RunRepository,
-    TestCaseRepository,
-)
+from voicetest.storage.repositories import AgentRepository
+from voicetest.storage.repositories import RunRepository
+from voicetest.storage.repositories import TestCaseRepository
 
 
 @pytest.fixture
@@ -235,7 +239,8 @@ class TestAgentRepository:
             agent_repo.load_graph(record)
 
     def test_create_agent_with_metrics_config(self, agent_repo):
-        from voicetest.models.agent import GlobalMetric, MetricsConfig
+        from voicetest.models.agent import GlobalMetric
+        from voicetest.models.agent import MetricsConfig
 
         metrics_config = MetricsConfig(
             threshold=0.8,
@@ -258,7 +263,8 @@ class TestAgentRepository:
         assert loaded.global_metrics[0].name == "HIPAA"
 
     def test_update_metrics_config(self, agent_repo):
-        from voicetest.models.agent import GlobalMetric, MetricsConfig
+        from voicetest.models.agent import GlobalMetric
+        from voicetest.models.agent import MetricsConfig
 
         record = agent_repo.create(
             name="Agent",
@@ -283,7 +289,8 @@ class TestAgentRepository:
         assert loaded.global_metrics[0].name == "PCI"
 
     def test_get_metrics_config(self, agent_repo):
-        from voicetest.models.agent import GlobalMetric, MetricsConfig
+        from voicetest.models.agent import GlobalMetric
+        from voicetest.models.agent import MetricsConfig
 
         metrics_config = MetricsConfig(
             threshold=0.75,

@@ -13,7 +13,10 @@ import uuid
 import wave
 
 from livekit import rtc
-from livekit.agents import APIConnectOptions, stt, tts, utils
+from livekit.agents import APIConnectOptions
+from livekit.agents import stt
+from livekit.agents import tts
+from livekit.agents import utils
 from mlx_audio.stt.generate import generate_transcription
 from mlx_audio.tts.utils import load_model
 import numpy as np

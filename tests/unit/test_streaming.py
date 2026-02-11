@@ -4,8 +4,10 @@ import os
 
 import pytest
 
-from voicetest.models.agent import AgentGraph, AgentNode
-from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
 from voicetest.settings import load_settings
 
 
@@ -49,7 +51,8 @@ class TestStreamingPredictor:
     async def test_streaming_session_with_callback(self, simple_graph):
         """Test that streaming session calls on_token callback."""
         from voicetest.engine.session import ConversationRunner
-        from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
+        from voicetest.simulator.user_sim import SimulatorResponse
+        from voicetest.simulator.user_sim import UserSimulator
 
         options = RunOptions(streaming=True)
         runner = ConversationRunner(simple_graph, options, mock_mode=True)
@@ -153,7 +156,8 @@ class TestStreamifyIntegration:
             pytest.skip("claudecode/ models don't support litellm streaming")
 
         import dspy
-        from dspy.streaming import StreamListener, streamify
+        from dspy.streaming import StreamListener
+        from dspy.streaming import streamify
 
         lm = dspy.LM(_settings.models.agent)
 

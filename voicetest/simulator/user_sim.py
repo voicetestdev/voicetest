@@ -4,7 +4,8 @@ Generates user messages based on Identity/Goal/Personality prompts
 using an LLM to simulate realistic user behavior.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
+from collections.abc import Callable
 from dataclasses import dataclass
 import re
 

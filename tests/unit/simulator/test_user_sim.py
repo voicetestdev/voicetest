@@ -141,7 +141,8 @@ class TestUserSimulatorGenerate:
 
     @pytest.mark.asyncio
     async def test_generate_returns_response(self):
-        from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
+        from voicetest.simulator.user_sim import SimulatorResponse
+        from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator(
             "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly"
@@ -166,7 +167,8 @@ class TestUserSimulatorGenerate:
 
     @pytest.mark.asyncio
     async def test_generate_with_transcript_context(self):
-        from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
+        from voicetest.simulator.user_sim import SimulatorResponse
+        from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator(
             "## Identity\nJohn\n\n## Goal\nGet refund\n\n## Personality\nPolite"
@@ -192,7 +194,8 @@ class TestUserSimulatorGenerate:
 
     @pytest.mark.asyncio
     async def test_generate_can_signal_end(self):
-        from voicetest.simulator.user_sim import SimulatorResponse, UserSimulator
+        from voicetest.simulator.user_sim import SimulatorResponse
+        from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator("## Identity\nJohn\n\n## Goal\nSay bye\n\n## Personality\nBrief")
 

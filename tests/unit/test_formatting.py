@@ -2,16 +2,16 @@
 
 from datetime import datetime
 
-from voicetest.formatting import (
-    format_flow,
-    format_result_detail,
-    format_result_line,
-    format_run,
-    format_run_summary,
-    status_color,
-    status_icon,
-)
-from voicetest.models.results import MetricResult, TestResult, TestRun
+from voicetest.formatting import format_flow
+from voicetest.formatting import format_result_detail
+from voicetest.formatting import format_result_line
+from voicetest.formatting import format_run
+from voicetest.formatting import format_run_summary
+from voicetest.formatting import status_color
+from voicetest.formatting import status_icon
+from voicetest.models.results import MetricResult
+from voicetest.models.results import TestResult
+from voicetest.models.results import TestRun
 
 
 class TestStatusIcon:

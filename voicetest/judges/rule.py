@@ -2,7 +2,8 @@
 
 import re
 
-from voicetest.models.results import Message, MetricResult
+from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
 
 
 class RuleJudge:

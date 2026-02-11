@@ -11,8 +11,12 @@ import subprocess
 
 import pytest
 
-from voicetest.models.agent import AgentGraph, AgentNode, Transition, TransitionCondition
-from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
 
 
 def ollama_available() -> bool:

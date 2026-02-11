@@ -4,7 +4,8 @@ import os
 
 import punq
 from sqlalchemy import Engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
+from sqlalchemy.orm import sessionmaker
 
 from voicetest.exporters.bland import BlandExporter
 from voicetest.exporters.graph_viz import MermaidExporter
@@ -12,7 +13,8 @@ from voicetest.exporters.livekit_codegen import LiveKitExporter
 from voicetest.exporters.registry import ExporterRegistry
 from voicetest.exporters.retell_cf import RetellCFExporter
 from voicetest.exporters.retell_llm import RetellLLMExporter
-from voicetest.exporters.vapi import VAPIAssistantExporter, VAPISquadExporter
+from voicetest.exporters.vapi import VAPIAssistantExporter
+from voicetest.exporters.vapi import VAPISquadExporter
 from voicetest.importers.agentgraph import AgentGraphImporter
 from voicetest.importers.bland import BlandImporter
 from voicetest.importers.custom import CustomImporter
@@ -27,13 +29,12 @@ from voicetest.platforms.livekit import LiveKitPlatformClient
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.platforms.retell import RetellPlatformClient
 from voicetest.platforms.vapi import VapiPlatformClient
-from voicetest.storage.engine import create_db_engine, get_session_factory
-from voicetest.storage.repositories import (
-    AgentRepository,
-    CallRepository,
-    RunRepository,
-    TestCaseRepository,
-)
+from voicetest.storage.engine import create_db_engine
+from voicetest.storage.engine import get_session_factory
+from voicetest.storage.repositories import AgentRepository
+from voicetest.storage.repositories import CallRepository
+from voicetest.storage.repositories import RunRepository
+from voicetest.storage.repositories import TestCaseRepository
 
 
 def _create_importer_registry() -> ImporterRegistry:

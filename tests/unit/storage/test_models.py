@@ -1,12 +1,17 @@
 """Tests for SQLAlchemy ORM models."""
 
-from datetime import UTC, datetime
+from datetime import UTC
+from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from voicetest.storage.models import Agent, Base, Result, Run, TestCase
+from voicetest.storage.models import Agent
+from voicetest.storage.models import Base
+from voicetest.storage.models import Result
+from voicetest.storage.models import Run
+from voicetest.storage.models import TestCase
 
 
 @pytest.fixture

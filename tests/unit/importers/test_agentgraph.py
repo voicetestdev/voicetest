@@ -95,7 +95,8 @@ class TestAgentGraphImporter:
 
     def test_import_agent_from_file(self, tmp_path):
         from voicetest.importers.agentgraph import AgentGraphImporter
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         importer = AgentGraphImporter()
 

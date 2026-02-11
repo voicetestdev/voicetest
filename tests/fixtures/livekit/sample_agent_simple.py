@@ -1,6 +1,8 @@
 """Simple single-agent LiveKit example."""
 
-from livekit.agents import Agent, RunContext, function_tool
+from livekit.agents import Agent
+from livekit.agents import RunContext
+from livekit.agents import function_tool
 
 
 class GreetingAgent(Agent):

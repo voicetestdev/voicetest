@@ -2,10 +2,12 @@
 
 from pathlib import Path
 
-from sqlalchemy import Engine, inspect
+from sqlalchemy import Engine
+from sqlalchemy import inspect
 
 from voicetest.config import get_db_path
-from voicetest.container import get_container, reset_container
+from voicetest.container import get_container
+from voicetest.container import reset_container
 from voicetest.storage.engine import create_db_engine
 
 
@@ -111,7 +113,9 @@ class TestSchema:
         """
         from sqlalchemy import text
 
-        from voicetest.storage.models import Agent, Result, Run
+        from voicetest.storage.models import Agent
+        from voicetest.storage.models import Result
+        from voicetest.storage.models import Run
         from voicetest.storage.models import TestCase as TestCaseModel
 
         db_path = tmp_path / "test.duckdb"

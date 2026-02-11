@@ -2,7 +2,9 @@
 
 import os
 
-from voicetest.settings import Settings, load_settings, save_settings
+from voicetest.settings import Settings
+from voicetest.settings import load_settings
+from voicetest.settings import save_settings
 
 
 class TestSettings:

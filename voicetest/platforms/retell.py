@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import os
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+from typing import Any
 
 from retell import Retell
 

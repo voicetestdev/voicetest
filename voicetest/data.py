@@ -4,7 +4,8 @@ Stores agents, test cases, and run results in parquet files.
 All files live in a data/ directory (configurable).
 """
 
-from datetime import UTC, datetime
+from datetime import UTC
+from datetime import datetime
 import json
 from pathlib import Path
 from uuid import uuid4

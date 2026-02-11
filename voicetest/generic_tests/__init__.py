@@ -1,10 +1,8 @@
 """Generic test cases for common voice agent scenarios."""
 
-from voicetest.generic_tests.adversarial import (
-    get_abusive_test,
-    get_jailbreak_test,
-    get_off_topic_test,
-)
+from voicetest.generic_tests.adversarial import get_abusive_test
+from voicetest.generic_tests.adversarial import get_jailbreak_test
+from voicetest.generic_tests.adversarial import get_off_topic_test
 from voicetest.generic_tests.greeting import get_greeting_test
 from voicetest.generic_tests.hangup import get_hangup_test
 

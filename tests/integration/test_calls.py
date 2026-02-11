@@ -271,7 +271,8 @@ class TestCallManager:
     @pytest.fixture
     def call_manager(self):
         """Create a CallManager for testing."""
-        from voicetest.calls import CallManager, LiveKitConfig
+        from voicetest.calls import CallManager
+        from voicetest.calls import LiveKitConfig
 
         config = LiveKitConfig(
             url="ws://localhost:7880",

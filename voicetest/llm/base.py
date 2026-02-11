@@ -5,14 +5,17 @@ retry behavior, error handling, and future enhancements.
 """
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
+from collections.abc import Callable
 
 import dspy
 from dspy.adapters.baml_adapter import BAMLAdapter
-from dspy.streaming import StreamListener, streamify
+from dspy.streaming import StreamListener
+from dspy.streaming import streamify
 
 from voicetest.llm.claudecode import ClaudeCodeLM
-from voicetest.retry import OnErrorCallback, with_retry
+from voicetest.retry import OnErrorCallback
+from voicetest.retry import with_retry
 
 
 # Callback type for token updates: receives token string

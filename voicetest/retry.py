@@ -1,7 +1,8 @@
 """Retry utilities for handling transient LLM errors."""
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable
+from collections.abc import Callable
 from dataclasses import dataclass
 import random
 import time

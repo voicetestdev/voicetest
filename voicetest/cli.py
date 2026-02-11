@@ -13,14 +13,18 @@ import uvicorn
 
 from voicetest import api
 from voicetest.container import get_session
-from voicetest.demo import get_demo_agent, get_demo_tests
+from voicetest.demo import get_demo_agent
+from voicetest.demo import get_demo_tests
 from voicetest.formatting import format_run
-from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
 from voicetest.retry import RetryError
 from voicetest.runner import TestRunContext
 from voicetest.settings import load_settings
-from voicetest.storage.repositories import AgentRepository, TestCaseRepository
-from voicetest.tui import VoicetestApp, VoicetestShell
+from voicetest.storage.repositories import AgentRepository
+from voicetest.storage.repositories import TestCaseRepository
+from voicetest.tui import VoicetestApp
+from voicetest.tui import VoicetestShell
 
 
 console = Console()
@@ -436,7 +440,15 @@ async def _smoke_test(max_turns: int) -> None:
     type=click.Path(exists=True, path_type=Path),
     help="Test file(s) to link (paired with preceding --agent)",
 )
-def serve(host: str, port: int, reload: bool, agent: tuple[Path, ...], tests: tuple[Path, ...]):
+@click.option("--verbose", "-v", is_flag=True, help="Enable debug logging")
+def serve(
+    host: str,
+    port: int,
+    reload: bool,
+    agent: tuple[Path, ...],
+    tests: tuple[Path, ...],
+    verbose: bool,
+):
     """Start the REST API server.
 
     Use --agent to link agent files, and --tests to link test files.
@@ -444,6 +456,8 @@ def serve(host: str, port: int, reload: bool, agent: tuple[Path, ...], tests: tu
     If multiple agents need different tests, specify them in order:
       --agent a1.json --tests t1.json --agent a2.json --tests t2.json
     """
+    os.environ["VOICETEST_LOG_LEVEL"] = "DEBUG" if verbose else "INFO"
+
     os.environ["VOICETEST_LINKED_AGENTS"] = ",".join(str(p) for p in agent)
 
     # Build VOICETEST_LINKED_TESTS mapping: "agent_path=test1,test2;..."

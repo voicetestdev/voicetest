@@ -20,8 +20,10 @@ import sys
 import traceback
 
 from livekit import rtc
-from livekit.agents.voice import Agent, AgentSession
-from livekit.plugins import openai, silero
+from livekit.agents.voice import Agent
+from livekit.agents.voice import AgentSession
+from livekit.plugins import openai
+from livekit.plugins import silero
 
 from voicetest.engine.conversation import ConversationEngine
 from voicetest.engine.livekit_llm import VoicetestLLM
@@ -29,7 +31,8 @@ from voicetest.models.agent import AgentGraph
 
 
 try:
-    from voicetest.plugins.mlx import MlxKokoroTTS, MlxWhisperSTT
+    from voicetest.plugins.mlx import MlxKokoroTTS
+    from voicetest.plugins.mlx import MlxWhisperSTT
 
     MLX_AVAILABLE = True
 except ImportError:

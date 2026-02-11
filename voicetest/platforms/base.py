@@ -1,7 +1,10 @@
 """Base protocol and types for platform clients."""
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import Protocol
+from typing import runtime_checkable
 
 
 if TYPE_CHECKING:

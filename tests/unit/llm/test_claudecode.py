@@ -2,7 +2,8 @@
 
 import json
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -442,7 +443,9 @@ class TestPackageExports:
 
     def test_private_functions_exported(self):
         """Private functions should still be accessible for tests."""
-        from voicetest.llm import _call_llm_streaming, _call_llm_sync, _invoke_callback
+        from voicetest.llm import _call_llm_streaming
+        from voicetest.llm import _call_llm_sync
+        from voicetest.llm import _invoke_callback
 
         assert callable(_call_llm_sync)
         assert callable(_call_llm_streaming)

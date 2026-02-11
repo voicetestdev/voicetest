@@ -7,12 +7,10 @@ from typing import Any
 from openpyxl import load_workbook
 
 from voicetest.importers.base import ImporterInfo
-from voicetest.models.agent import (
-    AgentGraph,
-    AgentNode,
-    Transition,
-    TransitionCondition,
-)
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
 
 
 class XLSFormImporter:

@@ -46,7 +46,8 @@ class TestTransition:
     """Tests for Transition model."""
 
     def test_create_transition(self):
-        from voicetest.models.agent import Transition, TransitionCondition
+        from voicetest.models.agent import Transition
+        from voicetest.models.agent import TransitionCondition
 
         transition = Transition(
             target_node_id="billing",
@@ -58,7 +59,8 @@ class TestTransition:
         assert transition.description == "Route to billing department"
 
     def test_transition_without_description(self):
-        from voicetest.models.agent import Transition, TransitionCondition
+        from voicetest.models.agent import Transition
+        from voicetest.models.agent import TransitionCondition
 
         transition = Transition(
             target_node_id="support", condition=TransitionCondition(type="always", value="")
@@ -100,7 +102,9 @@ class TestAgentNode:
         assert node.metadata == {}
 
     def test_create_node_with_transitions(self):
-        from voicetest.models.agent import AgentNode, Transition, TransitionCondition
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import Transition
+        from voicetest.models.agent import TransitionCondition
 
         node = AgentNode(
             id="greeting",
@@ -125,7 +129,8 @@ class TestAgentNode:
         assert node.transitions[1].target_node_id == "support"
 
     def test_create_node_with_tools(self):
-        from voicetest.models.agent import AgentNode, ToolDefinition
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import ToolDefinition
 
         node = AgentNode(
             id="lookup",
@@ -157,7 +162,8 @@ class TestAgentGraph:
     """Tests for AgentGraph model."""
 
     def test_create_simple_graph(self):
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         nodes = {
             "greeting": AgentNode(id="greeting", state_prompt="Hello!"),
@@ -170,7 +176,8 @@ class TestAgentGraph:
         assert graph.source_metadata == {}
 
     def test_get_entry_node(self):
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         nodes = {
             "start": AgentNode(id="start", state_prompt="Start here"),
@@ -182,7 +189,8 @@ class TestAgentGraph:
         assert entry.state_prompt == "Start here"
 
     def test_get_node(self):
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         nodes = {
             "a": AgentNode(id="a", state_prompt="Node A"),
@@ -195,7 +203,8 @@ class TestAgentGraph:
         assert graph.get_node("nonexistent") is None
 
     def test_graph_with_source_metadata(self):
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={"n": AgentNode(id="n", state_prompt="Test")},
@@ -207,12 +216,10 @@ class TestAgentGraph:
         assert graph.source_metadata["version"] == 2
 
     def test_graph_json_serialization(self):
-        from voicetest.models.agent import (
-            AgentGraph,
-            AgentNode,
-            Transition,
-            TransitionCondition,
-        )
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import Transition
+        from voicetest.models.agent import TransitionCondition
 
         graph = AgentGraph(
             nodes={
@@ -295,7 +302,8 @@ class TestMetricsConfig:
         assert config.threshold == 0.8
 
     def test_create_metrics_config_with_global_metrics(self):
-        from voicetest.models.agent import GlobalMetric, MetricsConfig
+        from voicetest.models.agent import GlobalMetric
+        from voicetest.models.agent import MetricsConfig
 
         config = MetricsConfig(
             threshold=0.75,
@@ -310,7 +318,8 @@ class TestMetricsConfig:
         assert config.global_metrics[1].threshold == 0.9
 
     def test_metrics_config_json_serialization(self):
-        from voicetest.models.agent import GlobalMetric, MetricsConfig
+        from voicetest.models.agent import GlobalMetric
+        from voicetest.models.agent import MetricsConfig
 
         config = MetricsConfig(
             threshold=0.8,

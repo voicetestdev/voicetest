@@ -36,7 +36,8 @@ class TestCustomImporter:
 
     def test_import_agent_from_function(self):
         from voicetest.importers.custom import CustomImporter
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         importer = CustomImporter()
 
@@ -58,7 +59,8 @@ class TestCustomImporter:
 
     def test_import_agent_from_lambda(self):
         from voicetest.importers.custom import CustomImporter
-        from voicetest.models.agent import AgentGraph, AgentNode
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
 
         importer = CustomImporter()
 

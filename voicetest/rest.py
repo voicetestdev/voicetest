@@ -8,49 +8,72 @@ Or: uvicorn voicetest.rest:app --reload
 """
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC
+from datetime import datetime
 import json
+import logging
 import os
 from pathlib import Path
 import tempfile
 from typing import Any
 
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    FastAPI,
-    Header,
-    HTTPException,
-    Response,
-    UploadFile,
-    WebSocket,
-)
+from fastapi import APIRouter
+from fastapi import BackgroundTasks
+from fastapi import FastAPI
+from fastapi import Header
+from fastapi import HTTPException
+from fastapi import Response
+from fastapi import UploadFile
+from fastapi import WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from starlette.websockets import WebSocketDisconnect, WebSocketState
+from starlette.websockets import WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from voicetest import api
 from voicetest.calls import get_call_manager
-from voicetest.container import get_container, get_importer_registry, get_session
-from voicetest.demo import get_demo_agent, get_demo_tests
-from voicetest.executor import RunJob, get_executor_factory
+from voicetest.container import get_container
+from voicetest.container import get_importer_registry
+from voicetest.container import get_session
+from voicetest.demo import get_demo_agent
+from voicetest.demo import get_demo_tests
+from voicetest.executor import RunJob
+from voicetest.executor import get_executor_factory
 from voicetest.exporters.test_cases import export_tests
-from voicetest.models.agent import AgentGraph, GlobalMetric, MetricsConfig
-from voicetest.models.results import Message, MetricResult, TestResult, TestRun
-from voicetest.models.test_case import RunOptions, TestCase
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import GlobalMetric
+from voicetest.models.agent import MetricsConfig
+from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
+from voicetest.models.results import TestResult
+from voicetest.models.results import TestRun
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.retry import RetryError
-from voicetest.settings import Settings, load_settings, save_settings
-from voicetest.storage.linked_file import check_file, compute_etag
-from voicetest.storage.repositories import (
-    AgentRepository,
-    CallRepository,
-    RunRepository,
-    TestCaseRepository,
-)
+from voicetest.settings import Settings
+from voicetest.settings import load_settings
+from voicetest.settings import save_settings
+from voicetest.storage.linked_file import check_file
+from voicetest.storage.linked_file import compute_etag
+from voicetest.storage.repositories import AgentRepository
+from voicetest.storage.repositories import CallRepository
+from voicetest.storage.repositories import RunRepository
+from voicetest.storage.repositories import TestCaseRepository
 
+
+# Configure logging from env var set by CLI (carries across uvicorn --reload workers).
+# Can't use basicConfig here — uvicorn already configured the root logger, making it a no-op.
+_log_level = os.environ.get("VOICETEST_LOG_LEVEL", "WARNING").upper()
+_vt_logger = logging.getLogger("voicetest")
+_vt_logger.setLevel(getattr(logging, _log_level, logging.WARNING))
+if not _vt_logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+    _vt_logger.addHandler(_handler)
+_vt_logger.info("voicetest logging configured at %s", _log_level)
 
 # Active runs: run_id -> {"cancel": Event, "websockets": set[WebSocket], "message_queue": list}
 _active_runs: dict[str, dict[str, Any]] = {}

@@ -9,7 +9,8 @@ from typing import Any
 
 import dspy
 
-from voicetest.models.agent import AgentGraph, Transition
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import Transition
 from voicetest.utils import create_template_filler
 
 
