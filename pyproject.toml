@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "0.16"
+version = "0.17"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
