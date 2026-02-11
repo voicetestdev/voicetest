@@ -3,6 +3,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { resolve } from "path";
 
 const apiTarget = process.env.VITE_API_TARGET || "http://localhost:8000";
+const inDocker = !!process.env.VITE_API_TARGET;
 
 export default defineConfig({
   plugins: [svelte()],
@@ -12,6 +13,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    watch: inDocker ? { usePolling: true, interval: 1000 } : undefined,
     proxy: {
       "/api": {
         target: apiTarget,
