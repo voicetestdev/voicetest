@@ -6,17 +6,9 @@
   <img alt="voicetest" src="assets/logo-light.svg" width="300">
 </picture>
 
-### 
-
 A generic test harness for voice agent workflows. Test agents from Retell, VAPI, LiveKit, Bland, and custom sources using a unified execution and evaluation model.
 
 ## Installation
-
-```bash
-pip install voicetest
-```
-
-Or with uv (as a global CLI tool):
 
 ```bash
 uv tool install voicetest
@@ -26,6 +18,12 @@ Or add to a project (use `uv run voicetest` to run):
 
 ```bash
 uv add voicetest
+```
+
+Or with pip:
+
+```bash
+pip install voicetest
 ```
 
 ## Quick Demo
@@ -385,11 +383,13 @@ cd voicetest
 docker compose -f docker-compose.dev.yml up
 ```
 
-This starts three services:
+This starts five services:
 
 | Service    | URL                   | Description                              |
 | ---------- | --------------------- | ---------------------------------------- |
 | `livekit`  | ws://localhost:7880   | LiveKit server for real-time voice calls |
+| `whisper`  | http://localhost:8001 | Faster Whisper STT server                |
+| `kokoro`   | http://localhost:8002 | Kokoro TTS server                        |
 | `backend`  | http://localhost:8000 | FastAPI backend with hot reload          |
 | `frontend` | http://localhost:5173 | Vite dev server with hot reload          |
 

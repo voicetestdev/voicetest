@@ -1,0 +1,5 @@
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates jq \
+    && curl -sSL https://get.livekit.io/cli | bash \
+    && apt-get purge -y curl jq \
+    && rm -rf /var/lib/apt/lists/*

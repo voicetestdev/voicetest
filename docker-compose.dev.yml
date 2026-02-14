@@ -20,7 +20,8 @@ services:
       - "8002:8880"
 
   backend:
-    image: ghcr.io/astral-sh/uv:python3.12-bookworm
+    build:
+      dockerfile: Dockerfile.dev
     working_dir: /app
     volumes:
       - .:/app
