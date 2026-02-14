@@ -31,8 +31,8 @@ pip install voicetest
 Try voicetest with a sample healthcare receptionist agent and tests:
 
 ```bash
-# Set up an API key (get a free one at https://openrouter.ai)
-export OPENROUTER_API_KEY=sk-or-v1-...
+# Set up an API key (free, no credit card at https://console.groq.com)
+export GROQ_API_KEY=gsk_...
 
 # Load demo and start interactive shell
 voicetest demo
@@ -58,7 +58,7 @@ The demo includes a healthcare receptionist agent with 8 test cases covering app
 uv run voicetest
 
 # In the shell:
-> agent tests/fixtures/retell/sample_agent.json
+> agent tests/fixtures/retell/sample_config.json
 > tests tests/fixtures/retell/sample_tests.json
 > set agent_model ollama_chat/qwen2.5:0.5b
 > run
@@ -115,7 +115,7 @@ Data is persisted to `.voicetest/data.duckdb` (configurable via `VOICETEST_DB_PA
 
 ### REST API
 
-The REST API is available at http://localhost:8000/api when running `voicetest serve`:
+The REST API is available at http://localhost:8000/api when running `voicetest serve`. Full API documentation is at [voicetest.dev/api](https://voicetest.dev/api/).
 
 ```bash
 # Health check
@@ -124,57 +124,14 @@ curl http://localhost:8000/api/health
 # List agents
 curl http://localhost:8000/api/agents
 
-# Get agent with graph
-curl http://localhost:8000/api/agents/{id}/graph
-
-# List tests for agent
-curl http://localhost:8000/api/agents/{id}/tests
-
 # Start a test run
 curl -X POST http://localhost:8000/api/agents/{id}/runs \
   -H "Content-Type: application/json" \
   -d '{"test_ids": ["test-1", "test-2"]}'
 
-# Get run with results
-curl http://localhost:8000/api/runs/{id}
-
-# Get/update agent metrics configuration
-curl http://localhost:8000/api/agents/{id}/metrics-config
-curl -X PUT http://localhost:8000/api/agents/{id}/metrics-config \
-  -H "Content-Type: application/json" \
-  -d '{"threshold": 0.8, "global_metrics": [{"name": "HIPAA", "criteria": "Check compliance", "enabled": true}]}'
-
-# Export test cases to platform format
-curl -X POST http://localhost:8000/api/agents/{id}/tests/export \
-  -H "Content-Type: application/json" \
-  -d '{"format": "retell"}'
-
 # WebSocket for real-time updates
 wscat -c ws://localhost:8000/api/runs/{id}/ws
-
-# Platform integration (Retell, VAPI, Bland, LiveKit)
-curl http://localhost:8000/api/platforms                              # List platforms
-curl http://localhost:8000/api/platforms/retell/status                # Check connection
-curl -X POST http://localhost:8000/api/platforms/retell/configure \   # Configure API key
-  -H "Content-Type: application/json" \
-  -d '{"api_key": "key_..."}'
-curl http://localhost:8000/api/platforms/retell/agents                # List remote agents
-curl -X POST http://localhost:8000/api/platforms/retell/agents/{id}/import  # Import agent
-curl -X POST http://localhost:8000/api/platforms/retell/export \      # Push agent to platform
-  -H "Content-Type: application/json" \
-  -d '{"agent_id": "local-agent-id"}'
-
-# Sync agent back to source platform (for imported agents)
-curl http://localhost:8000/api/agents/{id}/sync-status               # Check if sync available
-curl -X POST http://localhost:8000/api/agents/{id}/sync \            # Sync changes to source
-  -H "Content-Type: application/json" \
-  -d '{"graph": {...}}'
 ```
-
-WebSocket messages:
-
-- Server → Client: `test_started`, `transcript_update`, `test_completed`, `run_completed`
-- Client → Server: `cancel_test` (with `result_id`), `cancel_run`
 
 ## Format Conversion
 
@@ -206,7 +163,7 @@ voicetest export --agent retell-cf-agent.json --format retell-llm > retell-llm-a
 voicetest export --agent vapi-assistant.json --format retell-llm > retell-agent.json
 
 # Convert Retell LLM to VAPI format
-voicetest export --agent retell-llm-agent.json --format vapi > vapi-agent.json
+voicetest export --agent retell-llm-agent.json --format vapi-assistant > vapi-agent.json
 ```
 
 ## Test Case Format
@@ -315,7 +272,7 @@ jobs:
       - run: uv tool install voicetest
       - run: voicetest run --agent agents/receptionist.json --tests agents/tests.json --all
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 ```
 
 ## LLM Configuration
@@ -511,7 +468,7 @@ voicetest/
 │   ├── platforms/       # Platform SDK clients (retell, vapi, bland, livekit)
 │   ├── engine/          # Execution engine
 │   ├── simulator/       # User simulation
-│   ├── judges/          # Evaluation judges (metric, flow, rule)
+│   ├── judges/          # Evaluation judges (metric, rule)
 │   ├── storage/         # DuckDB persistence layer
 │   └── tui/             # TUI and shell
 ├── web/                 # Frontend (Bun + Svelte + Vite)
@@ -524,6 +481,10 @@ voicetest/
 │   └── integration/     # Integration tests (Ollama)
 └── docs/
 ```
+
+## Contact
+
+Questions, feedback, or partnerships: [hello@voicetest.dev](mailto:hello@voicetest.dev)
 
 ## License
 
