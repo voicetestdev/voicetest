@@ -29,7 +29,7 @@ class RunOptions(BaseModel):
     flow_judge: bool = False
     streaming: bool = False
     test_model_precedence: bool = False
-    cot_transitions: bool = False
+    split_transitions: bool = False
 
     # LLM model configuration (None = not configured, use defaults)
     agent_model: str | None = None

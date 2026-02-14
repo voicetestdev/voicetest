@@ -39,7 +39,7 @@ class StateResult:
 
     response: str
     handoff_to: str | None  # Node ID or None to stay
-    transition_reasoning: str | None = None  # CoT reasoning (when enabled)
+    transition_reasoning: str | None = None  # Reasoning from split transition evaluation
 
 
 class StateModule(dspy.Module):
@@ -50,7 +50,7 @@ class StateModule(dspy.Module):
 
     The module supports two modes:
     - Combined (default): Single LLM call for both response and transition
-    - Response-only (CoT): Just generate response, transitions handled by ConversationModule
+    - Response-only (split): Just generate response, transitions handled separately
     """
 
     def __init__(
@@ -58,17 +58,17 @@ class StateModule(dspy.Module):
         node_id: str,
         instructions: str,
         transitions: list[Transition],
-        use_cot_transitions: bool = False,
+        use_split_transitions: bool = False,
     ):
         super().__init__()
         self.node_id = node_id
         self.instructions = instructions  # state_prompt, LiveKit naming
         self.transitions = transitions
-        self.use_cot_transitions = use_cot_transitions
+        self.use_split_transitions = use_split_transitions
         self._template_filler = create_template_filler(instructions)
 
         # Create appropriate signature based on mode
-        if use_cot_transitions:
+        if use_split_transitions:
             # Response-only mode - transitions handled by ConversationModule
             self._response_signature = self._create_response_signature(include_transitions=False)
         else:
@@ -115,7 +115,7 @@ class StateModule(dspy.Module):
 
         This is the main DSPy-optimizable method.
         """
-        if self.use_cot_transitions:
+        if self.use_split_transitions:
             return self._forward_response_only(ctx)
         else:
             return self._forward_combined(ctx)
@@ -168,40 +168,40 @@ class ConversationModule(dspy.Module):
     Wraps all state modules and manages conversation execution.
     State modules are registered as submodules for DSPy optimization.
 
-    When use_cot_transitions is True, transition detection happens here
-    after getting the agent's response, using Chain-of-Thought reasoning.
+    When use_split_transitions is True, transition detection happens in a
+    separate LLM call after getting the agent's response.
     """
 
-    def __init__(self, graph: AgentGraph, use_cot_transitions: bool = False):
+    def __init__(self, graph: AgentGraph, use_split_transitions: bool = False):
         super().__init__()
         self.instructions = graph.source_metadata.get("general_prompt", "")
         self.entry_node_id = graph.entry_node_id
         self.graph = graph
-        self.use_cot_transitions = use_cot_transitions
+        self.use_split_transitions = use_split_transitions
 
         # Build and register state modules as proper submodules
         self._state_modules: dict[str, StateModule] = {}
         for node_id, node in graph.nodes.items():
-            # Force CoT to False if node has no transitions
-            effective_cot = use_cot_transitions and bool(node.transitions)
+            # Force split to False if node has no transitions
+            effective_split = use_split_transitions and bool(node.transitions)
 
             state_module = StateModule(
                 node_id=node_id,
                 instructions=node.state_prompt,
                 transitions=node.transitions,
-                use_cot_transitions=effective_cot,
+                use_split_transitions=effective_split,
             )
             # Register as attribute for DSPy optimization
             setattr(self, f"state_{node_id}", state_module)
             self._state_modules[node_id] = state_module
 
-        # Create transition predictor for CoT mode
-        if use_cot_transitions:
+        # Create transition predictor for split mode
+        if use_split_transitions:
             self._transition_signature = self._create_transition_signature()
             self.transition_predictor = dspy.ChainOfThought(self._transition_signature)
 
     def _create_transition_signature(self) -> type[dspy.Signature]:
-        """Create CoT Signature for transition evaluation."""
+        """Create Signature for split transition evaluation."""
         docstring = (
             "Evaluate if conversation should transition to a different state "
             "based on the conversation and agent's response."
@@ -235,7 +235,7 @@ class ConversationModule(dspy.Module):
         This method is called by ConversationRunner for each turn.
         The runner manages the conversation loop and state.
 
-        In CoT mode, this method handles transition detection after
+        In split mode, this method handles transition detection after
         getting the response from the state module.
         """
         state_module = self._state_modules.get(node_id)
@@ -245,8 +245,8 @@ class ConversationModule(dspy.Module):
         # Get response from state module
         result = state_module(ctx)
 
-        # In CoT mode with transitions, evaluate transition separately
-        if state_module.use_cot_transitions:
+        # In split mode with transitions, evaluate transition separately
+        if state_module.use_split_transitions:
             transition_result = self.transition_predictor(
                 conversation_history=ctx.conversation_history,
                 agent_response=result.response,

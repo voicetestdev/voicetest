@@ -63,7 +63,7 @@ class ConversationRunner:
         options: RunOptions | None = None,
         mock_mode: bool = False,
         dynamic_variables: dict | None = None,
-        use_cot_transitions: bool = False,
+        use_split_transitions: bool = False,
     ):
         self.graph = graph
         self.options = options or RunOptions()
@@ -73,17 +73,17 @@ class ConversationRunner:
         # Keep _conversation_module for backward compatibility with tests
         # that access it directly
         self._conversation_module = ConversationModule(
-            graph, use_cot_transitions=use_cot_transitions
+            graph, use_split_transitions=use_split_transitions
         )
 
         # Engine for actual turn processing (not used in mock mode)
         self._engine: ConversationEngine | None = None
         if not mock_mode:
-            # Apply cot_transitions setting to options
+            # Apply split_transitions setting to options
             effective_options = RunOptions(
                 **{
                     **self.options.model_dump(),
-                    "cot_transitions": use_cot_transitions,
+                    "split_transitions": use_split_transitions,
                 }
             )
             self._engine = ConversationEngine(

@@ -59,8 +59,8 @@ class ConversationEngine:
         self.options = options or RunOptions()
         self._dynamic_variables = dynamic_variables or {}
 
-        use_cot = self.options.cot_transitions if self.options else False
-        self._module = ConversationModule(graph, use_cot_transitions=use_cot)
+        self._split_transitions = self.options.split_transitions if self.options else False
+        self._module = ConversationModule(graph, use_split_transitions=self._split_transitions)
 
         # State
         self._current_node = graph.entry_node_id
@@ -154,6 +154,18 @@ class ConversationEngine:
             state_instructions=state_instructions,
         )
 
+        # Build kwargs for the response LLM call
+        response_kwargs = {
+            "general_instructions": ctx.general_instructions,
+            "state_instructions": ctx.state_instructions,
+            "conversation_history": ctx.conversation_history,
+            "user_message": ctx.user_message,
+        }
+
+        # Only pass available_transitions when the signature expects it (combined mode)
+        if state_module.transitions and not state_module.use_split_transitions:
+            response_kwargs["available_transitions"] = ctx.available_transitions
+
         # Call LLM with the state module's signature
         result = await call_llm(
             self.model,
@@ -161,24 +173,29 @@ class ConversationEngine:
             on_token=on_token,
             stream_field="response" if on_token else None,
             on_error=on_error,
-            general_instructions=ctx.general_instructions,
-            state_instructions=ctx.state_instructions,
-            conversation_history=ctx.conversation_history,
-            user_message=ctx.user_message,
-            **(
-                {"available_transitions": ctx.available_transitions}
-                if state_module.transitions
-                else {}
-            ),
+            **response_kwargs,
         )
 
         # Build turn result
         turn_result = TurnResult(response=result.response)
 
-        # Handle transition
-        transition_target = getattr(result, "transition_to", "none")
-        if transition_target:
-            transition_target = transition_target.strip().lower()
+        # Determine transition target
+        if state_module.use_split_transitions and state_module.transitions:
+            # Split mode: second LLM call to evaluate transitions separately
+            transition_result = await call_llm(
+                self.model,
+                self._module._transition_signature,
+                on_error=on_error,
+                conversation_history=ctx.conversation_history,
+                agent_response=result.response,
+                available_transitions=ctx.available_transitions,
+            )
+            transition_target = transition_result.transition_to.strip().lower()
+        else:
+            # Combined mode: transition comes from the response call
+            transition_target = getattr(result, "transition_to", "none")
+            if transition_target:
+                transition_target = transition_target.strip().lower()
 
         if transition_target and transition_target != "none":
             # Check for end_call

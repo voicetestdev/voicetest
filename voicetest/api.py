@@ -255,7 +255,7 @@ async def run_test(
             options,
             mock_mode=_mock_mode,
             dynamic_variables=dynamic_vars,
-            use_cot_transitions=options.cot_transitions,
+            use_split_transitions=options.split_transitions,
         )
         simulator = UserSimulator(user_prompt, options.simulator_model)
         metric_judge = MetricJudge(options.judge_model)
