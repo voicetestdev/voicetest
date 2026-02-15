@@ -307,6 +307,12 @@ export interface CallRecord {
   ended_at: string | null;
 }
 
+export interface RunResult {
+  run_id: string;
+  message?: string;
+  details?: Record<string, string>;
+}
+
 export interface StartCallResponse {
   call_id: string;
   room_name: string;
