@@ -48,14 +48,14 @@ Get help with billing.
 ## Personality
 Polite but impatient.
 """
-        simulator = UserSimulator(user_prompt)
+        simulator = UserSimulator(user_prompt, "openai/gpt-4o-mini")
 
         assert simulator.user_prompt == user_prompt
 
     def test_format_transcript_empty(self):
         from voicetest.simulator.user_sim import UserSimulator
 
-        simulator = UserSimulator("test prompt")
+        simulator = UserSimulator("test prompt", "openai/gpt-4o-mini")
         result = simulator._format_transcript([])
 
         assert "(conversation not started)" in result.lower() or result == ""
@@ -63,7 +63,7 @@ Polite but impatient.
     def test_format_transcript_with_messages(self):
         from voicetest.simulator.user_sim import UserSimulator
 
-        simulator = UserSimulator("test prompt")
+        simulator = UserSimulator("test prompt", "openai/gpt-4o-mini")
         messages = [
             Message(role="user", content="Hello"),
             Message(role="assistant", content="Hi there!"),
@@ -89,7 +89,7 @@ Check account balance.
 ## Personality
 Friendly.
 """
-        simulator = UserSimulator(user_prompt)
+        simulator = UserSimulator(user_prompt, "openai/gpt-4o-mini")
         persona = simulator._parse_persona()
 
         assert "Sarah" in persona.get("identity", "")
@@ -108,7 +108,7 @@ Return a defective product and get a refund.
 ## Personality
 Frustrated.
 """
-        simulator = UserSimulator(user_prompt)
+        simulator = UserSimulator(user_prompt, "openai/gpt-4o-mini")
         persona = simulator._parse_persona()
 
         assert "refund" in persona.get("goal", "").lower()
@@ -126,7 +126,7 @@ Ask a question
 ## Personality
 Very patient and understanding. Speaks slowly and clearly.
 """
-        simulator = UserSimulator(user_prompt)
+        simulator = UserSimulator(user_prompt, "openai/gpt-4o-mini")
         persona = simulator._parse_persona()
 
         assert "patient" in persona.get("personality", "").lower()
@@ -145,7 +145,8 @@ class TestUserSimulatorGenerate:
         from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator(
-            "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly"
+            "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",
+            "openai/gpt-4o-mini",
         )
 
         # Use mock mode for testing
@@ -171,7 +172,8 @@ class TestUserSimulatorGenerate:
         from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator(
-            "## Identity\nJohn\n\n## Goal\nGet refund\n\n## Personality\nPolite"
+            "## Identity\nJohn\n\n## Goal\nGet refund\n\n## Personality\nPolite",
+            "openai/gpt-4o-mini",
         )
 
         transcript = [
@@ -197,7 +199,10 @@ class TestUserSimulatorGenerate:
         from voicetest.simulator.user_sim import SimulatorResponse
         from voicetest.simulator.user_sim import UserSimulator
 
-        simulator = UserSimulator("## Identity\nJohn\n\n## Goal\nSay bye\n\n## Personality\nBrief")
+        simulator = UserSimulator(
+            "## Identity\nJohn\n\n## Goal\nSay bye\n\n## Personality\nBrief",
+            "openai/gpt-4o-mini",
+        )
 
         simulator._mock_mode = True
         simulator._mock_responses = [

@@ -28,7 +28,7 @@ from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.retry import OnErrorCallback
-from voicetest.settings import DEFAULT_MODEL
+from voicetest.settings import resolve_model
 from voicetest.simulator.user_sim import SimulatorResponse
 from voicetest.simulator.user_sim import UserSimulator
 from voicetest.utils import substitute_variables
@@ -108,6 +108,82 @@ def list_export_formats() -> list[dict[str, str]]:
     ]
 
 
+async def evaluate_global_metrics(
+    transcript: list[Message],
+    metrics_config: MetricsConfig,
+    judge_model: str,
+    on_error: OnErrorCallback | None = None,
+) -> list[MetricResult]:
+    """Evaluate a transcript against an agent's global metrics.
+
+    Args:
+        transcript: Conversation transcript to evaluate.
+        metrics_config: Agent metrics configuration with threshold and global metrics.
+        judge_model: LLM model to use for evaluation.
+        on_error: Optional callback for retry notifications.
+
+    Returns:
+        List of MetricResult objects for each enabled global metric.
+    """
+    metric_judge = MetricJudge(judge_model)
+    threshold = metrics_config.threshold
+    results: list[MetricResult] = []
+
+    for gm in metrics_config.global_metrics:
+        if gm.enabled:
+            gm_threshold = gm.threshold if gm.threshold is not None else threshold
+            result = await metric_judge.evaluate(
+                transcript,
+                gm.criteria,
+                threshold=gm_threshold,
+                on_error=on_error,
+            )
+            result = result.model_copy(update={"metric": f"[{gm.name}]"})
+            results.append(result)
+
+    return results
+
+
+def _model_overrides(
+    role: str,
+    settings_value: str | None,
+    role_default: str | None,
+    resolved: str,
+    test_model_precedence: bool,
+) -> list[ModelOverride]:
+    """Generate diagnostic override records when resolved model differs from inputs."""
+    if not role_default or not settings_value:
+        if role_default and not settings_value:
+            return [
+                ModelOverride(
+                    role=role,
+                    requested="(not configured)",
+                    actual=role_default,
+                    reason=f"role default used (global {role} not configured)",
+                )
+            ]
+        return []
+    if role_default == settings_value:
+        return []
+    if resolved == role_default:
+        return [
+            ModelOverride(
+                role=role,
+                requested=settings_value,
+                actual=role_default,
+                reason="role default used (test_model_precedence enabled)",
+            )
+        ]
+    return [
+        ModelOverride(
+            role=role,
+            requested=role_default,
+            actual=settings_value,
+            reason=f"global settings override {role} default",
+        )
+    ]
+
+
 async def run_test(
     graph: AgentGraph,
     test_case: TestCase,
@@ -135,92 +211,30 @@ async def run_test(
     """
     options = options or RunOptions()
     overrides: list[ModelOverride] = []
+    tmp = options.test_model_precedence
 
-    # Resolve agent_model with graph.default_model precedence
-    # Precedence: global (if set) > agent.default_model > DEFAULT_MODEL
-    if graph.default_model:
-        if options.agent_model is None:
-            # Global not configured, agent's default wins
-            options = options.model_copy(update={"agent_model": graph.default_model})
-            overrides.append(
-                ModelOverride(
-                    role="agent",
-                    requested="(not configured)",
-                    actual=graph.default_model,
-                    reason="agent.default_model used (global agent not configured)",
-                )
-            )
-        elif options.test_model_precedence:
-            # Toggle enabled, agent's default wins over explicit global
-            if options.agent_model != graph.default_model:
-                overrides.append(
-                    ModelOverride(
-                        role="agent",
-                        requested=options.agent_model,
-                        actual=graph.default_model,
-                        reason="agent.default_model used (test_model_precedence enabled)",
-                    )
-                )
-                options = options.model_copy(update={"agent_model": graph.default_model})
-        else:
-            # Global explicitly set, global wins
-            if options.agent_model != graph.default_model:
-                overrides.append(
-                    ModelOverride(
-                        role="agent",
-                        requested=graph.default_model,
-                        actual=options.agent_model,
-                        reason="global settings override agent.default_model",
-                    )
-                )
-    elif options.agent_model is None:
-        # No agent default, no global, use DEFAULT_MODEL
-        options = options.model_copy(update={"agent_model": DEFAULT_MODEL})
+    # Resolve models via central precedence chain
+    resolved_agent = resolve_model(options.agent_model, graph.default_model, tmp)
+    resolved_sim = resolve_model(options.simulator_model, test_case.llm_model, tmp)
+    resolved_judge = resolve_model(options.judge_model)
 
-    # Resolve simulator_model with test_case.llm_model precedence
-    # test_case.llm_model controls the simulator (simulated user), not the agent
-    if test_case.llm_model:
-        if options.simulator_model is None:
-            # Global not configured, test wins
-            options = options.model_copy(update={"simulator_model": test_case.llm_model})
-            overrides.append(
-                ModelOverride(
-                    role="simulator",
-                    requested="(not configured)",
-                    actual=test_case.llm_model,
-                    reason="test_case.llm_model used (global simulator not configured)",
-                )
-            )
-        elif options.test_model_precedence:
-            # Toggle enabled, test wins over explicit global
-            if options.simulator_model != test_case.llm_model:
-                overrides.append(
-                    ModelOverride(
-                        role="simulator",
-                        requested=options.simulator_model,
-                        actual=test_case.llm_model,
-                        reason="test_case.llm_model used (test_model_precedence enabled)",
-                    )
-                )
-                options = options.model_copy(update={"simulator_model": test_case.llm_model})
-        else:
-            # Global explicitly set, global wins
-            if options.simulator_model != test_case.llm_model:
-                overrides.append(
-                    ModelOverride(
-                        role="simulator",
-                        requested=test_case.llm_model,
-                        actual=options.simulator_model,
-                        reason="global settings override test_case.llm_model",
-                    )
-                )
-    elif options.simulator_model is None:
-        # No test model, no global, use default
-        options = options.model_copy(update={"simulator_model": DEFAULT_MODEL})
+    # Track overrides for diagnostics
+    overrides.extend(
+        _model_overrides("agent", options.agent_model, graph.default_model, resolved_agent, tmp)
+    )
+    overrides.extend(
+        _model_overrides(
+            "simulator", options.simulator_model, test_case.llm_model, resolved_sim, tmp
+        )
+    )
 
-    # Resolve judge_model (no test override, just global or default)
-    if options.judge_model is None:
-        options = options.model_copy(update={"judge_model": DEFAULT_MODEL})
+    options = options.model_copy(
+        update={
+            "agent_model": resolved_agent,
+            "simulator_model": resolved_sim,
+            "judge_model": resolved_judge,
+        }
+    )
 
     models_used = ModelsUsed(
         agent=options.agent_model,
@@ -339,18 +353,13 @@ async def run_test(
 
         # Evaluate global metrics if configured
         if metrics_config:
-            for gm in metrics_config.global_metrics:
-                if gm.enabled:
-                    gm_threshold = gm.threshold if gm.threshold is not None else threshold
-                    result = await metric_judge.evaluate(
-                        state.transcript,
-                        gm.criteria,
-                        threshold=gm_threshold,
-                        on_error=on_error,
-                    )
-                    # Override metric name to show global metric info
-                    result = result.model_copy(update={"metric": f"[{gm.name}]"})
-                    metric_results.append(result)
+            global_results = await evaluate_global_metrics(
+                state.transcript,
+                metrics_config,
+                judge_model=options.judge_model,
+                on_error=on_error,
+            )
+            metric_results.extend(global_results)
 
         # Check flow constraints (optional, informational only)
         flow_issues: list[str] = []
@@ -446,6 +455,7 @@ async def run_tests(
 async def evaluate_transcript(
     transcript: list[Message],
     metrics: list[str],
+    judge_model: str | None = None,
     _mock_mode: bool = False,
 ) -> list[MetricResult]:
     """Evaluate an existing transcript against metrics (no simulation).
@@ -453,12 +463,13 @@ async def evaluate_transcript(
     Args:
         transcript: Conversation transcript to evaluate.
         metrics: List of metric criteria strings.
+        judge_model: LLM model for evaluation. Uses resolve_model() if None.
         _mock_mode: If True, use mock responses (for testing).
 
     Returns:
         List of MetricResult objects.
     """
-    judge = MetricJudge()
+    judge = MetricJudge(judge_model or resolve_model())
 
     if _mock_mode:
         judge._mock_mode = True

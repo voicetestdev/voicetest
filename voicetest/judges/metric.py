@@ -18,7 +18,7 @@ class MetricJudge:
     a conversation transcript meets specified criteria.
     """
 
-    def __init__(self, model: str = "openai/gpt-4o-mini"):
+    def __init__(self, model: str):
         """Initialize the judge.
 
         Args:

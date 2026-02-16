@@ -2,8 +2,10 @@
 
 import os
 
+from voicetest.settings import DEFAULT_MODEL
 from voicetest.settings import Settings
 from voicetest.settings import load_settings
+from voicetest.settings import resolve_model
 from voicetest.settings import save_settings
 
 
@@ -140,3 +142,41 @@ class TestSettingsPersistence:
         content = settings_file.read_text()
 
         assert "[env]" not in content
+
+
+class TestResolveModel:
+    """Tests for resolve_model utility."""
+
+    def test_no_args_returns_default(self):
+        assert resolve_model() == DEFAULT_MODEL
+
+    def test_settings_value_wins_over_default(self):
+        assert resolve_model(settings_value="openai/gpt-4o") == "openai/gpt-4o"
+
+    def test_role_default_wins_over_system_default(self):
+        assert resolve_model(role_default="anthropic/claude-3-haiku") == "anthropic/claude-3-haiku"
+
+    def test_settings_value_wins_over_role_default(self):
+        result = resolve_model(
+            settings_value="openai/gpt-4o", role_default="anthropic/claude-3-haiku"
+        )
+        assert result == "openai/gpt-4o"
+
+    def test_test_model_precedence_makes_role_default_win(self):
+        result = resolve_model(
+            settings_value="openai/gpt-4o",
+            role_default="anthropic/claude-3-haiku",
+            test_model_precedence=True,
+        )
+        assert result == "anthropic/claude-3-haiku"
+
+    def test_test_model_precedence_without_role_default_uses_settings(self):
+        result = resolve_model(
+            settings_value="openai/gpt-4o",
+            test_model_precedence=True,
+        )
+        assert result == "openai/gpt-4o"
+
+    def test_test_model_precedence_no_settings_no_role_returns_default(self):
+        result = resolve_model(test_model_precedence=True)
+        assert result == DEFAULT_MODEL

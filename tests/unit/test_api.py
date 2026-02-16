@@ -2,11 +2,15 @@
 
 import pytest
 
+from voicetest.api import evaluate_global_metrics
 from voicetest.api import run_test
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import GlobalMetric
+from voicetest.models.agent import MetricsConfig
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
+from voicetest.models.results import Message
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.settings import DEFAULT_MODEL
@@ -73,7 +77,7 @@ class TestAgentModelPrecedence:
         agent_override = next((o for o in result.model_overrides if o.role == "agent"), None)
         assert agent_override is not None
         assert agent_override.actual == "openai/gpt-4o"
-        assert "agent.default_model used" in agent_override.reason
+        assert "role default used" in agent_override.reason
 
     @pytest.mark.asyncio
     async def test_global_set_overrides_agent_default(self, simple_graph, simple_test_case):
@@ -144,7 +148,7 @@ class TestSimulatorModelPrecedence:
         sim_override = next((o for o in result.model_overrides if o.role == "simulator"), None)
         assert sim_override is not None
         assert sim_override.actual == "openai/gpt-4o-mini"
-        assert "test_case.llm_model used" in sim_override.reason
+        assert "role default used" in sim_override.reason
 
     @pytest.mark.asyncio
     async def test_global_set_overrides_test_model(self, simple_graph, simple_test_case):
@@ -273,3 +277,105 @@ class TestCombinedPrecedence:
 
         assert result.models_used.agent == "openai/gpt-4o"
         assert result.models_used.simulator == "openai/gpt-4o-mini"
+
+
+class TestEvaluateGlobalMetrics:
+    """Tests for evaluate_global_metrics standalone function."""
+
+    @pytest.mark.asyncio
+    async def test_empty_metrics_returns_empty(self):
+        """No global metrics configured returns empty list."""
+        transcript = [Message(role="user", content="Hello")]
+        config = MetricsConfig()
+
+        results = await evaluate_global_metrics(
+            transcript, config, judge_model="openai/gpt-4o-mini"
+        )
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_disabled_metrics_are_skipped(self):
+        """Disabled global metrics are not evaluated."""
+        transcript = [Message(role="user", content="Hello")]
+        config = MetricsConfig(
+            global_metrics=[
+                GlobalMetric(name="Politeness", criteria="Be polite", enabled=False),
+            ]
+        )
+
+        results = await evaluate_global_metrics(
+            transcript, config, judge_model="openai/gpt-4o-mini"
+        )
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_enabled_metric_is_evaluated(self):
+        """Enabled global metric produces a result."""
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch
+
+        from voicetest.models.results import MetricResult
+
+        transcript = [
+            Message(role="user", content="Hello"),
+            Message(role="assistant", content="Hi there"),
+        ]
+        config = MetricsConfig(
+            threshold=0.7,
+            global_metrics=[
+                GlobalMetric(name="Politeness", criteria="Agent is polite", enabled=True),
+            ],
+        )
+
+        mock_result = MetricResult(
+            metric="Agent is polite",
+            score=0.9,
+            passed=True,
+            reasoning="Very polite",
+            threshold=0.7,
+        )
+
+        with patch("voicetest.api.MetricJudge.evaluate", new_callable=AsyncMock) as mock_eval:
+            mock_eval.return_value = mock_result
+            results = await evaluate_global_metrics(
+                transcript, config, judge_model="openai/gpt-4o-mini"
+            )
+
+        assert len(results) == 1
+        assert results[0].metric == "[Politeness]"
+        assert results[0].passed is True
+
+    @pytest.mark.asyncio
+    async def test_metric_uses_own_threshold_over_global(self):
+        """Per-metric threshold overrides the global threshold."""
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch
+
+        from voicetest.models.results import MetricResult
+
+        transcript = [Message(role="user", content="Hello")]
+        config = MetricsConfig(
+            threshold=0.7,
+            global_metrics=[
+                GlobalMetric(name="Strict", criteria="Be strict", enabled=True, threshold=0.9),
+            ],
+        )
+
+        mock_result = MetricResult(
+            metric="Be strict",
+            score=0.85,
+            passed=False,
+            reasoning="Below strict threshold",
+            threshold=0.9,
+        )
+
+        with patch("voicetest.api.MetricJudge.evaluate", new_callable=AsyncMock) as mock_eval:
+            mock_eval.return_value = mock_result
+            results = await evaluate_global_metrics(
+                transcript, config, judge_model="openai/gpt-4o-mini"
+            )
+
+        assert len(results) == 1
+        mock_eval.assert_called_once()
+        call_kwargs = mock_eval.call_args
+        assert call_kwargs.kwargs["threshold"] == 0.9

@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "0.17"
+version = "0.18"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -114,6 +114,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "e2e: end-to-end tests requiring Docker Compose (deselect with '-m \"not e2e\"')",
 ]
 
 [dependency-groups]

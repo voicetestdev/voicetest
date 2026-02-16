@@ -208,7 +208,8 @@ export interface RunRecord {
 export interface RunResultRecord {
   id: string;
   run_id: string;
-  test_case_id: string;
+  test_case_id: string | null;
+  call_id?: string | null;
   test_name: string;
   status: "pass" | "fail" | "error" | "running" | "cancelled";
   duration_ms: number | null;

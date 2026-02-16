@@ -160,7 +160,8 @@ class Result(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), nullable=False)
-    test_case_id: Mapped[str] = mapped_column(String, nullable=False)
+    test_case_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    call_id: Mapped[str | None] = mapped_column(String, nullable=True)
     test_name: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -182,6 +183,7 @@ class Result(Base):
             "id": self.id,
             "run_id": self.run_id,
             "test_case_id": self.test_case_id,
+            "call_id": self.call_id,
             "test_name": self.test_name,
             "status": self.status,
             "duration_ms": self.duration_ms,

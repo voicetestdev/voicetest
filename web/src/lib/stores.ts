@@ -454,7 +454,8 @@ export function connectRunWebSocket(runId: string): void {
         const newResult: RunResultRecord = {
           id: data.result_id,
           run_id: runId,
-          test_case_id: data.test_case_id || "",
+          test_case_id: data.test_case_id || null,
+          call_id: null,
           test_name: data.test_name,
           status: "running",
           duration_ms: null,

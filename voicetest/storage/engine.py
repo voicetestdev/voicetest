@@ -15,15 +15,26 @@ from voicetest.storage.models import Base
 logger = logging.getLogger(__name__)
 
 # Ordered list of schema migrations. Each is (version, description, sql, verify_sql).
+# sql can be a single string or a list of strings (executed in order).
 # Append-only — never reorder or remove entries. Version numbers must be sequential.
 # verify_sql: a SELECT that returns a row if the migration was truly applied.
-_MIGRATIONS: list[tuple[int, str, str, str]] = [
+_MIGRATIONS: list[tuple[int, str, str | list[str], str]] = [
     (
         1,
         "Add tests_paths to agents",
         "ALTER TABLE agents ADD COLUMN tests_paths JSON",
         "SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'agents' AND column_name = 'tests_paths'",
+    ),
+    (
+        2,
+        "Add call_id to results and make test_case_id nullable",
+        [
+            "ALTER TABLE results ADD COLUMN call_id VARCHAR",
+            "ALTER TABLE results ALTER COLUMN test_case_id DROP NOT NULL",
+        ],
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'results' AND column_name = 'call_id'",
     ),
 ]
 
@@ -118,7 +129,9 @@ def _migrate_schema(engine: Engine) -> None:
         logger.info("Running %d pending migration(s) from version %d", len(pending), current)
         for version, description, sql, _verify in pending:
             logger.info("Migration %d: %s", version, description)
-            conn.execute(text(sql))
+            statements = sql if isinstance(sql, list) else [sql]
+            for stmt in statements:
+                conn.execute(text(stmt))
             conn.execute(
                 text("INSERT INTO schema_version (version, description) VALUES (:v, :d)"),
                 {"v": version, "d": description},

@@ -11,7 +11,7 @@ class TestMetricJudge:
     def test_create_judge(self):
         from voicetest.judges.metric import MetricJudge
 
-        judge = MetricJudge()
+        judge = MetricJudge("openai/gpt-4o-mini")
 
         assert judge is not None
 
@@ -27,7 +27,7 @@ class TestMetricJudge:
         from voicetest.judges.metric import MetricJudge
         from voicetest.models.results import MetricResult
 
-        judge = MetricJudge()
+        judge = MetricJudge("openai/gpt-4o-mini")
 
         transcript = [
             Message(role="assistant", content="Hello! How can I help you today?"),
@@ -58,7 +58,7 @@ class TestMetricJudge:
         from voicetest.judges.metric import MetricJudge
         from voicetest.models.results import MetricResult
 
-        judge = MetricJudge()
+        judge = MetricJudge("openai/gpt-4o-mini")
 
         transcript = [
             Message(role="assistant", content="Hello!"),
@@ -84,7 +84,7 @@ class TestMetricJudge:
     def test_format_transcript(self):
         from voicetest.judges.metric import MetricJudge
 
-        judge = MetricJudge()
+        judge = MetricJudge("openai/gpt-4o-mini")
 
         transcript = [
             Message(role="user", content="Hello"),
@@ -101,7 +101,7 @@ class TestMetricJudge:
         from voicetest.judges.metric import MetricJudge
         from voicetest.models.results import MetricResult
 
-        judge = MetricJudge()
+        judge = MetricJudge("openai/gpt-4o-mini")
         judge._mock_mode = True
         judge._mock_results = [
             MetricResult(
@@ -126,7 +126,7 @@ class TestMetricJudge:
         from voicetest.judges.metric import MetricJudge
         from voicetest.models.results import MetricResult
 
-        judge = MetricJudge()
+        judge = MetricJudge("openai/gpt-4o-mini")
         judge._mock_mode = True
         judge._mock_results = [
             MetricResult(
@@ -151,7 +151,7 @@ class TestMetricJudge:
         from voicetest.judges.metric import MetricJudge
         from voicetest.models.results import MetricResult
 
-        judge = MetricJudge()
+        judge = MetricJudge("openai/gpt-4o-mini")
         judge._mock_mode = True
         judge._mock_results = [
             MetricResult(metric="m1", score=0.9, passed=True, reasoning="Good", threshold=0.8),
