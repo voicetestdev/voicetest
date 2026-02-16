@@ -9,7 +9,7 @@ class TestConversationEngine:
     def test_create_engine(self, simple_graph):
         from voicetest.engine.conversation import ConversationEngine
 
-        engine = ConversationEngine(simple_graph)
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
         assert engine.graph is simple_graph
         assert engine.model == "openai/gpt-4o-mini"
@@ -22,19 +22,17 @@ class TestConversationEngine:
 
         assert engine.model == "openai/gpt-4"
 
-    def test_engine_uses_graph_default_model(self, graph_with_metadata):
+    def test_engine_uses_provided_model(self, graph_with_metadata):
         from voicetest.engine.conversation import ConversationEngine
 
-        # graph_with_metadata has source_metadata with model="gpt-4o"
-        # but default_model is None, so it should use the default
-        engine = ConversationEngine(graph_with_metadata)
+        engine = ConversationEngine(graph_with_metadata, model="anthropic/claude-3-haiku")
 
-        assert engine.model == "openai/gpt-4o-mini"
+        assert engine.model == "anthropic/claude-3-haiku"
 
     def test_engine_initial_state(self, simple_graph):
         from voicetest.engine.conversation import ConversationEngine
 
-        engine = ConversationEngine(simple_graph)
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
         assert engine.current_node == "greeting"
         assert engine.transcript == []
@@ -45,7 +43,7 @@ class TestConversationEngine:
     def test_add_user_message(self, simple_graph):
         from voicetest.engine.conversation import ConversationEngine
 
-        engine = ConversationEngine(simple_graph)
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
         engine.add_user_message("Hello!")
 
         assert len(engine.transcript) == 1
@@ -56,7 +54,7 @@ class TestConversationEngine:
     def test_reset_engine(self, simple_graph):
         from voicetest.engine.conversation import ConversationEngine
 
-        engine = ConversationEngine(simple_graph)
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
         engine.add_user_message("Hello!")
         engine._current_node = "farewell"
         engine._nodes_visited.append("farewell")
@@ -70,7 +68,7 @@ class TestConversationEngine:
     def test_transcript_returns_copy(self, simple_graph):
         from voicetest.engine.conversation import ConversationEngine
 
-        engine = ConversationEngine(simple_graph)
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
         engine.add_user_message("Hello!")
 
         transcript = engine.transcript
@@ -81,7 +79,7 @@ class TestConversationEngine:
     def test_nodes_visited_returns_copy(self, simple_graph):
         from voicetest.engine.conversation import ConversationEngine
 
-        engine = ConversationEngine(simple_graph)
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
         nodes = engine.nodes_visited
         nodes.append("fake_node")  # Modify the copy
@@ -128,7 +126,7 @@ class TestProcessTurn:
 
         from voicetest.engine.conversation import ConversationEngine
 
-        engine = ConversationEngine(simple_graph)
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
         captured_kwargs = {}
 
@@ -157,7 +155,7 @@ class TestProcessTurn:
 
         from voicetest.engine.conversation import ConversationEngine
 
-        engine = ConversationEngine(simple_graph)
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
@@ -181,7 +179,7 @@ class TestProcessTurn:
 
         from voicetest.engine.conversation import ConversationEngine
 
-        engine = ConversationEngine(simple_graph)
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
@@ -209,7 +207,9 @@ class TestProcessTurn:
             "account_status": "active",
             "company_name": "Acme Corp",
         }
-        engine = ConversationEngine(graph_with_dynamic_variables, dynamic_variables=dynamic_vars)
+        engine = ConversationEngine(
+            graph_with_dynamic_variables, model="openai/gpt-4o-mini", dynamic_variables=dynamic_vars
+        )
 
         captured_kwargs = {}
 

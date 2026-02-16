@@ -140,6 +140,27 @@ class TestMigrateSchema:
                     ")"
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE TABLE results ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "run_id VARCHAR NOT NULL, "
+                    "test_case_id VARCHAR NOT NULL, "
+                    "test_name VARCHAR, "
+                    "status VARCHAR, "
+                    "duration_ms INTEGER, "
+                    "turn_count INTEGER, "
+                    "end_reason VARCHAR, "
+                    "error_message VARCHAR, "
+                    "transcript_json JSON, "
+                    "metrics_json JSON, "
+                    "nodes_visited JSON, "
+                    "tools_called JSON, "
+                    "models_used JSON, "
+                    "created_at TIMESTAMP"
+                    ")"
+                )
+            )
             # Insert a row so we can verify data survives migration
             conn.execute(
                 text(
@@ -167,7 +188,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 1
+            assert version == 2
 
     def test_runs_pending_migration_on_old_schema(self, tmp_path):
         db_path = tmp_path / "old.duckdb"
@@ -187,6 +208,18 @@ class TestMigrateSchema:
                     "user_id VARCHAR, "
                     "created_at TIMESTAMP, "
                     "updated_at TIMESTAMP"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE results ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "run_id VARCHAR NOT NULL, "
+                    "test_case_id VARCHAR NOT NULL, "
+                    "test_name VARCHAR, "
+                    "status VARCHAR, "
+                    "created_at TIMESTAMP"
                     ")"
                 )
             )
@@ -214,7 +247,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 1
+            assert version == 2
 
     def test_tracks_version(self, tmp_path):
         db_path = tmp_path / "versioned.duckdb"
@@ -253,11 +286,24 @@ class TestMigrateSchema:
                     ")"
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE TABLE results ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "run_id VARCHAR NOT NULL, "
+                    "test_case_id VARCHAR NOT NULL, "
+                    "test_name VARCHAR, "
+                    "status VARCHAR, "
+                    "created_at TIMESTAMP"
+                    ")"
+                )
+            )
 
         with caplog.at_level("INFO", logger="voicetest.storage.engine"):
             _migrate_schema(engine)
 
         assert "Migration 1" in caplog.text
+        assert "Migration 2" in caplog.text
 
     def test_recovers_from_phantom_migration(self, tmp_path):
         """If schema_version says migration ran but the column is missing, re-run it."""
@@ -272,6 +318,18 @@ class TestMigrateSchema:
                     "id VARCHAR PRIMARY KEY, "
                     "name VARCHAR NOT NULL, "
                     "source_type VARCHAR NOT NULL"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE results ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "run_id VARCHAR NOT NULL, "
+                    "test_case_id VARCHAR NOT NULL, "
+                    "test_name VARCHAR, "
+                    "status VARCHAR, "
+                    "created_at TIMESTAMP"
                     ")"
                 )
             )

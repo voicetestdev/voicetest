@@ -5,6 +5,7 @@
 import { writable, get } from "svelte/store";
 import { api } from "./api";
 import { connectToRoom, cleanupAudioElements, type LiveKitConnection } from "./livekit";
+import { loadRunHistory, selectRun } from "./stores";
 import type { CallTranscriptMessage, CallStatus } from "./types";
 
 export interface CallState {
@@ -87,17 +88,25 @@ export async function startCall(agentId: string): Promise<void> {
   }
 }
 
-export async function endCall(): Promise<void> {
+export async function endCall(agentId: string): Promise<void> {
   const state = get(callState);
   if (!state.callId) return;
 
+  let runId: string | null = null;
+
   try {
-    await api.endCall(state.callId);
+    const response = await api.endCall(state.callId);
+    runId = response.run_id;
   } catch (error) {
     console.error("Error ending call:", error);
   }
 
   cleanupCall();
+
+  if (runId && agentId) {
+    await loadRunHistory(agentId);
+    await selectRun(agentId, runId);
+  }
 }
 
 export async function toggleMute(): Promise<void> {

@@ -314,7 +314,7 @@ export const api = {
 
   getCall: (callId: string) => get<CallRecord>(`/calls/${callId}`),
 
-  endCall: (callId: string) => post<{ status: string; call_id: string }>(`/calls/${callId}/end`, {}),
+  endCall: (callId: string) => post<{ status: string; call_id: string; run_id: string | null }>(`/calls/${callId}/end`, {}),
 
   getWebSocketUrl: (path: string): string => {
     const baseUrl = globalConfig.baseUrl || "/api";

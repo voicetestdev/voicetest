@@ -55,6 +55,7 @@ from voicetest.platforms.registry import PlatformRegistry
 from voicetest.retry import RetryError
 from voicetest.settings import Settings
 from voicetest.settings import load_settings
+from voicetest.settings import resolve_model
 from voicetest.settings import save_settings
 from voicetest.storage.linked_file import check_file
 from voicetest.storage.linked_file import compute_etag
@@ -1429,8 +1430,14 @@ async def start_call(agent_id: str) -> StartCallResponse:
     call_repo = get_call_repo()
     call_manager = get_call_manager()
 
+    settings = load_settings()
+    settings.apply_env()
+    agent_model = settings.models.agent
+
     try:
-        call_info = await call_manager.start_call(agent_id, graph, call_repo)
+        call_info = await call_manager.start_call(
+            agent_id, graph, call_repo, agent_model=agent_model
+        )
         return StartCallResponse(**call_info)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start call: {e}") from None
@@ -1464,7 +1471,7 @@ async def get_call(call_id: str) -> CallStatusResponse:
 
 @router.post("/calls/{call_id}/end")
 async def end_call(call_id: str) -> dict:
-    """End a live call."""
+    """End a live call and save the transcript as a run."""
     call_repo = get_call_repo()
     call = call_repo.get(call_id)
     if not call:
@@ -1474,9 +1481,78 @@ async def end_call(call_id: str) -> dict:
 
     try:
         await call_manager.end_call(call_id, call_repo)
-        return {"status": "ended", "call_id": call_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to end call: {e}") from None
+
+    # Re-fetch call to get final transcript and timestamps
+    call = call_repo.get(call_id)
+    run_id = await _save_call_as_run(call)
+
+    return {"status": "ended", "call_id": call_id, "run_id": run_id}
+
+
+async def _save_call_as_run(call: dict) -> str | None:
+    """Convert a completed call into a Run with a single Result.
+
+    Evaluates global metrics against the transcript if the agent has any configured.
+    Returns the run_id, or None if the call has no transcript.
+    """
+    transcript_data = call.get("transcript_json") or []
+    if not transcript_data:
+        return None
+
+    agent_id = call["agent_id"]
+    call_id = call["id"]
+
+    # Convert raw transcript dicts to Message objects
+    transcript = [Message(**m) for m in transcript_data]
+
+    # Compute duration from call timestamps
+    duration_ms = None
+    if call.get("started_at") and call.get("ended_at"):
+        started = datetime.fromisoformat(call["started_at"])
+        ended = datetime.fromisoformat(call["ended_at"])
+        duration_ms = int((ended - started).total_seconds() * 1000)
+
+    turn_count = len(transcript) // 2
+
+    # Evaluate global metrics if agent has them configured
+    agent_repo = get_agent_repo()
+    metrics_config = agent_repo.get_metrics_config(agent_id)
+    metric_results: list[MetricResult] = []
+
+    if metrics_config and metrics_config.global_metrics:
+        settings = load_settings()
+        settings.apply_env()
+        judge_model = resolve_model(settings.models.judge)
+        try:
+            metric_results = await api.evaluate_global_metrics(
+                transcript, metrics_config, judge_model=judge_model
+            )
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Failed to evaluate global metrics for call %s", call_id
+            )
+
+    metrics_passed = all(r.passed for r in metric_results)
+    status = "pass" if metrics_passed else "fail"
+
+    test_result = TestResult(
+        test_name="Live Call",
+        status=status,
+        transcript=transcript,
+        metric_results=metric_results,
+        turn_count=turn_count,
+        duration_ms=duration_ms,
+        end_reason="user_ended",
+    )
+
+    run_repo = get_run_repo()
+    run = run_repo.create(agent_id)
+    run_repo.add_result_from_call(run["id"], call_id, test_result)
+    run_repo.complete(run["id"])
+
+    return run["id"]
 
 
 @router.websocket("/calls/{call_id}/ws")

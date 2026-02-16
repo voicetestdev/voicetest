@@ -27,7 +27,6 @@ class LiveKitConfig:
     api_key: str = "devkey"
     api_secret: str = "secret"
     voice_backend: str = "openai"  # 'openai', 'local', or 'mlx'
-    ollama_url: str = "http://localhost:11434/v1"
     whisper_url: str = "http://localhost:8001/v1"
     kokoro_url: str = "http://localhost:8002/v1"
 
@@ -41,7 +40,6 @@ class LiveKitConfig:
             api_key=os.environ.get("LIVEKIT_API_KEY", "devkey"),
             api_secret=os.environ.get("LIVEKIT_API_SECRET", "secret"),
             voice_backend=os.environ.get("VOICETEST_BACKEND", "openai"),
-            ollama_url=os.environ.get("OLLAMA_URL", "http://localhost:11434/v1"),
             whisper_url=os.environ.get("WHISPER_URL", "http://localhost:8001/v1"),
             kokoro_url=os.environ.get("KOKORO_URL", "http://localhost:8002/v1"),
         )
@@ -101,10 +99,17 @@ class CallManager:
         agent_id: str,
         graph: AgentGraph,
         call_repo: Any,
+        agent_model: str | None = None,
     ) -> dict:
         """Start a new live call.
 
         Creates LiveKit room, generates tokens, spawns agent worker subprocess.
+
+        Args:
+            agent_id: ID of the agent to call.
+            graph: The agent graph configuration.
+            call_repo: Repository for persisting call records.
+            agent_model: LLM model from global settings (overrides graph.default_model).
 
         Returns:
             Dict with call_id, room_name, livekit_url, token (for user)
@@ -144,13 +149,14 @@ class CallManager:
             agent_token,
             "--backend",
             self.config.voice_backend,
-            "--ollama-url",
-            self.config.ollama_url,
             "--whisper-url",
             self.config.whisper_url,
             "--kokoro-url",
             self.config.kokoro_url,
         ]
+
+        if agent_model:
+            cmd.extend(["--agent-model", agent_model])
 
         process = subprocess.Popen(
             cmd,

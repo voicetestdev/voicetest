@@ -118,6 +118,21 @@ def _to_toml(settings: Settings) -> str:
     return "\n".join(lines)
 
 
+def resolve_model(
+    settings_value: str | None = None,
+    role_default: str | None = None,
+    test_model_precedence: bool = False,
+) -> str:
+    """Resolve which model to use for a given role."""
+    if test_model_precedence and role_default:
+        return role_default
+    if settings_value:
+        return settings_value
+    if role_default:
+        return role_default
+    return DEFAULT_MODEL
+
+
 def load_settings(path: Path | None = None) -> Settings:
     """Load settings from .voicetest.toml."""
     return Settings.load(path)

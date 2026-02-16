@@ -542,6 +542,39 @@ class RunRepository:
         self.session.add(db_result)
         self.session.commit()
 
+    def add_result_from_call(
+        self,
+        run_id: str,
+        call_id: str,
+        result: TestResult,
+    ) -> str:
+        """Add a result linked to a live call (no test case)."""
+        result_id = str(uuid4())
+        now = datetime.now(UTC)
+        data = self._serialize_result_data(result)
+
+        db_result = Result(
+            id=result_id,
+            run_id=run_id,
+            test_case_id=None,
+            call_id=call_id,
+            test_name=result.test_name,
+            status=result.status,
+            duration_ms=result.duration_ms,
+            turn_count=result.turn_count,
+            end_reason=result.end_reason,
+            error_message=result.error_message,
+            transcript_json=data["transcript"],
+            metrics_json=data["metrics"],
+            nodes_visited=result.nodes_visited,
+            tools_called=data["tools"],
+            models_used=data["models"],
+            created_at=now,
+        )
+        self.session.add(db_result)
+        self.session.commit()
+        return result_id
+
     def create_pending_result(self, run_id: str, test_case_id: str, test_name: str) -> str:
         """Create a pending result for an in-progress test."""
         result_id = str(uuid4())
@@ -638,6 +671,7 @@ class RunRepository:
             "id": result.id,
             "run_id": result.run_id,
             "test_case_id": result.test_case_id,
+            "call_id": result.call_id,
             "test_name": result.test_name,
             "status": result.status,
             "duration_ms": result.duration_ms,

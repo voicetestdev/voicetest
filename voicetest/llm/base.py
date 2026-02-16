@@ -47,41 +47,6 @@ async def call_llm(
     on_error: OnErrorCallback | None = None,
     **kwargs,
 ) -> dspy.Prediction:
-    """Execute an LLM call with automatic streaming/adapter handling.
-
-    Single entry point for all LLM calls. Handles:
-    - Streaming vs non-streaming based on on_token presence
-    - Adapter selection (BAMLAdapter for non-streaming, None for streaming)
-    - Retry logic with exponential backoff
-
-    Args:
-        model: LLM model identifier (e.g., "openai/gpt-4o-mini").
-        signature_class: DSPy Signature class for the prediction.
-        on_token: Optional callback for streaming tokens. If provided, enables streaming.
-        stream_field: Field name to stream tokens for (required if on_token provided).
-        on_error: Optional callback for retry notifications.
-        **kwargs: Arguments to pass to the predictor.
-
-    Returns:
-        dspy.Prediction with the result.
-
-    Usage:
-        # Non-streaming
-        result = await call_llm(
-            "openai/gpt-4o-mini",
-            MySignature,
-            input="hello",
-        )
-
-        # Streaming
-        result = await call_llm(
-            "openai/gpt-4o-mini",
-            MySignature,
-            on_token=lambda t: print(t),
-            stream_field="response",
-            input="hello",
-        )
-    """
     if on_token:
         if not stream_field:
             raise ValueError("stream_field required when on_token is provided")

@@ -823,3 +823,71 @@ class TestRunRepositoryEdgeCases:
 
     def test_delete_nonexistent(self, run_repo):
         run_repo.delete("nonexistent-id")
+
+
+class TestAddResultFromCall:
+    """Tests for RunRepository.add_result_from_call."""
+
+    def test_add_result_from_call_creates_result(self, run_repo, agent_repo):
+        agent = agent_repo.create("Test Agent", "custom")
+        run = run_repo.create(agent["id"])
+
+        test_result = TestResult(
+            test_name="Live Call",
+            status="pass",
+            transcript=[
+                Message(role="user", content="Hello"),
+                Message(role="assistant", content="Hi there"),
+            ],
+            turn_count=1,
+            duration_ms=5000,
+            end_reason="user_ended",
+        )
+
+        result_id = run_repo.add_result_from_call(run["id"], "call-abc-123", test_result)
+        assert result_id is not None
+
+        run_data = run_repo.get_with_results(run["id"])
+        assert len(run_data["results"]) == 1
+
+        result = run_data["results"][0]
+        assert result["test_name"] == "Live Call"
+        assert result["status"] == "pass"
+        assert result["call_id"] == "call-abc-123"
+        assert result["test_case_id"] is None
+        assert result["turn_count"] == 1
+        assert result["duration_ms"] == 5000
+
+    def test_add_result_from_call_with_metrics(self, run_repo, agent_repo):
+        agent = agent_repo.create("Test Agent", "custom")
+        run = run_repo.create(agent["id"])
+
+        test_result = TestResult(
+            test_name="Live Call",
+            status="fail",
+            transcript=[Message(role="user", content="Hello")],
+            metric_results=[
+                MetricResult(
+                    metric="[Politeness]",
+                    score=0.4,
+                    passed=False,
+                    reasoning="Agent was rude",
+                    threshold=0.7,
+                )
+            ],
+            turn_count=1,
+            end_reason="user_ended",
+        )
+
+        run_repo.add_result_from_call(run["id"], "call-xyz-789", test_result)
+
+        run_data = run_repo.get_with_results(run["id"])
+        result = run_data["results"][0]
+        assert result["status"] == "fail"
+        assert result["call_id"] == "call-xyz-789"
+
+        metrics_raw = result["metrics_json"]
+        metrics = json.loads(metrics_raw) if isinstance(metrics_raw, str) else metrics_raw
+        assert len(metrics) == 1
+        assert metrics[0]["metric"] == "[Politeness]"
+        assert metrics[0]["passed"] is False

@@ -14,7 +14,7 @@ class TestFlowJudge:
     """Tests for FlowJudge."""
 
     def test_create_judge(self):
-        judge = FlowJudge()
+        judge = FlowJudge("openai/gpt-4o-mini")
         assert judge is not None
         assert judge.model == "openai/gpt-4o-mini"
 
@@ -24,7 +24,7 @@ class TestFlowJudge:
 
     @pytest.mark.asyncio
     async def test_evaluate_empty_nodes_visited(self):
-        judge = FlowJudge()
+        judge = FlowJudge("openai/gpt-4o-mini")
 
         nodes = {
             "greeting": AgentNode(
@@ -43,7 +43,7 @@ class TestFlowJudge:
 
     @pytest.mark.asyncio
     async def test_evaluate_with_mock_mode(self):
-        judge = FlowJudge()
+        judge = FlowJudge("openai/gpt-4o-mini")
         judge._mock_mode = True
         judge._mock_result = FlowResult(
             valid=False,

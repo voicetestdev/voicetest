@@ -29,7 +29,8 @@
   }
 
   async function handleEndCall() {
-    await endCall();
+    if (!agentId) return;
+    await endCall(agentId);
   }
 
   async function handleToggleMute() {

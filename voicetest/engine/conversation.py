@@ -42,7 +42,7 @@ class ConversationEngine:
     def __init__(
         self,
         graph: AgentGraph,
-        model: str | None = None,
+        model: str,
         options: RunOptions | None = None,
         dynamic_variables: dict | None = None,
     ):
@@ -55,7 +55,7 @@ class ConversationEngine:
             dynamic_variables: Variables for template substitution.
         """
         self.graph = graph
-        self.model = model or graph.default_model or "openai/gpt-4o-mini"
+        self.model = model
         self.options = options or RunOptions()
         self._dynamic_variables = dynamic_variables or {}
 

@@ -28,6 +28,7 @@ from livekit.plugins import silero
 from voicetest.engine.conversation import ConversationEngine
 from voicetest.engine.livekit_llm import VoicetestLLM
 from voicetest.models.agent import AgentGraph
+from voicetest.settings import resolve_model
 
 
 try:
@@ -86,11 +87,6 @@ def main() -> None:
         help="Voice backend: 'openai' for OpenAI API, 'local' for Ollama+MLX",
     )
     parser.add_argument(
-        "--ollama-url",
-        default=os.environ.get("OLLAMA_URL", "http://localhost:11434/v1"),
-        help="Ollama API URL (for local backend)",
-    )
-    parser.add_argument(
         "--whisper-url",
         default=os.environ.get("WHISPER_URL", "http://localhost:8001/v1"),
         help="Whisper STT API URL (for local backend)",
@@ -99,6 +95,11 @@ def main() -> None:
         "--kokoro-url",
         default=os.environ.get("KOKORO_URL", "http://localhost:8002/v1"),
         help="Kokoro TTS API URL (for local backend)",
+    )
+    parser.add_argument(
+        "--agent-model",
+        default=None,
+        help="LLM model from global settings (overrides graph.default_model)",
     )
 
     args = parser.parse_args()
@@ -125,7 +126,12 @@ def main() -> None:
             output_status("connected")
             print("[agent-worker] connected to room", file=sys.stderr, flush=True)
 
-            model_name = graph.default_model or "gpt-4o-mini"
+            resolved = resolve_model(
+                settings_value=args.agent_model,
+                role_default=graph.default_model,
+            )
+            # Strip provider prefix for voice pipeline (e.g. "openai/gpt-4o-mini" -> "gpt-4o-mini")
+            model_name = resolved.split("/", 1)[-1]
             print(
                 f"[agent-worker] backend={args.backend}, model={model_name}",
                 file=sys.stderr,
@@ -133,7 +139,7 @@ def main() -> None:
             )
 
             # Create ConversationEngine - same logic as test runner
-            engine = ConversationEngine(graph=graph, model=f"openai/{model_name}")
+            engine = ConversationEngine(graph=graph, model=resolved)
 
             # Create VoicetestLLM that wraps the engine
             voicetest_llm = VoicetestLLM(engine)
@@ -144,7 +150,7 @@ def main() -> None:
                 ollama_model = model_name if ":" in model_name else "qwen2.5:0.5b"
                 print(
                     f"[agent-worker] local backend: whisper={args.whisper_url},"
-                    f" ollama={args.ollama_url}, kokoro={args.kokoro_url}",
+                    f" kokoro={args.kokoro_url}",
                     file=sys.stderr,
                     flush=True,
                 )

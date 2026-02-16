@@ -26,7 +26,7 @@ class FlowJudge:
     given the conversation content and graph structure.
     """
 
-    def __init__(self, model: str = "openai/gpt-4o-mini"):
+    def __init__(self, model: str):
         """Initialize the judge.
 
         Args:

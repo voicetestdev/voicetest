@@ -60,7 +60,7 @@ class ModelOverride(BaseModel):
 class TestResult(BaseModel):
     """Result of running a single test case."""
 
-    test_id: str
+    test_id: str | None = None
     test_name: str
     status: Literal["pass", "fail", "error"]
     transcript: list[Message] = Field(default_factory=list)

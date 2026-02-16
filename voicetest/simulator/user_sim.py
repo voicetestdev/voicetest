@@ -43,7 +43,7 @@ class UserSimulator:
     following the Identity/Goal/Personality format.
     """
 
-    def __init__(self, user_prompt: str, model: str = "openai/gpt-4o-mini"):
+    def __init__(self, user_prompt: str, model: str):
         """Initialize the simulator.
 
         Args:
