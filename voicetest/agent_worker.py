@@ -130,10 +130,8 @@ def main() -> None:
                 settings_value=args.agent_model,
                 role_default=graph.default_model,
             )
-            # Strip provider prefix for voice pipeline (e.g. "openai/gpt-4o-mini" -> "gpt-4o-mini")
-            model_name = resolved.split("/", 1)[-1]
             print(
-                f"[agent-worker] backend={args.backend}, model={model_name}",
+                f"[agent-worker] backend={args.backend}, model={resolved}",
                 file=sys.stderr,
                 flush=True,
             )
@@ -143,19 +141,17 @@ def main() -> None:
 
             # Create VoicetestLLM that wraps the engine
             voicetest_llm = VoicetestLLM(engine)
+            voicetest_llm.set_on_response(lambda text: output_transcript("assistant", text))
 
             # Configure the voice pipeline based on backend choice
             if args.backend == "local":
-                # Local OSS stack via Docker: Whisper + Ollama + Kokoro
-                ollama_model = model_name if ":" in model_name else "qwen2.5:0.5b"
+                # Local OSS stack via Docker: Whisper + local TTS + Kokoro
                 print(
                     f"[agent-worker] local backend: whisper={args.whisper_url},"
                     f" kokoro={args.kokoro_url}",
                     file=sys.stderr,
                     flush=True,
                 )
-                # Update engine to use Ollama model
-                engine.model = f"ollama/{ollama_model}"
                 session = AgentSession(
                     stt=openai.STT(
                         base_url=args.whisper_url,
@@ -170,20 +166,19 @@ def main() -> None:
                         voice="af_heart",
                     ),
                     vad=silero.VAD.load(),
+                    allow_interruptions=False,
                 )
             elif args.backend == "mlx":
                 # macOS Metal-accelerated stack
                 if not MLX_AVAILABLE:
                     output_error("MLX backend requires mlx-audio: uv sync --extra macos")
                     sys.exit(1)
-
-                ollama_model = model_name if ":" in model_name else "qwen2.5:0.5b"
-                engine.model = f"ollama/{ollama_model}"
                 session = AgentSession(
                     stt=MlxWhisperSTT(),
                     llm=voicetest_llm,
                     tts=MlxKokoroTTS(),
                     vad=silero.VAD.load(),
+                    allow_interruptions=False,
                 )
             else:
                 # OpenAI backend
@@ -192,6 +187,7 @@ def main() -> None:
                     llm=voicetest_llm,
                     tts=openai.TTS(),
                     vad=silero.VAD.load(),
+                    allow_interruptions=False,
                 )
 
             # Get instructions from graph for Agent

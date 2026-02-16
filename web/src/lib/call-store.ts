@@ -110,12 +110,16 @@ export async function endCall(agentId: string): Promise<void> {
 }
 
 export async function toggleMute(): Promise<void> {
-  if (!livekitConnection) return;
-
   const state = get(callState);
   const newMuted = !state.muted;
 
-  await livekitConnection.setMuted(newMuted);
+  if (livekitConnection) {
+    try {
+      await livekitConnection.setMuted(newMuted);
+    } catch (error) {
+      console.warn("Failed to toggle microphone:", error);
+    }
+  }
   callState.update((s) => ({ ...s, muted: newMuted }));
 }
 

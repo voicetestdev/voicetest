@@ -162,7 +162,7 @@ class CallManager:
             cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=None,
             text=True,
         )
 
@@ -226,9 +226,10 @@ class CallManager:
 
             # Broadcast error if process exited unexpectedly
             if exit_code != 0 and not active_call.cancel_event.is_set():
+                error_msg = f"Agent worker exited with code {exit_code} (check logs for details)"
                 await self._broadcast_update(
                     call_id,
-                    {"type": "error", "message": f"Agent worker exited with code {exit_code}"},
+                    {"type": "error", "message": error_msg},
                 )
 
         except Exception as e:

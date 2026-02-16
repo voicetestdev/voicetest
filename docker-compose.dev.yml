@@ -28,6 +28,7 @@ services:
       - /app/.venv
       - backend-cache:/root/.cache/uv
       - ${HOME}:${HOME}:ro
+      - claude-auth:/claude-auth
     ports:
       - "8000:8000"
     environment:
@@ -36,11 +37,15 @@ services:
       - LIVEKIT_API_KEY=devkey
       - LIVEKIT_API_SECRET=secret
       - VOICETEST_BACKEND=local
-      - OLLAMA_URL=http://host.docker.internal:11434/v1
       - WHISPER_URL=http://whisper:8000/v1
       - KOKORO_URL=http://kokoro:8880/v1
     command: >
-      sh -c "uv sync && uv run voicetest serve --reload --host 0.0.0.0"
+      sh -c "
+        mkdir -p /claude-auth/.claude &&
+        ln -sf /claude-auth/.claude.json /root/.claude.json &&
+        ln -sf /claude-auth/.claude /root/.claude &&
+        uv sync && uv run voicetest serve --reload --host 0.0.0.0
+      "
     depends_on:
       - livekit
       - whisper
@@ -62,4 +67,5 @@ services:
 
 volumes:
   backend-cache:
+  claude-auth:
   frontend-node-modules:
