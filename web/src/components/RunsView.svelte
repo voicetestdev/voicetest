@@ -3,10 +3,13 @@
   import {
     currentRunWithResults,
     currentRunId,
+    currentAgentId,
     runHistory,
     cancelTest,
     retryStatus,
     loadRun,
+    startRun,
+    currentView,
   } from "../lib/stores";
   import type { RunResultRecord, Message, MetricResult, ModelsUsed } from "../lib/types";
 
@@ -29,6 +32,8 @@
 
   let selectedResultId = $state<string | null>(null);
   let deleting = $state(false);
+  let rerunOpen = $state(false);
+  let rerunDropdownEl: HTMLElement;
   let detailContainer: HTMLElement;
   let prevMessageCount = 0;
 
@@ -113,6 +118,47 @@
     deleting = false;
   }
 
+  function handleClickOutside(event: MouseEvent) {
+    if (rerunOpen && rerunDropdownEl && !rerunDropdownEl.contains(event.target as Node)) {
+      rerunOpen = false;
+    }
+  }
+
+  const rerunnableResults = $derived(
+    ($currentRunWithResults?.results ?? []).filter((r) => r.test_case_id)
+  );
+
+  const failedResults = $derived(
+    rerunnableResults.filter((r) => r.status === "fail" || r.status === "error")
+  );
+
+  const selectedRerunResult = $derived(
+    rerunnableResults.find((r) => r.id === selectedResultId) ?? null
+  );
+
+  async function rerunTests(testIds: string[]) {
+    const agentId = $currentAgentId;
+    if (!agentId || testIds.length === 0) return;
+    rerunOpen = false;
+    currentView.set("runs");
+    await startRun(agentId, testIds);
+  }
+
+  function rerunAll() {
+    const ids = rerunnableResults.map((r) => r.test_case_id!);
+    rerunTests(ids);
+  }
+
+  function rerunFailed() {
+    const ids = failedResults.map((r) => r.test_case_id!);
+    rerunTests(ids);
+  }
+
+  function rerunSelected() {
+    if (!selectedRerunResult?.test_case_id) return;
+    rerunTests([selectedRerunResult.test_case_id]);
+  }
+
   const selectedResult = $derived(
     $currentRunWithResults?.results.find((r) => r.id === selectedResultId) ?? null
   );
@@ -140,6 +186,9 @@
     prevMessageCount = 0;
   });
 </script>
+
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<svelte:window onclick={handleClickOutside} />
 
 <div class="runs-view">
   {#if !$currentRunWithResults && $runHistory.length === 0}
@@ -179,6 +228,43 @@
               <span class="error">{summary.errors} errors</span>
             {/if}
           </span>
+        {/if}
+        {#if $currentRunWithResults.completed_at && rerunnableResults.length > 0}
+          <div class="rerun-dropdown" bind:this={rerunDropdownEl}>
+            <button
+              class="rerun-btn"
+              onclick={() => (rerunOpen = !rerunOpen)}
+              title="Re-run tests"
+            >
+              Re-run
+              <span class="caret"></span>
+            </button>
+            {#if rerunOpen}
+              <ul class="rerun-menu">
+                <li>
+                  <button onclick={rerunAll}>
+                    Re-run all tests ({rerunnableResults.length})
+                  </button>
+                </li>
+                {#if failedResults.length > 0}
+                  <li>
+                    <button onclick={rerunFailed}>
+                      Re-run failed tests ({failedResults.length})
+                    </button>
+                  </li>
+                {/if}
+                {#if selectedRerunResult}
+                  <li>
+                    <button onclick={rerunSelected}>
+                      Re-run {selectedRerunResult.test_name.length > 30
+                        ? selectedRerunResult.test_name.slice(0, 30) + "..."
+                        : selectedRerunResult.test_name}
+                    </button>
+                  </li>
+                {/if}
+              </ul>
+            {/if}
+          </div>
         {/if}
         <button
           class="delete-run-btn"
@@ -512,12 +598,75 @@
     font-size: 0.9rem;
   }
 
+  .rerun-dropdown {
+    position: relative;
+    margin-left: auto;
+  }
+
+  .rerun-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.6rem !important;
+    font-size: 0.75rem !important;
+    background: var(--status-pass-bg) !important;
+    color: var(--color-pass) !important;
+    border: 1px solid rgba(63, 185, 80, 0.3) !important;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .rerun-btn:hover {
+    background: rgba(63, 185, 80, 0.25) !important;
+  }
+
+  .caret {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 4px solid currentColor;
+  }
+
+  .rerun-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 100;
+    min-width: 220px;
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  .rerun-menu li button {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background: transparent !important;
+    border: none !important;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .rerun-menu li button:hover {
+    background: var(--bg-hover) !important;
+  }
+
   .delete-run-btn {
     background: var(--danger-bg) !important;
     color: var(--danger-text) !important;
     padding: 0.25rem 0.5rem !important;
     font-size: 0.75rem !important;
-    margin-left: auto;
   }
 
   .delete-run-btn:hover:not(:disabled) {
