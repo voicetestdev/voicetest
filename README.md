@@ -87,7 +87,38 @@ voicetest tui --agent agent.json --tests tests.json
 
 # Start REST API server with Web UI
 voicetest serve
+
+# Start infrastructure (LiveKit, Whisper, Kokoro) + backend for live calls
+voicetest up
+
+# Stop infrastructure services
+voicetest down
 ```
+
+### Live Voice Calls
+
+For live voice calls, you need infrastructure services (LiveKit, Whisper STT, Kokoro TTS). The `up` command starts them via Docker and then launches the backend:
+
+```bash
+# Start infrastructure + backend server
+voicetest up
+
+# Or start infrastructure only (e.g., to run the backend separately)
+voicetest up --detach
+
+# Stop infrastructure when done
+voicetest down
+```
+
+This requires Docker with the compose plugin. The infrastructure services are:
+
+| Service   | URL                   | Description                              |
+| --------- | --------------------- | ---------------------------------------- |
+| `livekit` | ws://localhost:7880   | LiveKit server for real-time voice calls |
+| `whisper` | http://localhost:8001 | Faster Whisper STT server                |
+| `kokoro`  | http://localhost:8002 | Kokoro TTS server                        |
+
+If you only need simulated tests (no live voice), `voicetest serve` is sufficient and does not require Docker.
 
 ### Web UI
 
@@ -340,7 +371,7 @@ cd voicetest
 docker compose -f docker-compose.dev.yml up
 ```
 
-This starts five services:
+The dev compose file includes the base infrastructure from `voicetest/compose/docker-compose.yml` (the same file bundled with the package for `voicetest up`) and adds backend + frontend services on top. This starts five services:
 
 | Service    | URL                   | Description                              |
 | ---------- | --------------------- | ---------------------------------------- |
@@ -462,6 +493,7 @@ voicetest/
 │   ├── cli.py           # CLI
 │   ├── rest.py          # REST API server + WebSocket + SPA serving
 │   ├── container.py     # Dependency injection (Punq)
+│   ├── compose/         # Bundled Docker Compose for infrastructure services
 │   ├── models/          # Pydantic models
 │   ├── importers/       # Source importers (retell, vapi, bland, livekit, xlsform, custom)
 │   ├── exporters/       # Format exporters (mermaid, livekit, retell, vapi, bland, test_cases)
