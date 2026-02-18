@@ -188,7 +188,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 2
+            assert version == 3
 
     def test_runs_pending_migration_on_old_schema(self, tmp_path):
         db_path = tmp_path / "old.duckdb"
@@ -247,7 +247,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 2
+            assert version == 3
 
     def test_tracks_version(self, tmp_path):
         db_path = tmp_path / "versioned.duckdb"

@@ -59,6 +59,8 @@ from voicetest.settings import resolve_model
 from voicetest.settings import save_settings
 from voicetest.storage.linked_file import check_file
 from voicetest.storage.linked_file import compute_etag
+from voicetest.storage.models import Result as ResultModel
+from voicetest.storage.models import Run as RunModel
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import CallRepository
 from voicetest.storage.repositories import RunRepository
@@ -508,6 +510,9 @@ def _build_run_options(settings: Settings, request_options: RunOptions | None) -
         split_transitions=(
             (request_options.split_transitions if request_options else False)
             or settings.run.split_transitions
+        ),
+        audio_eval=(
+            (request_options.audio_eval if request_options else False) or settings.run.audio_eval
         ),
     )
 
@@ -1004,6 +1009,64 @@ async def delete_run(run_id: str) -> dict:
 
     run_repo.delete(run_id)
     return {"status": "deleted", "id": run_id}
+
+
+@router.post("/results/{result_id}/audio-eval")
+async def audio_eval_result(result_id: str) -> dict:
+    """Run audio evaluation on an existing test result.
+
+    Performs TTS→STT round-trip on assistant messages and re-evaluates
+    metrics using the "heard" text.
+    """
+    run_repo = get_run_repo()
+
+    session = get_session()
+    db_result = session.get(ResultModel, result_id)
+    if not db_result:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    result_dict = run_repo._result_to_dict(db_result)
+    transcript_data = result_dict.get("transcript_json") or []
+    if not transcript_data:
+        raise HTTPException(status_code=400, detail="Result has no transcript")
+
+    transcript = [Message(**m) for m in transcript_data]
+
+    # Find the test case to get metrics/rules
+    test_case_id = result_dict.get("test_case_id")
+    test_case_repo = get_test_case_repo()
+
+    test_record = test_case_repo.get(test_case_id) if test_case_id else None
+    if not test_record:
+        test_record = _find_linked_test(test_case_id) if test_case_id else None
+    if not test_record:
+        raise HTTPException(status_code=400, detail="Test case not found for result")
+
+    test_case = test_case_repo.to_model(test_record)
+
+    # Load metrics config for global metrics
+    run = session.get(RunModel, db_result.run_id)
+    agent_repo = get_agent_repo()
+    metrics_config = agent_repo.get_metrics_config(run.agent_id) if run else None
+
+    settings = load_settings()
+    settings.apply_env()
+    judge_model = resolve_model(settings.models.judge)
+
+    transformed, audio_metrics = await api.audio_eval_result(
+        transcript,
+        test_case,
+        metrics_config=metrics_config,
+        judge_model=judge_model,
+        settings=settings,
+    )
+
+    # Update stored result with audio eval data
+    run_repo.update_audio_eval(result_id, transformed, audio_metrics)
+
+    # Return updated result
+    session.refresh(db_result)
+    return run_repo._result_to_dict(db_result)
 
 
 async def _broadcast_run_update(run_id: str, data: dict) -> None:

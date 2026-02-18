@@ -6,9 +6,11 @@ This is the single interface for all consumers. CLI and Web UI are thin wrappers
 from collections.abc import Awaitable
 from collections.abc import Callable
 from datetime import datetime
+import logging
 from pathlib import Path
 import uuid
 
+from voicetest.audio import AudioRoundTrip
 from voicetest.container import get_exporter_registry
 from voicetest.container import get_importer_registry
 from voicetest.engine.session import ConversationRunner
@@ -28,6 +30,7 @@ from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.retry import OnErrorCallback
+from voicetest.settings import Settings
 from voicetest.settings import resolve_model
 from voicetest.simulator.user_sim import SimulatorResponse
 from voicetest.simulator.user_sim import UserSimulator
@@ -113,6 +116,7 @@ async def evaluate_global_metrics(
     metrics_config: MetricsConfig,
     judge_model: str,
     on_error: OnErrorCallback | None = None,
+    use_heard: bool = False,
 ) -> list[MetricResult]:
     """Evaluate a transcript against an agent's global metrics.
 
@@ -121,6 +125,7 @@ async def evaluate_global_metrics(
         metrics_config: Agent metrics configuration with threshold and global metrics.
         judge_model: LLM model to use for evaluation.
         on_error: Optional callback for retry notifications.
+        use_heard: If True, use metadata["heard"] for assistant messages.
 
     Returns:
         List of MetricResult objects for each enabled global metric.
@@ -137,6 +142,7 @@ async def evaluate_global_metrics(
                 gm.criteria,
                 threshold=gm_threshold,
                 on_error=on_error,
+                use_heard=use_heard,
             )
             result = result.model_copy(update={"metric": f"[{gm.name}]"})
             results.append(result)
@@ -361,6 +367,44 @@ async def run_test(
             )
             metric_results.extend(global_results)
 
+        # Audio evaluation (when enabled)
+        audio_metric_results: list[MetricResult] = []
+        if options.audio_eval:
+            try:
+                audio_rt = AudioRoundTrip.from_settings()
+                state.transcript = await audio_rt.transform_transcript(state.transcript)
+
+                if test_type == "rule":
+                    audio_metric_results = await rule_judge.evaluate(
+                        state.transcript,
+                        test_case.includes,
+                        test_case.excludes,
+                        test_case.patterns,
+                        use_heard=True,
+                    )
+                else:
+                    audio_metric_results = await metric_judge.evaluate_all(
+                        state.transcript,
+                        test_case.metrics,
+                        threshold=threshold,
+                        on_error=on_error,
+                        use_heard=True,
+                    )
+
+                if metrics_config:
+                    audio_global_results = await evaluate_global_metrics(
+                        state.transcript,
+                        metrics_config,
+                        judge_model=options.judge_model,
+                        on_error=on_error,
+                        use_heard=True,
+                    )
+                    audio_metric_results.extend(audio_global_results)
+
+                await audio_rt.close()
+            except Exception:
+                logging.getLogger(__name__).exception("Audio evaluation failed")
+
         # Check flow constraints (optional, informational only)
         flow_issues: list[str] = []
         if options.flow_judge:
@@ -381,6 +425,7 @@ async def run_test(
             status=status,
             transcript=state.transcript,
             metric_results=metric_results,
+            audio_metric_results=audio_metric_results,
             nodes_visited=state.nodes_visited,
             tools_called=state.tools_called,
             constraint_violations=flow_issues,
@@ -450,6 +495,70 @@ async def run_tests(
         completed_at=datetime.now(),
         results=results,
     )
+
+
+async def audio_eval_result(
+    transcript: list[Message],
+    test_case: TestCase,
+    metrics_config: MetricsConfig | None = None,
+    judge_model: str | None = None,
+    settings: Settings | None = None,
+) -> tuple[list[Message], list[MetricResult]]:
+    """Run audio evaluation on an existing transcript.
+
+    Performs TTS→STT round-trip on assistant messages and re-evaluates
+    metrics using the "heard" text.
+
+    Args:
+        transcript: Conversation transcript to evaluate.
+        test_case: Test case with metrics/rules to evaluate against.
+        metrics_config: Optional agent metrics config for global metrics.
+        judge_model: LLM model for evaluation.
+        settings: Settings for audio service URLs.
+
+    Returns:
+        Tuple of (transformed transcript, audio metric results).
+    """
+    if settings is None:
+        settings = Settings()
+
+    audio_rt = AudioRoundTrip.from_settings(settings)
+    transformed = await audio_rt.transform_transcript(transcript)
+
+    judge_model = judge_model or resolve_model()
+    test_type = test_case.effective_type
+
+    threshold = metrics_config.threshold if metrics_config else 0.7
+
+    if test_type == "rule":
+        rule_judge = RuleJudge()
+        audio_metrics = await rule_judge.evaluate(
+            transformed,
+            test_case.includes,
+            test_case.excludes,
+            test_case.patterns,
+            use_heard=True,
+        )
+    else:
+        metric_judge = MetricJudge(judge_model)
+        audio_metrics = await metric_judge.evaluate_all(
+            transformed,
+            test_case.metrics,
+            threshold=threshold,
+            use_heard=True,
+        )
+
+    if metrics_config:
+        global_results = await evaluate_global_metrics(
+            transformed,
+            metrics_config,
+            judge_model=judge_model,
+            use_heard=True,
+        )
+        audio_metrics.extend(global_results)
+
+    await audio_rt.close()
+    return transformed, audio_metrics
 
 
 async def evaluate_transcript(

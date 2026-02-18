@@ -59,6 +59,7 @@ class MetricJudge:
         criterion: str,
         threshold: float = DEFAULT_THRESHOLD,
         on_error: OnErrorCallback | None = None,
+        use_heard: bool = False,
     ) -> MetricResult:
         """Evaluate transcript against a single criterion.
 
@@ -78,7 +79,9 @@ class MetricJudge:
             return result
 
         # Real LLM evaluation
-        return await self._evaluate_with_llm(transcript, criterion, threshold, on_error)
+        return await self._evaluate_with_llm(
+            transcript, criterion, threshold, on_error, use_heard=use_heard
+        )
 
     async def evaluate_all(
         self,
@@ -86,6 +89,7 @@ class MetricJudge:
         criteria: list[str],
         threshold: float = DEFAULT_THRESHOLD,
         on_error: OnErrorCallback | None = None,
+        use_heard: bool = False,
     ) -> list[MetricResult]:
         """Evaluate transcript against multiple criteria.
 
@@ -100,7 +104,9 @@ class MetricJudge:
         """
         results = []
         for criterion in criteria:
-            result = await self.evaluate(transcript, criterion, threshold, on_error)
+            result = await self.evaluate(
+                transcript, criterion, threshold, on_error, use_heard=use_heard
+            )
             results.append(result)
         return results
 
@@ -110,9 +116,10 @@ class MetricJudge:
         criterion: str,
         threshold: float,
         on_error: OnErrorCallback | None = None,
+        use_heard: bool = False,
     ) -> MetricResult:
         """Evaluate using LLM."""
-        formatted_transcript = self._format_transcript(transcript)
+        formatted_transcript = self._format_transcript(transcript, use_heard=use_heard)
 
         result = await call_llm(
             self.model,
@@ -131,9 +138,12 @@ class MetricJudge:
             confidence=result.confidence,
         )
 
-    def _format_transcript(self, transcript: list[Message]) -> str:
+    def _format_transcript(self, transcript: list[Message], use_heard: bool = False) -> str:
         """Format transcript for LLM input."""
         lines = []
         for msg in transcript:
-            lines.append(f"{msg.role.upper()}: {msg.content}")
+            content = msg.content
+            if use_heard and msg.role == "assistant":
+                content = msg.metadata.get("heard", content)
+            lines.append(f"{msg.role.upper()}: {content}")
         return "\n".join(lines)

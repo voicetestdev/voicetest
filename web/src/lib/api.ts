@@ -16,6 +16,7 @@ import type {
   RemoteAgentInfo,
   RunOptions,
   RunRecord,
+  RunResultRecord,
   RunWithResults,
   Settings,
   StartCallResponse,
@@ -315,6 +316,9 @@ export const api = {
   getCall: (callId: string) => get<CallRecord>(`/calls/${callId}`),
 
   endCall: (callId: string) => post<{ status: string; call_id: string; run_id: string | null }>(`/calls/${callId}/end`, {}),
+
+  audioEvalResult: (resultId: string) =>
+    post<RunResultRecord>(`/results/${resultId}/audio-eval`, {}),
 
   getWebSocketUrl: (path: string): string => {
     const baseUrl = globalConfig.baseUrl || "/api";

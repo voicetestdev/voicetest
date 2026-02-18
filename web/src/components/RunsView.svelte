@@ -13,6 +13,93 @@
   } from "../lib/stores";
   import type { RunResultRecord, Message, MetricResult, ModelsUsed } from "../lib/types";
 
+  let audioEvalLoading = $state<string | null>(null);
+
+  function hasAudioEval(result: RunResultRecord): boolean {
+    const transcript = parseTranscript(result.transcript_json);
+    return transcript.some((m) => m.role === "assistant" && m.metadata?.heard);
+  }
+
+  async function runAudioEval(resultId: string) {
+    audioEvalLoading = resultId;
+    try {
+      const updated = await api.audioEvalResult(resultId);
+      // Update the result in the store
+      currentRunWithResults.update((run) => {
+        if (!run) return run;
+        return {
+          ...run,
+          results: run.results.map((r) =>
+            r.id === resultId ? { ...r, ...updated } : r
+          ),
+        };
+      });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Audio evaluation failed");
+    }
+    audioEvalLoading = null;
+  }
+
+  function parseAudioMetrics(json: string | MetricResult[] | null): MetricResult[] {
+    if (!json) return [];
+    if (Array.isArray(json)) return json;
+    try {
+      return JSON.parse(json);
+    } catch {
+      return [];
+    }
+  }
+
+  function diffWords(original: string, heard: string): string {
+    const origWords = original.split(/\s+/);
+    const heardWords = heard.split(/\s+/);
+    const result: string[] = [];
+
+    const m = origWords.length;
+    const n = heardWords.length;
+
+    // Build LCS table
+    const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (origWords[i - 1].toLowerCase() === heardWords[j - 1].toLowerCase()) {
+          dp[i][j] = dp[i - 1][j - 1] + 1;
+        } else {
+          dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+      }
+    }
+
+    // Backtrack to produce diff
+    let i = m, j = n;
+    const parts: { type: "same" | "del" | "ins"; text: string }[] = [];
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && origWords[i - 1].toLowerCase() === heardWords[j - 1].toLowerCase()) {
+        parts.unshift({ type: "same", text: origWords[i - 1] });
+        i--; j--;
+      } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+        parts.unshift({ type: "ins", text: heardWords[j - 1] });
+        j--;
+      } else {
+        parts.unshift({ type: "del", text: origWords[i - 1] });
+        i--;
+      }
+    }
+
+    for (const part of parts) {
+      const escaped = part.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      if (part.type === "del") {
+        result.push(`<del>${escaped}</del>`);
+      } else if (part.type === "ins") {
+        result.push(`<ins>${escaped}</ins>`);
+      } else {
+        result.push(escaped);
+      }
+    }
+
+    return result.join(" ");
+  }
+
   function formatRelativeTime(dateStr: string): string {
     const date = new Date(dateStr);
     const now = new Date();
@@ -377,6 +464,16 @@
                 </div>
               {/if}
 
+              {#if selectedResult.status !== "running" && selectedResult.test_case_id && !hasAudioEval(selectedResult)}
+                <button
+                  class="audio-eval-btn"
+                  onclick={() => runAudioEval(selectedResult.id)}
+                  disabled={audioEvalLoading === selectedResult.id}
+                >
+                  {audioEvalLoading === selectedResult.id ? "Running audio eval..." : "Run audio eval"}
+                </button>
+              {/if}
+
               {#if selectedResult.error_message}
                 <div class="error-box">
                   <strong>Error:</strong>
@@ -397,7 +494,13 @@
                   {/if}
                   <div class="message {msg.role}">
                     <span class="role">{msg.role}</span>
-                    <span class="content">{msg.content}</span>
+                    {#if msg.metadata?.heard && msg.role === "assistant"}
+                      <div class="audio-diff">
+                        {@html diffWords(msg.content, msg.metadata.heard as string)}
+                      </div>
+                    {:else}
+                      <span class="content">{msg.content}</span>
+                    {/if}
                   </div>
                 {:else}
                   {#if selectedResult.status !== "running"}
@@ -440,6 +543,38 @@
                 <h4>Metrics</h4>
                 <ul class="metrics">
                   {#each metrics as metric}
+                    {@const clampedScore = metric.score !== undefined
+                      ? Math.min(1, Math.max(0, metric.score))
+                      : undefined}
+                    {@const scoreColor = clampedScore !== undefined
+                      ? clampedScore >= 0.7 ? "green"
+                        : clampedScore >= 0.4 ? "yellow"
+                        : "red"
+                      : metric.passed ? "green" : "red"}
+                    <li class={metric.passed ? "pass" : "fail"}>
+                      <span class="metric-status">{metric.passed ? "PASS" : "FAIL"}</span>
+                      {#if clampedScore !== undefined}
+                        <span class="metric-score {scoreColor}">
+                          {(clampedScore * 100).toFixed(0)}%
+                        </span>
+                      {/if}
+                      <span class="metric-name">{metric.metric}</span>
+                      {#if metric.threshold !== undefined}
+                        {@const clampedThreshold = Math.min(1, Math.max(0, metric.threshold))}
+                        <span class="metric-threshold">threshold: {(clampedThreshold * 100).toFixed(0)}%</span>
+                      {/if}
+                      {#if metric.reasoning}
+                        <span class="metric-reason">{metric.reasoning}</span>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+
+              {#if parseAudioMetrics(selectedResult.audio_metrics_json).length > 0}
+                <h4>Audio Evaluation</h4>
+                <ul class="metrics">
+                  {#each parseAudioMetrics(selectedResult.audio_metrics_json) as metric}
                     {@const clampedScore = metric.score !== undefined
                       ? Math.min(1, Math.max(0, metric.score))
                       : undefined}
@@ -1063,6 +1198,42 @@
     .results {
       max-height: 200px;
     }
+  }
+
+  .audio-eval-btn {
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.75rem !important;
+    font-size: 0.8rem !important;
+    background: var(--bg-tertiary) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-secondary) !important;
+    cursor: pointer;
+  }
+
+  .audio-eval-btn:hover:not(:disabled) {
+    background: var(--bg-hover) !important;
+    color: var(--text-primary) !important;
+  }
+
+  .audio-eval-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .audio-diff {
+    white-space: pre-wrap;
+  }
+
+  .audio-diff :global(del) {
+    background: rgba(248, 113, 113, 0.2);
+    color: var(--danger-text, #f87171);
+    text-decoration: line-through;
+  }
+
+  .audio-diff :global(ins) {
+    background: rgba(34, 197, 94, 0.2);
+    color: #22c55e;
+    text-decoration: none;
   }
 
   @media (max-width: 768px) {

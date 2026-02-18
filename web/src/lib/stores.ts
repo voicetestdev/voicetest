@@ -464,6 +464,7 @@ export function connectRunWebSocket(runId: string): void {
           error_message: null,
           transcript_json: "[]",
           metrics_json: null,
+          audio_metrics_json: null,
           nodes_visited: null,
           tools_called: null,
           models_used: null,
