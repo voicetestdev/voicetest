@@ -12,6 +12,7 @@ import type {
   Settings,
 } from "./types";
 import { api } from "./api";
+import { etagCache } from "./etag-cache";
 
 export const agents = writable<AgentRecord[]>([]);
 export const currentAgentId = writable<string | null>(null);
@@ -246,6 +247,20 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
       await loadRun(runs[0].id);
     }
   }
+}
+
+export async function refreshAgent(agentId: string): Promise<void> {
+  etagCache.delete(`/agents/${agentId}/graph`);
+  etagCache.delete(`/agents/${agentId}/tests`);
+
+  const [graph, records] = await Promise.all([
+    api.getAgentGraph(agentId),
+    api.listTestsForAgent(agentId),
+  ]);
+
+  agentGraph.set(graph);
+  testCaseRecords.set(records);
+  testCases.set(records.map(parseTestCaseRecord));
 }
 
 export function toggleAgentExpanded(agentId: string): void {

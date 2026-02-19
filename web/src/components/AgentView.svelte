@@ -6,6 +6,7 @@
     currentAgentId,
     currentAgent,
     loadAgents,
+    refreshAgent,
     currentView,
   } from "../lib/stores";
   import type { ExporterInfo, Platform, PlatformInfo, PlatformStatus, SyncStatus } from "../lib/types";
@@ -55,6 +56,8 @@
   let savingModel = $state(false);
   let modelSaved = $state(false);
   let modelInput: HTMLInputElement;
+
+  let refreshing = $state(false);
 
   let syncStatus = $state<SyncStatus | null>(null);
   let syncing = $state(false);
@@ -576,6 +579,17 @@
     }
   }
 
+  async function refreshFromFile() {
+    if (!$currentAgentId) return;
+    refreshing = true;
+    try {
+      await refreshAgent($currentAgentId);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    refreshing = false;
+  }
+
   async function syncToSource() {
     if (!$currentAgentId || !$agentGraph || !syncStatus?.can_sync) return;
     syncing = true;
@@ -666,10 +680,27 @@
       {#if $currentAgent.source_path}
         <div class="info-row">
           <span class="label">Linked File:</span>
-          <span class="mono">{$currentAgent.source_path}</span>
+          <span class="linked-file">
+            <span class="mono">{$currentAgent.source_path}</span>
+            <button
+              class="refresh-btn"
+              onclick={refreshFromFile}
+              disabled={refreshing}
+              title="Reload agent from file"
+            >
+              <span class="refresh-icon" class:spinning={refreshing}>↻</span>
+            </button>
+          </span>
         </div>
       {/if}
     </section>
+
+    {#if $agentGraph.source_metadata?.general_prompt}
+      <section class="general-prompt">
+        <h3>General Prompt</h3>
+        <pre class="prompt-text">{$agentGraph.source_metadata.general_prompt}</pre>
+      </section>
+    {/if}
 
     <div class="actions">
       <CallView />
@@ -966,6 +997,65 @@
   .mono {
     font-family: monospace;
     font-size: 0.85rem;
+  }
+
+  .linked-file {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.15rem 0.35rem;
+    font-size: 0.85rem;
+    line-height: 1;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .refresh-btn:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+  }
+
+  .refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .refresh-icon.spinning {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .general-prompt {
+    margin-bottom: 1.5rem;
+    padding: var(--space-4);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+  }
+
+  .prompt-text {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+    max-height: 300px;
+    overflow-y: auto;
   }
 
   .model-value {
