@@ -16,6 +16,11 @@
       flow_judge: false,
       streaming: false,
       test_model_precedence: false,
+      audio_eval: false,
+    },
+    audio: {
+      tts_url: "http://localhost:8002/v1",
+      stt_url: "http://localhost:8001/v1",
     },
     env: {},
   });
@@ -216,6 +221,17 @@
         />
         <label for="test-model-precedence">Test/agent models take precedence</label>
         <span class="hint checkbox-hint">When enabled, agent and test LLM settings override global settings</span>
+      </div>
+
+      <div class="form-group checkbox">
+        <input
+          id="audio-eval"
+          type="checkbox"
+          bind:checked={localSettings.run.audio_eval}
+          onchange={saveSettings}
+        />
+        <label for="audio-eval">Audio evaluation</label>
+        <span class="hint checkbox-hint">Auto-run TTS→STT round-trip on every test (requires voicetest up)</span>
       </div>
     </section>
 

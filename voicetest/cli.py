@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 
 import click
@@ -12,6 +13,7 @@ from rich.table import Table
 import uvicorn
 
 from voicetest import api
+from voicetest.compose import get_compose_path
 from voicetest.container import get_session
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
@@ -477,6 +479,102 @@ def serve(
             console.print(f"    - {t}")
 
     _start_server(host, port, reload)
+
+
+def _check_docker_compose() -> None:
+    """Verify that docker compose is available, or exit with a helpful message."""
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "version"],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise FileNotFoundError
+    except FileNotFoundError:
+        console.print(
+            "[red]Error: 'docker compose' is not available.[/red]\n"
+            "Install Docker Desktop (https://docs.docker.com/get-docker/) "
+            "or the compose plugin (https://docs.docker.com/compose/install/)."
+        )
+        raise SystemExit(1) from None
+
+
+@main.command()
+@click.option("--host", "-h", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", "-p", default=8000, type=int, help="Port to bind to")
+@click.option("--verbose", "-v", is_flag=True, help="Enable debug logging")
+@click.option("--detach", "-d", is_flag=True, help="Start infra and exit (no backend server)")
+def up(host: str, port: int, verbose: bool, detach: bool):
+    """Start infrastructure services and the backend server.
+
+    Launches LiveKit, Whisper, and Kokoro via Docker Compose,
+    then starts the voicetest backend server.
+
+    Use --detach to start only the Docker infrastructure without
+    the backend server.
+
+    Examples:
+
+        voicetest up                # Start infra + backend
+
+        voicetest up --detach       # Start infra only
+
+        voicetest up -p 9000        # Backend on port 9000
+    """
+    _check_docker_compose()
+
+    os.environ["VOICETEST_LOG_LEVEL"] = "DEBUG" if verbose else "INFO"
+
+    with get_compose_path() as compose_path:
+        console.print("[bold]Starting infrastructure services...[/bold]")
+        result = subprocess.run(
+            ["docker", "compose", "-f", str(compose_path), "up", "-d"],
+            capture_output=not verbose,
+        )
+        if result.returncode != 0:
+            console.print("[red]Failed to start infrastructure services.[/red]")
+            if not verbose and result.stderr:
+                console.print(result.stderr.decode())
+            raise SystemExit(1)
+
+        console.print("  LiveKit:  localhost:7880")
+        console.print("  Whisper:  localhost:8001")
+        console.print("  Kokoro:   localhost:8002")
+        console.print()
+
+        if detach:
+            console.print("[dim]Infrastructure started. Run 'voicetest down' to stop.[/dim]")
+            return
+
+        _start_server(host, port)
+
+
+@main.command()
+def down():
+    """Stop infrastructure services.
+
+    Stops the LiveKit, Whisper, and Kokoro containers started
+    by 'voicetest up'.
+
+    Example:
+
+        voicetest down
+    """
+    _check_docker_compose()
+
+    with get_compose_path() as compose_path:
+        console.print("[bold]Stopping infrastructure services...[/bold]")
+        result = subprocess.run(
+            ["docker", "compose", "-f", str(compose_path), "down"],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            console.print("[red]Failed to stop infrastructure services.[/red]")
+            if result.stderr:
+                console.print(result.stderr.decode())
+            raise SystemExit(1)
+
+        console.print("[dim]Infrastructure stopped.[/dim]")
 
 
 if __name__ == "__main__":

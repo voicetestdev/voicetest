@@ -10,6 +10,34 @@ from voicetest.models.results import Message
 from voicetest.retry import OnErrorCallback
 
 
+class FlowValidationSignature(dspy.Signature):
+    """Evaluate if conversation flow through an agent graph was logical.
+
+    Given an agent graph (nodes with instructions and transitions),
+    a conversation transcript, and the sequence of nodes visited,
+    determine if the transitions between nodes were appropriate
+    given what was said in the conversation.
+    """
+
+    graph_structure: str = dspy.InputField(
+        desc="Agent graph: nodes with their instructions and valid transitions"
+    )
+    transcript: str = dspy.InputField(desc="Conversation between user and agent")
+    nodes_visited: list[str] = dspy.InputField(
+        desc="Sequence of node IDs the agent traversed, in order"
+    )
+
+    flow_valid: bool = dspy.OutputField(
+        desc="True if all transitions were logical given the conversation"
+    )
+    issues: list[str] = dspy.OutputField(
+        desc="List of specific flow issues found (empty list if valid)"
+    )
+    reasoning: str = dspy.OutputField(
+        desc="Step-by-step explanation of why each transition was or wasn't appropriate"
+    )
+
+
 @dataclass
 class FlowResult:
     """Result of flow validation."""
@@ -71,34 +99,6 @@ class FlowJudge:
         on_error: OnErrorCallback | None = None,
     ) -> FlowResult:
         """Evaluate using LLM."""
-
-        class FlowValidationSignature(dspy.Signature):
-            """Evaluate if conversation flow through an agent graph was logical.
-
-            Given an agent graph (nodes with instructions and transitions),
-            a conversation transcript, and the sequence of nodes visited,
-            determine if the transitions between nodes were appropriate
-            given what was said in the conversation.
-            """
-
-            graph_structure: str = dspy.InputField(
-                desc="Agent graph: nodes with their instructions and valid transitions"
-            )
-            transcript: str = dspy.InputField(desc="Conversation between user and agent")
-            nodes_visited: list[str] = dspy.InputField(
-                desc="Sequence of node IDs the agent traversed, in order"
-            )
-
-            flow_valid: bool = dspy.OutputField(
-                desc="True if all transitions were logical given the conversation"
-            )
-            issues: list[str] = dspy.OutputField(
-                desc="List of specific flow issues found (empty list if valid)"
-            )
-            reasoning: str = dspy.OutputField(
-                desc="Step-by-step explanation of why each transition was or wasn't appropriate"
-            )
-
         formatted_transcript = self._format_transcript(transcript)
         formatted_graph = self._format_graph(nodes)
 

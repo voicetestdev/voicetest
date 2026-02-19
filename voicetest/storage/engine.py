@@ -36,6 +36,13 @@ _MIGRATIONS: list[tuple[int, str, str | list[str], str]] = [
         "SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'results' AND column_name = 'call_id'",
     ),
+    (
+        3,
+        "Add audio_metrics_json to results",
+        "ALTER TABLE results ADD COLUMN audio_metrics_json JSON",
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'results' AND column_name = 'audio_metrics_json'",
+    ),
 ]
 
 

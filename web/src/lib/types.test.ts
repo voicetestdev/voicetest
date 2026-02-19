@@ -147,6 +147,11 @@ describe("types", () => {
           flow_judge: false,
           streaming: false,
           test_model_precedence: false,
+          audio_eval: false,
+        },
+        audio: {
+          tts_url: "http://localhost:8002/v1",
+          stt_url: "http://localhost:8001/v1",
         },
         env: {},
       };
@@ -169,6 +174,11 @@ describe("types", () => {
           flow_judge: true,
           streaming: true,
           test_model_precedence: false,
+          audio_eval: false,
+        },
+        audio: {
+          tts_url: "http://localhost:8002/v1",
+          stt_url: "http://localhost:8001/v1",
         },
         env: {},
       };
@@ -187,6 +197,11 @@ describe("types", () => {
           flow_judge: false,
           streaming: false,
           test_model_precedence: false,
+          audio_eval: false,
+        },
+        audio: {
+          tts_url: "http://localhost:8002/v1",
+          stt_url: "http://localhost:8001/v1",
         },
         env: {},
       };
@@ -199,6 +214,11 @@ describe("types", () => {
           flow_judge: false,
           streaming: false,
           test_model_precedence: true,
+          audio_eval: false,
+        },
+        audio: {
+          tts_url: "http://localhost:8002/v1",
+          stt_url: "http://localhost:8001/v1",
         },
         env: {},
       };
@@ -220,6 +240,11 @@ describe("types", () => {
           flow_judge: false,
           streaming: false,
           test_model_precedence: false,
+          audio_eval: false,
+        },
+        audio: {
+          tts_url: "http://localhost:8002/v1",
+          stt_url: "http://localhost:8001/v1",
         },
         env: {},
       };

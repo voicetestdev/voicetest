@@ -131,6 +131,11 @@ export interface Settings {
     flow_judge: boolean;
     streaming: boolean;
     test_model_precedence: boolean;
+    audio_eval: boolean;
+  };
+  audio: {
+    tts_url: string;
+    stt_url: string;
   };
   env: Record<string, string>;
 }
@@ -218,6 +223,7 @@ export interface RunResultRecord {
   error_message: string | null;
   transcript_json: string | null;
   metrics_json: string | null;
+  audio_metrics_json: string | null;
   nodes_visited: string | null;
   tools_called: string | null;
   models_used: string | null;

@@ -19,6 +19,7 @@ class RuleJudge:
         includes: list[str],
         excludes: list[str],
         patterns: list[str],
+        use_heard: bool = False,
     ) -> list[MetricResult]:
         """Evaluate transcript against rules.
 
@@ -27,11 +28,12 @@ class RuleJudge:
             includes: Substrings that must be present.
             excludes: Substrings that must NOT be present.
             patterns: Regex patterns that must match.
+            use_heard: If True, use metadata["heard"] for assistant messages.
 
         Returns:
             List of MetricResult objects for each rule.
         """
-        text = self._format_transcript(transcript)
+        text = self._format_transcript(transcript, use_heard=use_heard)
         results = []
 
         for include in includes:
@@ -92,9 +94,12 @@ class RuleJudge:
 
         return results
 
-    def _format_transcript(self, transcript: list[Message]) -> str:
+    def _format_transcript(self, transcript: list[Message], use_heard: bool = False) -> str:
         """Format transcript for text matching."""
         lines = []
         for msg in transcript:
-            lines.append(f"{msg.role.upper()}: {msg.content}")
+            content = msg.content
+            if use_heard and msg.role == "assistant":
+                content = msg.metadata.get("heard", content)
+            lines.append(f"{msg.role.upper()}: {content}")
         return "\n".join(lines)

@@ -170,6 +170,7 @@ class Result(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     transcript_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     metrics_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    audio_metrics_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     nodes_visited: Mapped[list | None] = mapped_column(JSON, nullable=True)
     tools_called: Mapped[list | None] = mapped_column(JSON, nullable=True)
     models_used: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -192,6 +193,7 @@ class Result(Base):
             "error_message": self.error_message,
             "transcript_json": self.transcript_json,
             "metrics_json": self.metrics_json,
+            "audio_metrics_json": self.audio_metrics_json,
             "nodes_visited": self.nodes_visited,
             "tools_called": self.tools_called,
             "models_used": self.models_used,

@@ -27,6 +27,31 @@ async def _invoke_callback(callback: Callable, *args) -> None:
         await result
 
 
+class UserSimSignature(dspy.Signature):
+    """Simulate a real phone caller. Respond briefly and naturally, the way people actually talk
+    on the phone. No introductions, pleasantries, or formalities unless the persona demands it.
+    On the first turn, say a standard greeting, hello etc unless instructed otherwise in persona."""
+
+    persona: str = dspy.InputField(desc="User persona (identity, goal, personality)")
+    conversation_history: str = dspy.InputField(
+        desc="Prior conversation (excluding latest agent message)"
+    )
+    current_agent_message: str = dspy.InputField(
+        desc="The agent's most recent message to respond to"
+    )
+    turn_number: int = dspy.InputField(desc="Current turn number (1 = first turn)")
+
+    should_continue: bool = dspy.OutputField(
+        desc="True if user should keep talking. False only if goal is achieved or user would "
+        "realistically hang up. Always True on turn 1."
+    )
+    message: str = dspy.OutputField(
+        desc="User's next spoken response — short and natural like a real phone call. "
+        "Empty string only if should_continue is False."
+    )
+    reasoning: str = dspy.OutputField(desc="Why the user said this or ended")
+
+
 @dataclass
 class SimulatorResponse:
     """Response from user simulator."""
@@ -80,65 +105,7 @@ class UserSimulator:
             self._mock_index += 1
             return response
 
-        # Real LLM generation
-        response = await self._generate_with_llm(transcript, on_token, on_error)
-
-        # Force first turn to continue - user shouldn't hang up without saying anything
-        is_first_turn = len([m for m in transcript if m.role == "user"]) == 0
-        if is_first_turn and response.should_end:
-            # Retry with explicit instruction to start conversation
-            response = await self._generate_opening_message(transcript, on_token, on_error)
-
-        return response
-
-    async def _generate_opening_message(
-        self,
-        transcript: list[Message],
-        on_token: OnTokenCallback | None = None,
-        on_error: OnErrorCallback | None = None,
-    ) -> SimulatorResponse:
-        """Generate an opening message when the LLM incorrectly signals end on first turn."""
-
-        class OpeningMessageSignature(dspy.Signature):
-            """Generate an opening message to start a conversation."""
-
-            persona: str = dspy.InputField(desc="User persona (identity, goal, personality)")
-            agent_greeting: str = dspy.InputField(desc="What the agent said (if anything)")
-
-            message: str = dspy.OutputField(
-                desc="User's opening message to start the conversation and work toward their goal"
-            )
-            reasoning: str = dspy.OutputField(desc="Why the user said this")
-
-        agent_said = ""
-        for msg in reversed(transcript):
-            if msg.role == "assistant":
-                agent_said = msg.content
-                break
-
-        user_prompt = self.user_prompt
-        agent_greeting = agent_said or "(agent has not spoken yet)"
-
-        # Wrap on_token to add source="user"
-        async def user_token_callback(token: str) -> None:
-            if on_token:
-                await _invoke_callback(on_token, token, "user")
-
-        result = await call_llm(
-            self.model,
-            OpeningMessageSignature,
-            on_token=user_token_callback if on_token else None,
-            stream_field="message" if on_token else None,
-            on_error=on_error,
-            persona=user_prompt,
-            agent_greeting=agent_greeting,
-        )
-
-        return SimulatorResponse(
-            message=result.message,
-            should_end=False,
-            reasoning=result.reasoning,
-        )
+        return await self._generate_with_llm(transcript, on_token, on_error)
 
     async def _generate_with_llm(
         self,
@@ -148,8 +115,6 @@ class UserSimulator:
     ) -> SimulatorResponse:
         """Generate response using LLM.
 
-        This method uses DSPy for structured generation.
-
         Args:
             transcript: Conversation history.
             on_token: Optional callback for streaming tokens.
@@ -158,27 +123,6 @@ class UserSimulator:
         Returns:
             SimulatorResponse with message, should_end flag, and reasoning.
         """
-
-        class UserSimSignature(dspy.Signature):
-            """Generate next user message in a simulated conversation."""
-
-            persona: str = dspy.InputField(desc="User persona (identity, goal, personality)")
-            conversation_history: str = dspy.InputField(
-                desc="Prior conversation (excluding latest agent message)"
-            )
-            current_agent_message: str = dspy.InputField(
-                desc="The agent's most recent message to respond to"
-            )
-            turn_number: int = dspy.InputField(desc="Current turn number")
-
-            should_continue: bool = dspy.OutputField(
-                desc="True if user should continue, False if goal achieved or user would hang up"
-            )
-            message: str = dspy.OutputField(
-                desc="User's next message (empty string if should_continue is False)"
-            )
-            reasoning: str = dspy.OutputField(desc="Why the user said this or ended")
-
         user_prompt = self.user_prompt
         turn_number = len([m for m in transcript if m.role == "user"]) + 1
 

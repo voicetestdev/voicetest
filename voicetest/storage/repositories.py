@@ -457,6 +457,11 @@ class RunRepository:
             "metrics": (
                 [m.model_dump() for m in result.metric_results] if result.metric_results else None
             ),
+            "audio_metrics": (
+                [m.model_dump() for m in result.audio_metric_results]
+                if result.audio_metric_results
+                else None
+            ),
             "tools": (
                 [t.model_dump() for t in result.tools_called] if result.tools_called else None
             ),
@@ -534,6 +539,7 @@ class RunRepository:
             error_message=result.error_message,
             transcript_json=data["transcript"],
             metrics_json=data["metrics"],
+            audio_metrics_json=data["audio_metrics"],
             nodes_visited=result.nodes_visited,
             tools_called=data["tools"],
             models_used=data["models"],
@@ -566,6 +572,7 @@ class RunRepository:
             error_message=result.error_message,
             transcript_json=data["transcript"],
             metrics_json=data["metrics"],
+            audio_metrics_json=data["audio_metrics"],
             nodes_visited=result.nodes_visited,
             tools_called=data["tools"],
             models_used=data["models"],
@@ -631,10 +638,28 @@ class RunRepository:
         db_result.error_message = result.error_message
         db_result.transcript_json = data["transcript"]
         db_result.metrics_json = data["metrics"]
+        db_result.audio_metrics_json = data["audio_metrics"]
         db_result.nodes_visited = result.nodes_visited
         db_result.tools_called = data["tools"]
         db_result.models_used = data["models"]
 
+        self.session.commit()
+
+    def update_audio_eval(
+        self,
+        result_id: str,
+        transcript: list,
+        audio_metrics: list,
+    ) -> None:
+        """Update a result with audio evaluation data."""
+        db_result = self.session.get(Result, result_id)
+        if not db_result:
+            return
+
+        db_result.transcript_json = [m.model_dump() for m in transcript]
+        db_result.audio_metrics_json = (
+            [m.model_dump() for m in audio_metrics] if audio_metrics else None
+        )
         self.session.commit()
 
     def complete(self, run_id: str) -> None:
@@ -680,6 +705,7 @@ class RunRepository:
             "error_message": result.error_message,
             "transcript_json": result.transcript_json,
             "metrics_json": result.metrics_json,
+            "audio_metrics_json": result.audio_metrics_json,
             "nodes_visited": result.nodes_visited,
             "tools_called": result.tools_called,
             "models_used": result.models_used,

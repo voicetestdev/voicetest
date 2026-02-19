@@ -65,6 +65,7 @@ class TestResult(BaseModel):
     status: Literal["pass", "fail", "error"]
     transcript: list[Message] = Field(default_factory=list)
     metric_results: list[MetricResult] = Field(default_factory=list)
+    audio_metric_results: list[MetricResult] = Field(default_factory=list)
     nodes_visited: list[str] = Field(default_factory=list)
     tools_called: list[ToolCall] = Field(default_factory=list)
     constraint_violations: list[str] = Field(default_factory=list)

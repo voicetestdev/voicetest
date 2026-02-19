@@ -87,7 +87,38 @@ voicetest tui --agent agent.json --tests tests.json
 
 # Start REST API server with Web UI
 voicetest serve
+
+# Start infrastructure (LiveKit, Whisper, Kokoro) + backend for live calls
+voicetest up
+
+# Stop infrastructure services
+voicetest down
 ```
+
+### Live Voice Calls
+
+For live voice calls, you need infrastructure services (LiveKit, Whisper STT, Kokoro TTS). The `up` command starts them via Docker and then launches the backend:
+
+```bash
+# Start infrastructure + backend server
+voicetest up
+
+# Or start infrastructure only (e.g., to run the backend separately)
+voicetest up --detach
+
+# Stop infrastructure when done
+voicetest down
+```
+
+This requires Docker with the compose plugin. The infrastructure services are:
+
+| Service   | URL                   | Description                              |
+| --------- | --------------------- | ---------------------------------------- |
+| `livekit` | ws://localhost:7880   | LiveKit server for real-time voice calls |
+| `whisper` | http://localhost:8001 | Faster Whisper STT server                |
+| `kokoro`  | http://localhost:8002 | Kokoro TTS server                        |
+
+If you only need simulated tests (no live voice), `voicetest serve` is sufficient and does not require Docker.
 
 ### Web UI
 
@@ -109,7 +140,8 @@ The web UI provides:
 - Cancel in-progress tests
 - Run history with detailed results
 - Transcript and metric inspection with scores
-- Settings configuration (models, max turns, streaming)
+- Audio evaluation with word-level diff of original vs. heard text
+- Settings configuration (models, max turns, streaming, audio eval)
 
 Data is persisted to `.voicetest/data.duckdb` (configurable via `VOICETEST_DB_PATH`).
 
@@ -198,6 +230,7 @@ Test cases follow the Retell export format:
 - **Real-time streaming**: WebSocket-based transcript streaming during test execution
 - **Token streaming**: Optional token-level streaming as LLM generates responses (experimental)
 - **Cancellation**: Cancel in-progress tests to stop token usage
+- **Audio evaluation**: TTS→STT round-trip to catch pronunciation issues (e.g., phone numbers spoken as words)
 
 ## Global Metrics
 
@@ -221,6 +254,61 @@ Example use cases:
 - PCI-DSS validation for payment processing
 - Brand voice consistency across all conversations
 - Safety guardrails and content policy adherence
+
+## Audio Evaluation
+
+Text-only evaluation has a blind spot: when an agent produces "415-555-1234", an LLM judge sees correct digits and passes. But TTS might speak it as "four hundred fifteen, five hundred fifty-five..." — which a caller can't use. Audio evaluation catches these issues by round-tripping agent messages through TTS→STT and judging what would actually be *heard*.
+
+```
+Conversation runs normally (text-only)
+    ↓
+Judges evaluate raw text → metric_results
+    ↓
+Agent messages → TTS → audio → STT → "heard" text
+    ↓
+Judges evaluate heard text → audio_metric_results
+```
+
+Both sets of results are stored. The original message text is preserved alongside what was heard, with a word-level diff shown in the UI.
+
+### Triggering Audio Evaluation
+
+**Automatic (per-run setting):** Enable `audio_eval` in settings to run TTS→STT round-trip on every test automatically.
+
+```toml
+# .voicetest/settings.toml
+[run]
+audio_eval = true
+```
+
+Or toggle the "Audio evaluation" checkbox in the Settings page of the Web UI.
+
+**On-demand (button):** After a test completes, click "Run audio eval" in the results view to run audio evaluation on that specific result.
+
+**REST API:**
+
+```bash
+# Run audio eval on an existing result
+curl -X POST http://localhost:8000/api/results/{result_id}/audio-eval
+```
+
+### Requirements
+
+Audio evaluation requires the TTS and STT services from `voicetest up`:
+
+| Service   | URL                   | Description        |
+| --------- | --------------------- | ------------------ |
+| `whisper` | http://localhost:8001 | Faster Whisper STT |
+| `kokoro`  | http://localhost:8002 | Kokoro TTS         |
+
+Service URLs are configurable in settings:
+
+```toml
+# .voicetest/settings.toml
+[audio]
+tts_url = "http://localhost:8002/v1"
+stt_url = "http://localhost:8001/v1"
+```
 
 ## Platform Integration
 
@@ -340,7 +428,7 @@ cd voicetest
 docker compose -f docker-compose.dev.yml up
 ```
 
-This starts five services:
+The dev compose file includes the base infrastructure from `voicetest/compose/docker-compose.yml` (the same file bundled with the package for `voicetest up`) and adds backend + frontend services on top. This starts five services:
 
 | Service    | URL                   | Description                              |
 | ---------- | --------------------- | ---------------------------------------- |
@@ -462,6 +550,7 @@ voicetest/
 │   ├── cli.py           # CLI
 │   ├── rest.py          # REST API server + WebSocket + SPA serving
 │   ├── container.py     # Dependency injection (Punq)
+│   ├── compose/         # Bundled Docker Compose for infrastructure services
 │   ├── models/          # Pydantic models
 │   ├── importers/       # Source importers (retell, vapi, bland, livekit, xlsform, custom)
 │   ├── exporters/       # Format exporters (mermaid, livekit, retell, vapi, bland, test_cases)

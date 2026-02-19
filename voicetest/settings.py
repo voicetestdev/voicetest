@@ -26,6 +26,13 @@ class ModelSettings(BaseModel):
     judge: str | None = Field(default=None, description="Model for evaluation")
 
 
+class AudioSettings(BaseModel):
+    """TTS/STT service configuration for audio evaluation."""
+
+    tts_url: str = Field(default="http://localhost:8002/v1")
+    stt_url: str = Field(default="http://localhost:8001/v1")
+
+
 class RunSettings(BaseModel):
     """Test run configuration."""
 
@@ -41,6 +48,10 @@ class RunSettings(BaseModel):
         default=False,
         description="Evaluate transitions separately from response generation (debugging)",
     )
+    audio_eval: bool = Field(
+        default=False,
+        description="Auto-run TTS→STT audio evaluation on every test",
+    )
 
 
 class Settings(BaseModel):
@@ -48,6 +59,7 @@ class Settings(BaseModel):
 
     models: ModelSettings = Field(default_factory=ModelSettings)
     run: RunSettings = Field(default_factory=RunSettings)
+    audio: AudioSettings = Field(default_factory=AudioSettings)
     env: dict[str, str] = Field(
         default_factory=dict,
         description="Environment variables to set (e.g., API keys for LLM providers)",
@@ -107,6 +119,12 @@ def _to_toml(settings: Settings) -> str:
     lines.append(f"streaming = {str(settings.run.streaming).lower()}")
     lines.append(f"test_model_precedence = {str(settings.run.test_model_precedence).lower()}")
     lines.append(f"split_transitions = {str(settings.run.split_transitions).lower()}")
+    lines.append(f"audio_eval = {str(settings.run.audio_eval).lower()}")
+    lines.append("")
+
+    lines.append("[audio]")
+    lines.append(f'tts_url = "{settings.audio.tts_url}"')
+    lines.append(f'stt_url = "{settings.audio.stt_url}"')
     lines.append("")
 
     if settings.env:

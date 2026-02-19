@@ -30,6 +30,7 @@ class RunOptions(BaseModel):
     streaming: bool = False
     test_model_precedence: bool = False
     split_transitions: bool = False
+    audio_eval: bool = False
 
     # LLM model configuration (None = not configured, use defaults)
     agent_model: str | None = None
