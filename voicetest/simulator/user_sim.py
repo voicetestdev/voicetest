@@ -30,7 +30,7 @@ async def _invoke_callback(callback: Callable, *args) -> None:
 class UserSimSignature(dspy.Signature):
     """Simulate a real phone caller. Respond briefly and naturally, the way people actually talk
     on the phone. No introductions, pleasantries, or formalities unless the persona demands it.
-    On the first turn, always engage — never hang up without saying anything."""
+    On the first turn, say a standard greeting, hello etc unless instructed otherwise in persona."""
 
     persona: str = dspy.InputField(desc="User persona (identity, goal, personality)")
     conversation_history: str = dspy.InputField(
