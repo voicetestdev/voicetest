@@ -66,6 +66,7 @@
     vapi: "VAPI",
     livekit: "LiveKit",
     bland: "Bland",
+    telnyx: "Telnyx",
   };
 
   function getPlatformDisplayName(platform: string): string {

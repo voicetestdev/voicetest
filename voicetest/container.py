@@ -13,6 +13,7 @@ from voicetest.exporters.livekit_codegen import LiveKitExporter
 from voicetest.exporters.registry import ExporterRegistry
 from voicetest.exporters.retell_cf import RetellCFExporter
 from voicetest.exporters.retell_llm import RetellLLMExporter
+from voicetest.exporters.telnyx import TelnyxExporter
 from voicetest.exporters.vapi import VAPIAssistantExporter
 from voicetest.exporters.vapi import VAPISquadExporter
 from voicetest.importers.agentgraph import AgentGraphImporter
@@ -22,12 +23,14 @@ from voicetest.importers.livekit import LiveKitImporter
 from voicetest.importers.registry import ImporterRegistry
 from voicetest.importers.retell import RetellImporter
 from voicetest.importers.retell_llm import RetellLLMImporter
+from voicetest.importers.telnyx import TelnyxImporter
 from voicetest.importers.vapi import VapiImporter
 from voicetest.importers.xlsform import XLSFormImporter
 from voicetest.platforms.bland import BlandPlatformClient
 from voicetest.platforms.livekit import LiveKitPlatformClient
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.platforms.retell import RetellPlatformClient
+from voicetest.platforms.telnyx import TelnyxPlatformClient
 from voicetest.platforms.vapi import VapiPlatformClient
 from voicetest.storage.engine import create_db_engine
 from voicetest.storage.engine import get_session_factory
@@ -45,6 +48,7 @@ def _create_importer_registry() -> ImporterRegistry:
     registry.register(VapiImporter())
     registry.register(LiveKitImporter())
     registry.register(BlandImporter())
+    registry.register(TelnyxImporter())
     registry.register(XLSFormImporter())
     registry.register(CustomImporter())
     registry.register(AgentGraphImporter())
@@ -61,6 +65,7 @@ def _create_exporter_registry() -> ExporterRegistry:
     registry.register(VAPIAssistantExporter())
     registry.register(VAPISquadExporter())
     registry.register(BlandExporter())
+    registry.register(TelnyxExporter())
     return registry
 
 
@@ -71,6 +76,7 @@ def _create_platform_registry() -> PlatformRegistry:
     registry.register(VapiPlatformClient())
     registry.register(LiveKitPlatformClient())
     registry.register(BlandPlatformClient())
+    registry.register(TelnyxPlatformClient())
     return registry
 
 

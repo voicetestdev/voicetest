@@ -1,0 +1,56 @@
+{
+  "id": "ast_abc123",
+  "name": "Pizza Order Bot",
+  "instructions": "You are a friendly pizza ordering assistant. Help customers place orders, check order status, and answer questions about the menu.",
+  "model": "openai/gpt-4o",
+  "greeting": "Hello! Welcome to Pizza Palace. What can I get for you today?",
+  "voice_settings": {
+    "voice": "Telnyx.KokoroTTS.af_heart",
+    "voice_speed": 1.0
+  },
+  "transcription": {
+    "model": "deepgram/nova-3",
+    "language": "en"
+  },
+  "telephony_settings": {
+    "noise_suppression": "krisp",
+    "time_limit_secs": 600,
+    "user_idle_timeout_secs": 30
+  },
+  "dynamic_variables": {
+    "store_name": "Pizza Palace",
+    "store_hours": "9am-10pm"
+  },
+  "tools": [
+    {
+      "type": "webhook",
+      "webhook": {
+        "name": "check_order_status",
+        "description": "Check the status of an existing pizza order",
+        "url": "https://api.example.com/orders/{order_id}",
+        "method": "GET",
+        "path_parameters": {
+          "type": "object",
+          "properties": {
+            "order_id": {"type": "string", "description": "The order ID"}
+          },
+          "required": ["order_id"]
+        }
+      }
+    },
+    {
+      "type": "transfer",
+      "transfer": {
+        "targets": [
+          {"name": "Manager", "to": "+15551234567"}
+        ]
+      }
+    },
+    {
+      "type": "hangup",
+      "hangup": {
+        "description": "End the call when the customer is done ordering"
+      }
+    }
+  ]
+}

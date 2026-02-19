@@ -7,7 +7,7 @@ license = "Apache-2.0"
 authors = [
     { name = "pld", email = "50706+pld@users.noreply.github.com" }
 ]
-keywords = ["voice", "ai", "testing", "retell", "vapi", "bland", "livekit"]
+keywords = ["voice", "ai", "testing", "retell", "vapi", "bland", "livekit", "telnyx"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -41,6 +41,7 @@ dependencies = [
     "vapi-server-sdk>=0.2",
     "sqlalchemy>=2.0",
     "duckdb-engine>=0.13",
+    "telnyx>=4.41.0",
 ]
 
 [project.urls]

@@ -1,0 +1,52 @@
+{
+  "id": "ast_main_001",
+  "name": "Front Desk Bot",
+  "instructions": "You are the front desk assistant. Greet callers and route them to the appropriate department.",
+  "model": "openai/gpt-4o",
+  "greeting": "Thank you for calling. How may I direct your call?",
+  "voice_settings": {
+    "voice": "Telnyx.KokoroTTS.af_heart"
+  },
+  "transcription": {
+    "model": "deepgram/nova-3",
+    "language": "en"
+  },
+  "telephony_settings": {
+    "noise_suppression": "krisp",
+    "time_limit_secs": 900
+  },
+  "tools": [
+    {
+      "type": "handoff",
+      "handoff": {
+        "ai_assistants": [
+          {"id": "ast_billing_002", "name": "Billing Department"},
+          {"id": "ast_support_003", "name": "Technical Support"}
+        ],
+        "voice_mode": "unified"
+      }
+    },
+    {
+      "type": "webhook",
+      "webhook": {
+        "name": "lookup_account",
+        "description": "Look up a customer account by phone number",
+        "url": "https://api.example.com/accounts/lookup",
+        "method": "POST",
+        "body_parameters": {
+          "type": "object",
+          "properties": {
+            "phone": {"type": "string", "description": "Customer phone number"}
+          },
+          "required": ["phone"]
+        }
+      }
+    },
+    {
+      "type": "hangup",
+      "hangup": {
+        "description": "End the call"
+      }
+    }
+  ]
+}
