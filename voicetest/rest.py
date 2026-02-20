@@ -1784,7 +1784,7 @@ async def call_websocket(websocket: WebSocket, call_id: str):
     except WebSocketDisconnect:
         pass
     except Exception:
-        pass
+        _vt_logger.exception("Error in call websocket for %s", call_id)
     finally:
         call_manager.unregister_websocket(call_id, websocket)
 
@@ -1897,7 +1897,7 @@ async def chat_websocket(websocket: WebSocket, chat_id: str):
     except WebSocketDisconnect:
         pass
     except Exception:
-        pass
+        _vt_logger.exception("Error in chat websocket for %s", chat_id)
     finally:
         chat_manager.unregister_websocket(chat_id, websocket)
 

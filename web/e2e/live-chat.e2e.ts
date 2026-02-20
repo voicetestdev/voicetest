@@ -10,18 +10,29 @@
 
 import { test, expect } from "@playwright/test";
 
-// Check if a demo agent exists, create one if not
-async function ensureDemoAgent(baseURL: string): Promise<string> {
-  const response = await fetch(`${baseURL}/api/demo`, { method: "POST" });
-  const data = await response.json();
-  return data.agent_id;
+// Ensure a demo agent exists and select it in the sidebar
+async function selectDemoAgent(
+  page: import("@playwright/test").Page,
+  baseURL: string,
+) {
+  await fetch(`${baseURL}/api/demo`, { method: "POST" });
+  await page.goto("/");
+
+  const agentBtn = page.getByRole("button", { name: "Demo Healthcare Agent" });
+  await expect(agentBtn).toBeVisible({ timeout: 10000 });
+  await agentBtn.click();
+
+  // Wait for agent view to load with chat button
+  await expect(
+    page.getByRole("button", { name: "Chat with Agent" }),
+  ).toBeVisible({ timeout: 10000 });
 }
 
 test.describe("Text Chat", () => {
+  test.setTimeout(30000);
+
   test.beforeEach(async ({ page, baseURL }) => {
-    const agentId = await ensureDemoAgent(baseURL!);
-    await page.goto(`/#agent=${agentId}`);
-    await page.waitForSelector("text=Chat with Agent", { timeout: 10000 });
+    await selectDemoAgent(page, baseURL!);
   });
 
   test("shows Chat with Agent button", async ({ page }) => {
@@ -52,10 +63,12 @@ test.describe("Text Chat", () => {
     await expect(page.locator(".chat-panel")).toBeVisible({ timeout: 10000 });
 
     // Click End button
-    await page.getByRole("button", { name: "End" }).click();
+    await page.getByRole("button", { name: "End", exact: true }).click();
 
     // Should return to idle state with the start button
-    await expect(page.getByRole("button", { name: "Chat with Agent" })).toBeVisible({
+    await expect(
+      page.getByRole("button", { name: "Chat with Agent" }),
+    ).toBeVisible({
       timeout: 10000,
     });
   });
