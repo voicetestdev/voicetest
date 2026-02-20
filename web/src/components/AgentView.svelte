@@ -11,6 +11,7 @@
   } from "../lib/stores";
   import type { ExporterInfo, Platform, PlatformInfo, PlatformStatus, SyncStatus } from "../lib/types";
   import CallView from "./CallView.svelte";
+  import ChatView from "./ChatView.svelte";
 
   interface Props {
     theme?: "light" | "dark";
@@ -888,6 +889,7 @@
     </section>
 
     <div class="actions">
+      <ChatView />
       <CallView />
       <button
         class="btn-primary"

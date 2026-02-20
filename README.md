@@ -444,6 +444,14 @@ The dev compose file includes the base infrastructure from `voicetest/compose/do
 
 Open http://localhost:5173 to access the web UI. Changes to Python or TypeScript files trigger automatic reloads.
 
+**Claude Code Authentication:** The dev image includes Claude Code CLI. To authenticate for `claudecode/*` model passthrough:
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend claude login
+```
+
+Credentials persist in the `claude-auth` Docker volume across container restarts.
+
 **Linked Agents:** The compose file mounts your home directory (`$HOME`) read-only so linked agents with absolute paths work inside the container. On macOS, you may need to grant Docker Desktop access to your home directory in Settings → Resources → File Sharing.
 
 To stop all services:

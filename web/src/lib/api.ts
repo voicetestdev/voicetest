@@ -20,6 +20,7 @@ import type {
   RunWithResults,
   Settings,
   StartCallResponse,
+  StartChatResponse,
   StartRunResponse,
   SyncStatus,
   SyncToPlatformResponse,
@@ -323,6 +324,12 @@ export const api = {
   getCall: (callId: string) => get<CallRecord>(`/calls/${callId}`),
 
   endCall: (callId: string) => post<{ status: string; call_id: string; run_id: string | null }>(`/calls/${callId}/end`, {}),
+
+  startChat: (agentId: string) =>
+    post<StartChatResponse>(`/agents/${agentId}/chats/start`, {}),
+
+  endChat: (chatId: string) =>
+    post<{ status: string; chat_id: string; run_id: string | null }>(`/chats/${chatId}/end`, {}),
 
   audioEvalResult: (resultId: string) =>
     post<RunResultRecord>(`/results/${resultId}/audio-eval`, {}),

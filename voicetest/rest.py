@@ -34,6 +34,7 @@ from starlette.websockets import WebSocketState
 
 from voicetest import api
 from voicetest.calls import get_call_manager
+from voicetest.chat import get_chat_manager
 from voicetest.container import get_container
 from voicetest.container import get_exporter_registry
 from voicetest.container import get_importer_registry
@@ -415,6 +416,12 @@ class CallStatusResponse(BaseModel):
     transcript: list[dict]
     started_at: str
     ended_at: str | None = None
+
+
+class StartChatResponse(BaseModel):
+    """Response from starting a text chat."""
+
+    chat_id: str
 
 
 class ImporterInfo(BaseModel):
@@ -1780,6 +1787,119 @@ async def call_websocket(websocket: WebSocket, call_id: str):
         pass
     finally:
         call_manager.unregister_websocket(call_id, websocket)
+
+
+# Text chat endpoints
+
+
+@router.post("/agents/{agent_id}/chats/start", response_model=StartChatResponse)
+async def start_chat(agent_id: str) -> StartChatResponse:
+    """Start a text chat session with an agent.
+
+    Creates a ConversationEngine in-process (no LiveKit or subprocess needed).
+    Returns a chat_id for WebSocket connection.
+    """
+    agent_repo = get_agent_repo()
+    agent = agent_repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    try:
+        result = agent_repo.load_graph(agent)
+        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
+
+    call_repo = get_call_repo()
+    chat_manager = get_chat_manager()
+
+    settings = load_settings()
+    settings.apply_env()
+    agent_model = settings.models.agent
+
+    try:
+        chat_info = await chat_manager.start_chat(
+            agent_id, graph, call_repo, agent_model=agent_model
+        )
+        return StartChatResponse(**chat_info)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start chat: {e}") from None
+
+
+@router.post("/chats/{chat_id}/end")
+async def end_chat_session(chat_id: str) -> dict:
+    """End a text chat session and save the transcript as a run."""
+    call_repo = get_call_repo()
+    call = call_repo.get(chat_id)
+    if not call:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    chat_manager = get_chat_manager()
+
+    try:
+        await chat_manager.end_chat(chat_id, call_repo)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to end chat: {e}") from None
+
+    # Re-fetch call to get final transcript and timestamps
+    call = call_repo.get(chat_id)
+    run_id = await _save_call_as_run(call)
+
+    return {"status": "ended", "chat_id": chat_id, "run_id": run_id}
+
+
+@router.websocket("/chats/{chat_id}/ws")
+async def chat_websocket(websocket: WebSocket, chat_id: str):
+    """WebSocket for text chat: send messages, receive streaming responses."""
+    try:
+        await websocket.accept()
+    except Exception:
+        return
+
+    call_repo = get_call_repo()
+    call = call_repo.get(chat_id)
+    if not call:
+        await websocket.send_json({"type": "error", "message": "Chat not found"})
+        await websocket.close(code=1008)
+        return
+
+    chat_manager = get_chat_manager()
+
+    try:
+        # Send initial state
+        active_chat = chat_manager.get_active_chat(chat_id)
+        transcript = active_chat.transcript if active_chat else (call.get("transcript_json") or [])
+        state_msg = {
+            "type": "state",
+            "chat": {
+                "id": call["id"],
+                "status": call["status"],
+                "transcript": transcript,
+            },
+        }
+        await websocket.send_json(state_msg)
+
+        # Register for broadcasts and replay queued messages
+        queued_messages = chat_manager.register_websocket(chat_id, websocket)
+        for msg in queued_messages:
+            await websocket.send_text(msg)
+
+        # Listen for messages from client
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "message":
+                content = data.get("content", "").strip()
+                if content:
+                    await chat_manager.process_message(chat_id, content, call_repo)
+            elif data.get("type") == "end_chat":
+                await chat_manager.end_chat(chat_id, call_repo)
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        chat_manager.unregister_websocket(chat_id, websocket)
 
 
 # Platform integration endpoints
