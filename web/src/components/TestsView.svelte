@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from "../lib/api";
   import {
+    agents,
     testCases,
     testCaseRecords,
     currentAgentId,
@@ -9,6 +10,7 @@
     isRunning,
     currentView,
     startRun,
+    refreshAgent,
   } from "../lib/stores";
   import type { TestCase, TestCaseRecord } from "../lib/types";
 
@@ -41,6 +43,12 @@
   let exportSelection = $state<"all" | "selected">("all");
   let exporting = $state(false);
   let exportError = $state("");
+
+  // Import modal tab state
+  let importTab = $state<"import" | "link">("import");
+  let linkPath = $state("");
+  let linkError = $state("");
+  let linking = $state(false);
 
   // Import progress tracking
   let importProgress = $state<{ current: number; total: number } | null>(null);
@@ -275,6 +283,9 @@
   function openImportModal() {
     jsonImport = "";
     importError = "";
+    importTab = "import";
+    linkPath = "";
+    linkError = "";
     showImportModal = true;
   }
 
@@ -282,6 +293,8 @@
     showImportModal = false;
     jsonImport = "";
     importError = "";
+    linkPath = "";
+    linkError = "";
   }
 
   function normalizeTestType(type: string | undefined): string {
@@ -439,6 +452,50 @@
 
     exporting = false;
   }
+
+  async function linkFile() {
+    if (!$currentAgentId || !linkPath.trim()) return;
+
+    linking = true;
+    linkError = "";
+
+    try {
+      await api.linkTestFile($currentAgentId, linkPath.trim());
+
+      // Refresh agent record (for tests_paths) and tests list
+      const updatedAgent = await api.getAgent($currentAgentId);
+      agents.update((list) =>
+        list.map((a) => (a.id === updatedAgent.id ? updatedAgent : a)),
+      );
+      await refreshAgent($currentAgentId);
+      closeImportModal();
+    } catch (e) {
+      linkError = e instanceof Error ? e.message : String(e);
+    }
+
+    linking = false;
+  }
+
+  async function unlinkFile(filePath: string) {
+    if (!$currentAgentId) return;
+    if (!confirm(`Unlink "${filePath.split("/").pop()}"? The file will not be deleted.`)) return;
+
+    try {
+      await api.unlinkTestFile($currentAgentId, filePath);
+
+      const updatedAgent = await api.getAgent($currentAgentId);
+      agents.update((list) =>
+        list.map((a) => (a.id === updatedAgent.id ? updatedAgent : a)),
+      );
+      await refreshAgent($currentAgentId);
+    } catch (e) {
+      console.error("Failed to unlink file:", e);
+    }
+  }
+
+  function basename(filePath: string): string {
+    return filePath.split("/").pop() || filePath;
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -496,6 +553,21 @@
     <p class="placeholder">No agent selected.</p>
   {:else}
     <div class="layout">
+      {#if $currentAgent?.tests_paths && $currentAgent.tests_paths.length > 0}
+        <section class="linked-files-section">
+          <h3 class="linked-files-heading">Linked Files</h3>
+          {#each $currentAgent.tests_paths as filePath}
+            <div class="linked-file-row">
+              <div class="linked-file-info">
+                <span class="linked-file-name">{basename(filePath)}</span>
+                <span class="linked-file-path">{filePath}</span>
+              </div>
+              <button class="small danger" onclick={() => unlinkFile(filePath)}>Unlink</button>
+            </div>
+          {/each}
+        </section>
+      {/if}
+
       <section class="test-list-section">
         {#if $testCaseRecords.length === 0}
           <p class="empty">No test cases yet. Click "New Test" or "Import" to add tests.</p>
@@ -542,7 +614,12 @@
                       onchange={() => toggleTestSelection(record.id)}
                     />
                   </td>
-                  <td class="col-name">{record.name}</td>
+                  <td class="col-name">
+                    {record.name}
+                    {#if record.source_path}
+                      <span class="badge-linked">linked</span>
+                    {/if}
+                  </td>
                   <td class="col-type">
                     <span class="tag {record.type}">{record.type}</span>
                   </td>
@@ -737,36 +814,72 @@
     <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
     <div class="modal" role="document" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
-        <h3>Import Tests</h3>
+        <h3>Add Tests</h3>
         <button class="close-btn" onclick={closeImportModal}>x</button>
       </div>
+      <div class="modal-tabs">
+        <button
+          class="modal-tab"
+          class:active={importTab === "import"}
+          onclick={() => { importTab = "import"; }}
+        >Import</button>
+        <button
+          class="modal-tab"
+          class:active={importTab === "link"}
+          onclick={() => { importTab = "link"; }}
+        >Link File</button>
+      </div>
       <div class="modal-body">
-        <div class="file-upload">
-          <label for="file-input" class="file-label">
-            Choose File
+        {#if importTab === "import"}
+          <div class="drop-zone">
+            <label for="file-input" class="file-label">
+              Choose File
+              <input
+                id="file-input"
+                type="file"
+                accept=".json,application/json"
+                onchange={handleFileUpload}
+              />
+            </label>
+            <span class="file-hint">or paste JSON below</span>
+          </div>
+          <textarea
+            bind:value={jsonImport}
+            placeholder="Paste test case JSON (single or array)..."
+            rows={10}
+          ></textarea>
+          {#if importError}
+            <p class="error-message">{importError}</p>
+          {/if}
+        {:else}
+          <div class="form-group">
+            <label for="link-path">Server File Path</label>
             <input
-              id="file-input"
-              type="file"
-              accept=".json,application/json"
-              onchange={handleFileUpload}
+              id="link-path"
+              type="text"
+              bind:value={linkPath}
+              placeholder="/path/to/tests.json"
             />
-          </label>
-          <span class="file-hint">or paste JSON below</span>
-        </div>
-        <textarea
-          bind:value={jsonImport}
-          placeholder="Paste test case JSON (single or array)..."
-          rows={10}
-        ></textarea>
-        {#if importError}
-          <p class="error-message">{importError}</p>
+            <span class="field-hint">
+              Point to a JSON test file on the server. Tests stay in sync — edits write back to the file.
+            </span>
+          </div>
+          {#if linkError}
+            <p class="error-message">{linkError}</p>
+          {/if}
         {/if}
       </div>
       <div class="modal-footer">
         <button class="secondary" onclick={closeImportModal}>Cancel</button>
-        <button onclick={importFromJson} disabled={!jsonImport || saving}>
-          {saving ? "Importing..." : "Import"}
-        </button>
+        {#if importTab === "import"}
+          <button onclick={importFromJson} disabled={!jsonImport || saving}>
+            {saving ? "Importing..." : "Import"}
+          </button>
+        {:else}
+          <button onclick={linkFile} disabled={!linkPath.trim() || linking}>
+            {linking ? "Linking..." : "Link"}
+          </button>
+        {/if}
       </div>
     </div>
   </div>
@@ -1171,11 +1284,108 @@
     font-size: 0.8rem;
   }
 
-  .file-upload {
+  /* Linked files section */
+  .linked-files-section {
+    background: var(--bg-secondary);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+  }
+
+  .linked-files-heading {
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    margin: 0 0 var(--space-2) 0;
+  }
+
+  .linked-file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) 0;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .linked-file-row:first-of-type {
+    border-top: none;
+  }
+
+  .linked-file-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  .linked-file-name {
+    font-weight: 500;
+    font-size: var(--text-sm);
+  }
+
+  .linked-file-path {
+    font-family: monospace;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Linked badge */
+  .badge-linked {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 9999px;
+    font-size: 0.65rem;
+    font-weight: 500;
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    vertical-align: middle;
+  }
+
+  /* Modal tabs */
+  .modal-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    padding: 0 var(--space-4);
+  }
+
+  .modal-tab {
+    padding: var(--space-2) var(--space-3);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    transition: color 80ms ease-out, border-color 80ms ease-out;
+  }
+
+  .modal-tab:hover {
+    color: var(--text-primary);
+    background: transparent;
+  }
+
+  .modal-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* Drop zone file upload area */
+  .drop-zone {
     display: flex;
     align-items: center;
     gap: 1rem;
     margin-bottom: 0.75rem;
+    padding: var(--space-3);
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    background: var(--bg-primary);
   }
 
   .file-label {

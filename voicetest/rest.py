@@ -390,6 +390,12 @@ class StartRunRequest(BaseModel):
     options: RunOptions | None = None
 
 
+class LinkTestFileRequest(BaseModel):
+    """Request to link a test file to an agent."""
+
+    path: str
+
+
 class ExportTestsRequest(BaseModel):
     """Request to export test cases."""
 
@@ -911,6 +917,77 @@ async def list_tests_for_agent(agent_id: str) -> list[dict]:
 
     tests_paths = agent.get("tests_paths")
     return get_test_case_repo().list_for_agent_with_linked(agent_id, tests_paths)
+
+
+@router.post("/agents/{agent_id}/tests-paths")
+async def link_test_file(agent_id: str, request: LinkTestFileRequest) -> dict:
+    """Link a JSON test file to an agent.
+
+    The file must exist, contain valid JSON, and be a JSON array.
+    Tests from the file will appear alongside DB tests via list_for_agent_with_linked.
+    """
+    agent_repo = get_agent_repo()
+    agent = agent_repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    resolved = str(Path(request.path).resolve())
+
+    # Validate file exists and is readable
+    path = Path(resolved)
+    if not path.exists():
+        raise HTTPException(status_code=400, detail=f"File not found: {request.path}")
+    if not path.is_file():
+        raise HTTPException(status_code=400, detail=f"Not a file: {request.path}")
+
+    # Validate JSON content is an array
+    try:
+        content = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from None
+
+    if not isinstance(content, list):
+        raise HTTPException(status_code=400, detail="File must contain a JSON array")
+
+    # Check for duplicates
+    current_paths = agent.get("tests_paths") or []
+    if resolved in current_paths:
+        raise HTTPException(status_code=409, detail="File already linked")
+
+    updated_paths = current_paths + [resolved]
+    agent_repo.update(agent_id, tests_paths=updated_paths)
+
+    return {
+        "path": resolved,
+        "test_count": len(content),
+        "tests_paths": updated_paths,
+    }
+
+
+@router.delete("/agents/{agent_id}/tests-paths")
+async def unlink_test_file(agent_id: str, path: str) -> dict:
+    """Unlink a test file from an agent.
+
+    Removes the path from tests_paths. The file itself is not deleted.
+    """
+    agent_repo = get_agent_repo()
+    agent = agent_repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    resolved = str(Path(path).resolve())
+    current_paths = agent.get("tests_paths") or []
+
+    if resolved not in current_paths:
+        raise HTTPException(status_code=404, detail="File not linked to this agent")
+
+    updated_paths = [p for p in current_paths if p != resolved]
+    agent_repo.update(agent_id, tests_paths=updated_paths)
+
+    return {
+        "path": resolved,
+        "tests_paths": updated_paths,
+    }
 
 
 @router.post("/agents/{agent_id}/tests/export")

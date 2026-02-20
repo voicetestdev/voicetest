@@ -197,35 +197,21 @@ class ConversationEngine:
             if transition_target:
                 transition_target = transition_target.strip().lower()
 
-        if transition_target and transition_target != "none":
-            # Check for end_call
-            current_node = self.graph.nodes.get(self._current_node)
-            has_end_call = current_node and any(
-                t.name == "end_call" or getattr(t, "type", "") == "end_call"
-                for t in current_node.tools
+        if (
+            transition_target
+            and transition_target != "none"
+            and transition_target in self.graph.nodes
+        ):
+            self._current_node = transition_target
+            self._nodes_visited.append(transition_target)
+            turn_result.transitioned_to = transition_target
+            tool_call = ToolCall(
+                name=f"route_to_{transition_target}",
+                arguments={},
+                result=transition_target,
             )
-
-            if transition_target == "end_call" and has_end_call:
-                self._end_call_invoked = True
-                turn_result.end_call_invoked = True
-                tool_call = ToolCall(
-                    name="end_call",
-                    arguments={},
-                    result="call_ended",
-                )
-                self._tools_called.append(tool_call)
-                turn_result.tool_calls.append(tool_call)
-            elif transition_target in self.graph.nodes:
-                self._current_node = transition_target
-                self._nodes_visited.append(transition_target)
-                turn_result.transitioned_to = transition_target
-                tool_call = ToolCall(
-                    name=f"route_to_{transition_target}",
-                    arguments={},
-                    result=transition_target,
-                )
-                self._tools_called.append(tool_call)
-                turn_result.tool_calls.append(tool_call)
+            self._tools_called.append(tool_call)
+            turn_result.tool_calls.append(tool_call)
 
         # Record agent response
         self._transcript.append(

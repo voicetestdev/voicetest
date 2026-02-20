@@ -331,6 +331,17 @@ export const api = {
   endChat: (chatId: string) =>
     post<{ status: string; chat_id: string; run_id: string | null }>(`/chats/${chatId}/end`, {}),
 
+  linkTestFile: (agentId: string, path: string) =>
+    post<{ path: string; test_count: number; tests_paths: string[] }>(
+      `/agents/${agentId}/tests-paths`,
+      { path },
+    ),
+
+  unlinkTestFile: (agentId: string, path: string) =>
+    del<{ path: string; tests_paths: string[] }>(
+      `/agents/${agentId}/tests-paths?path=${encodeURIComponent(path)}`,
+    ),
+
   audioEvalResult: (resultId: string) =>
     post<RunResultRecord>(`/results/${resultId}/audio-eval`, {}),
 
