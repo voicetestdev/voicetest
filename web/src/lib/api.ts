@@ -248,6 +248,13 @@ export const api = {
   updateAgent: (id: string, updates: { name?: string; default_model?: string; graph_json?: string }) =>
     put<AgentRecord>(`/agents/${id}`, updates),
 
+  updatePrompt: (agentId: string, nodeId: string | null, promptText: string, transitionTargetId?: string) =>
+    put<AgentGraph>(`/agents/${agentId}/prompts`, {
+      node_id: nodeId,
+      prompt_text: promptText,
+      ...(transitionTargetId != null ? { transition_target_id: transitionTargetId } : {}),
+    }),
+
   deleteAgent: (id: string) => del<{ status: string; id: string }>(`/agents/${id}`),
 
   listTestsForAgent: (agentId: string) =>

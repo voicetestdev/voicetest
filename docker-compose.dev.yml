@@ -10,7 +10,7 @@ services:
       - .:/app
       - /app/.venv
       - backend-cache:/root/.cache/uv
-      - ${HOME}:${HOME}:ro
+      - ${HOME}:${HOME}
       - claude-auth:/claude-auth
     ports:
       - "8000:8000"

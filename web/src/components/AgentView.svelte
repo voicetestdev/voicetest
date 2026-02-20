@@ -27,7 +27,7 @@
   let lastTheme = $state<string | null>(null);
   let renderCounter = 0;
   let mermaidContainer: HTMLDivElement;
-  let tooltip = $state({ show: false, x: 0, y: 0, text: "", title: "" });
+  let tooltip = $state({ show: false, x: 0, y: 0, text: "", title: "", nodeId: "", sourceNodeId: "", targetNodeId: "" });
   let tooltipHideTimer: ReturnType<typeof setTimeout> | null = null;
   const TOOLTIP_HIDE_DELAY = 200;
   let zoomLevel = $state(1);
@@ -56,6 +56,27 @@
   let savingModel = $state(false);
   let modelSaved = $state(false);
   let modelInput: HTMLInputElement;
+
+  let editingGeneralPrompt = $state(false);
+  let editedGeneralPrompt = $state("");
+  let savingGeneralPrompt = $state(false);
+  let generalPromptSaved = $state(false);
+  let generalPromptTextarea: HTMLTextAreaElement;
+
+  let editingNodePrompt = $state(false);
+  let editingNodeId = $state("");
+  let editedNodePrompt = $state("");
+  let savingNodePrompt = $state(false);
+  let nodePromptSaved = $state(false);
+  let nodePromptTextarea: HTMLTextAreaElement;
+
+  let editingTransition = $state(false);
+  let transitionSourceId = $state("");
+  let transitionTargetId = $state("");
+  let editedTransitionCondition = $state("");
+  let savingTransition = $state(false);
+  let transitionSaved = $state(false);
+  let transitionTextarea: HTMLTextAreaElement;
 
   let refreshing = $state(false);
 
@@ -165,12 +186,12 @@
     }
   }
 
-  function showTooltip(x: number, y: number, title: string, text: string) {
+  function showTooltip(x: number, y: number, title: string, text: string, opts: { nodeId?: string; sourceNodeId?: string; targetNodeId?: string } = {}) {
     if (tooltipHideTimer) {
       clearTimeout(tooltipHideTimer);
       tooltipHideTimer = null;
     }
-    tooltip = { show: true, x, y, title, text };
+    tooltip = { show: true, x, y, title, text, nodeId: opts.nodeId || "", sourceNodeId: opts.sourceNodeId || "", targetNodeId: opts.targetNodeId || "" };
   }
 
   function scheduleHideTooltip() {
@@ -238,11 +259,19 @@
           rect.left + rect.width / 2,
           rect.top - 8,
           matchedId,
-          nodeData.state_prompt
+          nodeData.state_prompt,
+          { nodeId: matchedId }
         );
       });
       node.addEventListener("mouseleave", () => {
         scheduleHideTooltip();
+      });
+      node.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+      });
+      node.addEventListener("click", () => {
+        tooltip = { ...tooltip, show: false };
+        openNodePromptModal(matchedId, nodeData.state_prompt);
       });
     });
 
@@ -252,15 +281,17 @@
       const labelText = label.textContent?.trim() || "";
       if (!labelText) return;
 
-      // Find the full transition condition and target node by matching truncated text
+      // Find the full transition condition and source/target node by matching truncated text
       let fullCondition = labelText;
+      let sourceNodeId = "";
       let targetNodeId = "";
-      for (const node of Object.values($agentGraph?.nodes || {})) {
+      for (const [nodeId, node] of Object.entries($agentGraph?.nodes || {})) {
         for (const transition of node.transitions) {
           const condValue = transition.condition.value;
           if (condValue.startsWith(labelText.replace("...", "")) ||
               labelText.replace("...", "") === condValue.slice(0, labelText.length - 3)) {
             fullCondition = condValue;
+            sourceNodeId = nodeId;
             targetNodeId = transition.target_node_id;
             break;
           }
@@ -270,16 +301,26 @@
 
       label.addEventListener("mouseenter", (e) => {
         const rect = (e.target as Element).getBoundingClientRect();
-        const title = targetNodeId ? `Destination: ${targetNodeId}` : "Transition";
+        const title = targetNodeId ? `${sourceNodeId} → ${targetNodeId}` : "Transition";
         showTooltip(
           rect.left + rect.width / 2,
           rect.top - 8,
           title,
-          fullCondition
+          fullCondition,
+          { sourceNodeId, targetNodeId }
         );
       });
       label.addEventListener("mouseleave", () => {
         scheduleHideTooltip();
+      });
+      label.addEventListener("mousedown", (e) => {
+        e.stopPropagation();
+      });
+      label.addEventListener("click", () => {
+        if (sourceNodeId && targetNodeId) {
+          tooltip = { ...tooltip, show: false };
+          openTransitionModal(sourceNodeId, targetNodeId, fullCondition);
+        }
       });
     });
   }
@@ -484,6 +525,14 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && editingTransition) {
+      closeTransitionModal();
+      return;
+    }
+    if (e.key === "Escape" && editingNodePrompt) {
+      closeNodePromptModal();
+      return;
+    }
     if (e.key === "Escape" && showExportModal) {
       showExportModal = false;
     }
@@ -492,6 +541,9 @@
     }
     if (e.key === "Escape" && editingModel) {
       editingModel = false;
+    }
+    if (e.key === "Escape" && editingGeneralPrompt) {
+      editingGeneralPrompt = false;
     }
   }
 
@@ -605,6 +657,118 @@
     syncing = false;
   }
 
+  function startEditingGeneralPrompt() {
+    editedGeneralPrompt = String($agentGraph?.source_metadata?.general_prompt ?? "");
+    editingGeneralPrompt = true;
+    requestAnimationFrame(() => {
+      generalPromptTextarea?.focus();
+    });
+  }
+
+  async function saveGeneralPrompt() {
+    if (!$currentAgentId) {
+      editingGeneralPrompt = false;
+      return;
+    }
+    const current = String($agentGraph?.source_metadata?.general_prompt ?? "");
+    if (editedGeneralPrompt === current) {
+      editingGeneralPrompt = false;
+      return;
+    }
+    savingGeneralPrompt = true;
+    try {
+      const result = await api.updatePrompt($currentAgentId, null, editedGeneralPrompt);
+      agentGraph.set(result);
+      editingGeneralPrompt = false;
+      generalPromptSaved = true;
+      setTimeout(() => { generalPromptSaved = false; }, 2000);
+      requestAnimationFrame(() => setupTooltips());
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    savingGeneralPrompt = false;
+  }
+
+  function openNodePromptModal(nodeId: string, prompt: string) {
+    editingNodeId = nodeId;
+    editedNodePrompt = prompt;
+    editingNodePrompt = true;
+    nodePromptSaved = false;
+    requestAnimationFrame(() => {
+      nodePromptTextarea?.focus();
+    });
+  }
+
+  async function saveNodePrompt() {
+    if (!$currentAgentId || !editingNodeId) return;
+    savingNodePrompt = true;
+    try {
+      const result = await api.updatePrompt($currentAgentId, editingNodeId, editedNodePrompt);
+      agentGraph.set(result);
+      nodePromptSaved = true;
+      setTimeout(() => {
+        nodePromptSaved = false;
+        editingNodePrompt = false;
+        editingNodeId = "";
+      }, 800);
+      requestAnimationFrame(() => setupTooltips());
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    savingNodePrompt = false;
+  }
+
+  function closeNodePromptModal() {
+    if (savingNodePrompt) return;
+    editingNodePrompt = false;
+    editingNodeId = "";
+    editedNodePrompt = "";
+  }
+
+  function openTransitionModal(sourceId: string, targetId: string, condition: string) {
+    transitionSourceId = sourceId;
+    transitionTargetId = targetId;
+    editedTransitionCondition = condition;
+    editingTransition = true;
+    transitionSaved = false;
+    requestAnimationFrame(() => {
+      transitionTextarea?.focus();
+    });
+  }
+
+  async function saveTransition() {
+    if (!$currentAgentId || !transitionSourceId || !transitionTargetId) return;
+    savingTransition = true;
+    try {
+      const result = await api.updatePrompt(
+        $currentAgentId,
+        transitionSourceId,
+        editedTransitionCondition,
+        transitionTargetId,
+      );
+      agentGraph.set(result);
+      transitionSaved = true;
+      setTimeout(() => {
+        transitionSaved = false;
+        editingTransition = false;
+        transitionSourceId = "";
+        transitionTargetId = "";
+      }, 800);
+      requestAnimationFrame(() => setupTooltips());
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    savingTransition = false;
+  }
+
+  function closeTransitionModal() {
+    if (savingTransition) return;
+    editingTransition = false;
+    transitionSourceId = "";
+    transitionTargetId = "";
+    editedTransitionCondition = "";
+  }
+
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -695,12 +859,33 @@
       {/if}
     </section>
 
-    {#if $agentGraph.source_metadata?.general_prompt}
-      <section class="general-prompt">
+    <section class="general-prompt">
+      <div class="prompt-header">
         <h3>General Prompt</h3>
-        <pre class="prompt-text">{$agentGraph.source_metadata.general_prompt}</pre>
-      </section>
-    {/if}
+        {#if savingGeneralPrompt}
+          <span class="save-indicator">Saving...</span>
+        {:else if generalPromptSaved}
+          <span class="save-indicator saved">Saved</span>
+        {/if}
+      </div>
+      {#if editingGeneralPrompt}
+        <textarea
+          class="prompt-textarea"
+          bind:value={editedGeneralPrompt}
+          bind:this={generalPromptTextarea}
+          onblur={saveGeneralPrompt}
+          disabled={savingGeneralPrompt}
+          rows="10"
+        ></textarea>
+      {:else}
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <pre
+          class="prompt-text clickable"
+          onclick={startEditingGeneralPrompt}
+          title="Click to edit"
+        >{$agentGraph.source_metadata?.general_prompt || "(No general prompt — click to add)"}</pre>
+      {/if}
+    </section>
 
     <div class="actions">
       <CallView />
@@ -881,17 +1066,93 @@
     </section>
 
     {#if tooltip.show}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div
         class="node-tooltip"
+        class:clickable={tooltip.nodeId !== "" || (tooltip.sourceNodeId !== "" && tooltip.targetNodeId !== "")}
         style="left: {tooltip.x}px; top: {tooltip.y}px;"
         onmouseenter={cancelHideTooltip}
         onmouseleave={scheduleHideTooltip}
+        onclick={() => {
+          const nid = tooltip.nodeId;
+          const src = tooltip.sourceNodeId;
+          const tgt = tooltip.targetNodeId;
+          const text = tooltip.text;
+          tooltip = { ...tooltip, show: false };
+          if (nid) {
+            const nodeData = $agentGraph?.nodes[nid];
+            if (nodeData) {
+              openNodePromptModal(nid, nodeData.state_prompt);
+            }
+          } else if (src && tgt) {
+            openTransitionModal(src, tgt, text);
+          }
+        }}
       >
         {#if tooltip.title}
           <div class="tooltip-title">{tooltip.title}</div>
         {/if}
         <div class="tooltip-text">{tooltip.text}</div>
+      </div>
+    {/if}
+
+    {#if editingNodePrompt}
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <div class="modal-backdrop" onclick={(e) => { if ((e.target as HTMLElement).classList.contains("modal-backdrop")) closeNodePromptModal(); }}>
+        <div class="modal node-prompt-modal">
+          <div class="modal-header">
+            <h3>Edit Prompt: {editingNodeId}</h3>
+            <button class="close-btn" onclick={closeNodePromptModal}>&times;</button>
+          </div>
+          <div class="modal-body">
+            <textarea
+              class="prompt-textarea"
+              bind:value={editedNodePrompt}
+              bind:this={nodePromptTextarea}
+              disabled={savingNodePrompt}
+              rows="15"
+            ></textarea>
+            <div class="modal-actions">
+              {#if nodePromptSaved}
+                <span class="save-indicator saved">Saved</span>
+              {/if}
+              <button onclick={closeNodePromptModal} disabled={savingNodePrompt}>Cancel</button>
+              <button class="btn-primary" onclick={saveNodePrompt} disabled={savingNodePrompt}>
+                {savingNodePrompt ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if editingTransition}
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <div class="modal-backdrop" onclick={(e) => { if ((e.target as HTMLElement).classList.contains("modal-backdrop")) closeTransitionModal(); }}>
+        <div class="modal node-prompt-modal">
+          <div class="modal-header">
+            <h3>Edit Transition: {transitionSourceId} → {transitionTargetId}</h3>
+            <button class="close-btn" onclick={closeTransitionModal}>&times;</button>
+          </div>
+          <div class="modal-body">
+            <textarea
+              class="prompt-textarea"
+              bind:value={editedTransitionCondition}
+              bind:this={transitionTextarea}
+              disabled={savingTransition}
+              rows="6"
+            ></textarea>
+            <div class="modal-actions">
+              {#if transitionSaved}
+                <span class="save-indicator saved">Saved</span>
+              {/if}
+              <button onclick={closeTransitionModal} disabled={savingTransition}>Cancel</button>
+              <button class="btn-primary" onclick={saveTransition} disabled={savingTransition}>
+                {savingTransition ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     {/if}
 
@@ -1047,6 +1308,12 @@
     border-radius: var(--radius-md);
   }
 
+  .prompt-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
   .prompt-text {
     margin: 0;
     white-space: pre-wrap;
@@ -1056,6 +1323,37 @@
     line-height: 1.5;
     max-height: 300px;
     overflow-y: auto;
+  }
+
+  .prompt-text.clickable {
+    cursor: pointer;
+    padding: 0.5rem;
+    margin: -0.5rem;
+    border-radius: var(--radius-sm);
+    transition: background 0.15s;
+  }
+
+  .prompt-text.clickable:hover {
+    background: var(--bg-hover);
+  }
+
+  .prompt-textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: 0.5rem;
+    font-family: monospace;
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--accent-color, #6366f1);
+    border-radius: var(--radius-sm);
+    resize: vertical;
+    outline: none;
+  }
+
+  .prompt-textarea:disabled {
+    opacity: 0.6;
   }
 
   .model-value {
@@ -1245,6 +1543,15 @@
     color: var(--text-secondary);
   }
 
+  .node-tooltip.clickable {
+    cursor: pointer;
+  }
+
+  .node-tooltip.clickable:hover {
+    border-color: var(--accent-color, #6366f1);
+  }
+
+
   .danger-zone {
     background: var(--bg-secondary);
     padding: var(--space-4);
@@ -1357,6 +1664,23 @@
     padding: var(--space-4);
     overflow-y: auto;
     max-height: calc(80vh - 100px);
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: var(--space-3);
+  }
+
+  .node-prompt-modal {
+    min-width: 500px;
+    max-width: 700px;
+  }
+
+  .node-prompt-modal .prompt-textarea {
+    min-height: 250px;
   }
 
   .tab-panels {
