@@ -148,12 +148,14 @@ class ChatManager:
                 },
             )
 
-            # If agent ended the call, broadcast that
+            # If agent ended the call, broadcast and clean up the session
             if turn_result.end_call_invoked:
                 await self._broadcast_update(
                     chat_id,
                     {"type": "chat_ended", "reason": "agent_ended"},
                 )
+                call_repo.end_call(chat_id)
+                del self._active_chats[chat_id]
 
         except Exception as e:
             logger.exception("Error processing chat message for %s", chat_id)

@@ -125,8 +125,13 @@ function connectChatWebSocket(chatId: string): void {
         streamingContent: s.streamingContent + (data.content || ""),
       }));
     } else if (data.type === "chat_ended") {
-      chatState.update((s) => ({ ...s, status: "ended" }));
-      cleanupChat();
+      chatState.update((s) => ({
+        ...s,
+        status: "ended",
+        streaming: false,
+        streamingContent: "",
+      }));
+      disconnectChatWebSocket();
     } else if (data.type === "error") {
       chatState.update((s) => ({
         ...s,
@@ -155,6 +160,10 @@ function disconnectChatWebSocket(): void {
 
 function cleanupChat(): void {
   disconnectChatWebSocket();
+  chatState.set(initialState);
+}
+
+export function dismissChat(): void {
   chatState.set(initialState);
 }
 

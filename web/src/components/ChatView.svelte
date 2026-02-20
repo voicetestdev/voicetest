@@ -6,6 +6,7 @@
     startChat,
     endChat,
     sendMessage,
+    dismissChat,
     resetChatState,
   } from "../lib/chat-store";
 
@@ -62,7 +63,7 @@
 <button
   class="btn-primary"
   class:connecting={chat.status === "connecting"}
-  disabled={!agentId || chat.status === "connecting" || chat.status === "active"}
+  disabled={!agentId || chat.status === "connecting" || chat.status === "active" || chat.status === "ended"}
   onclick={handleStartChat}
 >
   {#if chat.status === "connecting"}
@@ -73,15 +74,24 @@
   {/if}
 </button>
 
-{#if chat.status === "active"}
+{#if chat.status === "active" || chat.status === "ended"}
   <div class="chat-panel">
     <div class="chat-header">
-      <span class="chat-status">Live Chat</span>
-      <div class="chat-controls">
-        <button class="btn-sm btn-danger" onclick={handleEndChat}>
-          End
-        </button>
-      </div>
+      {#if chat.status === "ended"}
+        <span class="chat-status ended">Chat Ended</span>
+        <div class="chat-controls">
+          <button class="btn-sm" onclick={dismissChat}>
+            Close
+          </button>
+        </div>
+      {:else}
+        <span class="chat-status">Live Chat</span>
+        <div class="chat-controls">
+          <button class="btn-sm btn-danger" onclick={handleEndChat}>
+            End
+          </button>
+        </div>
+      {/if}
     </div>
     <div class="transcript" bind:this={messagesContainer}>
       {#if chat.transcript.length === 0 && !chat.streaming}
@@ -103,23 +113,25 @@
         </div>
       {/if}
     </div>
-    <div class="input-area">
-      <input
-        type="text"
-        class="chat-input"
-        bind:value={inputValue}
-        onkeydown={handleKeydown}
-        placeholder="Type a message..."
-        disabled={chat.streaming}
-      />
-      <button
-        class="btn-sm send-btn"
-        onclick={handleSend}
-        disabled={!inputValue.trim() || chat.streaming}
-      >
-        Send
-      </button>
-    </div>
+    {#if chat.status === "active"}
+      <div class="input-area">
+        <input
+          type="text"
+          class="chat-input"
+          bind:value={inputValue}
+          onkeydown={handleKeydown}
+          placeholder="Type a message..."
+          disabled={chat.streaming}
+        />
+        <button
+          class="btn-sm send-btn"
+          onclick={handleSend}
+          disabled={!inputValue.trim() || chat.streaming}
+        >
+          Send
+        </button>
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -191,6 +203,15 @@
     background: var(--success-text);
     border-radius: 50%;
     animation: pulse 2s infinite;
+  }
+
+  .chat-status.ended {
+    color: var(--text-secondary);
+  }
+
+  .chat-status.ended::before {
+    background: var(--text-secondary);
+    animation: none;
   }
 
   @keyframes pulse {
