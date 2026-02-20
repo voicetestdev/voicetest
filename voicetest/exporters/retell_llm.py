@@ -54,7 +54,7 @@ def export_retell_llm(graph: AgentGraph) -> dict[str, Any]:
     if general_tools:
         result["general_tools"] = [_convert_tool(t) for t in general_tools]
 
-    result["general_prompt"] = ""
+    result["general_prompt"] = graph.source_metadata.get("general_prompt", "")
     result["states"] = _build_states(graph, general_tools)
 
     return result

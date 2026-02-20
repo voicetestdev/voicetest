@@ -34,7 +34,9 @@ from starlette.websockets import WebSocketState
 
 from voicetest import api
 from voicetest.calls import get_call_manager
+from voicetest.chat import get_chat_manager
 from voicetest.container import get_container
+from voicetest.container import get_exporter_registry
 from voicetest.container import get_importer_registry
 from voicetest.container import get_session
 from voicetest.demo import get_demo_agent
@@ -59,6 +61,7 @@ from voicetest.settings import resolve_model
 from voicetest.settings import save_settings
 from voicetest.storage.linked_file import check_file
 from voicetest.storage.linked_file import compute_etag
+from voicetest.storage.linked_file import write_json
 from voicetest.storage.models import Result as ResultModel
 from voicetest.storage.models import Run as RunModel
 from voicetest.storage.repositories import AgentRepository
@@ -345,6 +348,19 @@ class UpdateAgentRequest(BaseModel):
     graph_json: str | None = None
 
 
+class UpdatePromptRequest(BaseModel):
+    """Request to update a prompt (general, node, or transition).
+
+    - node_id=None: updates source_metadata.general_prompt
+    - node_id set, transition_target_id=None: updates node's state_prompt
+    - node_id set, transition_target_id set: updates transition condition value
+    """
+
+    node_id: str | None = None
+    prompt_text: str
+    transition_target_id: str | None = None
+
+
 class UpdateMetricsConfigRequest(BaseModel):
     """Request to update an agent's metrics configuration."""
 
@@ -400,6 +416,12 @@ class CallStatusResponse(BaseModel):
     transcript: list[dict]
     started_at: str
     ended_at: str | None = None
+
+
+class StartChatResponse(BaseModel):
+    """Response from starting a text chat."""
+
+    chat_id: str
 
 
 class ImporterInfo(BaseModel):
@@ -735,6 +757,109 @@ async def update_agent(agent_id: str, request: UpdateAgentRequest) -> dict:
         graph_json = json.dumps(graph_data)
 
     return repo.update(agent_id, name=request.name, graph_json=graph_json)
+
+
+@router.put("/agents/{agent_id}/prompts", response_model=AgentGraph)
+async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGraph:
+    """Update a general or node-specific prompt.
+
+    When node_id is None, updates source_metadata.general_prompt.
+    When node_id is set, updates that node's state_prompt.
+    For linked-file agents, writes back to the source file on disk.
+    """
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    # Load the current graph
+    source_path = agent.get("source_path")
+    if source_path:
+        try:
+            graph = get_importer_registry().import_agent(Path(source_path))
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404, detail=f"Agent file not found: {source_path}"
+            ) from None
+    else:
+        try:
+            result = repo.load_graph(agent)
+            if isinstance(result, Path):
+                graph = get_importer_registry().import_agent(result)
+            else:
+                graph = result
+        except (FileNotFoundError, ValueError) as e:
+            raise HTTPException(status_code=404, detail=str(e)) from None
+
+    # Apply the prompt update
+    if request.node_id is None:
+        graph.source_metadata["general_prompt"] = request.prompt_text
+    elif request.transition_target_id is not None:
+        node = graph.get_node(request.node_id)
+        if not node:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Node not found: {request.node_id}",
+            )
+        transition = next(
+            (t for t in node.transitions if t.target_node_id == request.transition_target_id),
+            None,
+        )
+        if not transition:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Transition not found: {request.node_id} -> {request.transition_target_id}",
+            )
+        transition.condition.value = request.prompt_text
+    else:
+        node = graph.get_node(request.node_id)
+        if not node:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Node not found: {request.node_id}",
+            )
+        node.state_prompt = request.prompt_text
+
+    # Persist the change
+    if source_path:
+        try:
+            _write_graph_to_linked_file(graph, source_path, agent)
+        except OSError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot write to linked file: {e}",
+            ) from None
+    else:
+        repo.update(agent_id, graph_json=graph.model_dump_json())
+
+    return graph
+
+
+def _write_graph_to_linked_file(graph: AgentGraph, source_path: str, agent: dict) -> None:
+    """Export a graph back to a linked file on disk."""
+    source_type = agent.get("source_type", "")
+
+    # Try format-based exporter (e.g. retell-llm)
+    exporter_registry = get_exporter_registry()
+    exporter = exporter_registry.get(source_type)
+    if exporter:
+        exported = json.loads(exporter.export(graph))
+        write_json(source_path, exported)
+        return
+
+    # Try platform-based exporter
+    platform_registry = _get_platform_registry()
+    if platform_registry.has_platform(source_type):
+        platform_exporter = platform_registry.get_exporter(source_type)
+        if platform_exporter:
+            exported = platform_exporter(graph)
+            write_json(source_path, exported)
+            return
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"No exporter available for source type: {source_type}",
+    )
 
 
 @router.delete("/agents/{agent_id}")
@@ -1659,9 +1784,122 @@ async def call_websocket(websocket: WebSocket, call_id: str):
     except WebSocketDisconnect:
         pass
     except Exception:
-        pass
+        _vt_logger.exception("Error in call websocket for %s", call_id)
     finally:
         call_manager.unregister_websocket(call_id, websocket)
+
+
+# Text chat endpoints
+
+
+@router.post("/agents/{agent_id}/chats/start", response_model=StartChatResponse)
+async def start_chat(agent_id: str) -> StartChatResponse:
+    """Start a text chat session with an agent.
+
+    Creates a ConversationEngine in-process (no LiveKit or subprocess needed).
+    Returns a chat_id for WebSocket connection.
+    """
+    agent_repo = get_agent_repo()
+    agent = agent_repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    try:
+        result = agent_repo.load_graph(agent)
+        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
+
+    call_repo = get_call_repo()
+    chat_manager = get_chat_manager()
+
+    settings = load_settings()
+    settings.apply_env()
+    agent_model = settings.models.agent
+
+    try:
+        chat_info = await chat_manager.start_chat(
+            agent_id, graph, call_repo, agent_model=agent_model
+        )
+        return StartChatResponse(**chat_info)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start chat: {e}") from None
+
+
+@router.post("/chats/{chat_id}/end")
+async def end_chat_session(chat_id: str) -> dict:
+    """End a text chat session and save the transcript as a run."""
+    call_repo = get_call_repo()
+    call = call_repo.get(chat_id)
+    if not call:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    chat_manager = get_chat_manager()
+
+    try:
+        await chat_manager.end_chat(chat_id, call_repo)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to end chat: {e}") from None
+
+    # Re-fetch call to get final transcript and timestamps
+    call = call_repo.get(chat_id)
+    run_id = await _save_call_as_run(call)
+
+    return {"status": "ended", "chat_id": chat_id, "run_id": run_id}
+
+
+@router.websocket("/chats/{chat_id}/ws")
+async def chat_websocket(websocket: WebSocket, chat_id: str):
+    """WebSocket for text chat: send messages, receive streaming responses."""
+    try:
+        await websocket.accept()
+    except Exception:
+        return
+
+    call_repo = get_call_repo()
+    call = call_repo.get(chat_id)
+    if not call:
+        await websocket.send_json({"type": "error", "message": "Chat not found"})
+        await websocket.close(code=1008)
+        return
+
+    chat_manager = get_chat_manager()
+
+    try:
+        # Send initial state
+        active_chat = chat_manager.get_active_chat(chat_id)
+        transcript = active_chat.transcript if active_chat else (call.get("transcript_json") or [])
+        state_msg = {
+            "type": "state",
+            "chat": {
+                "id": call["id"],
+                "status": call["status"],
+                "transcript": transcript,
+            },
+        }
+        await websocket.send_json(state_msg)
+
+        # Register for broadcasts and replay queued messages
+        queued_messages = chat_manager.register_websocket(chat_id, websocket)
+        for msg in queued_messages:
+            await websocket.send_text(msg)
+
+        # Listen for messages from client
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "message":
+                content = data.get("content", "").strip()
+                if content:
+                    await chat_manager.process_message(chat_id, content, call_repo)
+            elif data.get("type") == "end_chat":
+                await chat_manager.end_chat(chat_id, call_repo)
+                break
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        _vt_logger.exception("Error in chat websocket for %s", chat_id)
+    finally:
+        chat_manager.unregister_websocket(chat_id, websocket)
 
 
 # Platform integration endpoints

@@ -6,7 +6,7 @@
   <img alt="voicetest" src="assets/logo-light.svg" width="300">
 </picture>
 
-A generic test harness for voice agent workflows. Test agents from Retell, VAPI, LiveKit, Bland, and custom sources using a unified execution and evaluation model.
+A generic test harness for voice agent workflows. Test agents from Retell, VAPI, LiveKit, Bland, Telnyx, and custom sources using a unified execution and evaluation model.
 
 ## Installation
 
@@ -81,6 +81,7 @@ voicetest export --agent agent.json --format retell-cf       # Retell Conversati
 voicetest export --agent agent.json --format vapi-assistant  # VAPI Assistant JSON
 voicetest export --agent agent.json --format vapi-squad      # VAPI Squad JSON
 voicetest export --agent agent.json --format bland           # Bland AI JSON
+voicetest export --agent agent.json --format telnyx          # Telnyx AI JSON
 
 # Launch full TUI
 voicetest tui --agent agent.json --tests tests.json
@@ -131,8 +132,8 @@ voicetest serve
 The web UI provides:
 
 - Agent import and graph visualization
-- Export agents to multiple formats (Mermaid, LiveKit, Retell, VAPI, Bland)
-- Platform integration: import agents from, push agents to, and sync changes back to Retell, VAPI, LiveKit
+- Export agents to multiple formats (Mermaid, LiveKit, Retell, VAPI, Bland, Telnyx)
+- Platform integration: import agents from, push agents to, and sync changes back to Retell, VAPI, LiveKit, Telnyx
 - Test case management with persistence
 - Export tests to platform formats (Retell)
 - Global metrics configuration (compliance checks that run on all tests)
@@ -174,9 +175,11 @@ Retell CF ─────┐                  ┌───▶ Retell LLM
                │                  │
 Retell LLM ────┼                  ├───▶ Retell CF
                │                  │
-VAPI ──────────┼───▶ AgentGraph ──┼───▶ VAPI
+VAPI ──────────┼                  ├───▶ VAPI
                │                  │
-Bland ─────────┤                  ├───▶ Bland
+Bland ─────────┼───▶ AgentGraph ──┼───▶ Bland
+               │                  │
+Telnyx ────────┤                  ├───▶ Telnyx
                │                  │
 LiveKit ───────┤                  ├───▶ LiveKit
                │                  │
@@ -217,11 +220,11 @@ Test cases follow the Retell export format:
 
 ## Features
 
-- **Multi-source import**: Retell CF, Retell LLM, VAPI, Bland, LiveKit, XLSForm, custom Python functions
-- **Format conversion**: Convert between Retell, VAPI, Bland, LiveKit, and other formats
+- **Multi-source import**: Retell CF, Retell LLM, VAPI, Bland, Telnyx, LiveKit, XLSForm, custom Python functions
+- **Format conversion**: Convert between Retell, VAPI, Bland, Telnyx, LiveKit, and other formats
 - **Unified IR**: AgentGraph representation for any voice agent
-- **Multi-format export**: Mermaid diagrams, LiveKit Python, Retell LLM, Retell CF, VAPI, Bland
-- **Platform integration**: Import, push, and sync agents with Retell, VAPI, Bland, LiveKit via API
+- **Multi-format export**: Mermaid diagrams, LiveKit Python, Retell LLM, Retell CF, VAPI, Bland, Telnyx
+- **Platform integration**: Import, push, and sync agents with Retell, VAPI, Bland, Telnyx, LiveKit via API
 - **Configurable LLMs**: Separate models for agent, simulator, and judge
 - **DSPy-based evaluation**: LLM judges with reasoning and 0-1 scores
 - **Global metrics**: Define compliance checks that run on all tests for an agent
@@ -321,6 +324,7 @@ voicetest can connect directly to voice platforms to import and push agent confi
 | Retell   | ✓      | ✓    | ✓    | `RETELL_API_KEY`                         |
 | VAPI     | ✓      | ✓    | ✓    | `VAPI_API_KEY`                           |
 | Bland    | ✓      | ✓    |      | `BLAND_API_KEY`                          |
+| Telnyx   | ✓      | ✓    | ✓    | `TELNYX_API_KEY`                         |
 | LiveKit  | ✓      | ✓    | ✓    | `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` |
 
 ### Usage
@@ -440,6 +444,14 @@ The dev compose file includes the base infrastructure from `voicetest/compose/do
 
 Open http://localhost:5173 to access the web UI. Changes to Python or TypeScript files trigger automatic reloads.
 
+**Claude Code Authentication:** The dev image includes Claude Code CLI. To authenticate for `claudecode/*` model passthrough:
+
+```bash
+docker compose -f docker-compose.dev.yml exec backend claude login
+```
+
+Credentials persist in the `claude-auth` Docker volume across container restarts.
+
 **Linked Agents:** The compose file mounts your home directory (`$HOME`) read-only so linked agents with absolute paths work inside the container. On macOS, you may need to grant Docker Desktop access to your home directory in Settings → Resources → File Sharing.
 
 To stop all services:
@@ -552,9 +564,9 @@ voicetest/
 │   ├── container.py     # Dependency injection (Punq)
 │   ├── compose/         # Bundled Docker Compose for infrastructure services
 │   ├── models/          # Pydantic models
-│   ├── importers/       # Source importers (retell, vapi, bland, livekit, xlsform, custom)
-│   ├── exporters/       # Format exporters (mermaid, livekit, retell, vapi, bland, test_cases)
-│   ├── platforms/       # Platform SDK clients (retell, vapi, bland, livekit)
+│   ├── importers/       # Source importers (retell, vapi, bland, telnyx, livekit, xlsform, custom)
+│   ├── exporters/       # Format exporters (mermaid, livekit, retell, vapi, bland, telnyx, test_cases)
+│   ├── platforms/       # Platform SDK clients (retell, vapi, bland, telnyx, livekit)
 │   ├── engine/          # Execution engine
 │   ├── simulator/       # User simulation
 │   ├── judges/          # Evaluation judges (metric, rule)

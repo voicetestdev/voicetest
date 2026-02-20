@@ -326,3 +326,7 @@ export interface StartCallResponse {
   livekit_url: string;
   token: string;
 }
+
+export interface StartChatResponse {
+  chat_id: string;
+}

@@ -20,6 +20,7 @@ import type {
   RunWithResults,
   Settings,
   StartCallResponse,
+  StartChatResponse,
   StartRunResponse,
   SyncStatus,
   SyncToPlatformResponse,
@@ -248,6 +249,13 @@ export const api = {
   updateAgent: (id: string, updates: { name?: string; default_model?: string; graph_json?: string }) =>
     put<AgentRecord>(`/agents/${id}`, updates),
 
+  updatePrompt: (agentId: string, nodeId: string | null, promptText: string, transitionTargetId?: string) =>
+    put<AgentGraph>(`/agents/${agentId}/prompts`, {
+      node_id: nodeId,
+      prompt_text: promptText,
+      ...(transitionTargetId != null ? { transition_target_id: transitionTargetId } : {}),
+    }),
+
   deleteAgent: (id: string) => del<{ status: string; id: string }>(`/agents/${id}`),
 
   listTestsForAgent: (agentId: string) =>
@@ -316,6 +324,12 @@ export const api = {
   getCall: (callId: string) => get<CallRecord>(`/calls/${callId}`),
 
   endCall: (callId: string) => post<{ status: string; call_id: string; run_id: string | null }>(`/calls/${callId}/end`, {}),
+
+  startChat: (agentId: string) =>
+    post<StartChatResponse>(`/agents/${agentId}/chats/start`, {}),
+
+  endChat: (chatId: string) =>
+    post<{ status: string; chat_id: string; run_id: string | null }>(`/chats/${chatId}/end`, {}),
 
   audioEvalResult: (resultId: string) =>
     post<RunResultRecord>(`/results/${resultId}/audio-eval`, {}),

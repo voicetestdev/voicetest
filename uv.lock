@@ -4057,6 +4057,23 @@ wheels = [
 ]
 
 [[package]]
+name = "telnyx"
+version = "4.41.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/47/c1/c396a3702ab8583abd84fdef32f8d28a0268601e05e84856a9dc1fb352c0/telnyx-4.41.0.tar.gz", hash = "sha256:d348d11807fd43502f1efc29acebfb20492c34f9791a271cdb72334449990983", size = 1044829 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/31/d1e8cfa6edd3fd29e694d0cffbb17f87fe59187785edfa537bfb5e152309/telnyx-4.41.0-py3-none-any.whl", hash = "sha256:1f35d1b3de64c5c69262533244fc96159759bfc1afbbab43a762f1321dbf6dc2", size = 2062763 },
+]
+
+[[package]]
 name = "tenacity"
 version = "9.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -4478,6 +4495,7 @@ dependencies = [
     { name = "retell-sdk" },
     { name = "rich" },
     { name = "sqlalchemy" },
+    { name = "telnyx" },
     { name = "textual" },
     { name = "uvicorn" },
     { name = "vapi-server-sdk" },
@@ -4523,6 +4541,7 @@ requires-dist = [
     { name = "retell-sdk", specifier = ">=5.0" },
     { name = "rich", specifier = ">=13.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
+    { name = "telnyx", specifier = ">=4.41.0" },
     { name = "textual", specifier = ">=7.2.0" },
     { name = "uvicorn", specifier = ">=0.32" },
     { name = "vapi-server-sdk", specifier = ">=0.2" },
