@@ -38,25 +38,26 @@
   }
 </script>
 
-{#if state.status === "idle" || state.status === "ended"}
-  <button
-    class="btn-primary"
-    class:unavailable={!lkStatus.available}
-    disabled={lkStatus.available && !agentId}
-    onclick={!lkStatus.checking && !lkStatus.available ? () => checkLiveKitStatus() : handleStartCall}
-    title={!lkStatus.checking && !lkStatus.available ? (lkStatus.error || "LiveKit unavailable") : undefined}
-  >
+<button
+  class="btn-primary"
+  class:unavailable={!lkStatus.available}
+  class:connecting={state.status === "connecting"}
+  disabled={state.status === "connecting" || state.status === "active" || (lkStatus.available && !agentId)}
+  onclick={!lkStatus.checking && !lkStatus.available ? () => checkLiveKitStatus() : handleStartCall}
+  title={!lkStatus.checking && !lkStatus.available ? (lkStatus.error || "LiveKit unavailable") : undefined}
+>
+  {#if state.status === "connecting"}
+    <span class="spinner"></span>
+    Connecting...
+  {:else}
     Talk to Agent
     {#if !lkStatus.available}
       <span class="btn-icon" class:spinning={lkStatus.checking}>↻</span>
     {/if}
-  </button>
-{:else if state.status === "connecting"}
-  <button class="connecting" disabled>
-    <span class="spinner"></span>
-    Connecting...
-  </button>
-{:else if state.status === "active"}
+  {/if}
+</button>
+
+{#if state.status === "active"}
   <div class="call-panel">
     <div class="call-header">
       <span class="call-status">Live Call</span>
@@ -88,7 +89,9 @@
       {/if}
     </div>
   </div>
-{:else if state.status === "error"}
+{/if}
+
+{#if state.status === "error"}
   <div class="error-inline">
     <span class="error-text">{state.error || "Call failed"}</span>
     <button class="btn-sm" onclick={handleStartCall}>Retry</button>

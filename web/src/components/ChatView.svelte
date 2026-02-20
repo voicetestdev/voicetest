@@ -59,20 +59,21 @@
   });
 </script>
 
-{#if chat.status === "idle" || chat.status === "ended"}
-  <button
-    class="btn-primary"
-    disabled={!agentId}
-    onclick={handleStartChat}
-  >
-    Chat with Agent
-  </button>
-{:else if chat.status === "connecting"}
-  <button class="connecting" disabled>
+<button
+  class="btn-primary"
+  class:connecting={chat.status === "connecting"}
+  disabled={!agentId || chat.status === "connecting" || chat.status === "active"}
+  onclick={handleStartChat}
+>
+  {#if chat.status === "connecting"}
     <span class="spinner"></span>
     Connecting...
-  </button>
-{:else if chat.status === "active"}
+  {:else}
+    Chat with Agent
+  {/if}
+</button>
+
+{#if chat.status === "active"}
   <div class="chat-panel">
     <div class="chat-header">
       <span class="chat-status">Live Chat</span>
@@ -120,7 +121,9 @@
       </button>
     </div>
   </div>
-{:else if chat.status === "error"}
+{/if}
+
+{#if chat.status === "error"}
   <div class="error-inline">
     <span class="error-text">{chat.error || "Chat failed"}</span>
     <button class="btn-sm" onclick={handleStartChat}>Retry</button>
