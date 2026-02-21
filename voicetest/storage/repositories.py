@@ -216,7 +216,12 @@ class TestCaseRepository:
             .order_by(TestCaseModel.created_at)
             .all()
         )
-        return [self._to_dict(tc) for tc in test_cases]
+        results = []
+        for index, tc in enumerate(test_cases):
+            d = self._to_dict(tc)
+            d["source_index"] = index
+            results.append(d)
+        return results
 
     def get(self, test_id: str) -> dict | None:
         """Get test case by ID."""
@@ -441,6 +446,8 @@ class TestCaseRepository:
             "patterns": tc.patterns,
             "created_at": _serialize_datetime(tc.created_at),
             "updated_at": _serialize_datetime(tc.updated_at),
+            "source_path": None,
+            "source_index": None,
         }
 
 

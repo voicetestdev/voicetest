@@ -54,14 +54,20 @@
   let importProgress = $state<{ current: number; total: number } | null>(null);
 
   // Sorting state
-  type SortColumn = "id" | "name" | "type" | "prompt";
+  type SortColumn = "index" | "id" | "name" | "type" | "prompt";
   type SortDirection = "asc" | "desc";
-  let sortColumn = $state<SortColumn>("id");
+  let sortColumn = $state<SortColumn>("index");
   let sortDirection = $state<SortDirection>("asc");
 
   let sortedRecords = $derived.by(() => {
     const records = [...$testCaseRecords];
     records.sort((a, b) => {
+      if (sortColumn === "index") {
+        const aIdx = a.source_index ?? Number.MAX_SAFE_INTEGER;
+        const bIdx = b.source_index ?? Number.MAX_SAFE_INTEGER;
+        const cmp = aIdx - bIdx;
+        return sortDirection === "asc" ? cmp : -cmp;
+      }
       let aVal: string;
       let bVal: string;
       switch (sortColumn) {
@@ -575,13 +581,18 @@
           <table class="test-table">
             <thead>
               <tr>
-                <th class="col-select sortable" onclick={() => handleSort("id")}>
+                <th class="col-select">
                   <input
                     type="checkbox"
                     checked={selectedTestIds.length === $testCaseRecords.length && $testCaseRecords.length > 0}
                     onchange={selectAllTests}
-                    onclick={(e) => e.stopPropagation()}
                   />
+                </th>
+                <th class="col-index sortable" onclick={() => handleSort("index")}>
+                  #
+                  {#if sortColumn === "index"}
+                    <span class="sort-indicator">{sortDirection === "asc" ? "▲" : "▼"}</span>
+                  {/if}
                 </th>
                 <th class="col-name sortable" onclick={() => handleSort("name")}>
                   Name
@@ -614,6 +625,7 @@
                       onchange={() => toggleTestSelection(record.id)}
                     />
                   </td>
+                  <td class="col-index">{record.source_index ?? "—"}</td>
                   <td class="col-name">
                     {record.name}
                     {#if record.source_path}
@@ -1046,6 +1058,14 @@
 
   .col-select {
     width: 40px;
+  }
+
+  .col-index {
+    width: 40px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
   }
 
   .col-name {
