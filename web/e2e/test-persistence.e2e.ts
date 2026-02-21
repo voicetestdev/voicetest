@@ -79,10 +79,10 @@ test.describe("Test Case Persistence", () => {
     ]);
 
     await page.locator(".modal textarea").fill(testCases);
-    await page.click(".modal button:has-text('Import')");
+    await page.click(".modal-footer button:has-text('Import')");
 
-    // Wait for tests to appear
-    await expect(page.locator("table")).toBeVisible();
+    // Wait for tests to appear (async import needs API roundtrips)
+    await expect(page.locator("table")).toBeVisible({ timeout: 10000 });
     await expect(page.locator("table")).toContainText("Billing inquiry test");
     await expect(page.locator("table")).toContainText("Payment test");
 

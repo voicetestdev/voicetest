@@ -15,6 +15,7 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import MetricsConfig
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import TestCase
+from voicetest.pathutil import resolve_path
 from voicetest.storage.linked_file import read_json
 from voicetest.storage.linked_file import write_json
 from voicetest.storage.models import Agent
@@ -175,7 +176,7 @@ class AgentRepository:
             return AgentGraph.model_validate_json(agent["graph_json"])
 
         if agent.get("source_path"):
-            path = Path(agent["source_path"])
+            path = resolve_path(agent["source_path"])
             if not path.exists():
                 raise FileNotFoundError(f"Agent file not found: {path}")
             return path

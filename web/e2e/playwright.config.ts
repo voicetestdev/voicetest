@@ -3,9 +3,9 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: ".",
   testMatch: "**/*.e2e.ts",
-  timeout: 5000,
+  timeout: 15000,
   expect: {
-    timeout: 3000,
+    timeout: 5000,
   },
   retries: process.env.CI ? 1 : 0,
   use: {

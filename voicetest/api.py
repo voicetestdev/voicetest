@@ -279,7 +279,7 @@ async def run_test(
         )
         simulator = UserSimulator(user_prompt, options.simulator_model)
         metric_judge = MetricJudge(options.judge_model)
-        rule_judge = RuleJudge()
+        rule_judge = RuleJudge(pattern_engine=options.pattern_engine)
         flow_judge = FlowJudge(options.judge_model)
 
         # Get threshold from metrics_config or use default
@@ -531,7 +531,7 @@ async def audio_eval_result(
     threshold = metrics_config.threshold if metrics_config else 0.7
 
     if test_type == "rule":
-        rule_judge = RuleJudge()
+        rule_judge = RuleJudge(pattern_engine=settings.run.pattern_engine)
         audio_metrics = await rule_judge.evaluate(
             transformed,
             test_case.includes,

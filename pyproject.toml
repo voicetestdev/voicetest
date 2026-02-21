@@ -53,6 +53,9 @@ Issues = "https://github.com/voicetestdev/voicetest/issues"
 postgres = [
     "psycopg[binary]>=3.0",
 ]
+re2 = [
+    "google-re2>=1.1",
+]
 macos = [
     "mlx-audio>=0.3",
     "misaki[en]>=0.1",

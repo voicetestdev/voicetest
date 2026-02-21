@@ -30,6 +30,14 @@ repos:
         files: ^web/src/.*\.ts$
         pass_filenames: false
 
+  # Security - Semgrep
+  - repo: https://github.com/semgrep/pre-commit
+    rev: v1.152.0
+    hooks:
+      - id: semgrep
+        args: ['--config', 'p/python', '--config', 'p/security-audit', '--error', '--skip-unknown-extensions']
+        files: \.py$
+
   # Markdown - mdformat
   - repo: https://github.com/executablebooks/mdformat
     rev: 0.7.21
