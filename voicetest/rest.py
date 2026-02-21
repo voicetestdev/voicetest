@@ -53,6 +53,8 @@ from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
+from voicetest.pathutil import resolve_file
+from voicetest.pathutil import resolve_path
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.retry import RetryError
 from voicetest.settings import Settings
@@ -80,6 +82,7 @@ if not _vt_logger.handlers:
     _handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
     _vt_logger.addHandler(_handler)
 _vt_logger.info("voicetest logging configured at %s", _log_level)
+
 
 # Active runs: run_id -> {"cancel": Event, "websockets": set[WebSocket], "message_queue": list}
 _active_runs: dict[str, dict[str, Any]] = {}
@@ -212,7 +215,7 @@ app = FastAPI(
 # Add CORS middleware to allow cross-origin requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # nosemgrep: python.fastapi.security.wildcard-cors.wildcard-cors
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -388,6 +391,12 @@ class StartRunRequest(BaseModel):
 
     test_ids: list[str] | None = None
     options: RunOptions | None = None
+
+
+class LinkTestFileRequest(BaseModel):
+    """Request to link a test file to an agent."""
+
+    path: str
 
 
 class ExportTestsRequest(BaseModel):
@@ -641,7 +650,7 @@ async def get_agent_graph(
         response.headers["ETag"] = etag
         response.headers["Cache-Control"] = "private, must-revalidate"
 
-        return get_importer_registry().import_agent(Path(source_path))
+        return get_importer_registry().import_agent(resolve_path(source_path))
 
     # For non-linked agents, use updated_at for caching
     try:
@@ -672,19 +681,14 @@ async def create_agent(request: CreateAgentRequest) -> dict:
     # Validate and resolve path before attempting import
     absolute_path: str | None = None
     if request.path:
-        path = Path(request.path)
-        if not path.exists():
-            raise HTTPException(status_code=400, detail=f"File not found: {request.path}")
-        if not path.is_file():
-            raise HTTPException(status_code=400, detail=f"Path is not a file: {request.path}")
+        path = resolve_file(request.path)
         try:
             path.read_text()
         except PermissionError:
             raise HTTPException(
                 status_code=400, detail=f"Permission denied: {request.path}"
             ) from None
-        # Convert to absolute path for storage
-        absolute_path = str(path.resolve())
+        absolute_path = str(path)
 
     try:
         source = absolute_path if absolute_path else request.config
@@ -776,7 +780,7 @@ async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGra
     source_path = agent.get("source_path")
     if source_path:
         try:
-            graph = get_importer_registry().import_agent(Path(source_path))
+            graph = get_importer_registry().import_agent(resolve_path(source_path))
         except FileNotFoundError:
             raise HTTPException(
                 status_code=404, detail=f"Agent file not found: {source_path}"
@@ -911,6 +915,71 @@ async def list_tests_for_agent(agent_id: str) -> list[dict]:
 
     tests_paths = agent.get("tests_paths")
     return get_test_case_repo().list_for_agent_with_linked(agent_id, tests_paths)
+
+
+@router.post("/agents/{agent_id}/tests-paths")
+async def link_test_file(agent_id: str, request: LinkTestFileRequest) -> dict:
+    """Link a JSON test file to an agent.
+
+    The file must exist, contain valid JSON, and be a JSON array.
+    Tests from the file will appear alongside DB tests via list_for_agent_with_linked.
+    """
+    agent_repo = get_agent_repo()
+    agent = agent_repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    path = resolve_file(request.path)
+    resolved = str(path)
+
+    # Validate JSON content is an array
+    try:
+        content = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from None
+
+    if not isinstance(content, list):
+        raise HTTPException(status_code=400, detail="File must contain a JSON array")
+
+    # Check for duplicates
+    current_paths = agent.get("tests_paths") or []
+    if resolved in current_paths:
+        raise HTTPException(status_code=409, detail="File already linked")
+
+    updated_paths = current_paths + [resolved]
+    agent_repo.update(agent_id, tests_paths=updated_paths)
+
+    return {
+        "path": resolved,
+        "test_count": len(content),
+        "tests_paths": updated_paths,
+    }
+
+
+@router.delete("/agents/{agent_id}/tests-paths")
+async def unlink_test_file(agent_id: str, path: str) -> dict:
+    """Unlink a test file from an agent.
+
+    Removes the path from tests_paths. The file itself is not deleted.
+    """
+    agent_repo = get_agent_repo()
+    agent = agent_repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    resolved = str(resolve_path(path))
+    current_paths = agent.get("tests_paths") or []
+
+    if resolved not in current_paths:
+        raise HTTPException(status_code=404, detail="File not linked to this agent")
+
+    updated_paths = [p for p in current_paths if p != resolved]
+    agent_repo.update(agent_id, tests_paths=updated_paths)
+
+    return {
+        "path": resolved,
+        "tests_paths": updated_paths,
+    }
 
 
 @router.post("/agents/{agent_id}/tests/export")

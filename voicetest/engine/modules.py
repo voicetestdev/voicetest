@@ -276,11 +276,4 @@ class ConversationModule(dspy.Module):
             condition = transition.condition.value or "No condition specified"
             lines.append(f"- {transition.target_node_id}: {condition}")
 
-        # Check for end_call tool
-        for tool in node.tools:
-            if tool.name == "end_call" or getattr(tool, "type", "") == "end_call":
-                desc = tool.description or "End the call"
-                lines.append(f"- end_call: {desc}")
-                break
-
         return "\n".join(lines) if lines else "(no transitions available)"

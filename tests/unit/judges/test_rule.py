@@ -89,12 +89,23 @@ class TestRuleJudge:
             sample_transcript,
             includes=[],
             excludes=[],
-            patterns=["REF-[A-Z0-9]+"],
+            patterns=["*REF-*"],
         )
         assert len(results) == 1
         assert results[0].passed
         assert "matched" in results[0].reasoning
-        assert "REF-ABC123" in results[0].reasoning
+
+    @pytest.mark.asyncio
+    async def test_evaluate_pattern_char_class(self, judge, sample_transcript):
+        """fnmatch [ABC] character classes work for single-char matching."""
+        results = await judge.evaluate(
+            sample_transcript,
+            includes=[],
+            excludes=[],
+            patterns=["*REF-[A-Z]*"],
+        )
+        assert len(results) == 1
+        assert results[0].passed
 
     @pytest.mark.asyncio
     async def test_evaluate_pattern_no_match(self, judge, sample_transcript):
@@ -102,23 +113,23 @@ class TestRuleJudge:
             sample_transcript,
             includes=[],
             excludes=[],
-            patterns=["TICKET-[0-9]+"],
+            patterns=["*TICKET-*"],
         )
         assert len(results) == 1
         assert not results[0].passed
         assert "not found" in results[0].reasoning
 
     @pytest.mark.asyncio
-    async def test_evaluate_invalid_regex(self, judge, sample_transcript):
+    async def test_evaluate_pattern_literal_treated_as_literal(self, judge, sample_transcript):
+        """fnmatch treats unrecognized characters as literals — no crash."""
         results = await judge.evaluate(
             sample_transcript,
             includes=[],
             excludes=[],
-            patterns=["[invalid(regex"],
+            patterns=["[invalid(pattern"],
         )
         assert len(results) == 1
         assert not results[0].passed
-        assert "Invalid regex" in results[0].reasoning
 
     @pytest.mark.asyncio
     async def test_evaluate_all_rules(self, judge, sample_transcript):
@@ -126,7 +137,7 @@ class TestRuleJudge:
             sample_transcript,
             includes=["welcome"],
             excludes=["error"],
-            patterns=["REF-[A-Z0-9]+"],
+            patterns=["*REF-*"],
         )
         assert len(results) == 3
         assert all(r.passed for r in results)
@@ -163,3 +174,15 @@ class TestRuleJudge:
         )
         assert len(results) == 1
         assert not results[0].passed
+
+    @pytest.mark.asyncio
+    async def test_pattern_case_insensitive(self, judge, sample_transcript):
+        """Wildcard patterns match case-insensitively."""
+        results = await judge.evaluate(
+            sample_transcript,
+            includes=[],
+            excludes=[],
+            patterns=["*ref-*"],
+        )
+        assert len(results) == 1
+        assert results[0].passed

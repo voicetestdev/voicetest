@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "0.19"
+version = "0.20"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -52,6 +52,9 @@ Issues = "https://github.com/voicetestdev/voicetest/issues"
 [project.optional-dependencies]
 postgres = [
     "psycopg[binary]>=3.0",
+]
+re2 = [
+    "google-re2>=1.1",
 ]
 macos = [
     "mlx-audio>=0.3",

@@ -31,6 +31,7 @@ class RunOptions(BaseModel):
     test_model_precedence: bool = False
     split_transitions: bool = False
     audio_eval: bool = False
+    pattern_engine: str = "fnmatch"
 
     # LLM model configuration (None = not configured, use defaults)
     agent_model: str | None = None

@@ -2,6 +2,7 @@
 
 import re
 
+from voicetest.judges.pattern import compile_pattern
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 
@@ -10,8 +11,11 @@ class RuleJudge:
     """Evaluate conversation against deterministic rules.
 
     Checks transcripts for required substrings (includes),
-    forbidden substrings (excludes), and regex patterns.
+    forbidden substrings (excludes), and wildcard/regex patterns.
     """
+
+    def __init__(self, pattern_engine: str = "fnmatch"):
+        self._pattern_engine = pattern_engine
 
     async def evaluate(
         self,
@@ -27,7 +31,7 @@ class RuleJudge:
             transcript: Conversation transcript to evaluate.
             includes: Substrings that must be present.
             excludes: Substrings that must NOT be present.
-            patterns: Regex patterns that must match.
+            patterns: Wildcard patterns (fnmatch) or regex patterns (re2).
             use_heard: If True, use metadata["heard"] for assistant messages.
 
         Returns:
@@ -68,7 +72,8 @@ class RuleJudge:
 
         for pattern in patterns:
             try:
-                match = re.search(pattern, text)
+                compiled = compile_pattern(pattern, engine=self._pattern_engine)
+                match = compiled.search(text)
                 passed = match is not None
                 results.append(
                     MetricResult(
@@ -82,12 +87,12 @@ class RuleJudge:
                         confidence=1.0,
                     )
                 )
-            except re.error as e:
+            except (re.error, ImportError) as e:
                 results.append(
                     MetricResult(
                         metric=f"pattern: {pattern}",
                         passed=False,
-                        reasoning=f"Invalid regex pattern: {e}",
+                        reasoning=f"Invalid pattern: {e}",
                         confidence=1.0,
                     )
                 )

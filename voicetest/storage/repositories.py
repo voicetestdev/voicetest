@@ -15,6 +15,7 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import MetricsConfig
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import TestCase
+from voicetest.pathutil import resolve_path
 from voicetest.storage.linked_file import read_json
 from voicetest.storage.linked_file import write_json
 from voicetest.storage.models import Agent
@@ -175,7 +176,7 @@ class AgentRepository:
             return AgentGraph.model_validate_json(agent["graph_json"])
 
         if agent.get("source_path"):
-            path = Path(agent["source_path"])
+            path = resolve_path(agent["source_path"])
             if not path.exists():
                 raise FileNotFoundError(f"Agent file not found: {path}")
             return path
@@ -216,7 +217,12 @@ class TestCaseRepository:
             .order_by(TestCaseModel.created_at)
             .all()
         )
-        return [self._to_dict(tc) for tc in test_cases]
+        results = []
+        for index, tc in enumerate(test_cases):
+            d = self._to_dict(tc)
+            d["source_index"] = index
+            results.append(d)
+        return results
 
     def get(self, test_id: str) -> dict | None:
         """Get test case by ID."""
@@ -441,6 +447,8 @@ class TestCaseRepository:
             "patterns": tc.patterns,
             "created_at": _serialize_datetime(tc.created_at),
             "updated_at": _serialize_datetime(tc.updated_at),
+            "source_path": None,
+            "source_index": None,
         }
 
 

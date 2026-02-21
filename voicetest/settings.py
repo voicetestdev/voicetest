@@ -52,6 +52,10 @@ class RunSettings(BaseModel):
         default=False,
         description="Auto-run TTS→STT audio evaluation on every test",
     )
+    pattern_engine: str = Field(
+        default="fnmatch",
+        description="Pattern engine: 'fnmatch' (wildcards) or 're2' (regex)",
+    )
 
 
 class Settings(BaseModel):
@@ -120,6 +124,7 @@ def _to_toml(settings: Settings) -> str:
     lines.append(f"test_model_precedence = {str(settings.run.test_model_precedence).lower()}")
     lines.append(f"split_transitions = {str(settings.run.split_transitions).lower()}")
     lines.append(f"audio_eval = {str(settings.run.audio_eval).lower()}")
+    lines.append(f'pattern_engine = "{settings.run.pattern_engine}"')
     lines.append("")
 
     lines.append("[audio]")
