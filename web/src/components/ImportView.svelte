@@ -290,7 +290,7 @@
             {importing ? "Linking..." : "Link"}
           </button>
         </div>
-        <p class="hint">Link to a file on the server. Changes to the file will be reflected when reloading.</p>
+        <p class="hint">Link using an absolute path on the server. Changes to the file will be reflected when reloading.</p>
       {/if}
     </div>
   {:else}

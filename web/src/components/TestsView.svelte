@@ -873,7 +873,7 @@
               placeholder="/path/to/tests.json"
             />
             <span class="field-hint">
-              Point to a JSON test file on the server. Tests stay in sync — edits write back to the file.
+              Absolute path to a JSON test file on the server. Tests stay in sync — edits write back to the file.
             </span>
           </div>
           {#if linkError}

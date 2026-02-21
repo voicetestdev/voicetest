@@ -55,6 +55,7 @@ from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.pathutil import resolve_file
 from voicetest.pathutil import resolve_path
+from voicetest.pathutil import resolve_within
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.retry import RetryError
 from voicetest.settings import Settings
@@ -2278,7 +2279,8 @@ if WEB_DIST is not None:
         """Serve the SPA for all non-API routes."""
         if WEB_DIST is None:
             raise HTTPException(status_code=404, detail="Web UI not found")
-        file_path = WEB_DIST / path
-        if file_path.is_file():
-            return FileResponse(file_path)
+        if path:
+            file_path = resolve_within(path, base=WEB_DIST)
+            if file_path.is_file():
+                return FileResponse(file_path)
         return FileResponse(WEB_DIST / "index.html")
