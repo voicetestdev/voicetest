@@ -101,6 +101,11 @@ def main() -> None:
         default=None,
         help="LLM model from global settings (overrides graph.default_model)",
     )
+    parser.add_argument(
+        "--dynamic-variables",
+        default="{}",
+        help="JSON string of dynamic variables for template substitution",
+    )
 
     args = parser.parse_args()
 
@@ -136,8 +141,13 @@ def main() -> None:
                 flush=True,
             )
 
+            # Parse dynamic variables
+            dynamic_variables = json.loads(args.dynamic_variables)
+
             # Create ConversationEngine - same logic as test runner
-            engine = ConversationEngine(graph=graph, model=resolved)
+            engine = ConversationEngine(
+                graph=graph, model=resolved, dynamic_variables=dynamic_variables or None
+            )
 
             # Create VoicetestLLM that wraps the engine
             voicetest_llm = VoicetestLLM(engine)

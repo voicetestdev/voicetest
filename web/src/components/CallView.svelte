@@ -10,10 +10,12 @@
     liveKitStatus,
     checkLiveKitStatus,
   } from "../lib/call-store";
+  import LaunchModal from "./LaunchModal.svelte";
 
-  let state = $derived($callState);
+  let callStatus = $derived($callState);
   let agentId = $derived($currentAgentId);
   let lkStatus = $derived($liveKitStatus);
+  let showLaunchModal = $state(false);
 
   onMount(() => {
     checkLiveKitStatus();
@@ -23,9 +25,19 @@
     resetCallState();
   });
 
-  async function handleStartCall() {
+  function handleStartCall() {
     if (!agentId || !lkStatus.available) return;
-    await startCall(agentId);
+    showLaunchModal = true;
+  }
+
+  async function handleLaunch(variables: Record<string, unknown>) {
+    showLaunchModal = false;
+    if (!agentId) return;
+    await startCall(agentId, variables);
+  }
+
+  function handleCloseLaunchModal() {
+    showLaunchModal = false;
   }
 
   async function handleEndCall() {
@@ -41,12 +53,12 @@
 <button
   class="btn-primary"
   class:unavailable={!lkStatus.available}
-  class:connecting={state.status === "connecting"}
-  disabled={state.status === "connecting" || state.status === "active" || (lkStatus.available && !agentId)}
+  class:connecting={callStatus.status === "connecting"}
+  disabled={callStatus.status === "connecting" || callStatus.status === "active" || (lkStatus.available && !agentId)}
   onclick={!lkStatus.checking && !lkStatus.available ? () => checkLiveKitStatus() : handleStartCall}
   title={!lkStatus.checking && !lkStatus.available ? (lkStatus.error || "LiveKit unavailable") : undefined}
 >
-  {#if state.status === "connecting"}
+  {#if callStatus.status === "connecting"}
     <span class="spinner"></span>
     Connecting...
   {:else}
@@ -57,17 +69,17 @@
   {/if}
 </button>
 
-{#if state.status === "active"}
+{#if callStatus.status === "active"}
   <div class="call-panel">
     <div class="call-header">
       <span class="call-status">Live Call</span>
       <div class="call-controls">
         <button
           class="btn-sm"
-          class:muted={state.muted}
+          class:muted={callStatus.muted}
           onclick={handleToggleMute}
         >
-          {state.muted ? "Unmute" : "Mute"}
+          {callStatus.muted ? "Unmute" : "Mute"}
         </button>
         <button class="btn-sm btn-danger" onclick={handleEndCall}>
           End
@@ -75,11 +87,11 @@
       </div>
     </div>
     <div class="transcript">
-      {#if state.transcript.length === 0}
+      {#if callStatus.transcript.length === 0}
         <p class="empty-state">Start speaking...</p>
       {:else}
         <div class="messages">
-          {#each state.transcript as msg}
+          {#each callStatus.transcript as msg}
             <div class="message" class:user={msg.role === "user"} class:agent={msg.role === "assistant"}>
               <span class="role">{msg.role === "user" ? "You" : "Agent"}:</span>
               <span class="content">{msg.content}</span>
@@ -91,11 +103,20 @@
   </div>
 {/if}
 
-{#if state.status === "error"}
+{#if callStatus.status === "error"}
   <div class="error-inline">
-    <span class="error-text">{state.error || "Call failed"}</span>
+    <span class="error-text">{callStatus.error || "Call failed"}</span>
     <button class="btn-sm" onclick={handleStartCall}>Retry</button>
   </div>
+{/if}
+
+{#if showLaunchModal && agentId}
+  <LaunchModal
+    agentId={agentId}
+    mode="call"
+    onclose={handleCloseLaunchModal}
+    onlaunch={handleLaunch}
+  />
 {/if}
 
 <style>

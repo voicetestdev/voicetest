@@ -100,6 +100,7 @@ class CallManager:
         graph: AgentGraph,
         call_repo: Any,
         agent_model: str | None = None,
+        dynamic_variables: dict | None = None,
     ) -> dict:
         """Start a new live call.
 
@@ -110,6 +111,7 @@ class CallManager:
             graph: The agent graph configuration.
             call_repo: Repository for persisting call records.
             agent_model: LLM model from global settings (overrides graph.default_model).
+            dynamic_variables: Variables for template substitution in prompts.
 
         Returns:
             Dict with call_id, room_name, livekit_url, token (for user)
@@ -157,6 +159,9 @@ class CallManager:
 
         if agent_model:
             cmd.extend(["--agent-model", agent_model])
+
+        if dynamic_variables:
+            cmd.extend(["--dynamic-variables", json.dumps(dynamic_variables)])
 
         process = subprocess.Popen(
             cmd,

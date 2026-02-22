@@ -42,14 +42,17 @@ export const liveKitStatus = writable<LiveKitStatus>(initialLiveKitStatus);
 
 let livekitConnection: LiveKitConnection | null = null;
 
-export async function startCall(agentId: string): Promise<void> {
+export async function startCall(
+  agentId: string,
+  dynamicVariables?: Record<string, unknown>,
+): Promise<void> {
   callState.set({
     ...initialState,
     status: "connecting",
   });
 
   try {
-    const response = await api.startCall(agentId);
+    const response = await api.startCall(agentId, dynamicVariables);
 
     callState.update((s) => ({
       ...s,

@@ -106,6 +106,33 @@ class TestChatManagerStartChat:
         active = chat_manager.get_active_chat(result["chat_id"])
         assert active.engine.model == "openai/gpt-4o"
 
+    @pytest.mark.asyncio
+    async def test_start_chat_with_dynamic_variables(
+        self, chat_manager, call_repo, single_node_graph
+    ):
+        variables = {"name": "Alice", "company": "Acme"}
+        result = await chat_manager.start_chat(
+            "agent-1",
+            single_node_graph,
+            call_repo,
+            agent_model="groq/llama-3.1-8b-instant",
+            dynamic_variables=variables,
+        )
+
+        active = chat_manager.get_active_chat(result["chat_id"])
+        assert active.engine._dynamic_variables == variables
+
+    @pytest.mark.asyncio
+    async def test_start_chat_without_dynamic_variables(
+        self, chat_manager, call_repo, single_node_graph
+    ):
+        result = await chat_manager.start_chat(
+            "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
+        )
+
+        active = chat_manager.get_active_chat(result["chat_id"])
+        assert active.engine._dynamic_variables == {}
+
 
 class TestChatManagerEndChat:
     """Tests for ChatManager.end_chat."""

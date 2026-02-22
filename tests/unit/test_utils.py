@@ -1,5 +1,6 @@
 """Tests for voicetest.utils module."""
 
+from voicetest.utils import extract_variables
 from voicetest.utils import substitute_variables
 
 
@@ -54,3 +55,35 @@ class TestSubstituteVariables:
         text = "{{name}} says hello to {{name}}."
         result = substitute_variables(text, {"name": "Alice"})
         assert result == "Alice says hello to Alice."
+
+
+class TestExtractVariables:
+    """Tests for extract_variables function."""
+
+    def test_basic(self):
+        result = extract_variables("Hello {{name}}")
+        assert result == ["name"]
+
+    def test_multiple(self):
+        result = extract_variables("{{greeting}}, {{name}}! Welcome to {{place}}.")
+        assert result == ["greeting", "name", "place"]
+
+    def test_dedup(self):
+        result = extract_variables("{{a}} and {{a}}")
+        assert result == ["a"]
+
+    def test_whitespace(self):
+        result = extract_variables("{{ name }}")
+        assert result == ["name"]
+
+    def test_empty(self):
+        result = extract_variables("no vars here")
+        assert result == []
+
+    def test_preserves_order(self):
+        result = extract_variables("{{z}} then {{a}} then {{m}}")
+        assert result == ["z", "a", "m"]
+
+    def test_dedup_preserves_first_occurrence_order(self):
+        result = extract_variables("{{b}} then {{a}} then {{b}} then {{c}}")
+        assert result == ["b", "a", "c"]

@@ -5,6 +5,22 @@ import re
 from typing import Any
 
 
+_VAR_PATTERN = re.compile(r"\{\{(\s*\w+\s*)\}\}")
+
+
+def extract_variables(text: str) -> list[str]:
+    """Extract unique {{var}} placeholder names from text, preserving first-appearance order.
+
+    Args:
+        text: The text containing {{var}} placeholders.
+
+    Returns:
+        List of unique variable names in first-appearance order.
+    """
+    raw_names = [m.strip() for m in _VAR_PATTERN.findall(text)]
+    return list(dict.fromkeys(raw_names))
+
+
 def substitute_variables(text: str, variables: dict[str, Any]) -> str:
     """Substitute {{var}} placeholders in text with values from variables dict.
 
@@ -24,7 +40,7 @@ def substitute_variables(text: str, variables: dict[str, Any]) -> str:
             return str(variables[var_name])
         return match.group(0)
 
-    return re.sub(r"\{\{(\s*\w+\s*)\}\}", replace, text)
+    return _VAR_PATTERN.sub(replace, text)
 
 
 def create_template_filler(template: str) -> Callable[[dict[str, Any]], str]:

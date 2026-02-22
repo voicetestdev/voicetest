@@ -563,6 +563,63 @@ class TestAgentsCRUD:
         assert "metrics_config" in agent
 
 
+class TestAgentVariablesEndpoint:
+    """Tests for GET /agents/{id}/variables endpoint."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    def test_get_variables_from_dynamic_graph(self, db_client, graph_with_dynamic_variables):
+        """Agent with {{var}} placeholders returns extracted variable names."""
+        from voicetest.rest import get_agent_repo
+
+        repo = get_agent_repo()
+        agent = repo.create(
+            name="Vars Agent",
+            source_type="custom",
+            graph_json=graph_with_dynamic_variables.model_dump_json(),
+        )
+        agent_id = agent["id"]
+
+        response = db_client.get(f"/api/agents/{agent_id}/variables")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "variables" in data
+        variables = data["variables"]
+        assert "company_name" in variables
+        assert "customer_name" in variables
+        assert "account_status" in variables
+
+    def test_get_variables_no_variables(self, db_client, sample_retell_config):
+        """Agent without {{var}} placeholders returns empty list."""
+        agent_response = db_client.post(
+            "/api/agents",
+            json={"name": "No Vars Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_response.json()["id"]
+
+        response = db_client.get(f"/api/agents/{agent_id}/variables")
+        assert response.status_code == 200
+        assert response.json()["variables"] == []
+
+    def test_get_variables_nonexistent_agent(self, db_client):
+        """Returns 404 for non-existent agent."""
+        response = db_client.get("/api/agents/nonexistent/variables")
+        assert response.status_code == 404
+
+
 class TestTestCasesCRUD:
     """Tests for test case CRUD endpoints."""
 

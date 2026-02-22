@@ -31,14 +31,17 @@ const initialState: ChatState = {
 export const chatState = writable<ChatState>(initialState);
 export const chatWebSocket = writable<WebSocket | null>(null);
 
-export async function startChat(agentId: string): Promise<void> {
+export async function startChat(
+  agentId: string,
+  dynamicVariables?: Record<string, unknown>,
+): Promise<void> {
   chatState.set({
     ...initialState,
     status: "connecting",
   });
 
   try {
-    const response = await api.startChat(agentId);
+    const response = await api.startChat(agentId, dynamicVariables);
 
     chatState.update((s) => ({
       ...s,
