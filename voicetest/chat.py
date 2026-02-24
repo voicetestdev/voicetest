@@ -48,6 +48,7 @@ class ChatManager:
         graph: AgentGraph,
         call_repo: Any,
         agent_model: str | None = None,
+        dynamic_variables: dict | None = None,
     ) -> dict:
         """Start a text chat session.
 
@@ -58,6 +59,7 @@ class ChatManager:
             graph: The agent graph configuration.
             call_repo: Repository for persisting call/chat records.
             agent_model: LLM model from global settings.
+            dynamic_variables: Variables for template substitution in prompts.
 
         Returns:
             Dict with chat_id.
@@ -68,7 +70,7 @@ class ChatManager:
         # Resolve model: settings agent_model, then graph default, then fallback
         model = resolve_model(agent_model, graph.default_model)
 
-        engine = ConversationEngine(graph, model, RunOptions())
+        engine = ConversationEngine(graph, model, RunOptions(), dynamic_variables=dynamic_variables)
 
         # Persist using the Call table
         call_record = call_repo.create(agent_id, room_name)

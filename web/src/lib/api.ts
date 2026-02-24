@@ -240,6 +240,9 @@ export const api = {
 
   getAgentGraph: (id: string) => get<AgentGraph>(`/agents/${id}/graph`),
 
+  getAgentVariables: (id: string) =>
+    get<{ variables: string[] }>(`/agents/${id}/variables`),
+
   createAgent: (name: string, config: unknown, source?: string) =>
     post<AgentRecord>("/agents", { name, config, source }),
 
@@ -318,15 +321,19 @@ export const api = {
 
   getLiveKitStatus: () => get<{ available: boolean; error: string | null }>("/livekit/status"),
 
-  startCall: (agentId: string) =>
-    post<StartCallResponse>(`/agents/${agentId}/calls/start`, {}),
+  startCall: (agentId: string, dynamicVariables?: Record<string, unknown>) =>
+    post<StartCallResponse>(`/agents/${agentId}/calls/start`, {
+      dynamic_variables: dynamicVariables ?? {},
+    }),
 
   getCall: (callId: string) => get<CallRecord>(`/calls/${callId}`),
 
   endCall: (callId: string) => post<{ status: string; call_id: string; run_id: string | null }>(`/calls/${callId}/end`, {}),
 
-  startChat: (agentId: string) =>
-    post<StartChatResponse>(`/agents/${agentId}/chats/start`, {}),
+  startChat: (agentId: string, dynamicVariables?: Record<string, unknown>) =>
+    post<StartChatResponse>(`/agents/${agentId}/chats/start`, {
+      dynamic_variables: dynamicVariables ?? {},
+    }),
 
   endChat: (chatId: string) =>
     post<{ status: string; chat_id: string; run_id: string | null }>(`/chats/${chatId}/end`, {}),

@@ -9,20 +9,32 @@
     dismissChat,
     resetChatState,
   } from "../lib/chat-store";
+  import LaunchModal from "./LaunchModal.svelte";
 
   let chat = $derived($chatState);
   let agentId = $derived($currentAgentId);
 
   let inputValue = $state("");
   let messagesContainer = $state<HTMLDivElement | undefined>(undefined);
+  let showLaunchModal = $state(false);
 
   onDestroy(() => {
     resetChatState();
   });
 
-  async function handleStartChat() {
+  function handleStartChat() {
     if (!agentId) return;
-    await startChat(agentId);
+    showLaunchModal = true;
+  }
+
+  async function handleLaunch(variables: Record<string, unknown>) {
+    showLaunchModal = false;
+    if (!agentId) return;
+    await startChat(agentId, variables);
+  }
+
+  function handleCloseLaunchModal() {
+    showLaunchModal = false;
   }
 
   async function handleEndChat() {
@@ -140,6 +152,15 @@
     <span class="error-text">{chat.error || "Chat failed"}</span>
     <button class="btn-sm" onclick={handleStartChat}>Retry</button>
   </div>
+{/if}
+
+{#if showLaunchModal && agentId}
+  <LaunchModal
+    agentId={agentId}
+    mode="chat"
+    onclose={handleCloseLaunchModal}
+    onlaunch={handleLaunch}
+  />
 {/if}
 
 <style>

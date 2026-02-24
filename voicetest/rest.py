@@ -71,6 +71,7 @@ from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import CallRepository
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
+from voicetest.utils import extract_variables
 
 
 # Configure logging from env var set by CLI (carries across uvicorn --reload workers).
@@ -434,6 +435,18 @@ class StartChatResponse(BaseModel):
     chat_id: str
 
 
+class StartChatRequest(BaseModel):
+    """Request to start a text chat session."""
+
+    dynamic_variables: dict[str, Any] = {}
+
+
+class StartCallRequest(BaseModel):
+    """Request to start a live voice call."""
+
+    dynamic_variables: dict[str, Any] = {}
+
+
 class ImporterInfo(BaseModel):
     """Importer information for API response."""
 
@@ -671,6 +684,39 @@ async def get_agent_graph(
         return result
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+
+
+@router.get("/agents/{agent_id}/variables")
+async def get_agent_variables(agent_id: str) -> dict:
+    """Extract dynamic variable names from agent prompts.
+
+    Scans general_prompt and all node state_prompt values for {{var}} placeholders.
+    Returns unique variable names in first-appearance order.
+    """
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    try:
+        result = repo.load_graph(agent)
+        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
+
+    # Collect all text that might contain {{var}} placeholders
+    texts = []
+    general_prompt = graph.source_metadata.get("general_prompt", "")
+    if general_prompt:
+        texts.append(general_prompt)
+    for node in graph.nodes.values():
+        if node.state_prompt:
+            texts.append(node.state_prompt)
+
+    combined = "\n".join(texts)
+    variables = extract_variables(combined)
+
+    return {"variables": variables}
 
 
 @router.post("/agents")
@@ -1668,7 +1714,7 @@ async def get_livekit_status() -> LiveKitStatusResponse:
 
 
 @router.post("/agents/{agent_id}/calls/start", response_model=StartCallResponse)
-async def start_call(agent_id: str) -> StartCallResponse:
+async def start_call(agent_id: str, request: StartCallRequest | None = None) -> StartCallResponse:
     """Start a live voice call with an agent.
 
     Creates a LiveKit room and spawns an agent worker subprocess.
@@ -1692,9 +1738,15 @@ async def start_call(agent_id: str) -> StartCallResponse:
     settings.apply_env()
     agent_model = settings.models.agent
 
+    dynamic_variables = request.dynamic_variables if request else {}
+
     try:
         call_info = await call_manager.start_call(
-            agent_id, graph, call_repo, agent_model=agent_model
+            agent_id,
+            graph,
+            call_repo,
+            agent_model=agent_model,
+            dynamic_variables=dynamic_variables or None,
         )
         return StartCallResponse(**call_info)
     except Exception as e:
@@ -1863,7 +1915,7 @@ async def call_websocket(websocket: WebSocket, call_id: str):
 
 
 @router.post("/agents/{agent_id}/chats/start", response_model=StartChatResponse)
-async def start_chat(agent_id: str) -> StartChatResponse:
+async def start_chat(agent_id: str, request: StartChatRequest | None = None) -> StartChatResponse:
     """Start a text chat session with an agent.
 
     Creates a ConversationEngine in-process (no LiveKit or subprocess needed).
@@ -1887,9 +1939,15 @@ async def start_chat(agent_id: str) -> StartChatResponse:
     settings.apply_env()
     agent_model = settings.models.agent
 
+    dynamic_variables = request.dynamic_variables if request else {}
+
     try:
         chat_info = await chat_manager.start_chat(
-            agent_id, graph, call_repo, agent_model=agent_model
+            agent_id,
+            graph,
+            call_repo,
+            agent_model=agent_model,
+            dynamic_variables=dynamic_variables or None,
         )
         return StartChatResponse(**chat_info)
     except Exception as e:
