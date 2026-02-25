@@ -137,6 +137,18 @@ Data persists to `.voicetest/data.duckdb` (or `VOICETEST_DB_PATH` env var).
 
 Tests are scoped to agents via `agent_id` foreign key in `test_cases` table.
 
+### Diagnosis & Auto-Fix
+
+Post-run failure diagnosis and auto-fix flow:
+
+- `voicetest/models/diagnosis.py` - Pydantic models (Diagnosis, FixSuggestion, PromptChange, etc.)
+- `voicetest/judges/diagnosis.py` - DSPy signatures and DiagnosisJudge class
+- `voicetest/api.py` - `diagnose_failure()`, `apply_and_rerun()`, `revise_fix()`, `apply_fix_to_graph()`
+- `voicetest/rest.py` - REST endpoints: `/results/{id}/diagnose`, `/results/{id}/apply-fix`, `/results/{id}/revise-fix`, `/agents/{id}/save-fix`
+- `web/src/components/RunsView.svelte` - UI: diagnose button, model input, edit-before-apply textareas, auto-fix loop with progress
+
+Flow: diagnose (identify fault locations + root cause) -> suggest fix (prompt changes) -> user edits changes -> apply & rerun test -> compare scores -> iterate or save.
+
 ### Svelte 5 Reactivity
 
 Critical rules to prevent silent reactivity failures:

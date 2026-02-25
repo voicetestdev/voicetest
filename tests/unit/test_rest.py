@@ -71,6 +71,8 @@ class TestExportersEndpoint:
             assert "id" in exp
             assert "name" in exp
             assert "description" in exp
+            assert "ext" in exp
+            assert exp["ext"] != "undefined"
 
 
 class TestImportEndpoint:
@@ -2140,3 +2142,357 @@ class TestSnippetEndpoints:
             },
         )
         assert response.status_code == 200
+
+
+class TestDiagnosisEndpoints:
+    """Tests for diagnosis and fix endpoints."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    @pytest.fixture
+    def failed_result(self, db_client, sample_retell_config):
+        """Create an agent, test case, run, and failed result for testing."""
+        from voicetest.models.results import MetricResult
+        from voicetest.models.results import TestResult
+        from voicetest.models.test_case import TestCase
+        from voicetest.rest import get_run_repo
+        from voicetest.rest import get_test_case_repo
+
+        # Create agent with graph
+        agent_response = db_client.post(
+            "/api/agents",
+            json={"name": "Diag Test Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_response.json()["id"]
+
+        # Create test case
+        test_case_repo = get_test_case_repo()
+        tc = TestCase(
+            name="Billing test",
+            user_prompt="Ask about a refund",
+            metrics=["Agent resolves billing issue"],
+        )
+        tc_record = test_case_repo.create(agent_id, tc)
+        tc_id = tc_record["id"]
+
+        # Create run + result
+        run_repo = get_run_repo()
+        run = run_repo.create(agent_id)
+        run_id = run["id"]
+        result_id = run_repo.create_pending_result(run_id, tc_id, "Billing test")
+
+        # Complete with failed result
+        test_result = TestResult(
+            test_id="Billing test",
+            test_name="Billing test",
+            status="fail",
+            transcript=[
+                {"role": "assistant", "content": "Hello!", "metadata": {"node_id": "greeting"}},
+                {"role": "user", "content": "I want a refund"},
+                {
+                    "role": "assistant",
+                    "content": "Cannot help.",
+                    "metadata": {"node_id": "greeting"},
+                },
+            ],
+            metric_results=[
+                MetricResult(
+                    metric="Agent resolves billing issue",
+                    score=0.3,
+                    passed=False,
+                    reasoning="Agent refused to help",
+                    threshold=0.7,
+                )
+            ],
+            nodes_visited=["greeting"],
+        )
+        run_repo.complete_result(result_id, test_result)
+        run_repo.complete(run_id)
+
+        return {
+            "agent_id": agent_id,
+            "run_id": run_id,
+            "result_id": result_id,
+            "test_case_id": tc_id,
+        }
+
+    def test_diagnose_returns_200(self, db_client, failed_result):
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch
+
+        from voicetest.models.diagnosis import Diagnosis
+        from voicetest.models.diagnosis import DiagnosisResult
+        from voicetest.models.diagnosis import FaultLocation
+        from voicetest.models.diagnosis import FixSuggestion
+        from voicetest.models.diagnosis import PromptChange
+
+        mock_result = DiagnosisResult(
+            diagnosis=Diagnosis(
+                fault_locations=[
+                    FaultLocation(
+                        location_type="node_prompt",
+                        node_id="greeting",
+                        relevant_text="Greet the user",
+                        explanation="Too brief",
+                    )
+                ],
+                root_cause="Missing billing guidance",
+                transcript_evidence="ASSISTANT: Cannot help.",
+            ),
+            fix=FixSuggestion(
+                changes=[
+                    PromptChange(
+                        location_type="node_prompt",
+                        node_id="greeting",
+                        original_text="Greet the user",
+                        proposed_text="Greet and help with billing",
+                        rationale="Add billing help",
+                    )
+                ],
+                summary="Added billing guidance",
+                confidence=0.85,
+            ),
+        )
+
+        with patch("voicetest.rest.api.diagnose_failure", new_callable=AsyncMock) as mock_diag:
+            mock_diag.return_value = mock_result
+            response = db_client.post(f"/api/results/{failed_result['result_id']}/diagnose")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "diagnosis" in data
+        assert "fix" in data
+        assert data["diagnosis"]["root_cause"] == "Missing billing guidance"
+
+    def test_diagnose_returns_404_for_missing_result(self, db_client):
+        response = db_client.post("/api/results/nonexistent/diagnose")
+        assert response.status_code == 404
+
+    def test_apply_fix_returns_200(self, db_client, failed_result):
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch
+
+        from voicetest.models.diagnosis import FixAttemptResult
+
+        mock_attempt = FixAttemptResult(
+            iteration=1,
+            changes_applied=[],
+            test_passed=False,
+            metric_results=[{"metric": "test", "score": 0.5, "passed": False}],
+            improved=True,
+            original_scores={"test": 0.3},
+            new_scores={"test": 0.5},
+        )
+
+        with patch("voicetest.rest.api.apply_and_rerun", new_callable=AsyncMock) as mock_apply:
+            mock_apply.return_value = mock_attempt
+            response = db_client.post(
+                f"/api/results/{failed_result['result_id']}/apply-fix",
+                json={
+                    "changes": [
+                        {
+                            "location_type": "node_prompt",
+                            "node_id": "greeting",
+                            "original_text": "old",
+                            "proposed_text": "new",
+                            "rationale": "fix",
+                        }
+                    ],
+                    "iteration": 1,
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["improved"] is True
+
+    def test_revise_fix_returns_200(self, db_client, failed_result):
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch
+
+        from voicetest.models.diagnosis import FixSuggestion
+        from voicetest.models.diagnosis import PromptChange
+
+        mock_fix = FixSuggestion(
+            changes=[
+                PromptChange(
+                    location_type="node_prompt",
+                    node_id="greeting",
+                    original_text="old",
+                    proposed_text="better",
+                    rationale="improved fix",
+                )
+            ],
+            summary="Revised fix",
+            confidence=0.9,
+        )
+
+        with patch("voicetest.rest.api.revise_fix", new_callable=AsyncMock) as mock_revise:
+            mock_revise.return_value = mock_fix
+            response = db_client.post(
+                f"/api/results/{failed_result['result_id']}/revise-fix",
+                json={
+                    "diagnosis": {
+                        "fault_locations": [],
+                        "root_cause": "test",
+                        "transcript_evidence": "test",
+                    },
+                    "previous_changes": [
+                        {
+                            "location_type": "node_prompt",
+                            "node_id": "greeting",
+                            "original_text": "old",
+                            "proposed_text": "new",
+                            "rationale": "first try",
+                        }
+                    ],
+                    "new_metric_results": [
+                        {
+                            "metric": "test",
+                            "score": 0.5,
+                            "passed": False,
+                            "reasoning": "partial",
+                        }
+                    ],
+                },
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["confidence"] == 0.9
+
+    def test_save_fix_returns_200(self, db_client, failed_result):
+        response = db_client.post(
+            f"/api/agents/{failed_result['agent_id']}/save-fix",
+            json={
+                "changes": [
+                    {
+                        "location_type": "node_prompt",
+                        "node_id": "greeting",
+                        "original_text": "old",
+                        "proposed_text": "new prompt text",
+                        "rationale": "fix",
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "nodes" in data
+
+    def test_diagnose_with_model_override(self, db_client, failed_result):
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch
+
+        from voicetest.models.diagnosis import Diagnosis
+        from voicetest.models.diagnosis import DiagnosisResult
+        from voicetest.models.diagnosis import FixSuggestion
+
+        mock_result = DiagnosisResult(
+            diagnosis=Diagnosis(
+                fault_locations=[],
+                root_cause="test",
+                transcript_evidence="test",
+            ),
+            fix=FixSuggestion(
+                changes=[],
+                summary="test",
+                confidence=0.5,
+            ),
+        )
+
+        with patch("voicetest.rest.api.diagnose_failure", new_callable=AsyncMock) as mock_diag:
+            mock_diag.return_value = mock_result
+            response = db_client.post(
+                f"/api/results/{failed_result['result_id']}/diagnose",
+                json={"model": "openai/gpt-4o"},
+            )
+
+        assert response.status_code == 200
+        # Verify the model override was passed through
+        call_kwargs = mock_diag.call_args.kwargs
+        assert call_kwargs["judge_model"] == "openai/gpt-4o"
+
+    def test_diagnose_without_model_uses_default(self, db_client, failed_result):
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch
+
+        from voicetest.models.diagnosis import Diagnosis
+        from voicetest.models.diagnosis import DiagnosisResult
+        from voicetest.models.diagnosis import FixSuggestion
+
+        mock_result = DiagnosisResult(
+            diagnosis=Diagnosis(
+                fault_locations=[],
+                root_cause="test",
+                transcript_evidence="test",
+            ),
+            fix=FixSuggestion(
+                changes=[],
+                summary="test",
+                confidence=0.5,
+            ),
+        )
+
+        with patch("voicetest.rest.api.diagnose_failure", new_callable=AsyncMock) as mock_diag:
+            mock_diag.return_value = mock_result
+            # No body / empty body
+            response = db_client.post(
+                f"/api/results/{failed_result['result_id']}/diagnose",
+            )
+
+        assert response.status_code == 200
+        # Should use the default resolved judge model, not an override
+        call_kwargs = mock_diag.call_args.kwargs
+        assert call_kwargs["judge_model"] != "openai/gpt-4o"
+
+    def test_revise_fix_with_model_override(self, db_client, failed_result):
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch
+
+        from voicetest.models.diagnosis import FixSuggestion
+
+        mock_fix = FixSuggestion(
+            changes=[],
+            summary="Revised",
+            confidence=0.9,
+        )
+
+        with patch("voicetest.rest.api.revise_fix", new_callable=AsyncMock) as mock_revise:
+            mock_revise.return_value = mock_fix
+            response = db_client.post(
+                f"/api/results/{failed_result['result_id']}/revise-fix",
+                json={
+                    "diagnosis": {
+                        "fault_locations": [],
+                        "root_cause": "test",
+                        "transcript_evidence": "test",
+                    },
+                    "previous_changes": [],
+                    "new_metric_results": [],
+                    "model": "anthropic/claude-3-sonnet",
+                },
+            )
+
+        assert response.status_code == 200
+        call_kwargs = mock_revise.call_args.kwargs
+        assert call_kwargs["judge_model"] == "anthropic/claude-3-sonnet"
+
+    def test_save_fix_returns_404_for_missing_agent(self, db_client):
+        response = db_client.post(
+            "/api/agents/nonexistent/save-fix",
+            json={"changes": []},
+        )
+        assert response.status_code == 404

@@ -22,8 +22,42 @@ if TYPE_CHECKING:
     from voicetest.platforms.base import SourceImporter
 
 
+_READONLY_FIELDS = {"conversation_flow_id", "version"}
+_API_TOOL_TYPES = {"custom", "check_availability_cal", "book_appointment_cal"}
+
+
+def _is_builtin_tool_name(name: str) -> bool:
+    """Check if a tool name corresponds to a Retell built-in action."""
+    return name == "end_call" or name.startswith("transfer_call")
+
+
 class RetellPlatformClient:
     """Retell platform client implementing PlatformClient protocol."""
+
+    @staticmethod
+    def filter_tools_for_api(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Filter tools to only those accepted by Retell's create/update API.
+
+        Built-in tool types like end_call and transfer_call are managed
+        internally by Retell and must not be sent via the API. Filters by
+        both declared type and well-known built-in tool names.
+        """
+        return [
+            t
+            for t in tools
+            if t.get("type") in _API_TOOL_TYPES and not _is_builtin_tool_name(t.get("name", ""))
+        ]
+
+    @staticmethod
+    def prepare_config_for_api(config: dict[str, Any]) -> dict[str, Any]:
+        """Prepare an exported config dict for the Retell create/update API.
+
+        Strips read-only fields and filters tools to API-accepted types.
+        """
+        prepared = {k: v for k, v in config.items() if k not in _READONLY_FIELDS}
+        if "tools" in prepared:
+            prepared["tools"] = RetellPlatformClient.filter_tools_for_api(prepared["tools"])
+        return prepared
 
     @property
     def platform_name(self) -> str:
@@ -111,7 +145,8 @@ class RetellPlatformClient:
         Returns:
             Dict with id, name, and platform fields.
         """
-        flow = client.conversation_flow.create(**config)
+        prepared = self.prepare_config_for_api(config)
+        flow = client.conversation_flow.create(**prepared)
         return {
             "id": flow.conversation_flow_id,
             "name": name or flow.conversation_flow_id,
@@ -148,7 +183,8 @@ class RetellPlatformClient:
         Returns:
             Dict with id, name, and platform fields.
         """
-        flow = client.conversation_flow.update(agent_id, **config)
+        prepared = self.prepare_config_for_api(config)
+        flow = client.conversation_flow.update(agent_id, **prepared)
         return {
             "id": flow.conversation_flow_id,
             "name": getattr(flow, "conversation_flow_name", None) or flow.conversation_flow_id,

@@ -24,5 +24,6 @@ node_modules/
 # Demo temp
 docs/demos/test-results
 
-# Test results
+# Test data and results
 web/test-results
+test-data

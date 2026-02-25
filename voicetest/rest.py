@@ -22,6 +22,7 @@ from fastapi import BackgroundTasks
 from fastapi import FastAPI
 from fastapi import Header
 from fastapi import HTTPException
+from fastapi import Request
 from fastapi import Response
 from fastapi import UploadFile
 from fastapi import WebSocket
@@ -47,6 +48,8 @@ from voicetest.exporters.test_cases import export_tests
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import GlobalMetric
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.diagnosis import Diagnosis as DiagnosisModel
+from voicetest.models.diagnosis import PromptChange as PromptChangeModel
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
@@ -485,6 +488,7 @@ class ExportFormatInfo(BaseModel):
     id: str
     name: str
     description: str
+    ext: str
 
 
 @router.get("/importers", response_model=list[ImporterInfo])
@@ -1432,6 +1436,167 @@ async def audio_eval_result(result_id: str) -> dict:
     # Return updated result
     session.refresh(db_result)
     return run_repo._result_to_dict(db_result)
+
+
+def _load_result_context(result_id: str) -> tuple[dict, "TestCase", AgentGraph, str]:
+    """Load result, test case, agent graph, and judge model for diagnosis endpoints.
+
+    Returns:
+        Tuple of (result_dict, test_case, agent_graph, judge_model).
+
+    Raises:
+        HTTPException on missing data.
+    """
+    run_repo = get_run_repo()
+    session = get_session()
+    db_result = session.get(ResultModel, result_id)
+    if not db_result:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    result_dict = run_repo._result_to_dict(db_result)
+
+    # Find test case
+    test_case_id = result_dict.get("test_case_id")
+    test_case_repo = get_test_case_repo()
+    test_record = test_case_repo.get(test_case_id) if test_case_id else None
+    if not test_record:
+        test_record = _find_linked_test(test_case_id) if test_case_id else None
+    if not test_record:
+        raise HTTPException(status_code=400, detail="Test case not found for result")
+
+    test_case = test_case_repo.to_model(test_record)
+
+    # Load agent graph
+    run = session.get(RunModel, db_result.run_id)
+    if not run:
+        raise HTTPException(status_code=400, detail="Run not found for result")
+
+    _agent, graph = _load_agent_graph(run.agent_id)
+
+    # Resolve judge model
+    settings = load_settings()
+    settings.apply_env()
+    judge_model = resolve_model(settings.models.judge)
+
+    return result_dict, test_case, graph, judge_model
+
+
+@router.post("/results/{result_id}/diagnose")
+async def diagnose_result(result_id: str, request: Request) -> dict:
+    """Diagnose why a test result failed and suggest a fix.
+
+    Analyzes the graph structure, transcript, and failed metrics to identify
+    the root cause and propose concrete prompt/transition changes.
+
+    Optional body: {"model": "provider/model-name"} to override the judge model.
+    """
+    result_dict, test_case, graph, judge_model = _load_result_context(result_id)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    model_override = body.get("model")
+    if model_override:
+        judge_model = model_override
+
+    transcript_data = result_dict.get("transcript_json") or []
+    transcript = [Message(**m) for m in transcript_data]
+
+    metrics_data = result_dict.get("metrics_json") or []
+    metric_results = [MetricResult(**m) for m in metrics_data]
+    nodes_visited = result_dict.get("nodes_visited") or []
+
+    diagnosis_result = await api.diagnose_failure(
+        graph=graph,
+        transcript=transcript,
+        nodes_visited=nodes_visited,
+        failed_metrics=metric_results,
+        test_scenario=test_case.user_prompt,
+        judge_model=judge_model,
+    )
+
+    return diagnosis_result.model_dump()
+
+
+@router.post("/results/{result_id}/apply-fix")
+async def apply_fix(result_id: str, body: dict) -> dict:
+    """Apply proposed changes to a copy of the graph and rerun the test.
+
+    Non-destructive: does not persist changes.
+    """
+    result_dict, test_case, graph, judge_model = _load_result_context(result_id)
+
+    changes = [PromptChangeModel.model_validate(c) for c in body.get("changes", [])]
+    iteration = body.get("iteration", 1)
+
+    metrics_data = result_dict.get("metrics_json") or []
+    original_metrics = [MetricResult(**m) for m in metrics_data]
+
+    # Load metrics config for global metrics
+    session = get_session()
+    db_result = session.get(ResultModel, result_id)
+    run = session.get(RunModel, db_result.run_id)
+    agent_repo = get_agent_repo()
+    metrics_config = agent_repo.get_metrics_config(run.agent_id) if run else None
+
+    options = RunOptions(judge_model=judge_model)
+
+    attempt_result = await api.apply_and_rerun(
+        graph=graph,
+        test_case=test_case,
+        changes=changes,
+        original_metrics=original_metrics,
+        iteration=iteration,
+        options=options,
+        metrics_config=metrics_config,
+    )
+
+    return attempt_result.model_dump()
+
+
+@router.post("/results/{result_id}/revise-fix")
+async def revise_fix_endpoint(result_id: str, body: dict) -> dict:
+    """Revise a previous fix attempt based on new metric results.
+
+    Given the original diagnosis and previous changes, produce a revised fix.
+
+    Optional body field: "model" to override the judge model.
+    """
+    result_dict, test_case, graph, judge_model = _load_result_context(result_id)
+
+    model_override = body.get("model")
+    if model_override:
+        judge_model = model_override
+
+    diagnosis = DiagnosisModel.model_validate(body["diagnosis"])
+    prev_changes = [PromptChangeModel.model_validate(c) for c in body["previous_changes"]]
+    new_metrics = [MetricResult.model_validate(m) for m in body["new_metric_results"]]
+
+    fix = await api.revise_fix(
+        graph=graph,
+        diagnosis=diagnosis,
+        prev_changes=prev_changes,
+        new_metrics=new_metrics,
+        judge_model=judge_model,
+    )
+
+    return fix.model_dump()
+
+
+@router.post("/agents/{agent_id}/save-fix")
+async def save_fix(agent_id: str, body: dict) -> dict:
+    """Persist proposed changes to the agent graph.
+
+    Applies changes and saves the modified graph.
+    """
+    agent, graph = _load_agent_graph(agent_id)
+    changes = [PromptChangeModel.model_validate(c) for c in body.get("changes", [])]
+
+    modified_graph = api.apply_fix_to_graph(graph, changes)
+    _save_agent_graph(agent_id, agent, modified_graph)
+
+    return modified_graph.model_dump()
 
 
 async def _broadcast_run_update(run_id: str, data: dict) -> None:

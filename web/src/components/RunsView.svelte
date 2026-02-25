@@ -11,9 +11,207 @@
     startRun,
     currentView,
   } from "../lib/stores";
-  import type { RunResultRecord, Message, MetricResult, ModelsUsed } from "../lib/types";
+  import type {
+    RunResultRecord,
+    Message,
+    MetricResult,
+    ModelsUsed,
+    DiagnoseResponse,
+    ApplyFixResponse,
+    PromptChange,
+    AutoFixStopCondition,
+  } from "../lib/types";
 
   let audioEvalLoading = $state<string | null>(null);
+
+  // Diagnosis state
+  let diagnosing = $state(false);
+  let diagnosisResult = $state<DiagnoseResponse | null>(null);
+  let applyingFix = $state(false);
+  let fixResult = $state<ApplyFixResponse | null>(null);
+  let savingFix = $state(false);
+  let currentChanges = $state<PromptChange[]>([]);
+  let iterationCount = $state(0);
+  let diagnosisError = $state<string | null>(null);
+  let diagnosisModel = $state("");
+
+  // Auto-fix state
+  let autoFixRunning = $state(false);
+  let autoFixCancelled = $state(false);
+  let autoFixMaxIterations = $state(3);
+  let autoFixStopCondition = $state<AutoFixStopCondition>("improve");
+  let autoFixPhase = $state("");
+  let autoFixIteration = $state(0);
+  let previousScores = $state<Record<string, number>>({});
+
+  // Reset diagnosis state when selected result changes
+  $effect(() => {
+    selectedResultId;
+    diagnosisResult = null;
+    fixResult = null;
+    currentChanges = [];
+    iterationCount = 0;
+    diagnosisError = null;
+    autoFixRunning = false;
+    autoFixCancelled = false;
+    autoFixPhase = "";
+    autoFixIteration = 0;
+    previousScores = {};
+  });
+
+  async function runDiagnosis(resultId: string) {
+    diagnosing = true;
+    diagnosisError = null;
+    try {
+      const model = diagnosisModel.trim() || undefined;
+      diagnosisResult = await api.diagnoseResult(resultId, model);
+      currentChanges = diagnosisResult.fix.changes;
+    } catch (e) {
+      diagnosisError = e instanceof Error ? e.message : "Diagnosis failed";
+    }
+    diagnosing = false;
+  }
+
+  async function applyAndTest(resultId: string) {
+    applyingFix = true;
+    iterationCount++;
+    try {
+      fixResult = await api.applyFix(resultId, currentChanges, iterationCount);
+    } catch (e) {
+      diagnosisError = e instanceof Error ? e.message : "Apply fix failed";
+    }
+    applyingFix = false;
+  }
+
+  async function tryAgain(resultId: string) {
+    if (!diagnosisResult || !fixResult) return;
+    applyingFix = true;
+    diagnosisError = null;
+    try {
+      const newMetrics = fixResult.metric_results;
+      previousScores = { ...fixResult.new_scores };
+      const model = diagnosisModel.trim() || undefined;
+      const revised = await api.reviseFix(
+        resultId,
+        diagnosisResult.diagnosis,
+        currentChanges,
+        newMetrics,
+        model,
+      );
+      currentChanges = revised.changes;
+      fixResult = null;
+      // Show the revised suggestion for review
+      diagnosisResult = {
+        ...diagnosisResult,
+        fix: revised,
+      };
+    } catch (e) {
+      diagnosisError = e instanceof Error ? e.message : "Revision failed";
+    }
+    applyingFix = false;
+  }
+
+  async function saveChanges() {
+    const agentId = $currentAgentId;
+    if (!agentId) return;
+    savingFix = true;
+    try {
+      await api.saveFix(agentId, currentChanges);
+      diagnosisResult = null;
+      fixResult = null;
+      currentChanges = [];
+      iterationCount = 0;
+    } catch (e) {
+      diagnosisError = e instanceof Error ? e.message : "Save failed";
+    }
+    savingFix = false;
+  }
+
+  function dismissDiagnosis() {
+    diagnosisResult = null;
+    fixResult = null;
+    currentChanges = [];
+    iterationCount = 0;
+    diagnosisError = null;
+    autoFixRunning = false;
+    autoFixCancelled = false;
+    previousScores = {};
+  }
+
+  function cancelAutoFix() {
+    autoFixCancelled = true;
+  }
+
+  async function runAutoFix(resultId: string) {
+    autoFixRunning = true;
+    autoFixCancelled = false;
+    autoFixIteration = 0;
+    diagnosisError = null;
+    previousScores = {};
+    const model = diagnosisModel.trim() || undefined;
+
+    try {
+      // Step 1: Diagnose
+      autoFixPhase = "Diagnosing failure...";
+      diagnosisResult = await api.diagnoseResult(resultId, model);
+      currentChanges = diagnosisResult.fix.changes;
+
+      // Step 2: Iterate
+      for (let i = 0; i < autoFixMaxIterations; i++) {
+        if (autoFixCancelled) {
+          autoFixPhase = "Cancelled";
+          break;
+        }
+
+        autoFixIteration = i + 1;
+        iterationCount = i + 1;
+        autoFixPhase = `Applying fix & testing (iteration ${i + 1}/${autoFixMaxIterations})...`;
+
+        fixResult = await api.applyFix(resultId, currentChanges, i + 1);
+
+        // Check stop condition
+        const stopOnImprove = autoFixStopCondition === "improve" && fixResult.improved;
+        const stopOnPass = autoFixStopCondition === "pass" && fixResult.test_passed;
+        if (stopOnPass || fixResult.test_passed) {
+          autoFixPhase = "All metrics pass";
+          break;
+        }
+        if (stopOnImprove) {
+          autoFixPhase = "Scores improved";
+          break;
+        }
+
+        // If not last iteration, revise
+        if (i < autoFixMaxIterations - 1 && !autoFixCancelled) {
+          autoFixPhase = `Revising fix (iteration ${i + 1}/${autoFixMaxIterations})...`;
+          previousScores = { ...fixResult.new_scores };
+          const revised = await api.reviseFix(
+            resultId,
+            diagnosisResult.diagnosis,
+            currentChanges,
+            fixResult.metric_results,
+            model,
+          );
+          currentChanges = revised.changes;
+          diagnosisResult = { ...diagnosisResult, fix: revised };
+          fixResult = null;
+        }
+      }
+    } catch (e) {
+      diagnosisError = e instanceof Error ? e.message : "Auto-fix failed";
+    }
+    autoFixRunning = false;
+  }
+
+  function getLocationLabel(locationType: string): string {
+    switch (locationType) {
+      case "general_prompt": return "General Prompt";
+      case "node_prompt": return "Node Prompt";
+      case "transition": return "Transition";
+      case "missing_transition": return "Missing Transition";
+      default: return locationType;
+    }
+  }
 
   function hasAudioEval(result: RunResultRecord): boolean {
     const transcript = parseTranscript(result.transcript_json);
@@ -601,6 +799,289 @@
                     </li>
                   {/each}
                 </ul>
+              {/if}
+
+              {#if selectedResult.status === "fail" && selectedResult.test_case_id && !diagnosisResult && !diagnosing && !autoFixRunning}
+                <div class="diagnosis-controls">
+                  <input
+                    type="text"
+                    class="model-input"
+                    placeholder="Judge model (default from settings)"
+                    bind:value={diagnosisModel}
+                  />
+                  <div class="diagnosis-buttons">
+                    <button
+                      class="diagnose-btn"
+                      onclick={() => runDiagnosis(selectedResult.id)}
+                      disabled={diagnosing}
+                    >
+                      Diagnose
+                    </button>
+                    <button
+                      class="auto-fix-btn"
+                      onclick={() => runAutoFix(selectedResult.id)}
+                    >
+                      Auto Fix
+                    </button>
+                  </div>
+                  <div class="auto-fix-options">
+                    <label class="auto-fix-label">
+                      Stop:
+                      <select bind:value={autoFixStopCondition}>
+                        <option value="improve">On improvement</option>
+                        <option value="pass">When all pass</option>
+                      </select>
+                    </label>
+                    <label class="auto-fix-label">
+                      Max:
+                      <input
+                        type="number"
+                        min="1"
+                        max="10"
+                        bind:value={autoFixMaxIterations}
+                        class="iterations-input"
+                      />
+                    </label>
+                  </div>
+                </div>
+              {/if}
+
+              {#if diagnosing}
+                <div class="diagnosis-loading">
+                  <span class="mini-spinner"></span>
+                  Analyzing failure...
+                </div>
+              {/if}
+
+              {#if autoFixRunning}
+                <div class="auto-fix-progress">
+                  <div class="auto-fix-status">
+                    <span class="mini-spinner"></span>
+                    <span>{autoFixPhase}</span>
+                    <span class="iteration-badge">{autoFixIteration}/{autoFixMaxIterations}</span>
+                  </div>
+                  {#if fixResult}
+                    <table class="score-comparison compact">
+                      <thead>
+                        <tr>
+                          <th>Metric</th>
+                          <th>Original</th>
+                          {#if Object.keys(previousScores).length > 0}
+                            <th>Previous</th>
+                          {/if}
+                          <th>Current</th>
+                          <th>vs Original</th>
+                          {#if Object.keys(previousScores).length > 0}
+                            <th>vs Previous</th>
+                          {/if}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {#each Object.keys(fixResult.new_scores) as metric}
+                          {@const orig = fixResult.original_scores[metric] ?? 0}
+                          {@const prev = previousScores[metric] ?? orig}
+                          {@const current = fixResult.new_scores[metric] ?? 0}
+                          {@const deltaOrig = current - orig}
+                          {@const deltaPrev = current - prev}
+                          <tr>
+                            <td class="metric-cell">{metric}</td>
+                            <td>{(orig * 100).toFixed(0)}%</td>
+                            {#if Object.keys(previousScores).length > 0}
+                              <td>{(prev * 100).toFixed(0)}%</td>
+                            {/if}
+                            <td>{(current * 100).toFixed(0)}%</td>
+                            <td class={deltaOrig > 0 ? "delta-positive" : deltaOrig < 0 ? "delta-negative" : "delta-neutral"}>
+                              {deltaOrig > 0 ? "+" : ""}{(deltaOrig * 100).toFixed(0)}%
+                            </td>
+                            {#if Object.keys(previousScores).length > 0}
+                              <td class={deltaPrev > 0 ? "delta-positive" : deltaPrev < 0 ? "delta-negative" : "delta-neutral"}>
+                                {deltaPrev > 0 ? "+" : ""}{(deltaPrev * 100).toFixed(0)}%
+                              </td>
+                            {/if}
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  {/if}
+                  <button class="cancel-auto-fix-btn" onclick={cancelAutoFix}>
+                    Cancel
+                  </button>
+                </div>
+              {/if}
+
+              {#if diagnosisError}
+                <div class="error-box">
+                  <strong>Diagnosis Error:</strong>
+                  <pre>{diagnosisError}</pre>
+                </div>
+              {/if}
+
+              {#if diagnosisResult}
+                <div class="diagnosis-panel">
+                  <h4>Diagnosis</h4>
+
+                  <div class="diagnosis-section">
+                    <span class="diagnosis-label">Root Cause</span>
+                    <p class="diagnosis-text">{diagnosisResult.diagnosis.root_cause}</p>
+                  </div>
+
+                  {#if diagnosisResult.diagnosis.fault_locations.length > 0}
+                    <div class="diagnosis-section">
+                      <span class="diagnosis-label">Fault Locations</span>
+                      <ul class="fault-locations">
+                        {#each diagnosisResult.diagnosis.fault_locations as loc}
+                          <li>
+                            <span class="location-badge {loc.location_type}">{getLocationLabel(loc.location_type)}</span>
+                            {#if loc.node_id}
+                              <code class="node-ref">{loc.node_id}</code>
+                            {/if}
+                            <pre class="relevant-text">{loc.relevant_text}</pre>
+                            <span class="fault-explanation">{loc.explanation}</span>
+                          </li>
+                        {/each}
+                      </ul>
+                    </div>
+                  {/if}
+
+                  {#if diagnosisResult.diagnosis.transcript_evidence}
+                    <div class="diagnosis-section">
+                      <span class="diagnosis-label">Evidence</span>
+                      <blockquote class="transcript-evidence">{diagnosisResult.diagnosis.transcript_evidence}</blockquote>
+                    </div>
+                  {/if}
+
+                  <h4>Suggested Fix</h4>
+                  <div class="fix-summary">
+                    <p>{diagnosisResult.fix.summary}</p>
+                    <span class="confidence-badge">
+                      {(diagnosisResult.fix.confidence * 100).toFixed(0)}% confidence
+                    </span>
+                  </div>
+
+                  {#if currentChanges.length > 0}
+                    <ul class="proposed-changes">
+                      {#each currentChanges as change, i}
+                        <li>
+                          <span class="location-badge {change.location_type}">{getLocationLabel(change.location_type)}</span>
+                          {#if change.node_id}
+                            <code class="node-ref">{change.node_id}</code>
+                          {/if}
+                          <div class="change-diff">
+                            <del>{change.original_text}</del>
+                            <textarea
+                              class="proposed-text-edit"
+                              bind:value={currentChanges[i].proposed_text}
+                              rows={Math.max(3, change.proposed_text.split('\n').length)}
+                            ></textarea>
+                          </div>
+                          <span class="change-rationale">{change.rationale}</span>
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+
+                  {#if !fixResult}
+                    <div class="diagnosis-actions">
+                      <button
+                        class="apply-btn"
+                        onclick={() => applyAndTest(selectedResult.id)}
+                        disabled={applyingFix}
+                      >
+                        {applyingFix ? "Applying..." : "Apply & Test"}
+                      </button>
+                      <button class="dismiss-btn" onclick={dismissDiagnosis}>
+                        Dismiss
+                      </button>
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+
+              {#if applyingFix && !fixResult}
+                <div class="diagnosis-loading">
+                  <span class="mini-spinner"></span>
+                  Applying fix and re-running test...
+                </div>
+              {/if}
+
+              {#if fixResult && !autoFixRunning}
+                <div class="fix-result-panel">
+                  <h4>Fix Result (Iteration {fixResult.iteration})</h4>
+
+                  <table class="score-comparison">
+                    <thead>
+                      <tr>
+                        <th>Metric</th>
+                        <th>Original</th>
+                        {#if Object.keys(previousScores).length > 0}
+                          <th>Previous</th>
+                        {/if}
+                        <th>After Fix</th>
+                        <th>vs Original</th>
+                        {#if Object.keys(previousScores).length > 0}
+                          <th>vs Previous</th>
+                        {/if}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each Object.keys(fixResult.new_scores) as metric}
+                        {@const orig = fixResult.original_scores[metric] ?? 0}
+                        {@const prev = previousScores[metric] ?? orig}
+                        {@const updated = fixResult.new_scores[metric] ?? 0}
+                        {@const deltaOrig = updated - orig}
+                        {@const deltaPrev = updated - prev}
+                        <tr>
+                          <td class="metric-cell">{metric}</td>
+                          <td>{(orig * 100).toFixed(0)}%</td>
+                          {#if Object.keys(previousScores).length > 0}
+                            <td>{(prev * 100).toFixed(0)}%</td>
+                          {/if}
+                          <td>{(updated * 100).toFixed(0)}%</td>
+                          <td class={deltaOrig > 0 ? "delta-positive" : deltaOrig < 0 ? "delta-negative" : "delta-neutral"}>
+                            {deltaOrig > 0 ? "+" : ""}{(deltaOrig * 100).toFixed(0)}%
+                          </td>
+                          {#if Object.keys(previousScores).length > 0}
+                            <td class={deltaPrev > 0 ? "delta-positive" : deltaPrev < 0 ? "delta-negative" : "delta-neutral"}>
+                              {deltaPrev > 0 ? "+" : ""}{(deltaPrev * 100).toFixed(0)}%
+                            </td>
+                          {/if}
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+
+                  {#if fixResult.test_passed}
+                    <div class="fix-status pass">All metrics pass</div>
+                  {:else if fixResult.improved}
+                    <div class="fix-status improved">Improved (not all passing yet)</div>
+                  {:else}
+                    <div class="fix-status no-improvement">No improvement</div>
+                  {/if}
+
+                  <div class="fix-actions">
+                    {#if fixResult.test_passed || fixResult.improved}
+                      <button
+                        class="save-btn"
+                        onclick={saveChanges}
+                        disabled={savingFix}
+                      >
+                        {savingFix ? "Saving..." : "Save Changes"}
+                      </button>
+                    {/if}
+                    {#if !fixResult.test_passed}
+                      <button
+                        class="retry-btn"
+                        onclick={() => tryAgain(selectedResult.id)}
+                        disabled={applyingFix}
+                      >
+                        Try Again
+                      </button>
+                    {/if}
+                    <button class="dismiss-btn" onclick={dismissDiagnosis}>
+                      Discard
+                    </button>
+                  </div>
+                </div>
               {/if}
             </div>
           {/if}
@@ -1241,5 +1722,480 @@
       flex-wrap: wrap;
       gap: var(--space-2);
     }
+  }
+
+  .diagnosis-controls {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .model-input {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.8rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    width: 100%;
+  }
+
+  .model-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  .model-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+  }
+
+  .diagnosis-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .diagnose-btn {
+    padding: 0.4rem 0.85rem !important;
+    font-size: 0.8rem !important;
+    background: #1e3a5f !important;
+    border: 1px solid rgba(96, 165, 250, 0.3) !important;
+    color: #60a5fa !important;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .diagnose-btn:hover:not(:disabled) {
+    background: rgba(96, 165, 250, 0.2) !important;
+  }
+
+  .auto-fix-btn {
+    padding: 0.4rem 0.85rem !important;
+    font-size: 0.8rem !important;
+    background: #4c1d95 !important;
+    border: 1px solid rgba(167, 139, 250, 0.3) !important;
+    color: #a78bfa !important;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .auto-fix-btn:hover {
+    background: rgba(167, 139, 250, 0.2) !important;
+  }
+
+  .auto-fix-options {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .auto-fix-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .auto-fix-label select {
+    padding: 0.2rem 0.4rem;
+    font-size: 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+  }
+
+  .iterations-input {
+    width: 3rem;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    text-align: center;
+  }
+
+  .auto-fix-progress {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: #1a1040;
+    border: 1px solid rgba(167, 139, 250, 0.3);
+    border-radius: var(--radius-md);
+  }
+
+  .auto-fix-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #a78bfa;
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .iteration-badge {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+    background: #4c1d95;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+
+  .score-comparison.compact {
+    font-size: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .cancel-auto-fix-btn {
+    padding: 0.3rem 0.6rem !important;
+    font-size: 0.75rem !important;
+    background: var(--bg-tertiary) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-secondary) !important;
+    cursor: pointer;
+  }
+
+  .cancel-auto-fix-btn:hover {
+    background: var(--bg-hover) !important;
+    color: #f87171 !important;
+  }
+
+  .diagnosis-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    margin-top: 0.75rem;
+    background: #1e3a5f;
+    border-radius: 4px;
+    color: #60a5fa;
+    font-size: 0.85rem;
+  }
+
+  .diagnosis-panel {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+  }
+
+  .diagnosis-panel h4 {
+    margin-top: 0.75rem;
+  }
+
+  .diagnosis-panel h4:first-child {
+    margin-top: 0;
+  }
+
+  .diagnosis-section {
+    margin-bottom: 0.75rem;
+  }
+
+  .diagnosis-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .diagnosis-text {
+    margin: 0;
+    font-size: 0.85rem;
+  }
+
+  .fault-locations {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .fault-locations li {
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    border-left: 3px solid #a855f7;
+  }
+
+  .location-badge {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+
+  .location-badge.general_prompt {
+    background: #1e3a5f;
+    color: #60a5fa;
+  }
+
+  .location-badge.node_prompt {
+    background: #065f46;
+    color: #34d399;
+  }
+
+  .location-badge.transition {
+    background: #4c1d95;
+    color: #a78bfa;
+  }
+
+  .location-badge.missing_transition {
+    background: #78350f;
+    color: #fbbf24;
+  }
+
+  .node-ref {
+    font-size: 0.75rem;
+    background: var(--bg-hover);
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    margin-left: 0.25rem;
+  }
+
+  .relevant-text {
+    font-size: 0.8rem;
+    margin: 0.25rem 0;
+    padding: 0.25rem 0.5rem;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    white-space: pre-wrap;
+    color: var(--text-secondary);
+  }
+
+  .fault-explanation {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    display: block;
+  }
+
+  .transcript-evidence {
+    margin: 0;
+    padding: 0.5rem 0.75rem;
+    border-left: 3px solid var(--border-color);
+    font-size: 0.8rem;
+    font-style: italic;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+  }
+
+  .fix-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+  }
+
+  .fix-summary p {
+    margin: 0;
+    font-size: 0.85rem;
+    flex: 1;
+  }
+
+  .confidence-badge {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    background: #065f46;
+    color: #34d399;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .proposed-changes {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 0.75rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .proposed-changes li {
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+  }
+
+  .change-diff {
+    margin: 0.25rem 0;
+    font-size: 0.8rem;
+  }
+
+  .change-diff del {
+    display: block;
+    background: rgba(248, 113, 113, 0.15);
+    color: #f87171;
+    text-decoration: line-through;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px 3px 0 0;
+    white-space: pre-wrap;
+  }
+
+  .change-diff ins {
+    display: block;
+    background: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+    text-decoration: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0 0 3px 3px;
+    white-space: pre-wrap;
+  }
+
+  .proposed-text-edit {
+    display: block;
+    width: 100%;
+    background: rgba(34, 197, 94, 0.1);
+    color: #22c55e;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: 0 0 3px 3px;
+    padding: 0.25rem 0.5rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    resize: vertical;
+    box-sizing: border-box;
+  }
+
+  .proposed-text-edit:focus {
+    outline: none;
+    border-color: #22c55e;
+    background: rgba(34, 197, 94, 0.15);
+  }
+
+  .change-rationale {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  .diagnosis-actions,
+  .fix-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+  }
+
+  .apply-btn,
+  .save-btn {
+    padding: 0.35rem 0.75rem !important;
+    font-size: 0.8rem !important;
+    background: var(--status-pass-bg) !important;
+    color: var(--color-pass) !important;
+    border: 1px solid rgba(63, 185, 80, 0.3) !important;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .apply-btn:hover:not(:disabled),
+  .save-btn:hover:not(:disabled) {
+    background: rgba(63, 185, 80, 0.25) !important;
+  }
+
+  .dismiss-btn {
+    padding: 0.35rem 0.75rem !important;
+    font-size: 0.8rem !important;
+    background: var(--bg-tertiary) !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-secondary) !important;
+    cursor: pointer;
+  }
+
+  .dismiss-btn:hover {
+    background: var(--bg-hover) !important;
+  }
+
+  .retry-btn {
+    padding: 0.35rem 0.75rem !important;
+    font-size: 0.8rem !important;
+    background: #1e3a5f !important;
+    border: 1px solid rgba(96, 165, 250, 0.3) !important;
+    color: #60a5fa !important;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .retry-btn:hover:not(:disabled) {
+    background: rgba(96, 165, 250, 0.2) !important;
+  }
+
+  .fix-result-panel {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+  }
+
+  .score-comparison {
+    width: 100%;
+    font-size: 0.8rem;
+    border-collapse: collapse;
+    margin-bottom: 0.75rem;
+  }
+
+  .score-comparison th {
+    text-align: left;
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.75rem;
+  }
+
+  .score-comparison td {
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .metric-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .delta-positive {
+    color: #34d399;
+    font-weight: 600;
+  }
+
+  .delta-negative {
+    color: #f87171;
+    font-weight: 600;
+  }
+
+  .delta-neutral {
+    color: var(--text-muted);
+  }
+
+  .fix-status {
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-align: center;
+  }
+
+  .fix-status.pass {
+    background: var(--status-pass-bg);
+    color: var(--color-pass);
+  }
+
+  .fix-status.improved {
+    background: #1e3a5f;
+    color: #60a5fa;
+  }
+
+  .fix-status.no-improvement {
+    background: var(--status-fail-bg);
+    color: var(--color-fail);
   }
 </style>

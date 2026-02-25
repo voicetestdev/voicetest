@@ -347,3 +347,49 @@ export interface DryAnalysis {
   exact: ExactMatch[];
   fuzzy: FuzzyMatch[];
 }
+
+export interface FaultLocation {
+  location_type: string;
+  node_id?: string | null;
+  transition_target_id?: string | null;
+  relevant_text: string;
+  explanation: string;
+}
+
+export interface Diagnosis {
+  fault_locations: FaultLocation[];
+  root_cause: string;
+  transcript_evidence: string;
+}
+
+export interface PromptChange {
+  location_type: string;
+  node_id?: string | null;
+  transition_target_id?: string | null;
+  original_text: string;
+  proposed_text: string;
+  rationale: string;
+}
+
+export interface FixSuggestion {
+  changes: PromptChange[];
+  summary: string;
+  confidence: number;
+}
+
+export interface DiagnoseResponse {
+  diagnosis: Diagnosis;
+  fix: FixSuggestion;
+}
+
+export interface ApplyFixResponse {
+  iteration: number;
+  changes_applied: PromptChange[];
+  test_passed: boolean;
+  metric_results: MetricResult[];
+  improved: boolean;
+  original_scores: Record<string, number>;
+  new_scores: Record<string, number>;
+}
+
+export type AutoFixStopCondition = "improve" | "pass";

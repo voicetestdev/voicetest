@@ -278,11 +278,11 @@ class TestRetellCFExporter:
 
         assert len(exported["nodes"]) == 11
         assert exported["conversation_flow_id"] == "cf_healthcare_001"
-        # 4 custom tools with URLs + 1 transfer_call (end_call is built-in and skipped)
-        assert len(exported["tools"]) == 5
+        # 4 custom tools + 1 end_call + 1 transfer_call
+        assert len(exported["tools"]) == 6
 
     def test_tool_types_preserved(self, sample_retell_config_complex):
-        """Test that tool types are preserved (built-in actions like end_call are skipped)."""
+        """Test that tool types are preserved including built-in actions."""
         from voicetest.exporters.retell_cf import export_retell_cf
         from voicetest.importers.retell import RetellImporter
 
@@ -291,7 +291,142 @@ class TestRetellCFExporter:
         exported = export_retell_cf(graph)
 
         tool_types = {t["name"]: t["type"] for t in exported["tools"]}
-        # end_call is skipped (built-in action handled via node type)
-        assert "end_call" not in tool_types
+        assert tool_types["end_call"] == "end_call"
         assert tool_types["transfer_to_nurse"] == "transfer_call"
         assert tool_types["lookup_patient"] == "custom"
+
+    def test_tools_array_always_present(self, sample_retell_config):
+        """Test that tools array is always present even when no tools exist."""
+        from voicetest.exporters.retell_cf import export_retell_cf
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config)
+        exported = export_retell_cf(graph)
+
+        assert "tools" in exported
+        assert isinstance(exported["tools"], list)
+
+    def test_tool_id_preserved_in_roundtrip(self, sample_retell_config_complex):
+        """Test that tool_id is preserved through import/export roundtrip."""
+        from voicetest.exporters.retell_cf import export_retell_cf
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_complex)
+        exported = export_retell_cf(graph)
+
+        tools_by_name = {t["name"]: t for t in exported["tools"]}
+        assert tools_by_name["lookup_patient"]["tool_id"] == "tool_lookup_001"
+        assert tools_by_name["book_appointment"]["tool_id"] == "tool_book_001"
+        # Built-in tools should not have tool_id
+        assert "tool_id" not in tools_by_name["end_call"]
+        assert "tool_id" not in tools_by_name["transfer_to_nurse"]
+
+    def test_export_tool_includes_tool_id(self):
+        """Test that tool_id is included in export when present."""
+        from voicetest.exporters.retell_cf import export_retell_cf
+
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(
+                    id="main",
+                    state_prompt="Main node.",
+                    tools=[
+                        ToolDefinition(
+                            name="lookup_user",
+                            description="Look up user",
+                            tool_id="tool_abc123",
+                        ),
+                        ToolDefinition(
+                            name="end_call",
+                            description="End the call",
+                            type="end_call",
+                        ),
+                    ],
+                    transitions=[],
+                ),
+            },
+            entry_node_id="main",
+            source_type="test",
+        )
+
+        result = export_retell_cf(graph)
+        lookup_tool = next(t for t in result["tools"] if t["name"] == "lookup_user")
+        assert lookup_tool["tool_id"] == "tool_abc123"
+
+        end_tool = next(t for t in result["tools"] if t["name"] == "end_call")
+        assert "tool_id" not in end_tool
+
+    def test_export_uses_default_model_for_model_choice(self):
+        """When model_choice is not in metadata, use graph.default_model."""
+        from voicetest.exporters.retell_cf import export_retell_cf
+
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(
+                    id="main",
+                    state_prompt="Hello.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="main",
+            source_type="retell-llm",
+            source_metadata={"general_prompt": "Be helpful."},
+            default_model="gpt-5.1",
+        )
+
+        result = export_retell_cf(graph)
+        assert result["model_choice"]["model"] == "gpt-5.1"
+
+    def test_export_begin_message_prepended_to_entry_node(self):
+        """begin_message from metadata should be prepended to the entry node instruction."""
+        from voicetest.exporters.retell_cf import export_retell_cf
+
+        graph = AgentGraph(
+            nodes={
+                "intro": AgentNode(
+                    id="intro",
+                    state_prompt="Greet the user.",
+                    transitions=[],
+                ),
+                "other": AgentNode(
+                    id="other",
+                    state_prompt="Help the user.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="intro",
+            source_type="retell-llm",
+            source_metadata={"begin_message": "Hello, this is Kate!"},
+        )
+
+        result = export_retell_cf(graph)
+        intro_node = next(n for n in result["nodes"] if n["id"] == "intro")
+        other_node = next(n for n in result["nodes"] if n["id"] == "other")
+
+        assert intro_node["instruction"]["text"].startswith(
+            "[Begin message: Hello, this is Kate!]\n\n"
+        )
+        assert "Begin message" not in other_node["instruction"]["text"]
+
+    def test_export_empty_begin_message_not_prepended(self):
+        """Empty begin_message should not be prepended."""
+        from voicetest.exporters.retell_cf import export_retell_cf
+
+        graph = AgentGraph(
+            nodes={
+                "intro": AgentNode(
+                    id="intro",
+                    state_prompt="Greet the user.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="intro",
+            source_type="retell-llm",
+            source_metadata={"begin_message": ""},
+        )
+
+        result = export_retell_cf(graph)
+        intro_node = next(n for n in result["nodes"] if n["id"] == "intro")
+        assert intro_node["instruction"]["text"] == "Greet the user."
