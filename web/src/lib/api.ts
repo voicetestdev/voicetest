@@ -2,6 +2,7 @@ import type {
   AgentGraph,
   AgentRecord,
   CallRecord,
+  DryAnalysis,
   ExporterInfo,
   ExportToPlatformResponse,
   GalleryItem,
@@ -207,10 +208,11 @@ export const api = {
     return res.json() as Promise<AgentRecord>;
   },
 
-  exportAgent: (graph: AgentGraph, format: string) =>
+  exportAgent: (graph: AgentGraph, format: string, expanded?: boolean) =>
     post<{ content: string; format: string }>("/agents/export", {
       graph,
       format,
+      ...(expanded != null ? { expanded } : {}),
     }),
 
   runSingleTest: (
@@ -242,6 +244,24 @@ export const api = {
 
   getAgentVariables: (id: string) =>
     get<{ variables: string[] }>(`/agents/${id}/variables`),
+
+  getSnippets: (agentId: string) =>
+    get<{ snippets: Record<string, string> }>(`/agents/${agentId}/snippets`),
+
+  updateSnippets: (agentId: string, snippets: Record<string, string>) =>
+    put<{ snippets: Record<string, string> }>(`/agents/${agentId}/snippets`, { snippets }),
+
+  updateSnippet: (agentId: string, name: string, text: string) =>
+    put<{ snippets: Record<string, string> }>(`/agents/${agentId}/snippets/${name}`, { text }),
+
+  deleteSnippet: (agentId: string, name: string) =>
+    del<{ snippets: Record<string, string> }>(`/agents/${agentId}/snippets/${name}`),
+
+  analyzeDry: (agentId: string) =>
+    post<DryAnalysis>(`/agents/${agentId}/analyze-dry`, {}),
+
+  applySnippets: (agentId: string, snippets: { name: string; text: string }[]) =>
+    post<AgentGraph>(`/agents/${agentId}/apply-snippets`, { snippets }),
 
   createAgent: (name: string, config: unknown, source?: string) =>
     post<AgentRecord>("/agents", { name, config, source }),

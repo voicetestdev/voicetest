@@ -16,6 +16,7 @@ from voicetest.exporters.retell_llm import RetellLLMExporter
 from voicetest.exporters.telnyx import TelnyxExporter
 from voicetest.exporters.vapi import VAPIAssistantExporter
 from voicetest.exporters.vapi import VAPISquadExporter
+from voicetest.exporters.voicetest_ir import VoicetestIRExporter
 from voicetest.importers.agentgraph import AgentGraphImporter
 from voicetest.importers.bland import BlandImporter
 from voicetest.importers.custom import CustomImporter
@@ -66,6 +67,7 @@ def _create_exporter_registry() -> ExporterRegistry:
     registry.register(VAPISquadExporter())
     registry.register(BlandExporter())
     registry.register(TelnyxExporter())
+    registry.register(VoicetestIRExporter())
     return registry
 
 
