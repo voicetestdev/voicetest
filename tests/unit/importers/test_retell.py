@@ -1,31 +1,25 @@
 """Tests for voicetest.importers.retell module."""
 
+from voicetest.importers.retell import RetellImporter
+
 
 class TestRetellImporter:
     """Tests for Retell JSON importer."""
 
     def test_source_type(self):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         assert importer.source_type == "retell"
 
     def test_can_import_dict(self, sample_retell_config):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         assert importer.can_import(sample_retell_config) is True
 
     def test_can_import_file_path(self, sample_retell_config_path):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         assert importer.can_import(sample_retell_config_path) is True
         assert importer.can_import(str(sample_retell_config_path)) is True
 
     def test_can_import_rejects_non_retell(self):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         # Missing required fields
         assert importer.can_import({"some": "config"}) is False
@@ -33,8 +27,6 @@ class TestRetellImporter:
         assert importer.can_import({"start_node_id": "x"}) is False  # Missing nodes
 
     def test_import_agent_from_dict(self, sample_retell_config):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config)
 
@@ -47,8 +39,6 @@ class TestRetellImporter:
         assert "end_call" in graph.nodes
 
     def test_import_agent_from_path(self, sample_retell_config_path):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_path)
 
@@ -56,8 +46,6 @@ class TestRetellImporter:
         assert graph.entry_node_id == "greeting"
 
     def test_node_instructions_imported(self, sample_retell_config):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config)
 
@@ -68,8 +56,6 @@ class TestRetellImporter:
         assert "billing inquiry" in billing.state_prompt
 
     def test_transitions_imported(self, sample_retell_config):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config)
 
@@ -81,8 +67,6 @@ class TestRetellImporter:
         assert "support" in targets
 
     def test_transition_conditions_imported(self, sample_retell_config):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config)
 
@@ -92,16 +76,12 @@ class TestRetellImporter:
         assert "billing" in billing_transition.condition.value.lower()
 
     def test_source_metadata_captured(self, sample_retell_config):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config)
 
         assert graph.source_metadata["conversation_flow_id"] == "test-flow-001"
 
     def test_node_metadata_captured(self, sample_retell_config):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config)
 
@@ -109,8 +89,6 @@ class TestRetellImporter:
         assert greeting.metadata["retell_type"] == "conversation"
 
     def test_get_info(self):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         info = importer.get_info()
 
@@ -123,8 +101,6 @@ class TestRetellImporterComplex:
     """Tests for Retell importer with complex configuration including tools."""
 
     def test_import_complex_config(self, sample_retell_config_complex):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_complex)
 
@@ -133,8 +109,6 @@ class TestRetellImporterComplex:
         assert len(graph.nodes) == 11
 
     def test_tools_imported(self, sample_retell_config_complex):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_complex)
 
@@ -151,8 +125,6 @@ class TestRetellImporterComplex:
         assert "transfer_to_nurse" in tool_names
 
     def test_tool_parameters_imported(self, sample_retell_config_complex):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_complex)
 
@@ -164,8 +136,6 @@ class TestRetellImporterComplex:
         assert "date_of_birth" in lookup_tool.parameters["properties"]
 
     def test_global_prompt_stored_separately(self, sample_retell_config_complex):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_complex)
 
@@ -178,8 +148,6 @@ class TestRetellImporterComplex:
         )
 
     def test_source_metadata_includes_model_settings(self, sample_retell_config_complex):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_complex)
 
@@ -190,8 +158,6 @@ class TestRetellImporterComplex:
         assert graph.source_metadata["start_speaker"] == "agent"
 
     def test_source_metadata_includes_model_choice(self, sample_retell_config_complex):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_complex)
 
@@ -201,8 +167,6 @@ class TestRetellImporterComplex:
         assert model_choice["high_priority"] is True
 
     def test_source_metadata_includes_knowledge_bases(self, sample_retell_config_complex):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_complex)
 
@@ -211,8 +175,6 @@ class TestRetellImporterComplex:
         assert "kb_insurance_info" in kb_ids
 
     def test_source_metadata_includes_dynamic_variables(self, sample_retell_config_complex):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_complex)
 
@@ -222,10 +184,34 @@ class TestRetellImporterComplex:
         assert vars["office_phone"] == "555-123-4567"
 
     def test_all_nodes_have_same_tools(self, sample_retell_config_complex):
-        from voicetest.importers.retell import RetellImporter
-
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_complex)
 
         for node in graph.nodes.values():
             assert len(node.tools) == 6
+
+
+class TestRetellImporterWrappedFormat:
+    """Tests for importing Retell UI agent wrapper format."""
+
+    def test_can_import_wrapped_format(self, sample_retell_config):
+        wrapped = {
+            "agent_id": "",
+            "response_engine": {"type": "conversation-flow"},
+            "conversationFlow": sample_retell_config,
+        }
+        importer = RetellImporter()
+        assert importer.can_import(wrapped) is True
+
+    def test_import_wrapped_format(self, sample_retell_config):
+        wrapped = {
+            "agent_id": "",
+            "response_engine": {"type": "conversation-flow"},
+            "conversationFlow": sample_retell_config,
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(wrapped)
+
+        assert graph.source_type == "retell"
+        assert graph.entry_node_id == "greeting"
+        assert len(graph.nodes) == 4

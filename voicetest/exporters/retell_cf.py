@@ -1,12 +1,16 @@
 """Retell Conversation Flow exporter."""
 
 import json
+import re
 from typing import Any
 
 from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import ToolDefinition
+
+
+_TERMINAL_TOOL_TYPES = {"end_call", "transfer_call"}
 
 
 class RetellCFExporter:
@@ -23,7 +27,18 @@ class RetellCFExporter:
         )
 
     def export(self, graph: AgentGraph) -> str:
-        return json.dumps(export_retell_cf(graph), indent=2)
+        """Export as Retell UI-importable agent JSON.
+
+        Wraps the bare conversation flow in the agent envelope that
+        Retell's UI import expects (response_engine + conversationFlow).
+        Preserves agent-level fields (voice_id, language, etc.) from
+        the original import when available.
+        """
+        cf = export_retell_cf(graph)
+        metadata = graph.source_metadata or {}
+        agent_envelope = metadata.get("agent_envelope")
+        agent_wrapper = _wrap_for_retell_ui(cf, agent_envelope)
+        return json.dumps(agent_wrapper, indent=2)
 
 
 def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
@@ -76,12 +91,150 @@ def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
     return result
 
 
+def _find_terminal_tools(graph: AgentGraph) -> list[ToolDefinition]:
+    """Collect unique tools with type in {end_call, transfer_call} across all nodes."""
+    seen_names: set[str] = set()
+    tools: list[ToolDefinition] = []
+
+    for node in graph.nodes.values():
+        for tool in node.tools:
+            if tool.type in _TERMINAL_TOOL_TYPES and tool.name not in seen_names:
+                tools.append(tool)
+                seen_names.add(tool.name)
+
+    return tools
+
+
+def _find_nodes_mentioning(graph: AgentGraph, tool_name: str) -> list[str]:
+    """Return node IDs where tool_name appears in state_prompt (word-boundary match)."""
+    pattern = re.compile(r"\b" + re.escape(tool_name) + r"\b")
+    return [node.id for node in graph.nodes.values() if pattern.search(node.state_prompt)]
+
+
+def _has_node_of_type(graph: AgentGraph, retell_type: str) -> bool:
+    """Check if graph already has a node with the given retell_type in metadata."""
+    return any(node.metadata.get("retell_type") == retell_type for node in graph.nodes.values())
+
+
+def _synthesize_end_node(tool: ToolDefinition) -> dict[str, Any]:
+    """Build a CF end node dict from an end_call tool."""
+    return {
+        "id": f"synth_{tool.name}",
+        "type": "end",
+        "instruction": {
+            "type": "prompt",
+            "text": tool.description or "End the call.",
+        },
+    }
+
+
+_DEFAULT_TRANSFER_DESTINATION = {"type": "predefined", "number": "+16505555555"}
+_DEFAULT_TRANSFER_OPTION = {"type": "cold_transfer", "show_transferee_as_caller": True}
+
+
+def _synthesize_transfer_node(tool: ToolDefinition, failure_dest_id: str) -> dict[str, Any]:
+    """Build a CF transfer_call node dict from a transfer_call tool.
+
+    Retell's transfer_call nodes use a singular ``edge`` (failure edge)
+    instead of the ``edges`` array that conversation nodes use, plus
+    required ``transfer_destination`` and ``transfer_option`` fields.
+    Uses values from tool.metadata if the importer preserved them,
+    otherwise falls back to placeholder defaults.
+    """
+    node_id = f"synth_{tool.name}"
+    transfer_dest = tool.metadata.get("transfer_destination", _DEFAULT_TRANSFER_DESTINATION)
+    transfer_opt = tool.metadata.get("transfer_option", _DEFAULT_TRANSFER_OPTION)
+    return {
+        "id": node_id,
+        "type": "transfer_call",
+        "instruction": {
+            "type": "prompt",
+            "text": tool.description or "Transferring the call.",
+        },
+        "transfer_destination": transfer_dest,
+        "transfer_option": transfer_opt,
+        "edge": {
+            "id": f"edge_{node_id}_transfer_failed",
+            "destination_node_id": failure_dest_id,
+            "condition": "Transfer failed",
+            "transition_condition": {
+                "type": "prompt",
+                "prompt": "Transfer failed",
+            },
+        },
+    }
+
+
 def _build_nodes(graph: AgentGraph, entry_node_id: str, begin_message: str) -> list[dict[str, Any]]:
-    """Build nodes array from graph."""
-    return [
+    """Build nodes array from graph, synthesizing terminal nodes from tools.
+
+    Processes end_call tools first so the end node ID is available as
+    the failure destination for transfer_call nodes.
+    """
+    nodes = [
         _convert_node(node, is_entry=(node.id == entry_node_id), begin_message=begin_message)
         for node in graph.nodes.values()
     ]
+
+    terminal_tools = _find_terminal_tools(graph)
+    end_tools = [t for t in terminal_tools if t.type == "end_call"]
+    transfer_tools = [t for t in terminal_tools if t.type == "transfer_call"]
+
+    # Synthesize end nodes first
+    end_node_id: str | None = None
+    for tool in end_tools:
+        if _has_node_of_type(graph, "end"):
+            break
+        synth_node = _synthesize_end_node(tool)
+        end_node_id = synth_node["id"]
+        _wire_edges_for_tool(nodes, graph, tool, synth_node)
+        nodes.append(synth_node)
+
+    # Find an existing end node ID if we didn't just create one
+    if end_node_id is None:
+        for node in graph.nodes.values():
+            if node.metadata.get("retell_type") == "end":
+                end_node_id = node.id
+                break
+
+    # Synthesize transfer nodes, failure edges point to the end node
+    for tool in transfer_tools:
+        if _has_node_of_type(graph, "transfer_call"):
+            break
+        failure_dest = end_node_id or entry_node_id
+        synth_node = _synthesize_transfer_node(tool, failure_dest)
+        _wire_edges_for_tool(nodes, graph, tool, synth_node)
+        nodes.append(synth_node)
+
+    return nodes
+
+
+def _wire_edges_for_tool(
+    nodes: list[dict[str, Any]],
+    graph: AgentGraph,
+    tool: ToolDefinition,
+    synth_node: dict[str, Any],
+) -> None:
+    """Append edges from nodes whose prompts mention the tool to the synthesized node."""
+    mentioning_ids = _find_nodes_mentioning(graph, tool.name)
+    for cf_node in nodes:
+        if cf_node["id"] in mentioning_ids:
+            if tool.type == "end_call":
+                condition_text = "Conversation is complete and call should end"
+            else:
+                condition_text = f"Caller should be transferred ({tool.description})"
+
+            edge_id = f"edge_{cf_node['id']}_to_{synth_node['id']}_{len(cf_node['edges'])}"
+            cf_node["edges"].append(
+                {
+                    "id": edge_id,
+                    "destination_node_id": synth_node["id"],
+                    "transition_condition": {
+                        "type": "prompt",
+                        "prompt": condition_text,
+                    },
+                }
+            )
 
 
 def _convert_node(
@@ -101,14 +254,16 @@ def _convert_node(
             "type": "prompt",
             "text": prompt_text,
         },
-        "edges": [_convert_transition_to_edge(t, i) for i, t in enumerate(node.transitions)],
+        "edges": [
+            _convert_transition_to_edge(t, node.id, i) for i, t in enumerate(node.transitions)
+        ],
     }
 
 
-def _convert_transition_to_edge(transition, index: int) -> dict[str, Any]:
+def _convert_transition_to_edge(transition, source_node_id: str, index: int) -> dict[str, Any]:
     """Convert a Transition to a Retell Conversation Flow edge."""
     edge: dict[str, Any] = {
-        "id": f"edge_{transition.target_node_id}_{index}",
+        "id": f"edge_{source_node_id}_to_{transition.target_node_id}_{index}",
         "destination_node_id": transition.target_node_id,
     }
 
@@ -127,17 +282,18 @@ def _convert_transition_to_edge(transition, index: int) -> dict[str, Any]:
 
 
 def _collect_all_tools(graph: AgentGraph) -> list[ToolDefinition]:
-    """Collect and deduplicate all tools from all nodes.
+    """Collect and deduplicate all non-terminal tools from all nodes.
 
-    Includes all tool types (custom, end_call, transfer_call, etc.) since
-    Retell's UI expects tool declarations to be present even for built-in
-    actions referenced in prompts.
+    Terminal tool types (end_call, transfer_call) are converted to CF nodes
+    by _build_nodes and excluded from the tools array.
     """
     seen_names: set[str] = set()
     tools: list[ToolDefinition] = []
 
     for node in graph.nodes.values():
         for tool in node.tools:
+            if tool.type in _TERMINAL_TOOL_TYPES:
+                continue
             if tool.name not in seen_names:
                 tools.append(tool)
                 seen_names.add(tool.name)
@@ -146,7 +302,11 @@ def _collect_all_tools(graph: AgentGraph) -> list[ToolDefinition]:
 
 
 def _convert_tool(tool: ToolDefinition) -> dict[str, Any]:
-    """Convert a ToolDefinition to Retell Conversation Flow tool format."""
+    """Convert a ToolDefinition to Retell Conversation Flow tool format.
+
+    Only called for non-terminal tools (custom, check_availability_cal, etc.).
+    Terminal tool types are handled by _build_nodes as synthesized nodes.
+    """
     result: dict[str, Any] = {
         "type": tool.type,
         "name": tool.name,
@@ -159,3 +319,45 @@ def _convert_tool(tool: ToolDefinition) -> dict[str, Any]:
     if tool.tool_id:
         result["tool_id"] = tool.tool_id
     return result
+
+
+_API_TOOL_TYPES = {"custom", "check_availability_cal", "book_appointment_cal"}
+
+
+def _filter_tools_for_api(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Filter tools to only those the Retell API accepts.
+
+    Built-in types like end_call and transfer_call are managed internally
+    by Retell and rejected by the create/update API.
+    """
+    return [t for t in tools if t.get("type") in _API_TOOL_TYPES]
+
+
+def _wrap_for_retell_ui(
+    cf: dict[str, Any], agent_envelope: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Wrap a bare conversation flow dict in the agent envelope Retell's UI expects.
+
+    Merges preserved agent-level fields (voice_id, language, etc.) from the
+    original import so they survive the LLM→CF conversion round-trip.
+    """
+    cf_id = cf.get("conversation_flow_id", "")
+    cf_for_ui = dict(cf)
+    if "tools" in cf_for_ui:
+        cf_for_ui["tools"] = _filter_tools_for_api(cf_for_ui["tools"])
+
+    wrapper: dict[str, Any] = {
+        "agent_id": "",
+        "response_engine": {
+            "type": "conversation-flow",
+            "conversation_flow_id": cf_id,
+        },
+        "conversationFlow": cf_for_ui,
+    }
+
+    if agent_envelope:
+        for key, value in agent_envelope.items():
+            if key not in ("response_engine", "conversationFlow"):
+                wrapper[key] = value
+
+    return wrapper

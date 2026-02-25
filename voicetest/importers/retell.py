@@ -114,6 +114,18 @@ class RetellConfig(BaseModel):
         return v if v is not None else {}
 
 
+def _unwrap_agent_envelope(config: dict[str, Any]) -> dict[str, Any]:
+    """Extract the CF dict from a Retell UI agent wrapper if present.
+
+    The Retell UI exports an agent envelope with the conversation flow
+    nested under ``conversationFlow``. This extracts that inner dict
+    so the importer can process it uniformly.
+    """
+    if "conversationFlow" in config:
+        return config["conversationFlow"]
+    return config
+
+
 class RetellImporter:
     """Import Retell Conversation Flow JSON."""
 
@@ -188,11 +200,16 @@ class RetellImporter:
         )
 
     def _load_config(self, path_or_config: str | Path | dict) -> dict[str, Any]:
-        """Load config from path or return dict directly."""
+        """Load config from path or return dict directly.
+
+        Handles both bare CF dicts and the Retell UI agent wrapper format
+        where the CF lives under the ``conversationFlow`` key.
+        """
         if isinstance(path_or_config, dict):
-            return path_or_config
+            return _unwrap_agent_envelope(path_or_config)
         path = Path(path_or_config)
-        return json.loads(path.read_text())
+        raw = json.loads(path.read_text())
+        return _unwrap_agent_envelope(raw)
 
     def _convert_edge(self, edge: RetellEdge) -> Transition:
         """Convert Retell edge to Transition."""

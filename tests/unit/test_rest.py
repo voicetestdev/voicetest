@@ -164,8 +164,10 @@ class TestExportEndpoint:
         import json
 
         content = json.loads(result["content"])
-        assert "nodes" in content
-        assert "start_node_id" in content
+        assert content["response_engine"]["type"] == "conversation-flow"
+        cf = content["conversationFlow"]
+        assert "nodes" in cf
+        assert "start_node_id" in cf
 
 
 class TestRunEndpoints:
