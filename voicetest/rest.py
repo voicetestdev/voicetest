@@ -721,16 +721,7 @@ async def get_agent_variables(agent_id: str) -> dict:
     Scans general_prompt and all node state_prompt values for {{var}} placeholders.
     Returns unique variable names in first-appearance order.
     """
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    try:
-        result = repo.load_graph(agent)
-        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
-    except (FileNotFoundError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
+    _agent, graph = _load_agent_graph(agent_id)
 
     # Collect all text that might contain {{var}} placeholders
     texts = []
@@ -748,17 +739,32 @@ async def get_agent_variables(agent_id: str) -> dict:
 
 
 def _load_agent_graph(agent_id: str) -> tuple[dict, AgentGraph]:
-    """Load agent record and its graph. Raises HTTPException on failure."""
+    """Load agent record and its graph. Raises HTTPException on failure.
+
+    Checks source_path first (for linked-file agents) before falling back
+    to the database via repo.load_graph.
+    """
     repo = get_agent_repo()
     agent = repo.get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    try:
-        result = repo.load_graph(agent)
-        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
-    except (FileNotFoundError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
+    source_path = agent.get("source_path")
+    if source_path:
+        try:
+            graph = get_importer_registry().import_agent(resolve_path(source_path))
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404, detail=f"Agent file not found: {source_path}"
+            ) from None
+    else:
+        try:
+            result = repo.load_graph(agent)
+            graph = (
+                get_importer_registry().import_agent(result) if isinstance(result, Path) else result
+            )
+        except (FileNotFoundError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
 
     return agent, graph
 
@@ -952,29 +958,7 @@ async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGra
     When node_id is set, updates that node's state_prompt.
     For linked-file agents, writes back to the source file on disk.
     """
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    # Load the current graph
-    source_path = agent.get("source_path")
-    if source_path:
-        try:
-            graph = get_importer_registry().import_agent(resolve_path(source_path))
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=404, detail=f"Agent file not found: {source_path}"
-            ) from None
-    else:
-        try:
-            result = repo.load_graph(agent)
-            if isinstance(result, Path):
-                graph = get_importer_registry().import_agent(result)
-            else:
-                graph = result
-        except (FileNotFoundError, ValueError) as e:
-            raise HTTPException(status_code=404, detail=str(e)) from None
+    agent, graph = _load_agent_graph(agent_id)
 
     # Apply the prompt update
     if request.node_id is None:
@@ -1005,18 +989,7 @@ async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGra
             )
         node.state_prompt = request.prompt_text
 
-    # Persist the change
-    if source_path:
-        try:
-            _write_graph_to_linked_file(graph, source_path, agent)
-        except OSError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot write to linked file: {e}",
-            ) from None
-    else:
-        repo.update(agent_id, graph_json=graph.model_dump_json())
-
+    _save_agent_graph(agent_id, agent, graph)
     return graph
 
 
@@ -1051,45 +1024,11 @@ def _write_graph_to_linked_file(graph: AgentGraph, source_path: str, agent: dict
 async def update_metadata(agent_id: str, request: UpdateMetadataRequest) -> AgentGraph:
     """Merge updates into an agent's source_metadata.
 
-    Follows the same graph-load + persist pattern as update_prompt.
-    Supports linked-file agents.
+    Supports linked-file agents via _load_agent_graph / _save_agent_graph.
     """
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    source_path = agent.get("source_path")
-    if source_path:
-        try:
-            graph = get_importer_registry().import_agent(resolve_path(source_path))
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=404, detail=f"Agent file not found: {source_path}"
-            ) from None
-    else:
-        try:
-            result = repo.load_graph(agent)
-            if isinstance(result, Path):
-                graph = get_importer_registry().import_agent(result)
-            else:
-                graph = result
-        except (FileNotFoundError, ValueError) as e:
-            raise HTTPException(status_code=404, detail=str(e)) from None
-
+    agent, graph = _load_agent_graph(agent_id)
     graph.source_metadata.update(request.updates)
-
-    if source_path:
-        try:
-            _write_graph_to_linked_file(graph, source_path, agent)
-        except OSError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot write to linked file: {e}",
-            ) from None
-    else:
-        repo.update(agent_id, graph_json=graph.model_dump_json())
-
+    _save_agent_graph(agent_id, agent, graph)
     return graph
 
 
