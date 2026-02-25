@@ -949,3 +949,64 @@ class TestRetellCFExporter:
         assert len(cf_tools) == 1
         assert cf_tools[0]["name"] == "lookup"
         assert cf_tools[0]["type"] == "custom"
+
+    def test_agent_envelope_preserved_through_export(self):
+        """LLM JSON with voice_id -> import -> CF export -> voice_id in wrapper."""
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        llm_json = {
+            "voice_id": "voice_abc123",
+            "language": "en-US",
+            "agent_name": "Test Agent",
+            "general_prompt": "You are a helpful agent.",
+            "model": "gpt-4o",
+            "general_tools": [],
+            "states": [
+                {
+                    "name": "main",
+                    "state_prompt": "Help the user.",
+                    "edges": [],
+                    "tools": [],
+                },
+            ],
+        }
+
+        importer = RetellLLMImporter()
+        graph = importer.import_agent(llm_json)
+
+        exporter = RetellCFExporter()
+        wrapped = json.loads(exporter.export(graph))
+
+        assert wrapped["voice_id"] == "voice_abc123"
+        assert wrapped["language"] == "en-US"
+        assert wrapped["agent_name"] == "Test Agent"
+        assert "conversationFlow" in wrapped
+
+    def test_transfer_without_end_call_failure_edge(self):
+        """transfer_call with no end_call -> failure edge points to entry_node_id."""
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(
+                    id="main",
+                    state_prompt="Route the caller. Use transfer_to_nurse if needed.",
+                    tools=[
+                        ToolDefinition(
+                            name="transfer_to_nurse",
+                            description="Transfer to nurse",
+                            type="transfer_call",
+                        ),
+                    ],
+                    transitions=[],
+                ),
+            },
+            entry_node_id="main",
+            source_type="test",
+        )
+
+        result = export_retell_cf(graph)
+        transfer_nodes = [n for n in result["nodes"] if n["type"] == "transfer_call"]
+        assert len(transfer_nodes) == 1
+
+        # No end node exists, so failure edge should point to entry_node_id
+        failure_edge = transfer_nodes[0]["edge"]
+        assert failure_edge["destination_node_id"] == "main"

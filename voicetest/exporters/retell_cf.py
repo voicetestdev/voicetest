@@ -321,18 +321,6 @@ def _convert_tool(tool: ToolDefinition) -> dict[str, Any]:
     return result
 
 
-_API_TOOL_TYPES = {"custom", "check_availability_cal", "book_appointment_cal"}
-
-
-def _filter_tools_for_api(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Filter tools to only those the Retell API accepts.
-
-    Built-in types like end_call and transfer_call are managed internally
-    by Retell and rejected by the create/update API.
-    """
-    return [t for t in tools if t.get("type") in _API_TOOL_TYPES]
-
-
 def _wrap_for_retell_ui(
     cf: dict[str, Any], agent_envelope: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -340,11 +328,11 @@ def _wrap_for_retell_ui(
 
     Merges preserved agent-level fields (voice_id, language, etc.) from the
     original import so they survive the LLM→CF conversion round-trip.
+
+    Terminal tools (end_call, transfer_call) are already excluded from the
+    tools array by _collect_all_tools, so no additional filtering is needed.
     """
     cf_id = cf.get("conversation_flow_id", "")
-    cf_for_ui = dict(cf)
-    if "tools" in cf_for_ui:
-        cf_for_ui["tools"] = _filter_tools_for_api(cf_for_ui["tools"])
 
     wrapper: dict[str, Any] = {
         "agent_id": "",
@@ -352,7 +340,7 @@ def _wrap_for_retell_ui(
             "type": "conversation-flow",
             "conversation_flow_id": cf_id,
         },
-        "conversationFlow": cf_for_ui,
+        "conversationFlow": cf,
     }
 
     if agent_envelope:

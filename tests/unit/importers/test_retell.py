@@ -191,6 +191,49 @@ class TestRetellImporterComplex:
             assert len(node.tools) == 6
 
 
+class TestRetellImporterTransferMetadata:
+    """Tests for CF importer preserving transfer tool metadata."""
+
+    def test_cf_importer_preserves_transfer_metadata(self):
+        """CF import with transfer_call tool -> transfer_destination in tool metadata."""
+        from voicetest.importers.retell import RetellImporter
+
+        config = {
+            "start_node_id": "main",
+            "nodes": [
+                {
+                    "id": "main",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Help the user."},
+                    "edges": [],
+                },
+            ],
+            "tools": [
+                {
+                    "type": "transfer_call",
+                    "name": "transfer_to_billing",
+                    "description": "Transfer to billing",
+                    "transfer_destination": {
+                        "type": "predefined",
+                        "number": "+18005551234",
+                    },
+                    "transfer_option": {
+                        "type": "warm_transfer",
+                        "agent_detection_timeout_ms": 30000,
+                    },
+                },
+            ],
+        }
+
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        main_node = graph.nodes["main"]
+        transfer_tool = next(t for t in main_node.tools if t.name == "transfer_to_billing")
+        assert transfer_tool.metadata["transfer_destination"]["number"] == "+18005551234"
+        assert transfer_tool.metadata["transfer_option"]["type"] == "warm_transfer"
+
+
 class TestRetellImporterWrappedFormat:
     """Tests for importing Retell UI agent wrapper format."""
 

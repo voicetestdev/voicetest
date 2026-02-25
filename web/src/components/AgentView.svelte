@@ -98,6 +98,12 @@
   let analyzingDry = $state(false);
   let applyingSnippets = $state(false);
 
+  let metadataExpanded = $state(false);
+  let editingMetadataKey = $state<string | null>(null);
+  let editedMetadataValue = $state("");
+  let savingMetadata = $state<string | null>(null);
+  let metadataSaved = $state<string | null>(null);
+
   const platformDisplayNames: Record<string, string> = {
     retell: "Retell",
     vapi: "VAPI",
@@ -709,6 +715,45 @@
       error = e instanceof Error ? e.message : String(e);
     }
     savingGeneralPrompt = false;
+  }
+
+  function startEditingMetadata(key: string, value: unknown) {
+    editingMetadataKey = key;
+    editedMetadataValue = typeof value === "string" ? value : JSON.stringify(value);
+  }
+
+  async function saveMetadataField(key: string) {
+    if (!$currentAgentId) {
+      editingMetadataKey = null;
+      return;
+    }
+    const current = $agentGraph?.source_metadata?.[key];
+    const currentStr = typeof current === "string" ? current : JSON.stringify(current);
+    if (editedMetadataValue === currentStr) {
+      editingMetadataKey = null;
+      return;
+    }
+    savingMetadata = key;
+    try {
+      let parsed: unknown = editedMetadataValue;
+      if (typeof current === "number") {
+        parsed = Number(editedMetadataValue);
+      } else if (typeof current === "boolean") {
+        parsed = editedMetadataValue === "true";
+      }
+      const result = await api.updateMetadata($currentAgentId, { [key]: parsed });
+      agentGraph.set(result);
+      editingMetadataKey = null;
+      metadataSaved = key;
+      setTimeout(() => { metadataSaved = null; }, 2000);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    savingMetadata = null;
+  }
+
+  function isComplexValue(value: unknown): boolean {
+    return typeof value === "object" && value !== null;
   }
 
   function openNodePromptModal(nodeId: string, prompt: string) {
@@ -1351,6 +1396,49 @@
         </div>
       </div>
     </section>
+
+    {#if $agentGraph?.source_metadata && Object.keys($agentGraph.source_metadata).length > 0}
+      <section class="metadata-section">
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div class="metadata-header" onclick={() => { metadataExpanded = !metadataExpanded; }}>
+          <h3>Metadata {metadataExpanded ? "▾" : "▸"}</h3>
+        </div>
+        {#if metadataExpanded}
+          <div class="metadata-fields">
+            {#each Object.entries($agentGraph.source_metadata).filter(([k]) => k !== "general_prompt") as [key, value]}
+              <div class="metadata-field">
+                <div class="metadata-label">
+                  <code>{key}</code>
+                  {#if savingMetadata === key}
+                    <span class="save-indicator">Saving...</span>
+                  {:else if metadataSaved === key}
+                    <span class="save-indicator saved">Saved</span>
+                  {/if}
+                </div>
+                {#if isComplexValue(value)}
+                  <pre class="metadata-value readonly">{JSON.stringify(value, null, 2)}</pre>
+                {:else if editingMetadataKey === key}
+                  <textarea
+                    class="metadata-textarea"
+                    bind:value={editedMetadataValue}
+                    onblur={() => saveMetadataField(key)}
+                    disabled={savingMetadata === key}
+                    rows={typeof value === "string" && value.length > 100 ? 6 : 2}
+                  ></textarea>
+                {:else}
+                  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+                  <span
+                    class="metadata-value editable"
+                    onclick={() => startEditingMetadata(key, value)}
+                    title="Click to edit"
+                  >{String(value) || "(empty)"}</span>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </section>
+    {/if}
 
     {#if tooltip.show}
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
@@ -2336,5 +2424,92 @@
       margin-left: 0;
       width: 100%;
     }
+  }
+
+  .metadata-section {
+    margin-bottom: 1.5rem;
+    padding: var(--space-4);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+  }
+
+  .metadata-header {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .metadata-header h3 {
+    margin: 0;
+  }
+
+  .metadata-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .metadata-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .metadata-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+  }
+
+  .metadata-label code {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+  }
+
+  .metadata-value.readonly {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg-tertiary);
+    padding: 0.5rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+  }
+
+  .metadata-value.editable {
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    transition: background 0.15s;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .metadata-value.editable:hover {
+    background: var(--bg-hover);
+  }
+
+  .metadata-textarea {
+    width: 100%;
+    padding: 0.5rem;
+    font-family: monospace;
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--accent-color, #6366f1);
+    border-radius: var(--radius-sm);
+    resize: vertical;
+    box-sizing: border-box;
   }
 </style>

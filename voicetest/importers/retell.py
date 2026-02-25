@@ -57,6 +57,8 @@ class RetellTool(BaseModel):
     url: str | None = None
     method: str | None = None
     parameters: dict[str, Any] | None = None
+    transfer_destination: dict[str, Any] | None = None
+    transfer_option: dict[str, Any] | None = None
 
 
 class RetellModelChoice(BaseModel):
@@ -114,16 +116,24 @@ class RetellConfig(BaseModel):
         return v if v is not None else {}
 
 
-def _unwrap_agent_envelope(config: dict[str, Any]) -> dict[str, Any]:
-    """Extract the CF dict from a Retell UI agent wrapper if present.
+def _unwrap_agent_envelope(
+    config: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Extract the CF dict and agent envelope from a Retell UI agent wrapper.
 
     The Retell UI exports an agent envelope with the conversation flow
-    nested under ``conversationFlow``. This extracts that inner dict
-    so the importer can process it uniformly.
+    nested under ``conversationFlow``. This extracts the inner CF dict
+    and returns the remaining agent-level fields (voice_id, language, etc.)
+    as a separate envelope dict for round-trip preservation.
+
+    Returns:
+        Tuple of (cf_dict, agent_envelope_or_None).
     """
     if "conversationFlow" in config:
-        return config["conversationFlow"]
-    return config
+        cf_keys = {"conversationFlow"}
+        envelope = {k: v for k, v in config.items() if k not in cf_keys}
+        return config["conversationFlow"], envelope if envelope else None
+    return config, None
 
 
 class RetellImporter:
@@ -143,14 +153,14 @@ class RetellImporter:
     def can_import(self, path_or_config: str | Path | dict) -> bool:
         """Detect Retell format by checking for characteristic fields."""
         try:
-            config = self._load_config(path_or_config)
+            config, _ = self._load_config(path_or_config)
             return "start_node_id" in config and "nodes" in config
         except Exception:
             return False
 
     def import_agent(self, path_or_config: str | Path | dict) -> AgentGraph:
         """Convert Retell JSON to AgentGraph."""
-        raw_config = self._load_config(path_or_config)
+        raw_config, agent_envelope = self._load_config(path_or_config)
         retell = RetellConfig.model_validate(raw_config)
 
         global_tools = [self._convert_tool(t) for t in retell.tools]
@@ -185,6 +195,8 @@ class RetellImporter:
             source_metadata["knowledge_base_ids"] = retell.knowledge_base_ids
         if retell.default_dynamic_variables:
             source_metadata["default_dynamic_variables"] = retell.default_dynamic_variables
+        if agent_envelope:
+            source_metadata["agent_envelope"] = agent_envelope
 
         # Extract default model from model_choice if available
         default_model = None
@@ -199,11 +211,16 @@ class RetellImporter:
             default_model=default_model,
         )
 
-    def _load_config(self, path_or_config: str | Path | dict) -> dict[str, Any]:
+    def _load_config(
+        self, path_or_config: str | Path | dict
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """Load config from path or return dict directly.
 
         Handles both bare CF dicts and the Retell UI agent wrapper format
         where the CF lives under the ``conversationFlow`` key.
+
+        Returns:
+            Tuple of (cf_dict, agent_envelope_or_None).
         """
         if isinstance(path_or_config, dict):
             return _unwrap_agent_envelope(path_or_config)
@@ -229,7 +246,16 @@ class RetellImporter:
         )
 
     def _convert_tool(self, tool: RetellTool) -> ToolDefinition:
-        """Convert Retell tool to ToolDefinition."""
+        """Convert Retell tool to ToolDefinition.
+
+        Transfer tools carry transfer_destination and transfer_option in
+        metadata so the CF exporter can emit proper transfer_call nodes.
+        """
+        metadata: dict[str, Any] = {}
+        if tool.transfer_destination:
+            metadata["transfer_destination"] = tool.transfer_destination
+        if tool.transfer_option:
+            metadata["transfer_option"] = tool.transfer_option
         return ToolDefinition(
             name=tool.name,
             description=tool.description,
@@ -237,4 +263,5 @@ class RetellImporter:
             type=tool.type,
             url=tool.url,
             tool_id=tool.tool_id,
+            metadata=metadata,
         )

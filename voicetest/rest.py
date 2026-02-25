@@ -384,6 +384,12 @@ class UpdatePromptRequest(BaseModel):
     transition_target_id: str | None = None
 
 
+class UpdateMetadataRequest(BaseModel):
+    """Request to merge updates into an agent's source_metadata."""
+
+    updates: dict[str, Any]
+
+
 class UpdateMetricsConfigRequest(BaseModel):
     """Request to update an agent's metrics configuration."""
 
@@ -1039,6 +1045,52 @@ def _write_graph_to_linked_file(graph: AgentGraph, source_path: str, agent: dict
         status_code=400,
         detail=f"No exporter available for source type: {source_type}",
     )
+
+
+@router.put("/agents/{agent_id}/metadata", response_model=AgentGraph)
+async def update_metadata(agent_id: str, request: UpdateMetadataRequest) -> AgentGraph:
+    """Merge updates into an agent's source_metadata.
+
+    Follows the same graph-load + persist pattern as update_prompt.
+    Supports linked-file agents.
+    """
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    source_path = agent.get("source_path")
+    if source_path:
+        try:
+            graph = get_importer_registry().import_agent(resolve_path(source_path))
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404, detail=f"Agent file not found: {source_path}"
+            ) from None
+    else:
+        try:
+            result = repo.load_graph(agent)
+            if isinstance(result, Path):
+                graph = get_importer_registry().import_agent(result)
+            else:
+                graph = result
+        except (FileNotFoundError, ValueError) as e:
+            raise HTTPException(status_code=404, detail=str(e)) from None
+
+    graph.source_metadata.update(request.updates)
+
+    if source_path:
+        try:
+            _write_graph_to_linked_file(graph, source_path, agent)
+        except OSError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot write to linked file: {e}",
+            ) from None
+    else:
+        repo.update(agent_id, graph_json=graph.model_dump_json())
+
+    return graph
 
 
 @router.delete("/agents/{agent_id}")

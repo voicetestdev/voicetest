@@ -2498,3 +2498,56 @@ class TestDiagnosisEndpoints:
             json={"changes": []},
         )
         assert response.status_code == 404
+
+
+class TestUpdateMetadataEndpoint:
+    """Tests for PUT /agents/{id}/metadata endpoint."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    def test_update_metadata_merges_updates(self, db_client, sample_retell_config):
+        from voicetest.rest import get_agent_repo
+
+        repo = get_agent_repo()
+
+        from voicetest.importers.retell import RetellImporter
+
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config)
+        agent = repo.create(
+            name="Meta Agent",
+            source_type="retell",
+            graph_json=graph.model_dump_json(),
+        )
+        agent_id = agent["id"]
+
+        response = db_client.put(
+            f"/api/agents/{agent_id}/metadata",
+            json={"updates": {"custom_field": "custom_value", "version": 99}},
+        )
+        assert response.status_code == 200
+
+        result = response.json()
+        assert result["source_metadata"]["custom_field"] == "custom_value"
+        assert result["source_metadata"]["version"] == 99
+        # Original metadata should still be present
+        assert "conversation_flow_id" in result["source_metadata"]
+
+    def test_update_metadata_returns_404_for_missing_agent(self, db_client):
+        response = db_client.put(
+            "/api/agents/nonexistent/metadata",
+            json={"updates": {"key": "value"}},
+        )
+        assert response.status_code == 404

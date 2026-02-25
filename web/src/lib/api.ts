@@ -284,6 +284,9 @@ export const api = {
       ...(transitionTargetId != null ? { transition_target_id: transitionTargetId } : {}),
     }),
 
+  updateMetadata: (agentId: string, updates: Record<string, unknown>) =>
+    put<AgentGraph>(`/agents/${agentId}/metadata`, { updates }),
+
   deleteAgent: (id: string) => del<{ status: string; id: string }>(`/agents/${id}`),
 
   listTestsForAgent: (agentId: string) =>
