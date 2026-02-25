@@ -1,10 +1,14 @@
 import type {
   AgentGraph,
   AgentRecord,
+  ApplyFixResponse,
   CallRecord,
+  DiagnoseResponse,
+  Diagnosis,
   DryAnalysis,
   ExporterInfo,
   ExportToPlatformResponse,
+  FixSuggestion,
   GalleryItem,
   ImporterInfo,
   LoadDemoResponse,
@@ -14,6 +18,7 @@ import type {
   Platform,
   PlatformInfo,
   PlatformStatus,
+  PromptChange,
   RemoteAgentInfo,
   RunOptions,
   RunRecord,
@@ -371,6 +376,29 @@ export const api = {
 
   audioEvalResult: (resultId: string) =>
     post<RunResultRecord>(`/results/${resultId}/audio-eval`, {}),
+
+  diagnoseResult: (resultId: string, model?: string) =>
+    post<DiagnoseResponse>(`/results/${resultId}/diagnose`, model ? { model } : {}),
+
+  applyFix: (resultId: string, changes: PromptChange[], iteration: number) =>
+    post<ApplyFixResponse>(`/results/${resultId}/apply-fix`, { changes, iteration }),
+
+  reviseFix: (
+    resultId: string,
+    diagnosis: Diagnosis,
+    previousChanges: PromptChange[],
+    newMetricResults: MetricResult[],
+    model?: string,
+  ) =>
+    post<FixSuggestion>(`/results/${resultId}/revise-fix`, {
+      diagnosis,
+      previous_changes: previousChanges,
+      new_metric_results: newMetricResults,
+      ...(model ? { model } : {}),
+    }),
+
+  saveFix: (agentId: string, changes: PromptChange[]) =>
+    post<AgentGraph>(`/agents/${agentId}/save-fix`, { changes }),
 
   getWebSocketUrl: (path: string): string => {
     const baseUrl = globalConfig.baseUrl || "/api";

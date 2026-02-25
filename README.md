@@ -334,6 +334,55 @@ curl -X POST http://localhost:8000/api/agents/export \
   -d '{"graph": {...}, "format": "retell-llm", "expanded": true}'
 ```
 
+## Post-Run Diagnosis & Auto-Fix
+
+When a test fails, voicetest can diagnose the root cause and suggest concrete prompt changes to fix it.
+
+### Manual Flow
+
+1. **Diagnose** - Click "Diagnose" on a failed result. The LLM analyzes the graph, transcript, and failed metrics to identify fault locations and root cause.
+1. **Review & Edit** - Proposed changes are shown as editable textareas. Modify the suggested text before applying.
+1. **Apply & Test** - Click "Apply & Test" to apply changes to a copy of the graph and rerun the test. A score comparison table shows original vs. new scores with deltas.
+1. **Iterate** - If not all metrics pass, click "Try Again" to revise the fix based on the latest results. The table shows delta from both original and previous iteration.
+1. **Save** - Click "Save Changes" to persist the fix to the agent graph.
+
+### Model Selection
+
+Enter a model string (e.g., `openai/gpt-4o`, `anthropic/claude-3-sonnet`) in the model input to override the default judge model for diagnosis and fix revision. Leave blank to use the model from settings.
+
+### Auto-Fix Mode
+
+Click "Auto Fix" to run an automated diagnose-apply-revise loop:
+
+- **Stop condition**: "On improvement" stops when scores improve; "When all pass" stops only when every metric passes.
+- **Max iterations**: Limits the number of apply-revise cycles (1-10, default 3).
+- **Progress**: A live table shows scores with deltas from both original and previous iteration.
+- **Cancel**: Stop the loop at any time.
+
+### REST API
+
+```bash
+# Diagnose a failed result (optional model override)
+curl -X POST http://localhost:8000/api/results/{result_id}/diagnose \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai/gpt-4o"}'
+
+# Apply fix and rerun test
+curl -X POST http://localhost:8000/api/results/{result_id}/apply-fix \
+  -H "Content-Type: application/json" \
+  -d '{"changes": [...], "iteration": 1}'
+
+# Revise a fix based on new metric results
+curl -X POST http://localhost:8000/api/results/{result_id}/revise-fix \
+  -H "Content-Type: application/json" \
+  -d '{"diagnosis": {...}, "previous_changes": [...], "new_metric_results": [...], "model": "openai/gpt-4o"}'
+
+# Save changes to agent graph
+curl -X POST http://localhost:8000/api/agents/{agent_id}/save-fix \
+  -H "Content-Type: application/json" \
+  -d '{"changes": [...]}'
+```
+
 ## Audio Evaluation
 
 Text-only evaluation has a blind spot: when an agent produces "415-555-1234", an LLM judge sees correct digits and passes. But TTS might speak it as "four hundred fifteen, five hundred fifty-five..." — which a caller can't use. Audio evaluation catches these issues by round-tripping agent messages through TTS→STT and judging what would actually be *heard*.
