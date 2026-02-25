@@ -29,6 +29,7 @@ export interface AgentGraph {
   entry_node_id: string;
   source_type: string;
   source_metadata: Record<string, unknown>;
+  snippets?: Record<string, string>;
   default_model?: string | null;
 }
 
@@ -329,4 +330,20 @@ export interface StartCallResponse {
 
 export interface StartChatResponse {
   chat_id: string;
+}
+
+export interface ExactMatch {
+  text: string;
+  locations: string[];
+}
+
+export interface FuzzyMatch {
+  texts: string[];
+  locations: string[];
+  similarity: number;
+}
+
+export interface DryAnalysis {
+  exact: ExactMatch[];
+  fuzzy: FuzzyMatch[];
 }

@@ -82,6 +82,7 @@ voicetest export --agent agent.json --format vapi-assistant  # VAPI Assistant JS
 voicetest export --agent agent.json --format vapi-squad      # VAPI Squad JSON
 voicetest export --agent agent.json --format bland           # Bland AI JSON
 voicetest export --agent agent.json --format telnyx          # Telnyx AI JSON
+voicetest export --agent agent.json --format voicetest       # Voicetest JSON (.vt.json)
 
 # Launch full TUI
 voicetest tui --agent agent.json --tests tests.json
@@ -183,9 +184,9 @@ Telnyx ────────┤                  ├───▶ Telnyx
                │                  │
 LiveKit ───────┤                  ├───▶ LiveKit
                │                  │
-XLSForm ───────┤                  └───▶ Mermaid
-               │
-Custom ────────┘
+XLSForm ───────┤                  ├───▶ Mermaid
+               │                  │
+Custom ────────┘                  └───▶ Voicetest JSON
 ```
 
 Import from any supported format, then export to any other:
@@ -223,7 +224,7 @@ Test cases follow the Retell export format:
 - **Multi-source import**: Retell CF, Retell LLM, VAPI, Bland, Telnyx, LiveKit, XLSForm, custom Python functions
 - **Format conversion**: Convert between Retell, VAPI, Bland, Telnyx, LiveKit, and other formats
 - **Unified IR**: AgentGraph representation for any voice agent
-- **Multi-format export**: Mermaid diagrams, LiveKit Python, Retell LLM, Retell CF, VAPI, Bland, Telnyx
+- **Multi-format export**: Mermaid diagrams, LiveKit Python, Retell LLM, Retell CF, VAPI, Bland, Telnyx, Voicetest JSON (.vt.json)
 - **Platform integration**: Import, push, and sync agents with Retell, VAPI, Bland, Telnyx, LiveKit via API
 - **Configurable LLMs**: Separate models for agent, simulator, and judge
 - **DSPy-based evaluation**: LLM judges with reasoning and 0-1 scores
@@ -233,6 +234,7 @@ Test cases follow the Retell export format:
 - **Real-time streaming**: WebSocket-based transcript streaming during test execution
 - **Token streaming**: Optional token-level streaming as LLM generates responses (experimental)
 - **Cancellation**: Cancel in-progress tests to stop token usage
+- **Prompt snippets**: Named reusable text blocks (`{%name%}`) with auto-DRY analysis
 - **Audio evaluation**: TTS→STT round-trip to catch pronunciation issues (e.g., phone numbers spoken as words)
 
 ## Global Metrics
@@ -257,6 +259,80 @@ Example use cases:
 - PCI-DSS validation for payment processing
 - Brand voice consistency across all conversations
 - Safety guardrails and content policy adherence
+
+## Prompt Snippets (DRY)
+
+Agent prompts often repeat text across nodes — sign-off phrases, compliance disclaimers, tone instructions, etc. **Snippets** are named, reusable text blocks defined at the agent level and referenced in prompts via `{%snippet_name%}`.
+
+### Defining Snippets
+
+In the Web UI, open an agent and scroll to the **Snippets** section. Each snippet has a name and a text body:
+
+| Snippet Name | Text                                                             |
+| ------------ | ---------------------------------------------------------------- |
+| `sign_off`   | "Thank you for calling. Is there anything else I can help with?" |
+| `hipaa_warn` | "I need to verify your identity before sharing medical info."    |
+
+### Referencing Snippets in Prompts
+
+Use `{%name%}` (with percent signs) in any node prompt or general prompt:
+
+```
+Welcome the caller and introduce yourself.
+
+{%hipaa_warn%}
+
+When the conversation ends:
+{%sign_off%}
+```
+
+Snippets are expanded (replaced with their text) **before** dynamic variables (`{{var}}`), so you can combine both:
+
+```
+Hello {{caller_name}}, {%greeting%}
+```
+
+### Auto-DRY Analysis
+
+Click **Analyze DRY** to scan all prompts for repeated or near-identical text:
+
+- **Exact matches**: Sentences that appear verbatim in 2+ nodes. Click "Apply" to extract into a snippet and replace all occurrences with `{%ref%}`.
+- **Fuzzy matches**: Sentences that are similar (above 80% match). Review and decide whether to unify them.
+- **Apply All**: Applies all exact-match suggestions at once.
+
+### Export Modes
+
+When an agent has snippets, the export modal offers two modes:
+
+- **Raw (.vt.json)**: Preserves `{%snippet%}` references and the snippets dictionary. Use this for sharing with teammates or version control.
+- **Expanded**: Resolves all snippet references to plain text. Use this for platform deployment (Retell, VAPI, LiveKit, etc.).
+
+Platform-specific formats (Retell, VAPI, Bland, Telnyx, LiveKit) are always exported expanded.
+
+### REST API
+
+```bash
+# Get snippets for an agent
+curl http://localhost:8000/api/agents/{id}/snippets
+
+# Update a single snippet
+curl -X PUT http://localhost:8000/api/agents/{id}/snippets/sign_off \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Thanks for calling!"}'
+
+# Run DRY analysis
+curl -X POST http://localhost:8000/api/agents/{id}/analyze-dry
+
+# Apply suggested snippets
+curl -X POST http://localhost:8000/api/agents/{id}/apply-snippets \
+  -H "Content-Type: application/json" \
+  -d '{"snippets": [{"name": "sign_off", "text": "Thanks for calling!"}]}'
+
+# Export with snippets expanded
+curl -X POST http://localhost:8000/api/agents/export \
+  -H "Content-Type: application/json" \
+  -d '{"graph": {...}, "format": "retell-llm", "expanded": true}'
+```
 
 ## Audio Evaluation
 
@@ -565,7 +641,7 @@ voicetest/
 │   ├── compose/         # Bundled Docker Compose for infrastructure services
 │   ├── models/          # Pydantic models
 │   ├── importers/       # Source importers (retell, vapi, bland, telnyx, livekit, xlsform, custom)
-│   ├── exporters/       # Format exporters (mermaid, livekit, retell, vapi, bland, telnyx, test_cases)
+│   ├── exporters/       # Format exporters (mermaid, livekit, retell, vapi, bland, telnyx, voicetest_ir)
 │   ├── platforms/       # Platform SDK clients (retell, vapi, bland, telnyx, livekit)
 │   ├── engine/          # Execution engine
 │   ├── simulator/       # User simulation

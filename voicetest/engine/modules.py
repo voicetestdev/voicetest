@@ -11,7 +11,7 @@ import dspy
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import Transition
-from voicetest.utils import create_template_filler
+from voicetest.templating import create_template_filler
 
 
 @dataclass

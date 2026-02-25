@@ -34,7 +34,7 @@ from voicetest.settings import Settings
 from voicetest.settings import resolve_model
 from voicetest.simulator.user_sim import SimulatorResponse
 from voicetest.simulator.user_sim import UserSimulator
-from voicetest.utils import substitute_variables
+from voicetest.templating import substitute_variables
 
 
 # Callback type for turn updates

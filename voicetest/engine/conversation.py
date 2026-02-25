@@ -16,7 +16,8 @@ from voicetest.models.results import Message
 from voicetest.models.results import ToolCall
 from voicetest.models.test_case import RunOptions
 from voicetest.retry import OnErrorCallback
-from voicetest.utils import substitute_variables
+from voicetest.templating import expand_snippets
+from voicetest.templating import substitute_variables
 
 
 @dataclass
@@ -136,13 +137,11 @@ class ConversationEngine:
         if state_module is None:
             raise ValueError(f"Unknown node: {self._current_node}")
 
-        # Apply dynamic variable substitution to instructions
-        general_instructions = substitute_variables(
-            self._module.instructions, self._dynamic_variables
-        )
-        state_instructions = substitute_variables(
-            state_module.instructions, self._dynamic_variables
-        )
+        # Expand static snippets first, then dynamic variables
+        general_instructions = expand_snippets(self._module.instructions, self.graph.snippets)
+        state_instructions = expand_snippets(state_module.instructions, self.graph.snippets)
+        general_instructions = substitute_variables(general_instructions, self._dynamic_variables)
+        state_instructions = substitute_variables(state_instructions, self._dynamic_variables)
 
         # Build context for state execution
         ctx = RunContext(

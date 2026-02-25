@@ -62,6 +62,7 @@ from voicetest.settings import Settings
 from voicetest.settings import load_settings
 from voicetest.settings import resolve_model
 from voicetest.settings import save_settings
+from voicetest.snippets import suggest_snippets
 from voicetest.storage.linked_file import check_file
 from voicetest.storage.linked_file import compute_etag
 from voicetest.storage.linked_file import write_json
@@ -71,7 +72,8 @@ from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import CallRepository
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
-from voicetest.utils import extract_variables
+from voicetest.templating import expand_graph_snippets
+from voicetest.templating import extract_variables
 
 
 # Configure logging from env var set by CLI (carries across uvicorn --reload workers).
@@ -311,6 +313,7 @@ class ExportRequest(BaseModel):
 
     graph: AgentGraph
     format: str
+    expanded: bool = False
 
 
 class RunTestRequest(BaseModel):
@@ -351,6 +354,18 @@ class UpdateAgentRequest(BaseModel):
     name: str | None = None
     default_model: str | None = None
     graph_json: str | None = None
+
+
+class UpdateSnippetRequest(BaseModel):
+    """Request to create or update a single snippet."""
+
+    text: str
+
+
+class ApplySnippetsRequest(BaseModel):
+    """Request to apply snippets: add them to graph and replace occurrences in prompts."""
+
+    snippets: list[dict[str, str]]
 
 
 class UpdatePromptRequest(BaseModel):
@@ -527,7 +542,10 @@ async def import_agent_file(file: UploadFile, source: str | None = None) -> Agen
 async def export_agent(request: ExportRequest) -> dict[str, str]:
     """Export an agent graph to a format."""
     try:
-        content = await api.export_agent(request.graph, format=request.format)
+        graph = request.graph
+        if request.expanded and graph.snippets:
+            graph = expand_graph_snippets(graph)
+        content = await api.export_agent(graph, format=request.format)
         return {"content": content, "format": request.format}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -717,6 +735,112 @@ async def get_agent_variables(agent_id: str) -> dict:
     variables = extract_variables(combined)
 
     return {"variables": variables}
+
+
+def _load_agent_graph(agent_id: str) -> tuple[dict, AgentGraph]:
+    """Load agent record and its graph. Raises HTTPException on failure."""
+    repo = get_agent_repo()
+    agent = repo.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    try:
+        result = repo.load_graph(agent)
+        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
+
+    return agent, graph
+
+
+def _save_agent_graph(agent_id: str, agent: dict, graph: AgentGraph) -> None:
+    """Persist an updated graph back to DB or linked file."""
+    source_path = agent.get("source_path")
+    if source_path:
+        try:
+            _write_graph_to_linked_file(graph, source_path, agent)
+        except OSError as e:
+            raise HTTPException(
+                status_code=400, detail=f"Cannot write to linked file: {e}"
+            ) from None
+    else:
+        get_agent_repo().update(agent_id, graph_json=graph.model_dump_json())
+
+
+@router.get("/agents/{agent_id}/snippets")
+async def get_snippets(agent_id: str) -> dict:
+    """Get all snippets defined for an agent."""
+    _agent, graph = _load_agent_graph(agent_id)
+    return {"snippets": graph.snippets}
+
+
+@router.put("/agents/{agent_id}/snippets")
+async def update_all_snippets(agent_id: str, body: dict) -> dict:
+    """Replace all snippets for an agent."""
+    agent, graph = _load_agent_graph(agent_id)
+    graph.snippets = body.get("snippets", {})
+    _save_agent_graph(agent_id, agent, graph)
+    return {"snippets": graph.snippets}
+
+
+@router.put("/agents/{agent_id}/snippets/{name}")
+async def update_snippet(agent_id: str, name: str, request: UpdateSnippetRequest) -> dict:
+    """Create or update a single snippet."""
+    agent, graph = _load_agent_graph(agent_id)
+    graph.snippets[name] = request.text
+    _save_agent_graph(agent_id, agent, graph)
+    return {"snippets": graph.snippets}
+
+
+@router.delete("/agents/{agent_id}/snippets/{name}")
+async def delete_snippet(agent_id: str, name: str) -> dict:
+    """Delete a single snippet."""
+    agent, graph = _load_agent_graph(agent_id)
+    if name not in graph.snippets:
+        raise HTTPException(status_code=404, detail=f"Snippet not found: {name}")
+    del graph.snippets[name]
+    _save_agent_graph(agent_id, agent, graph)
+    return {"snippets": graph.snippets}
+
+
+@router.post("/agents/{agent_id}/analyze-dry")
+async def analyze_dry(agent_id: str) -> dict:
+    """Run auto-DRY analysis on an agent's prompts."""
+    _agent, graph = _load_agent_graph(agent_id)
+    result = suggest_snippets(graph)
+    return {
+        "exact": [{"text": m.text, "locations": m.locations} for m in result.exact],
+        "fuzzy": [
+            {"texts": m.texts, "locations": m.locations, "similarity": m.similarity}
+            for m in result.fuzzy
+        ],
+    }
+
+
+@router.post("/agents/{agent_id}/apply-snippets", response_model=AgentGraph)
+async def apply_snippets(agent_id: str, request: ApplySnippetsRequest) -> AgentGraph:
+    """Apply snippets: add them to graph and replace occurrences in prompts with {%name%} refs."""
+    agent, graph = _load_agent_graph(agent_id)
+
+    for snippet in request.snippets:
+        name = snippet["name"]
+        text = snippet["text"]
+        graph.snippets[name] = text
+
+        ref = "{%" + name + "%}"
+
+        # Replace in general_prompt
+        general_prompt = graph.source_metadata.get("general_prompt", "")
+        if text in general_prompt:
+            graph.source_metadata["general_prompt"] = general_prompt.replace(text, ref)
+
+        # Replace in node state_prompts
+        for node in graph.nodes.values():
+            if text in node.state_prompt:
+                node.state_prompt = node.state_prompt.replace(text, ref)
+
+    _save_agent_graph(agent_id, agent, graph)
+    return graph
 
 
 @router.post("/agents")

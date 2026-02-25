@@ -9,7 +9,7 @@
     refreshAgent,
     currentView,
   } from "../lib/stores";
-  import type { ExporterInfo, Platform, PlatformInfo, PlatformStatus, SyncStatus } from "../lib/types";
+  import type { DryAnalysis, ExporterInfo, Platform, PlatformInfo, PlatformStatus, SyncStatus } from "../lib/types";
   import CallView from "./CallView.svelte";
   import ChatView from "./ChatView.svelte";
 
@@ -86,6 +86,18 @@
   let syncSuccess = $state(false);
   let syncError = $state("");
 
+  // Snippet management state
+  let snippets = $state<Record<string, string>>({});
+  let addingSnippet = $state(false);
+  let newSnippetName = $state("");
+  let newSnippetText = $state("");
+  let savingSnippet = $state(false);
+  let editingSnippetName = $state<string | null>(null);
+  let editedSnippetText = $state("");
+  let dryAnalysis = $state<DryAnalysis | null>(null);
+  let analyzingDry = $state(false);
+  let applyingSnippets = $state(false);
+
   const platformDisplayNames: Record<string, string> = {
     retell: "Retell",
     vapi: "VAPI",
@@ -127,8 +139,17 @@
       }).catch(() => {
         syncStatus = null;
       });
+      // Load snippets
+      api.getSnippets(agentId).then((data) => {
+        snippets = data.snippets;
+      }).catch(() => {
+        snippets = {};
+      });
+      dryAnalysis = null;
     } else {
       syncStatus = null;
+      snippets = {};
+      dryAnalysis = null;
     }
   });
 
@@ -770,6 +791,135 @@
     editedTransitionCondition = "";
   }
 
+  async function addSnippet() {
+    if (!$currentAgentId || !newSnippetName.trim() || !newSnippetText.trim()) return;
+    savingSnippet = true;
+    try {
+      const result = await api.updateSnippet($currentAgentId, newSnippetName.trim(), newSnippetText.trim());
+      snippets = result.snippets;
+      newSnippetName = "";
+      newSnippetText = "";
+      addingSnippet = false;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    savingSnippet = false;
+  }
+
+  async function saveEditedSnippet() {
+    if (!$currentAgentId || !editingSnippetName) return;
+    savingSnippet = true;
+    try {
+      const result = await api.updateSnippet($currentAgentId, editingSnippetName, editedSnippetText);
+      snippets = result.snippets;
+      editingSnippetName = null;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    savingSnippet = false;
+  }
+
+  async function removeSnippet(name: string) {
+    if (!$currentAgentId) return;
+    try {
+      const result = await api.deleteSnippet($currentAgentId, name);
+      snippets = result.snippets;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  async function runDryAnalysis() {
+    if (!$currentAgentId) return;
+    analyzingDry = true;
+    dryAnalysis = null;
+    try {
+      dryAnalysis = await api.analyzeDry($currentAgentId);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    analyzingDry = false;
+  }
+
+  async function applySingleSnippet(name: string, text: string) {
+    if (!$currentAgentId) return;
+    applyingSnippets = true;
+    try {
+      const result = await api.applySnippets($currentAgentId, [{ name, text }]);
+      agentGraph.set(result);
+      snippets = result.snippets ?? {};
+      dryAnalysis = null;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    applyingSnippets = false;
+  }
+
+  async function applyAllExactSnippets() {
+    if (!$currentAgentId || !dryAnalysis) return;
+    applyingSnippets = true;
+    try {
+      const items = dryAnalysis.exact.map((m, i) => ({
+        name: `snippet_${i + 1}`,
+        text: m.text,
+      }));
+      const result = await api.applySnippets($currentAgentId, items);
+      agentGraph.set(result);
+      snippets = result.snippets ?? {};
+      dryAnalysis = null;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    applyingSnippets = false;
+  }
+
+  function getExportFilenameForFormat(format: string, ext: string): string {
+    const agentName = $currentAgent?.name || "agent";
+    const safeName = agentName.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const suffix = format.replace(/-/g, "_");
+    return `${safeName}_${suffix}.${ext}`;
+  }
+
+  async function exportRawVtJson() {
+    if (!$agentGraph) return;
+    exporting = true;
+    error = "";
+    try {
+      const result = await api.exportAgent($agentGraph, "voicetest");
+      const blob = new Blob([result.content], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = getExportFilenameForFormat("voicetest", "vt.json");
+      a.click();
+      URL.revokeObjectURL(url);
+      showExportModal = false;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    exporting = false;
+  }
+
+  async function exportExpanded(exp: ExporterInfo) {
+    if (!$agentGraph) return;
+    exporting = true;
+    error = "";
+    try {
+      const result = await api.exportAgent($agentGraph, exp.id, true);
+      const blob = new Blob([result.content], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = getExportFilename(exp);
+      a.click();
+      URL.revokeObjectURL(url);
+      showExportModal = false;
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+    }
+    exporting = false;
+  }
+
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -888,6 +1038,118 @@
       {/if}
     </section>
 
+    <section class="snippets-section">
+      <div class="snippets-header">
+        <h3>Snippets</h3>
+        <div class="snippets-actions">
+          <button class="btn-sm" onclick={() => { addingSnippet = !addingSnippet; }} title="Add a snippet">+ Add</button>
+          <button class="btn-sm" onclick={runDryAnalysis} disabled={analyzingDry} title="Analyze prompts for repeated text">
+            {analyzingDry ? "Analyzing..." : "Analyze DRY"}
+          </button>
+        </div>
+      </div>
+
+      {#if Object.keys(snippets).length > 0}
+        <div class="snippet-list">
+          {#each Object.entries(snippets) as [name, text]}
+            <div class="snippet-item">
+              <div class="snippet-name-row">
+                <code class="snippet-ref">{"{%"}{name}{"%}"}</code>
+                <div class="snippet-btns">
+                  <button class="btn-xs" onclick={() => { editingSnippetName = name; editedSnippetText = text; }}>Edit</button>
+                  <button class="btn-xs danger-text" onclick={() => removeSnippet(name)}>Delete</button>
+                </div>
+              </div>
+              {#if editingSnippetName === name}
+                <textarea
+                  class="snippet-textarea"
+                  bind:value={editedSnippetText}
+                  disabled={savingSnippet}
+                  rows="3"
+                ></textarea>
+                <div class="snippet-edit-actions">
+                  <button class="btn-xs" onclick={() => { editingSnippetName = null; }}>Cancel</button>
+                  <button class="btn-xs btn-primary" onclick={saveEditedSnippet} disabled={savingSnippet}>Save</button>
+                </div>
+              {:else}
+                <pre class="snippet-preview">{text}</pre>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {:else if !addingSnippet}
+        <p class="snippet-empty">No snippets defined. Use "Analyze DRY" to find repeated text or add snippets manually.</p>
+      {/if}
+
+      {#if addingSnippet}
+        <div class="snippet-add-form">
+          <input type="text" placeholder="Snippet name" class="snippet-name-input" bind:value={newSnippetName} />
+          <textarea
+            class="snippet-textarea"
+            placeholder="Snippet text..."
+            bind:value={newSnippetText}
+            rows="3"
+          ></textarea>
+          <div class="snippet-edit-actions">
+            <button class="btn-xs" onclick={() => { addingSnippet = false; newSnippetName = ""; newSnippetText = ""; }}>Cancel</button>
+            <button class="btn-xs btn-primary" onclick={addSnippet} disabled={savingSnippet || !newSnippetName.trim() || !newSnippetText.trim()}>
+              {savingSnippet ? "Saving..." : "Add Snippet"}
+            </button>
+          </div>
+        </div>
+      {/if}
+
+      {#if dryAnalysis}
+        <div class="dry-results">
+          <div class="dry-header">
+            <h4>DRY Analysis Results</h4>
+            {#if dryAnalysis.exact.length > 0}
+              <button class="btn-sm" onclick={applyAllExactSnippets} disabled={applyingSnippets}>
+                {applyingSnippets ? "Applying..." : `Apply All (${dryAnalysis.exact.length})`}
+              </button>
+            {/if}
+          </div>
+
+          {#if dryAnalysis.exact.length === 0 && dryAnalysis.fuzzy.length === 0}
+            <p class="dry-empty">No repeated text found. Prompts are already DRY.</p>
+          {/if}
+
+          {#if dryAnalysis.exact.length > 0}
+            <div class="dry-section">
+              <h5>Exact Matches</h5>
+              {#each dryAnalysis.exact as match, i}
+                <div class="dry-match">
+                  <pre class="dry-text">{match.text}</pre>
+                  <div class="dry-meta">
+                    <span class="dry-locations">Found in: {match.locations.join(", ")}</span>
+                    <button
+                      class="btn-xs"
+                      onclick={() => applySingleSnippet(`snippet_${i + 1}`, match.text)}
+                      disabled={applyingSnippets}
+                    >Apply</button>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          {#if dryAnalysis.fuzzy.length > 0}
+            <div class="dry-section">
+              <h5>Similar Text ({dryAnalysis.fuzzy.length})</h5>
+              {#each dryAnalysis.fuzzy as match}
+                <div class="dry-match">
+                  <div class="dry-similarity">{Math.round(match.similarity * 100)}% similar</div>
+                  {#each match.texts as text, ti}
+                    <pre class="dry-text">{match.locations[ti]}: {text}</pre>
+                  {/each}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </section>
+
     <div class="actions">
       <ChatView />
       <CallView />
@@ -971,16 +1233,39 @@
               <div class="tab-panels">
                 <div class="tab-panel" class:active={exportTab === "file"}>
                   <div class="export-options">
-                    {#each exporters as exp}
+                    {#if Object.keys(snippets).length > 0}
                       <button
                         class="export-option"
-                        onclick={() => exportTo(exp)}
+                        onclick={() => exportRawVtJson()}
                         disabled={exporting}
                       >
-                        <span class="export-name">{exp.name}</span>
-                        <span class="export-desc">{exp.description}</span>
-                        <span class="export-ext">.{exp.ext}</span>
+                        <span class="export-name">Raw (.vt.json)</span>
+                        <span class="export-desc">Preserves snippet references for sharing with teammates</span>
+                        <span class="export-ext">.vt.json</span>
                       </button>
+                    {/if}
+                    {#each exporters as exp}
+                      {#if Object.keys(snippets).length > 0 && exp.id !== "voicetest"}
+                        <button
+                          class="export-option"
+                          onclick={() => exportExpanded(exp)}
+                          disabled={exporting}
+                        >
+                          <span class="export-name">{exp.name} (Expanded)</span>
+                          <span class="export-desc">{exp.description} &mdash; snippets resolved</span>
+                          <span class="export-ext">.{exp.ext}</span>
+                        </button>
+                      {:else}
+                        <button
+                          class="export-option"
+                          onclick={() => exportTo(exp)}
+                          disabled={exporting}
+                        >
+                          <span class="export-name">{exp.name}</span>
+                          <span class="export-desc">{exp.description}</span>
+                          <span class="export-ext">.{exp.ext}</span>
+                        </button>
+                      {/if}
                     {/each}
                   </div>
                 </div>
@@ -1553,6 +1838,198 @@
     border-color: var(--accent-color, #6366f1);
   }
 
+
+  .snippets-section {
+    margin-bottom: 1.5rem;
+    padding: var(--space-4);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+  }
+
+  .snippets-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .snippets-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .btn-sm {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
+  }
+
+  .btn-xs {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .danger-text {
+    color: var(--danger-text);
+  }
+
+  .snippet-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .snippet-item {
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+  }
+
+  .snippet-name-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+  }
+
+  .snippet-ref {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--accent-color, #6366f1);
+  }
+
+  .snippet-btns {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .snippet-preview {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 80px;
+    overflow-y: auto;
+  }
+
+  .snippet-textarea {
+    width: 100%;
+    padding: 0.4rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--accent-color, #6366f1);
+    border-radius: var(--radius-sm);
+    resize: vertical;
+    outline: none;
+  }
+
+  .snippet-edit-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+  }
+
+  .snippet-add-form {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .snippet-name-input {
+    padding: 0.3rem 0.5rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  .snippet-empty {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    margin: 0;
+  }
+
+  .dry-results {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+  }
+
+  .dry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .dry-header h4 {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+  }
+
+  .dry-section h5 {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin: 0.5rem 0 0.25rem;
+  }
+
+  .dry-match {
+    padding: 0.5rem;
+    margin-bottom: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
+  }
+
+  .dry-text {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    max-height: 80px;
+    overflow-y: auto;
+  }
+
+  .dry-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.25rem;
+  }
+
+  .dry-locations {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .dry-similarity {
+    font-size: 0.75rem;
+    color: var(--accent-color, #6366f1);
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+  }
+
+  .dry-empty {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-style: italic;
+    margin: 0;
+  }
 
   .danger-zone {
     background: var(--bg-secondary);

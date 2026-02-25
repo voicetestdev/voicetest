@@ -1988,3 +1988,155 @@ class TestPlatformRegistrySupportsUpdate:
         with pytest.raises(ValueError) as exc_info:
             registry.supports_update("unknown")
         assert "Unknown platform" in str(exc_info.value)
+
+
+class TestSnippetEndpoints:
+    """Tests for snippet CRUD and DRY analysis endpoints."""
+
+    @pytest.fixture
+    def db_client(self, tmp_path, monkeypatch):
+        """Create a test client with isolated database."""
+        db_path = tmp_path / "test.duckdb"
+        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+        monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+        from voicetest.rest import app
+        from voicetest.rest import init_storage
+
+        init_storage()
+
+        return TestClient(app)
+
+    def _create_agent_with_graph(self, db_client, graph):
+        """Helper to create an agent with a specific graph."""
+        from voicetest.rest import get_agent_repo
+
+        repo = get_agent_repo()
+        return repo.create(
+            name="Snippet Test Agent",
+            source_type=graph.source_type,
+            graph_json=graph.model_dump_json(),
+        )
+
+    def _make_graph(self, snippets=None, **node_prompts):
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
+
+        nodes = {}
+        first_id = None
+        for node_id, prompt in node_prompts.items():
+            if first_id is None:
+                first_id = node_id
+            nodes[node_id] = AgentNode(id=node_id, state_prompt=prompt, transitions=[])
+
+        return AgentGraph(
+            nodes=nodes,
+            entry_node_id=first_id or "a",
+            source_type="custom",
+            snippets=snippets or {},
+        )
+
+    def test_get_snippets(self, db_client):
+        graph = self._make_graph(snippets={"greeting": "Hello!", "signoff": "Bye!"}, a="main")
+        agent = self._create_agent_with_graph(db_client, graph)
+        agent_id = agent["id"]
+
+        response = db_client.get(f"/api/agents/{agent_id}/snippets")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["snippets"] == {"greeting": "Hello!", "signoff": "Bye!"}
+
+    def test_get_snippets_not_found(self, db_client):
+        response = db_client.get("/api/agents/nonexistent/snippets")
+        assert response.status_code == 404
+
+    def test_update_snippet(self, db_client):
+        graph = self._make_graph(a="main")
+        agent = self._create_agent_with_graph(db_client, graph)
+        agent_id = agent["id"]
+
+        response = db_client.put(
+            f"/api/agents/{agent_id}/snippets/greeting",
+            json={"text": "Hello world!"},
+        )
+        assert response.status_code == 200
+
+        # Verify it's persisted
+        get_response = db_client.get(f"/api/agents/{agent_id}/snippets")
+        assert get_response.json()["snippets"]["greeting"] == "Hello world!"
+
+    def test_delete_snippet(self, db_client):
+        graph = self._make_graph(snippets={"greeting": "Hello!"}, a="main")
+        agent = self._create_agent_with_graph(db_client, graph)
+        agent_id = agent["id"]
+
+        response = db_client.delete(f"/api/agents/{agent_id}/snippets/greeting")
+        assert response.status_code == 200
+
+        # Verify it's gone
+        get_response = db_client.get(f"/api/agents/{agent_id}/snippets")
+        assert "greeting" not in get_response.json()["snippets"]
+
+    def test_delete_snippet_not_found(self, db_client):
+        graph = self._make_graph(a="main")
+        agent = self._create_agent_with_graph(db_client, graph)
+        agent_id = agent["id"]
+
+        response = db_client.delete(f"/api/agents/{agent_id}/snippets/nonexistent")
+        assert response.status_code == 404
+
+    def test_analyze_dry(self, db_client):
+        graph = self._make_graph(
+            a="Always be polite and professional in every interaction. Task A.",
+            b="Always be polite and professional in every interaction. Task B.",
+        )
+        agent = self._create_agent_with_graph(db_client, graph)
+        agent_id = agent["id"]
+
+        response = db_client.post(f"/api/agents/{agent_id}/analyze-dry")
+        assert response.status_code == 200
+        data = response.json()
+        assert "exact" in data
+        assert "fuzzy" in data
+        assert len(data["exact"]) > 0
+
+    def test_apply_snippets(self, db_client):
+        graph = self._make_graph(
+            a="Always be polite. Task A.",
+            b="Always be polite. Task B.",
+        )
+        agent = self._create_agent_with_graph(db_client, graph)
+        agent_id = agent["id"]
+
+        response = db_client.post(
+            f"/api/agents/{agent_id}/apply-snippets",
+            json={"snippets": [{"name": "tone", "text": "Always be polite."}]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+
+        # Snippet should be added to the graph
+        assert "tone" in data["snippets"]
+        assert data["snippets"]["tone"] == "Always be polite."
+
+        # The text should be replaced with refs in prompts
+        assert "{%tone%}" in data["nodes"]["a"]["state_prompt"]
+        assert "{%tone%}" in data["nodes"]["b"]["state_prompt"]
+
+    def test_export_expanded(self, db_client):
+        graph = self._make_graph(
+            snippets={"greeting": "Hello!"},
+            a="{%greeting%} Welcome to support.",
+        )
+        self._create_agent_with_graph(db_client, graph)
+
+        # Export with expanded=True should resolve snippet refs
+        response = db_client.post(
+            "/api/agents/export",
+            json={
+                "graph": graph.model_dump(),
+                "format": "mermaid",
+                "expanded": True,
+            },
+        )
+        assert response.status_code == 200
