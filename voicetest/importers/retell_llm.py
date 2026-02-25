@@ -179,9 +179,29 @@ class RetellLLMImporter:
         )
 
     def _convert_tool(self, tool: RetellLLMTool) -> ToolDefinition:
-        """Convert Retell LLM tool to ToolDefinition."""
+        """Convert Retell LLM tool to ToolDefinition.
+
+        Retell's LLM format declares built-in actions (end_call, transfer_call)
+        as type=custom. This method resolves the actual type from the tool name.
+        """
+        tool_type = _resolve_tool_type(tool.name, tool.type)
         return ToolDefinition(
             name=tool.name,
             description=tool.description,
             parameters=tool.parameters or {},
+            type=tool_type,
         )
+
+
+def _resolve_tool_type(name: str, declared_type: str) -> str:
+    """Resolve the effective tool type from its name.
+
+    In Retell's LLM format, built-in actions like end_call and transfer_call
+    are declared as type=custom. This function returns the correct type based
+    on well-known tool name patterns.
+    """
+    if name == "end_call":
+        return "end_call"
+    if name.startswith("transfer_call"):
+        return "transfer_call"
+    return declared_type

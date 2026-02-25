@@ -71,6 +71,8 @@ class TestExportersEndpoint:
             assert "id" in exp
             assert "name" in exp
             assert "description" in exp
+            assert "ext" in exp
+            assert exp["ext"] != "undefined"
 
 
 class TestImportEndpoint:

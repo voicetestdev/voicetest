@@ -251,3 +251,65 @@ class TestRetellLLMDashboardExport:
 
         importer = RetellLLMImporter()
         assert importer.can_import(ambiguous_config) is False
+
+    def test_end_call_tool_gets_correct_type(self):
+        """Tools named end_call should get type='end_call' even if declared as custom."""
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        config = {
+            "general_prompt": "You are a helpful agent.",
+            "general_tools": [
+                {"type": "custom", "name": "end_call", "description": ""},
+            ],
+            "states": [],
+        }
+
+        importer = RetellLLMImporter()
+        graph = importer.import_agent(config)
+        tool = graph.nodes["main"].tools[0]
+        assert tool.name == "end_call"
+        assert tool.type == "end_call"
+
+    def test_transfer_call_tool_gets_correct_type(self):
+        """Tools named transfer_call_to_* should get type='transfer_call'."""
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        config = {
+            "general_prompt": "You are a helpful agent.",
+            "general_tools": [
+                {
+                    "type": "custom",
+                    "name": "transfer_call_to_person",
+                    "description": "Transfer the call",
+                },
+            ],
+            "states": [],
+        }
+
+        importer = RetellLLMImporter()
+        graph = importer.import_agent(config)
+        tool = graph.nodes["main"].tools[0]
+        assert tool.name == "transfer_call_to_person"
+        assert tool.type == "transfer_call"
+
+    def test_custom_tool_keeps_custom_type(self):
+        """Regular custom tools should keep type='custom'."""
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        config = {
+            "general_prompt": "You are a helpful agent.",
+            "general_tools": [
+                {
+                    "type": "custom",
+                    "name": "lookup_patient",
+                    "description": "Look up a patient",
+                },
+            ],
+            "states": [],
+        }
+
+        importer = RetellLLMImporter()
+        graph = importer.import_agent(config)
+        tool = graph.nodes["main"].tools[0]
+        assert tool.name == "lookup_patient"
+        assert tool.type == "custom"

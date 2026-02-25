@@ -488,6 +488,7 @@ class ExportFormatInfo(BaseModel):
     id: str
     name: str
     description: str
+    ext: str
 
 
 @router.get("/importers", response_model=list[ImporterInfo])

@@ -40,11 +40,16 @@ def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
     """
     metadata = graph.source_metadata or {}
 
+    default_model = graph.default_model or "gpt-4o"
+    model_choice = metadata.get("model_choice", {"type": "cascading", "model": default_model})
+
+    begin_message = metadata.get("begin_message", "")
+
     result: dict[str, Any] = {
         "start_node_id": graph.entry_node_id,
-        "nodes": _build_nodes(graph),
+        "nodes": _build_nodes(graph, graph.entry_node_id, begin_message),
         "start_speaker": metadata.get("start_speaker", "agent"),
-        "model_choice": metadata.get("model_choice", {"type": "cascading", "model": "gpt-4o"}),
+        "model_choice": model_choice,
     }
 
     # Add global_prompt if present
@@ -53,8 +58,7 @@ def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
         result["global_prompt"] = general_prompt
 
     all_tools = _collect_all_tools(graph)
-    if all_tools:
-        result["tools"] = [_convert_tool(t) for t in all_tools]
+    result["tools"] = [_convert_tool(t) for t in all_tools]
 
     if "conversation_flow_id" in metadata:
         result["conversation_flow_id"] = metadata["conversation_flow_id"]
@@ -72,21 +76,30 @@ def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
     return result
 
 
-def _build_nodes(graph: AgentGraph) -> list[dict[str, Any]]:
+def _build_nodes(graph: AgentGraph, entry_node_id: str, begin_message: str) -> list[dict[str, Any]]:
     """Build nodes array from graph."""
-    return [_convert_node(node) for node in graph.nodes.values()]
+    return [
+        _convert_node(node, is_entry=(node.id == entry_node_id), begin_message=begin_message)
+        for node in graph.nodes.values()
+    ]
 
 
-def _convert_node(node: AgentNode) -> dict[str, Any]:
+def _convert_node(
+    node: AgentNode, *, is_entry: bool = False, begin_message: str = ""
+) -> dict[str, Any]:
     """Convert an AgentNode to a Retell Conversation Flow node."""
     node_type = node.metadata.get("retell_type", "conversation")
+
+    prompt_text = node.state_prompt
+    if is_entry and begin_message:
+        prompt_text = f"[Begin message: {begin_message}]\n\n{prompt_text}"
 
     return {
         "id": node.id,
         "type": node_type,
         "instruction": {
             "type": "prompt",
-            "text": node.state_prompt,
+            "text": prompt_text,
         },
         "edges": [_convert_transition_to_edge(t, i) for i, t in enumerate(node.transitions)],
     }
@@ -116,23 +129,15 @@ def _convert_transition_to_edge(transition, index: int) -> dict[str, Any]:
 def _collect_all_tools(graph: AgentGraph) -> list[ToolDefinition]:
     """Collect and deduplicate all tools from all nodes.
 
-    Only includes tools that can be exported to Retell CF format.
-    Built-in actions like end_call and transfer_call are handled via node
-    types and edges. Custom tools require a URL (webhook endpoint) to be
-    valid in Retell CF.
+    Includes all tool types (custom, end_call, transfer_call, etc.) since
+    Retell's UI expects tool declarations to be present even for built-in
+    actions referenced in prompts.
     """
     seen_names: set[str] = set()
     tools: list[ToolDefinition] = []
 
-    builtin_actions = {"end_call", "transfer_call"}
-
     for node in graph.nodes.values():
         for tool in node.tools:
-            if tool.name in builtin_actions:
-                continue
-            # Custom tools require a URL - skip if not present
-            if tool.type == "custom" and not tool.url:
-                continue
             if tool.name not in seen_names:
                 tools.append(tool)
                 seen_names.add(tool.name)
@@ -149,4 +154,8 @@ def _convert_tool(tool: ToolDefinition) -> dict[str, Any]:
     }
     if tool.parameters:
         result["parameters"] = tool.parameters
+    if tool.url:
+        result["url"] = tool.url
+    if tool.tool_id:
+        result["tool_id"] = tool.tool_id
     return result
