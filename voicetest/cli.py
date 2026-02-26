@@ -12,9 +12,7 @@ from rich.console import Console
 from rich.table import Table
 import uvicorn
 
-from voicetest import api
 from voicetest.compose import get_compose_path
-from voicetest.container import get_session
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
 from voicetest.formatting import format_run
@@ -22,9 +20,11 @@ from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.retry import RetryError
 from voicetest.runner import TestRunContext
+from voicetest.services import get_agent_service
+from voicetest.services import get_discovery_service
+from voicetest.services import get_test_case_service
+from voicetest.services import get_test_execution_service
 from voicetest.settings import load_settings
-from voicetest.storage.repositories import AgentRepository
-from voicetest.storage.repositories import TestCaseRepository
 from voicetest.tui import VoicetestApp
 from voicetest.tui import VoicetestShell
 
@@ -222,6 +222,26 @@ def tui(agent: Path, tests: Path, source: str | None):
     _run_tui(agent, tests, source, verbose=False)
 
 
+def _get_export_format_ids() -> list[str]:
+    """Get export format IDs from the registry (single source of truth)."""
+    return [f["id"] for f in get_discovery_service().list_export_formats()]
+
+
+class LazyExportChoice(click.Choice):
+    """Choice type that reads export formats from registry at validation time."""
+
+    def __init__(self):
+        super().__init__([])
+
+    @property
+    def choices(self):
+        return _get_export_format_ids()
+
+    @choices.setter
+    def choices(self, value):
+        pass
+
+
 @main.command()
 @click.option(
     "--agent",
@@ -234,26 +254,31 @@ def tui(agent: Path, tests: Path, source: str | None):
     "--format",
     "-f",
     required=True,
-    type=click.Choice(
-        ["livekit", "mermaid", "retell-llm", "retell-cf", "vapi-assistant", "vapi-squad"]
-    ),
-    help="Export format",
+    type=LazyExportChoice(),
+    help="Export format (see 'voicetest exporters' for list)",
 )
 @click.option("--output", "-o", default=None, type=click.Path(path_type=Path), help="Output file")
 def export(agent: Path, format: str, output: Path | None):
-    """Export agent to different formats."""
+    """Export agent to different formats.
+
+    Examples:
+
+        voicetest export -a agent.json -f mermaid
+
+        voicetest export -a agent.json -f retell-llm -o out.json
+    """
     asyncio.run(_export(agent, format, output))
 
 
 def _get_export_info(format: str) -> tuple[str, str]:
     """Get file extension and suffix for export format.
 
-    Uses list_export_formats() as the single source of truth.
+    Uses the DiscoveryService as the single source of truth.
 
     Returns:
         Tuple of (extension with dot, filename suffix).
     """
-    formats = api.list_export_formats()
+    formats = get_discovery_service().list_export_formats()
     for fmt in formats:
         if fmt["id"] == format:
             ext = f".{fmt['ext']}"
@@ -265,7 +290,8 @@ def _get_export_info(format: str) -> tuple[str, str]:
 
 async def _export(agent: Path, format: str, output: Path | None) -> None:
     """Async implementation of export command."""
-    graph = await api.import_agent(agent)
+    svc = get_agent_service()
+    graph = await svc.import_agent(agent)
 
     # Generate default output filename if not provided
     if output is None:
@@ -273,14 +299,15 @@ async def _export(agent: Path, format: str, output: Path | None) -> None:
         ext, suffix = _get_export_info(format)
         output = Path(f"{agent_name}{suffix}{ext}")
 
-    await api.export_agent(graph, format=format, output=output)
+    await svc.export_agent(graph, format=format, output=output)
     console.print(f"[dim]Exported to {output}[/dim]")
 
 
 @main.command()
 def importers():
     """List available importers."""
-    importer_list = api.list_importers()
+    svc = get_discovery_service()
+    importer_list = svc.list_importers()
 
     table = Table(title="Available Importers")
     table.add_column("Source Type", style="cyan")
@@ -293,6 +320,24 @@ def importers():
             imp.description,
             ", ".join(imp.file_patterns) if imp.file_patterns else "-",
         )
+
+    console.print(table)
+
+
+@main.command()
+def exporters():
+    """List available export formats."""
+    svc = get_discovery_service()
+    format_list = svc.list_export_formats()
+
+    table = Table(title="Available Export Formats")
+    table.add_column("Format ID", style="cyan")
+    table.add_column("Name")
+    table.add_column("Description")
+    table.add_column("Extension")
+
+    for fmt in format_list:
+        table.add_row(fmt["id"], fmt["name"], fmt["description"], fmt["ext"])
 
     console.print(table)
 
@@ -318,30 +363,27 @@ def demo(serve: bool, host: str, port: int):
     demo_tests = get_demo_tests()
 
     if serve:
-        session = get_session()
+        agent_svc = get_agent_service()
+        test_svc = get_test_case_service()
 
-        agent_repo = AgentRepository(session)
-        test_repo = TestCaseRepository(session)
+        asyncio.run(agent_svc.import_agent(demo_agent_config))
 
-        graph = asyncio.run(api.import_agent(demo_agent_config))
-
-        existing = agent_repo.list_all()
+        existing = agent_svc.list_agents()
         demo_exists = any(a.get("name") == "Demo Healthcare Agent" for a in existing)
 
         if demo_exists:
             agent = next(a for a in existing if a.get("name") == "Demo Healthcare Agent")
             console.print(f"  Using existing demo agent: {agent['id']}")
         else:
-            agent = agent_repo.create(
+            agent = agent_svc.create_agent(
                 name="Demo Healthcare Agent",
-                source_type=graph.source_type,
-                graph_json=graph.model_dump_json(),
+                config=demo_agent_config,
             )
             console.print(f"  Created demo agent: {agent['id']}")
 
             for test_data in demo_tests:
                 test_case = TestCase(**test_data)
-                test_repo.create(agent["id"], test_case)
+                test_svc.create_test(agent["id"], test_case)
 
             console.print(f"  Created {len(demo_tests)} test cases")
 
@@ -398,7 +440,10 @@ async def _smoke_test(max_turns: int) -> None:
     console.print(f"  Max turns: {max_turns}")
     console.print()
 
-    graph = await api.import_agent(demo_agent)
+    agent_svc = get_agent_service()
+    exec_svc = get_test_execution_service()
+
+    graph = await agent_svc.import_agent(demo_agent)
     test_case = TestCase.model_validate(first_test)
     options = RunOptions(
         agent_model=settings.models.agent,
@@ -413,7 +458,7 @@ async def _smoke_test(max_turns: int) -> None:
             f"waiting {error.retry_after:.1f}s[/yellow]"
         )
 
-    result = await api.run_test(graph, test_case, options, on_error=on_error)
+    result = await exec_svc.run_test(graph, test_case, options, on_error=on_error)
 
     # Display result
     status_color = "green" if result.status == "pass" else "red"

@@ -2,7 +2,6 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./demo",
-  testMatch: "web-demo.ts",
   timeout: 60000,
   use: {
     baseURL: "http://localhost:8000",
@@ -15,4 +14,8 @@ export default defineConfig({
     },
   },
   outputDir: "../docs/demos/test-results",
+  projects: [
+    { name: "web", testMatch: "web-demo.ts" },
+    { name: "dry", testMatch: "dry-demo.ts" },
+  ],
 });

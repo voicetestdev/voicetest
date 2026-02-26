@@ -4516,7 +4516,7 @@ wheels = [
 
 [[package]]
 name = "voicetest"
-version = "0.24"
+version = "0.25"
 source = { editable = "." }
 dependencies = [
     { name = "bland" },

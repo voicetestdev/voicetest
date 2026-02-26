@@ -10,13 +10,14 @@ import json
 from pathlib import Path
 import uuid
 
-from voicetest import api
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.retry import OnErrorCallback
+from voicetest.services import get_agent_service
+from voicetest.services import get_test_execution_service
 
 
 async def load_agent(
@@ -32,7 +33,8 @@ async def load_agent(
     Returns:
         Loaded AgentGraph.
     """
-    return await api.import_agent(agent_path, source=source)
+    svc = get_agent_service()
+    return await svc.import_agent(agent_path, source=source)
 
 
 def load_test_cases(tests_path: Path) -> list[TestCase]:
@@ -65,7 +67,8 @@ async def run_all_tests(
     Returns:
         TestRun with all results.
     """
-    return await api.run_tests(graph, test_cases, options, _mock_mode=mock_mode)
+    svc = get_test_execution_service()
+    return await svc.run_tests(graph, test_cases, options, _mock_mode=mock_mode)
 
 
 async def run_tests_streaming(
@@ -89,8 +92,9 @@ async def run_tests_streaming(
     Yields:
         TestResult as each test completes.
     """
+    svc = get_test_execution_service()
     for test_case in test_cases:
-        result = await api.run_test(
+        result = await svc.run_test(
             graph, test_case, options, _mock_mode=mock_mode, on_error=on_error
         )
         yield result

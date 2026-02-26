@@ -843,23 +843,26 @@
       </div>
       <div class="modal-body">
         {#if importTab === "import"}
-          <div class="drop-zone">
-            <label for="file-input" class="file-label">
-              Choose File
-              <input
-                id="file-input"
-                type="file"
-                accept=".json,application/json"
-                onchange={handleFileUpload}
-              />
-            </label>
-            <span class="file-hint">or paste JSON below</span>
+          <div class="import-fields">
+            <div class="drop-zone">
+              <label for="file-input" class="file-label">
+                Choose File
+                <input
+                  id="file-input"
+                  type="file"
+                  accept=".json,application/json"
+                  onchange={handleFileUpload}
+                />
+              </label>
+              <span class="file-hint">or paste JSON below</span>
+            </div>
+            <textarea
+              class="json-input"
+              bind:value={jsonImport}
+              placeholder="Paste test case JSON (single or array)..."
+              rows={10}
+            ></textarea>
           </div>
-          <textarea
-            bind:value={jsonImport}
-            placeholder="Paste test case JSON (single or array)..."
-            rows={10}
-          ></textarea>
           {#if importError}
             <p class="error-message">{importError}</p>
           {/if}
@@ -1429,6 +1432,19 @@
   .file-hint {
     color: var(--text-muted);
     font-size: 0.85rem;
+  }
+
+  .import-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .json-input {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: monospace;
+    font-size: var(--text-sm);
   }
 
   /* Import progress bar */

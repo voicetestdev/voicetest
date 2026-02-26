@@ -114,3 +114,60 @@ class TestSuggestSnippets:
         result = suggest_snippets(graph, min_length=20)
         # Should have at least exact match for "Always be polite and professional"
         assert len(result.exact) > 0 or len(result.fuzzy) > 0
+
+
+class TestDryAnalysisFixture:
+    """Tests exercising DRY analysis against the insurance claims fixture."""
+
+    def test_exact_matches_found(self, graph_dry_analysis):
+        """find_repeated_text returns 3+ matches with 2+ locations each."""
+        results = find_repeated_text(graph_dry_analysis)
+
+        assert len(results) >= 3
+        for match in results:
+            assert len(match.locations) >= 2
+
+        matched_texts = [r.text for r in results]
+        assert any("All calls are recorded" in t for t in matched_texts)
+        assert any("verify the caller" in t for t in matched_texts)
+        assert any("Meridian Insurance" in t for t in matched_texts)
+
+    def test_fuzzy_matches_found(self, graph_dry_analysis):
+        """find_similar_text returns 3+ matches above 0.8 threshold."""
+        results = find_similar_text(graph_dry_analysis, threshold=0.8)
+
+        assert len(results) >= 3
+        for match in results:
+            assert match.similarity >= 0.8
+
+    def test_general_prompt_overlap_detected(self, graph_dry_analysis):
+        """At least one exact match includes general_prompt in its locations."""
+        results = find_repeated_text(graph_dry_analysis)
+        locations_with_general = [r for r in results if "general_prompt" in r.locations]
+        assert len(locations_with_general) >= 1
+
+    def test_unique_content_not_flagged(self, graph_dry_analysis):
+        """Node-specific unique sentences do not appear in any match."""
+        exact = find_repeated_text(graph_dry_analysis)
+        fuzzy = find_similar_text(graph_dry_analysis, threshold=0.8)
+
+        exact_texts = [r.text for r in exact]
+        fuzzy_texts = [t for r in fuzzy for t in r.texts]
+        all_flagged = exact_texts + fuzzy_texts
+
+        unique_fragments = [
+            "policy number, date of birth",
+            "filing a new insurance claim step by step",
+            "current status of their claim including any pending actions",
+            "premium breakdown and current payment schedule",
+        ]
+        for fragment in unique_fragments:
+            assert not any(fragment in t for t in all_flagged), (
+                f"Unique fragment should not be flagged: {fragment}"
+            )
+
+    def test_suggest_snippets_combined(self, graph_dry_analysis):
+        """suggest_snippets returns non-empty exact and fuzzy lists."""
+        result = suggest_snippets(graph_dry_analysis)
+        assert len(result.exact) > 0
+        assert len(result.fuzzy) > 0

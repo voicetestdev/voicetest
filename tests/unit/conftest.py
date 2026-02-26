@@ -390,3 +390,12 @@ def graph_with_dynamic_variables(fixtures_dir: Path):
 
     config_path = fixtures_dir / "graphs" / "graph_with_dynamic_variables.json"
     return AgentGraph.model_validate_json(config_path.read_text())
+
+
+@pytest.fixture
+def graph_dry_analysis(fixtures_dir: Path):
+    """Graph with repeated and similar prompts for DRY analysis testing."""
+    from voicetest.models.agent import AgentGraph
+
+    config_path = fixtures_dir / "graphs" / "graph_dry_analysis.json"
+    return AgentGraph.model_validate_json(config_path.read_text())

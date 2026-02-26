@@ -1,7 +1,7 @@
 """REST API for voicetest.
 
-Thin wrapper over the core API (voicetest.api). All business logic
-lives in api.py - this module just handles HTTP concerns.
+Transport adapter over the service layer. All business logic lives in
+voicetest.services — this module handles HTTP/WebSocket concerns.
 
 Run with: voicetest serve
 Or: uvicorn voicetest.rest:app --reload
@@ -33,18 +33,14 @@ from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from voicetest import api
 from voicetest.calls import get_call_manager
 from voicetest.chat import get_chat_manager
 from voicetest.container import get_container
-from voicetest.container import get_exporter_registry
-from voicetest.container import get_importer_registry
 from voicetest.container import get_session
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
 from voicetest.executor import RunJob
 from voicetest.executor import get_executor_factory
-from voicetest.exporters.test_cases import export_tests
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import GlobalMetric
 from voicetest.models.agent import MetricsConfig
@@ -56,27 +52,26 @@ from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
-from voicetest.pathutil import resolve_file
-from voicetest.pathutil import resolve_path
 from voicetest.pathutil import resolve_within
-from voicetest.platforms.registry import PlatformRegistry
 from voicetest.retry import RetryError
+from voicetest.services import get_agent_service
+from voicetest.services import get_diagnosis_service
+from voicetest.services import get_discovery_service
+from voicetest.services import get_evaluation_service
+from voicetest.services import get_platform_service
+from voicetest.services import get_run_service
+from voicetest.services import get_settings_service
+from voicetest.services import get_snippet_service
+from voicetest.services import get_test_case_service
+from voicetest.services import get_test_execution_service
 from voicetest.settings import Settings
 from voicetest.settings import load_settings
 from voicetest.settings import resolve_model
-from voicetest.settings import save_settings
-from voicetest.snippets import suggest_snippets
-from voicetest.storage.linked_file import check_file
-from voicetest.storage.linked_file import compute_etag
-from voicetest.storage.linked_file import write_json
 from voicetest.storage.models import Result as ResultModel
 from voicetest.storage.models import Run as RunModel
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import CallRepository
-from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
-from voicetest.templating import expand_graph_snippets
-from voicetest.templating import extract_variables
 
 
 # Configure logging from env var set by CLI (carries across uvicorn --reload workers).
@@ -165,34 +160,9 @@ def get_test_case_repo() -> TestCaseRepository:
     return _get_repo(TestCaseRepository)
 
 
-def get_run_repo() -> RunRepository:
-    """Get the run repository from the DI container."""
-    return _get_repo(RunRepository)
-
-
 def get_call_repo() -> CallRepository:
     """Get the call repository from the DI container."""
     return _get_repo(CallRepository)
-
-
-def _find_linked_test(test_id: str) -> dict | None:
-    """Search all agents' linked test files for a test with the given ID.
-
-    Returns the matching test dict (with source_path/source_index) or None.
-    """
-    agent_repo = get_agent_repo()
-    test_repo = get_test_case_repo()
-
-    for agent in agent_repo.list_all():
-        tests_paths = agent.get("tests_paths")
-        if not tests_paths:
-            continue
-        linked = test_repo.list_for_agent_with_linked(agent["id"], tests_paths)
-        for t in linked:
-            if t["id"] == test_id and t.get("source_path"):
-                return t
-
-    return None
 
 
 def _find_web_dist() -> Path | None:
@@ -490,7 +460,7 @@ class ExportFormatInfo(BaseModel):
 @router.get("/importers", response_model=list[ImporterInfo])
 async def list_importers() -> list[ImporterInfo]:
     """List available importers."""
-    importers = api.list_importers()
+    importers = get_discovery_service().list_importers()
     return [
         ImporterInfo(
             source_type=imp.source_type,
@@ -504,7 +474,7 @@ async def list_importers() -> list[ImporterInfo]:
 @router.get("/exporters", response_model=list[ExportFormatInfo])
 async def list_exporters() -> list[ExportFormatInfo]:
     """List available export formats."""
-    formats = api.list_export_formats()
+    formats = get_discovery_service().list_export_formats()
     return [ExportFormatInfo(**f) for f in formats]
 
 
@@ -512,7 +482,7 @@ async def list_exporters() -> list[ExportFormatInfo]:
 async def import_agent(request: ImportRequest) -> AgentGraph:
     """Import an agent from config."""
     try:
-        return await api.import_agent(request.config, source=request.source)
+        return await get_agent_service().import_agent(request.config, source=request.source)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
@@ -531,7 +501,7 @@ async def import_agent_file(file: UploadFile, source: str | None = None) -> Agen
             tmp_path = tmp.name
 
         try:
-            return await api.import_agent(tmp_path, source=source)
+            return await get_agent_service().import_agent(tmp_path, source=source)
         finally:
             Path(tmp_path).unlink(missing_ok=True)
     except ValueError as e:
@@ -542,10 +512,9 @@ async def import_agent_file(file: UploadFile, source: str | None = None) -> Agen
 async def export_agent(request: ExportRequest) -> dict[str, str]:
     """Export an agent graph to a format."""
     try:
-        graph = request.graph
-        if request.expanded and graph.snippets:
-            graph = expand_graph_snippets(graph)
-        content = await api.export_agent(graph, format=request.format)
+        content = await get_agent_service().export_agent(
+            request.graph, format=request.format, expanded=request.expanded
+        )
         return {"content": content, "format": request.format}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -586,7 +555,7 @@ async def run_test(request: RunTestRequest) -> TestResult:
     settings = load_settings()
     settings.apply_env()
     options = _build_run_options(settings, request.options)
-    return await api.run_test(
+    return await get_test_execution_service().run_test(
         request.graph,
         request.test_case,
         options=options,
@@ -599,7 +568,7 @@ async def run_tests(request: RunTestsRequest) -> TestRun:
     settings = load_settings()
     settings.apply_env()
     options = _build_run_options(settings, request.options)
-    return await api.run_tests(
+    return await get_test_execution_service().run_tests(
         request.graph,
         request.test_cases,
         options=options,
@@ -609,7 +578,7 @@ async def run_tests(request: RunTestsRequest) -> TestRun:
 @router.post("/evaluate", response_model=list[MetricResult])
 async def evaluate_transcript(request: EvaluateRequest) -> list[MetricResult]:
     """Evaluate a transcript against metrics."""
-    return await api.evaluate_transcript(
+    return await get_evaluation_service().evaluate_transcript(
         request.transcript,
         request.metrics,
     )
@@ -618,32 +587,31 @@ async def evaluate_transcript(request: EvaluateRequest) -> list[MetricResult]:
 @router.get("/settings", response_model=Settings)
 async def get_settings() -> Settings:
     """Get current settings from .voicetest.toml."""
-    return load_settings()
+    return get_settings_service().get_settings()
 
 
 @router.get("/settings/defaults", response_model=Settings)
 async def get_default_settings() -> Settings:
     """Get default settings (not from file)."""
-    return Settings()
+    return get_settings_service().get_defaults()
 
 
 @router.put("/settings", response_model=Settings)
 async def update_settings(settings: Settings) -> Settings:
     """Update settings in .voicetest.toml."""
-    save_settings(settings)
-    return settings
+    return get_settings_service().update_settings(settings)
 
 
 @router.get("/agents")
 async def list_agents() -> list[dict]:
     """List all agents."""
-    return get_agent_repo().list_all()
+    return get_agent_service().list_agents()
 
 
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: str) -> dict:
     """Get agent by ID."""
-    return _get_agent_or_404(agent_id)
+    return _require_agent(agent_id)
 
 
 @router.get("/agents/{agent_id}/graph", response_model=None)
@@ -657,44 +625,22 @@ async def get_agent_graph(
     For linked agents (source_path), uses file mtime for ETag-based caching.
     Returns 304 Not Modified if the file hasn't changed.
     """
-    agent = _get_agent_or_404(agent_id)
-
-    # For linked agents, use file mtime for caching
-    source_path = agent.get("source_path")
-    if source_path:
-        try:
-            _mtime, etag = check_file(source_path, agent_id)
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=404, detail=f"Agent file not found: {source_path}"
-            ) from None
-
-        if if_none_match and if_none_match == etag:
-            return Response(status_code=304)
-
-        response.headers["ETag"] = etag
-        response.headers["Cache-Control"] = "private, must-revalidate"
-
-        return get_importer_registry().import_agent(resolve_path(source_path))
-
-    # For non-linked agents, use updated_at for caching
+    svc = get_agent_service()
     try:
-        result = get_agent_repo().load_graph(agent)
-        if isinstance(result, Path):
-            return get_importer_registry().import_agent(result)
-
-        updated_at = agent.get("updated_at", "")
-        etag = compute_etag(agent_id, updated_at)
-
-        if if_none_match and if_none_match == etag:
-            return Response(status_code=304)
-
-        response.headers["ETag"] = etag
-        response.headers["Cache-Control"] = "private, must-revalidate"
-
-        return result
+        graph, etag, not_modified = svc.get_graph_with_etag(agent_id, if_none_match)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+
+    if not_modified:
+        return Response(status_code=304)
+
+    if etag:
+        response.headers["ETag"] = etag
+        response.headers["Cache-Control"] = "private, must-revalidate"
+
+    return graph
 
 
 @router.get("/agents/{agent_id}/variables")
@@ -704,170 +650,103 @@ async def get_agent_variables(agent_id: str) -> dict:
     Scans general_prompt and all node state_prompt values for {{var}} placeholders.
     Returns unique variable names in first-appearance order.
     """
-    _agent, graph = _load_agent_graph(agent_id)
-
-    # Collect all text that might contain {{var}} placeholders
-    texts = []
-    general_prompt = graph.source_metadata.get("general_prompt", "")
-    if general_prompt:
-        texts.append(general_prompt)
-    for node in graph.nodes.values():
-        if node.state_prompt:
-            texts.append(node.state_prompt)
-
-    combined = "\n".join(texts)
-    variables = extract_variables(combined)
-
+    svc = get_agent_service()
+    try:
+        variables = svc.get_variables(agent_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
     return {"variables": variables}
 
 
-def _get_agent_or_404(agent_id: str) -> dict:
-    """Fetch an agent by ID or raise 404."""
-    agent = get_agent_repo().get(agent_id)
+def _require_agent(agent_id: str) -> dict:
+    """Get agent or raise 404."""
+    agent = get_agent_service().get_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     return agent
 
 
 def _load_agent_graph(agent_id: str) -> tuple[dict, AgentGraph]:
-    """Load agent record and its graph. Raises HTTPException on failure.
-
-    Checks source_path first (for linked-file agents) before falling back
-    to the database via repo.load_graph.
-    """
-    agent = _get_agent_or_404(agent_id)
-
-    source_path = agent.get("source_path")
-    if source_path:
-        try:
-            graph = get_importer_registry().import_agent(resolve_path(source_path))
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=404, detail=f"Agent file not found: {source_path}"
-            ) from None
-    else:
-        try:
-            result = get_agent_repo().load_graph(agent)
-            graph = (
-                get_importer_registry().import_agent(result) if isinstance(result, Path) else result
-            )
-        except (FileNotFoundError, ValueError) as e:
-            raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
-
-    return agent, graph
-
-
-def _save_agent_graph(agent_id: str, agent: dict, graph: AgentGraph) -> None:
-    """Persist an updated graph back to DB or linked file."""
-    source_path = agent.get("source_path")
-    if source_path:
-        try:
-            _write_graph_to_linked_file(graph, source_path, agent)
-        except OSError as e:
-            raise HTTPException(
-                status_code=400, detail=f"Cannot write to linked file: {e}"
-            ) from None
-    else:
-        get_agent_repo().update(agent_id, graph_json=graph.model_dump_json())
+    """Load agent record and its graph. Raises HTTPException on failure."""
+    try:
+        return get_agent_service().load_graph(agent_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.get("/agents/{agent_id}/snippets")
 async def get_snippets(agent_id: str) -> dict:
     """Get all snippets defined for an agent."""
-    _agent, graph = _load_agent_graph(agent_id)
-    return {"snippets": graph.snippets}
+    svc = get_snippet_service()
+    try:
+        return {"snippets": svc.get_snippets(agent_id)}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.put("/agents/{agent_id}/snippets")
 async def update_all_snippets(agent_id: str, body: dict) -> dict:
     """Replace all snippets for an agent."""
-    agent, graph = _load_agent_graph(agent_id)
-    graph.snippets = body.get("snippets", {})
-    _save_agent_graph(agent_id, agent, graph)
-    return {"snippets": graph.snippets}
+    svc = get_snippet_service()
+    try:
+        return {"snippets": svc.update_all_snippets(agent_id, body.get("snippets", {}))}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.put("/agents/{agent_id}/snippets/{name}")
 async def update_snippet(agent_id: str, name: str, request: UpdateSnippetRequest) -> dict:
     """Create or update a single snippet."""
-    agent, graph = _load_agent_graph(agent_id)
-    graph.snippets[name] = request.text
-    _save_agent_graph(agent_id, agent, graph)
-    return {"snippets": graph.snippets}
+    svc = get_snippet_service()
+    try:
+        return {"snippets": svc.update_snippet(agent_id, name, request.text)}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.delete("/agents/{agent_id}/snippets/{name}")
 async def delete_snippet(agent_id: str, name: str) -> dict:
     """Delete a single snippet."""
-    agent, graph = _load_agent_graph(agent_id)
-    if name not in graph.snippets:
-        raise HTTPException(status_code=404, detail=f"Snippet not found: {name}")
-    del graph.snippets[name]
-    _save_agent_graph(agent_id, agent, graph)
-    return {"snippets": graph.snippets}
+    svc = get_snippet_service()
+    try:
+        return {"snippets": svc.delete_snippet(agent_id, name)}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.post("/agents/{agent_id}/analyze-dry")
 async def analyze_dry(agent_id: str) -> dict:
     """Run auto-DRY analysis on an agent's prompts."""
-    _agent, graph = _load_agent_graph(agent_id)
-    result = suggest_snippets(graph)
-    return {
-        "exact": [{"text": m.text, "locations": m.locations} for m in result.exact],
-        "fuzzy": [
-            {"texts": m.texts, "locations": m.locations, "similarity": m.similarity}
-            for m in result.fuzzy
-        ],
-    }
+    svc = get_snippet_service()
+    try:
+        return svc.analyze_dry(agent_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.post("/agents/{agent_id}/apply-snippets", response_model=AgentGraph)
 async def apply_snippets(agent_id: str, request: ApplySnippetsRequest) -> AgentGraph:
     """Apply snippets: add them to graph and replace occurrences in prompts with {%name%} refs."""
-    agent, graph = _load_agent_graph(agent_id)
-
-    for snippet in request.snippets:
-        name = snippet["name"]
-        text = snippet["text"]
-        graph.snippets[name] = text
-
-        ref = "{%" + name + "%}"
-
-        # Replace in general_prompt
-        general_prompt = graph.source_metadata.get("general_prompt", "")
-        if text in general_prompt:
-            graph.source_metadata["general_prompt"] = general_prompt.replace(text, ref)
-
-        # Replace in node state_prompts
-        for node in graph.nodes.values():
-            if text in node.state_prompt:
-                node.state_prompt = node.state_prompt.replace(text, ref)
-
-    _save_agent_graph(agent_id, agent, graph)
-    return graph
+    svc = get_snippet_service()
+    try:
+        return svc.apply_snippets(agent_id, request.snippets)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.post("/agents")
 async def create_agent(request: CreateAgentRequest) -> dict:
     """Create an agent from config dict or file path."""
-    if not request.config and not request.path:
-        raise HTTPException(status_code=400, detail="Either config or path is required")
-
-    # Validate and resolve path before attempting import
-    absolute_path: str | None = None
-    if request.path:
-        path = resolve_file(request.path)
-        try:
-            path.read_text()
-        except PermissionError:
-            raise HTTPException(
-                status_code=400, detail=f"Permission denied: {request.path}"
-            ) from None
-        absolute_path = str(path)
-
+    svc = get_agent_service()
     try:
-        source = absolute_path if absolute_path else request.config
-        graph = await api.import_agent(source, source=request.source)
+        return svc.create_agent(
+            name=request.name,
+            config=request.config,
+            path=request.path,
+            source=request.source,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     except FileNotFoundError:
@@ -876,14 +755,6 @@ async def create_agent(request: CreateAgentRequest) -> dict:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from None
     except PermissionError:
         raise HTTPException(status_code=400, detail=f"Permission denied: {request.path}") from None
-
-    repo = get_agent_repo()
-    return repo.create(
-        name=request.name,
-        source_type=graph.source_type,
-        source_path=absolute_path,
-        graph_json=graph.model_dump_json(),
-    )
 
 
 @router.post("/agents/upload")
@@ -898,6 +769,7 @@ async def create_agent_from_file(
 
     agent_name = name or Path(file.filename).stem
     suffix = Path(file.filename).suffix
+    agent_svc = get_agent_service()
 
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -906,7 +778,7 @@ async def create_agent_from_file(
             tmp_path = tmp.name
 
         try:
-            graph = await api.import_agent(tmp_path, source=source)
+            graph = await agent_svc.import_agent(tmp_path, source=source)
         finally:
             Path(tmp_path).unlink(missing_ok=True)
     except ValueError as e:
@@ -923,16 +795,15 @@ async def create_agent_from_file(
 @router.put("/agents/{agent_id}")
 async def update_agent(agent_id: str, request: UpdateAgentRequest) -> dict:
     """Update an agent."""
-    agent = _get_agent_or_404(agent_id)
-
-    graph_json = request.graph_json
-    if graph_json is None and request.default_model is not None and agent.get("graph_json"):
-        # Update default_model in existing stored graph
-        graph_data = json.loads(agent["graph_json"])
-        graph_data["default_model"] = request.default_model if request.default_model else None
-        graph_json = json.dumps(graph_data)
-
-    return get_agent_repo().update(agent_id, name=request.name, graph_json=graph_json)
+    try:
+        return get_agent_service().update_agent(
+            agent_id,
+            name=request.name,
+            default_model=request.default_model,
+            graph_json=request.graph_json,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.put("/agents/{agent_id}/prompts", response_model=AgentGraph)
@@ -943,114 +814,59 @@ async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGra
     When node_id is set, updates that node's state_prompt.
     For linked-file agents, writes back to the source file on disk.
     """
-    agent, graph = _load_agent_graph(agent_id)
-
-    # Apply the prompt update
-    if request.node_id is None:
-        graph.source_metadata["general_prompt"] = request.prompt_text
-    elif request.transition_target_id is not None:
-        node = graph.get_node(request.node_id)
-        if not node:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Node not found: {request.node_id}",
-            )
-        transition = next(
-            (t for t in node.transitions if t.target_node_id == request.transition_target_id),
-            None,
+    try:
+        return get_agent_service().update_prompt(
+            agent_id,
+            prompt_text=request.prompt_text,
+            node_id=request.node_id,
+            transition_target_id=request.transition_target_id,
         )
-        if not transition:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Transition not found: {request.node_id} -> {request.transition_target_id}",
-            )
-        transition.condition.value = request.prompt_text
-    else:
-        node = graph.get_node(request.node_id)
-        if not node:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Node not found: {request.node_id}",
-            )
-        node.state_prompt = request.prompt_text
-
-    _save_agent_graph(agent_id, agent, graph)
-    return graph
-
-
-def _write_graph_to_linked_file(graph: AgentGraph, source_path: str, agent: dict) -> None:
-    """Export a graph back to a linked file on disk."""
-    source_type = agent.get("source_type", "")
-
-    # Try format-based exporter (e.g. retell-llm)
-    exporter_registry = get_exporter_registry()
-    exporter = exporter_registry.get(source_type)
-    if exporter:
-        exported = json.loads(exporter.export(graph))
-        write_json(source_path, exported)
-        return
-
-    # Try platform-based exporter
-    platform_registry = _get_platform_registry()
-    if platform_registry.has_platform(source_type):
-        platform_exporter = platform_registry.get_exporter(source_type)
-        if platform_exporter:
-            exported = platform_exporter(graph)
-            write_json(source_path, exported)
-            return
-
-    raise HTTPException(
-        status_code=400,
-        detail=f"No exporter available for source type: {source_type}",
-    )
+    except ValueError as e:
+        detail = str(e)
+        status = 400 if "Cannot write" in detail else 404
+        raise HTTPException(status_code=status, detail=detail) from None
 
 
 @router.put("/agents/{agent_id}/metadata", response_model=AgentGraph)
 async def update_metadata(agent_id: str, request: UpdateMetadataRequest) -> AgentGraph:
-    """Merge updates into an agent's source_metadata.
-
-    Supports linked-file agents via _load_agent_graph / _save_agent_graph.
-    """
-    agent, graph = _load_agent_graph(agent_id)
-    graph.source_metadata.update(request.updates)
-    _save_agent_graph(agent_id, agent, graph)
-    return graph
+    """Merge updates into an agent's source_metadata."""
+    try:
+        return get_agent_service().update_metadata(agent_id, request.updates)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str) -> dict:
     """Delete an agent."""
-    _get_agent_or_404(agent_id)
-    get_agent_repo().delete(agent_id)
+    get_agent_service().delete_agent(agent_id)
     return {"status": "deleted", "id": agent_id}
 
 
 @router.get("/agents/{agent_id}/metrics-config")
 async def get_metrics_config(agent_id: str) -> dict:
     """Get an agent's metrics configuration."""
-    _get_agent_or_404(agent_id)
-    config = get_agent_repo().get_metrics_config(agent_id)
+    _require_agent(agent_id)
+    config = get_agent_service().get_metrics_config(agent_id)
     return config.model_dump()
 
 
 @router.put("/agents/{agent_id}/metrics-config")
 async def update_metrics_config(agent_id: str, request: UpdateMetricsConfigRequest) -> dict:
     """Update an agent's metrics configuration."""
-    _get_agent_or_404(agent_id)
+    _require_agent(agent_id)
     config = MetricsConfig(
         threshold=request.threshold,
         global_metrics=request.global_metrics,
     )
-    get_agent_repo().update_metrics_config(agent_id, config)
+    get_agent_service().update_metrics_config(agent_id, config)
     return config.model_dump()
 
 
 @router.get("/agents/{agent_id}/tests")
 async def list_tests_for_agent(agent_id: str) -> list[dict]:
     """List all test cases for an agent, including file-based linked tests."""
-    agent = _get_agent_or_404(agent_id)
-    tests_paths = agent.get("tests_paths")
-    return get_test_case_repo().list_for_agent_with_linked(agent_id, tests_paths)
+    return get_test_case_service().list_tests(agent_id)
 
 
 @router.post("/agents/{agent_id}/tests-paths")
@@ -1060,33 +876,14 @@ async def link_test_file(agent_id: str, request: LinkTestFileRequest) -> dict:
     The file must exist, contain valid JSON, and be a JSON array.
     Tests from the file will appear alongside DB tests via list_for_agent_with_linked.
     """
-    agent = _get_agent_or_404(agent_id)
-
-    path = resolve_file(request.path)
-    resolved = str(path)
-
-    # Validate JSON content is an array
     try:
-        content = json.loads(path.read_text())
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from None
-
-    if not isinstance(content, list):
-        raise HTTPException(status_code=400, detail="File must contain a JSON array")
-
-    # Check for duplicates
-    current_paths = agent.get("tests_paths") or []
-    if resolved in current_paths:
-        raise HTTPException(status_code=409, detail="File already linked")
-
-    updated_paths = current_paths + [resolved]
-    get_agent_repo().update(agent_id, tests_paths=updated_paths)
-
-    return {
-        "path": resolved,
-        "test_count": len(content),
-        "tests_paths": updated_paths,
-    }
+        return get_test_case_service().link_test_file(agent_id, request.path)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+    except ValueError as e:
+        detail = str(e)
+        status = 409 if "already linked" in detail.lower() else 400
+        raise HTTPException(status_code=status, detail=detail) from None
 
 
 @router.delete("/agents/{agent_id}/tests-paths")
@@ -1095,40 +892,17 @@ async def unlink_test_file(agent_id: str, path: str) -> dict:
 
     Removes the path from tests_paths. The file itself is not deleted.
     """
-    agent = _get_agent_or_404(agent_id)
-
-    resolved = str(resolve_path(path))
-    current_paths = agent.get("tests_paths") or []
-
-    if resolved not in current_paths:
-        raise HTTPException(status_code=404, detail="File not linked to this agent")
-
-    updated_paths = [p for p in current_paths if p != resolved]
-    get_agent_repo().update(agent_id, tests_paths=updated_paths)
-
-    return {
-        "path": resolved,
-        "tests_paths": updated_paths,
-    }
+    try:
+        return get_test_case_service().unlink_test_file(agent_id, path)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.post("/agents/{agent_id}/tests/export")
 async def export_tests_for_agent(agent_id: str, request: ExportTestsRequest) -> list[dict]:
     """Export test cases for an agent to a specified format."""
-    repo = get_test_case_repo()
-
-    if request.test_ids:
-        records = [repo.get(tid) for tid in request.test_ids if repo.get(tid)]
-    else:
-        records = repo.list_for_agent(agent_id)
-
-    if not records:
-        return []
-
-    test_cases = [repo.to_model(r) for r in records]
-
     try:
-        return export_tests(test_cases, request.format)
+        return get_test_case_service().export_tests(agent_id, request.test_ids, request.format)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
@@ -1153,22 +927,12 @@ async def create_test_case(agent_id: str, request: CreateTestCaseRequest) -> dic
         patterns=request.patterns,
     )
 
-    repo = get_test_case_repo()
-    agent = get_agent_repo().get(agent_id)
-    tests_paths = agent.get("tests_paths") if agent else None
-
-    if tests_paths:
-        return repo.create_in_file(tests_paths[0], agent_id, test_case)
-
-    return repo.create(agent_id, test_case)
+    return get_test_case_service().create_test(agent_id, test_case)
 
 
 @router.put("/tests/{test_id}")
 async def update_test_case(test_id: str, request: CreateTestCaseRequest) -> dict:
     """Update a test case (DB or linked file)."""
-    repo = get_test_case_repo()
-    test = repo.get(test_id)
-
     test_case = TestCase(
         name=request.name,
         user_prompt=request.user_prompt,
@@ -1182,33 +946,20 @@ async def update_test_case(test_id: str, request: CreateTestCaseRequest) -> dict
         patterns=request.patterns,
     )
 
-    if test:
-        return repo.update(test_id, test_case)
-
-    # Check linked files for this test ID
-    linked = _find_linked_test(test_id)
-    if linked:
-        return repo.update_linked(test_id, test_case, linked["source_path"], linked["source_index"])
-
-    raise HTTPException(status_code=404, detail="Test case not found")
+    try:
+        return get_test_case_service().update_test(test_id, test_case)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.delete("/tests/{test_id}")
 async def delete_test_case(test_id: str) -> dict:
     """Delete a test case (DB or linked file)."""
-    repo = get_test_case_repo()
-    test = repo.get(test_id)
-
-    if test:
-        repo.delete(test_id)
+    try:
+        get_test_case_service().delete_test(test_id)
         return {"status": "deleted", "id": test_id}
-
-    linked = _find_linked_test(test_id)
-    if linked:
-        repo.delete_linked(test_id, linked["source_path"], linked["source_index"])
-        return {"status": "deleted", "id": test_id}
-
-    raise HTTPException(status_code=404, detail="Test case not found")
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 class LoadDemoResponse(BaseModel):
@@ -1229,7 +980,7 @@ async def load_demo() -> LoadDemoResponse:
     demo_agent_config = get_demo_agent()
     demo_tests = get_demo_tests()
 
-    graph = await api.import_agent(demo_agent_config)
+    graph = await get_agent_service().import_agent(demo_agent_config)
 
     agent_repo = get_agent_repo()
     test_repo = get_test_case_repo()
@@ -1292,27 +1043,27 @@ async def list_gallery() -> list[dict]:
 @router.get("/agents/{agent_id}/runs")
 async def list_runs_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
     """List all runs for an agent."""
-    return get_run_repo().list_for_agent(agent_id, limit)
+    return get_run_service().list_runs(agent_id, limit)
 
 
 @router.get("/runs/{run_id}")
 async def get_run(run_id: str) -> dict:
     """Get a run with all results."""
-    run_repo = get_run_repo()
-    run = run_repo.get_with_results(run_id)
+    run_svc = get_run_service()
+    run = run_svc.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
     # Detect orphaned run: not completed but not actively running
     if run["completed_at"] is None and run_id not in _active_runs:
-        run_repo.complete(run_id)
+        run_svc.complete(run_id)
         run["completed_at"] = datetime.now(UTC).isoformat()
 
     # Fix inconsistent state: run complete but results still "running"
     if run["completed_at"] is not None:
         for result in run["results"]:
             if result["status"] == "running":
-                run_repo.mark_result_error(result["id"], "Run orphaned - backend stopped")
+                run_svc.mark_result_error(result["id"], "Run orphaned - backend stopped")
                 result["status"] = "error"
                 result["error_message"] = "Run orphaned - backend stopped"
 
@@ -1322,8 +1073,7 @@ async def get_run(run_id: str) -> dict:
 @router.delete("/runs/{run_id}")
 async def delete_run(run_id: str) -> dict:
     """Delete a run and all its results."""
-    run_repo = get_run_repo()
-    run = run_repo.get_with_results(run_id)
+    run = get_run_service().get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
@@ -1331,7 +1081,7 @@ async def delete_run(run_id: str) -> dict:
     if run_id in _active_runs:
         raise HTTPException(status_code=400, detail="Cannot delete an active run")
 
-    run_repo.delete(run_id)
+    get_run_service().delete_run(run_id)
     return {"status": "deleted", "id": run_id}
 
 
@@ -1339,17 +1089,18 @@ async def delete_run(run_id: str) -> dict:
 async def audio_eval_result(result_id: str) -> dict:
     """Run audio evaluation on an existing test result.
 
-    Performs TTS→STT round-trip on assistant messages and re-evaluates
+    Performs TTS->STT round-trip on assistant messages and re-evaluates
     metrics using the "heard" text.
     """
-    run_repo = get_run_repo()
+    run_svc = get_run_service()
+    tc_svc = get_test_case_service()
 
     session = get_session()
     db_result = session.get(ResultModel, result_id)
     if not db_result:
         raise HTTPException(status_code=404, detail="Result not found")
 
-    result_dict = run_repo._result_to_dict(db_result)
+    result_dict = run_svc._runs._result_to_dict(db_result)
     transcript_data = result_dict.get("transcript_json") or []
     if not transcript_data:
         raise HTTPException(status_code=400, detail="Result has no transcript")
@@ -1358,26 +1109,23 @@ async def audio_eval_result(result_id: str) -> dict:
 
     # Find the test case to get metrics/rules
     test_case_id = result_dict.get("test_case_id")
-    test_case_repo = get_test_case_repo()
-
-    test_record = test_case_repo.get(test_case_id) if test_case_id else None
+    test_record = tc_svc.get_test(test_case_id) if test_case_id else None
     if not test_record:
-        test_record = _find_linked_test(test_case_id) if test_case_id else None
+        test_record = tc_svc.find_linked_test(test_case_id) if test_case_id else None
     if not test_record:
         raise HTTPException(status_code=400, detail="Test case not found for result")
 
-    test_case = test_case_repo.to_model(test_record)
+    test_case = tc_svc.to_model(test_record)
 
     # Load metrics config for global metrics
     run = session.get(RunModel, db_result.run_id)
-    agent_repo = get_agent_repo()
-    metrics_config = agent_repo.get_metrics_config(run.agent_id) if run else None
+    metrics_config = get_agent_service().get_metrics_config(run.agent_id) if run else None
 
     settings = load_settings()
     settings.apply_env()
     judge_model = resolve_model(settings.models.judge)
 
-    transformed, audio_metrics = await api.audio_eval_result(
+    transformed, audio_metrics = await get_evaluation_service().audio_eval_result(
         transcript,
         test_case,
         metrics_config=metrics_config,
@@ -1386,11 +1134,11 @@ async def audio_eval_result(result_id: str) -> dict:
     )
 
     # Update stored result with audio eval data
-    run_repo.update_audio_eval(result_id, transformed, audio_metrics)
+    run_svc.update_audio_eval(result_id, transformed, audio_metrics)
 
     # Return updated result
     session.refresh(db_result)
-    return run_repo._result_to_dict(db_result)
+    return run_svc._runs._result_to_dict(db_result)
 
 
 def _load_result_context(result_id: str) -> tuple[dict, "TestCase", AgentGraph, str]:
@@ -1402,24 +1150,25 @@ def _load_result_context(result_id: str) -> tuple[dict, "TestCase", AgentGraph, 
     Raises:
         HTTPException on missing data.
     """
-    run_repo = get_run_repo()
+    run_svc = get_run_service()
+    tc_svc = get_test_case_service()
+
     session = get_session()
     db_result = session.get(ResultModel, result_id)
     if not db_result:
         raise HTTPException(status_code=404, detail="Result not found")
 
-    result_dict = run_repo._result_to_dict(db_result)
+    result_dict = run_svc._runs._result_to_dict(db_result)
 
     # Find test case
     test_case_id = result_dict.get("test_case_id")
-    test_case_repo = get_test_case_repo()
-    test_record = test_case_repo.get(test_case_id) if test_case_id else None
+    test_record = tc_svc.get_test(test_case_id) if test_case_id else None
     if not test_record:
-        test_record = _find_linked_test(test_case_id) if test_case_id else None
+        test_record = tc_svc.find_linked_test(test_case_id) if test_case_id else None
     if not test_record:
         raise HTTPException(status_code=400, detail="Test case not found for result")
 
-    test_case = test_case_repo.to_model(test_record)
+    test_case = tc_svc.to_model(test_record)
 
     # Load agent graph
     run = session.get(RunModel, db_result.run_id)
@@ -1462,7 +1211,7 @@ async def diagnose_result(result_id: str, request: Request) -> dict:
     metric_results = [MetricResult(**m) for m in metrics_data]
     nodes_visited = result_dict.get("nodes_visited") or []
 
-    diagnosis_result = await api.diagnose_failure(
+    diagnosis_result = await get_diagnosis_service().diagnose_failure(
         graph=graph,
         transcript=transcript,
         nodes_visited=nodes_visited,
@@ -1492,12 +1241,11 @@ async def apply_fix(result_id: str, body: dict) -> dict:
     session = get_session()
     db_result = session.get(ResultModel, result_id)
     run = session.get(RunModel, db_result.run_id)
-    agent_repo = get_agent_repo()
-    metrics_config = agent_repo.get_metrics_config(run.agent_id) if run else None
+    metrics_config = get_agent_service().get_metrics_config(run.agent_id) if run else None
 
     options = RunOptions(judge_model=judge_model)
 
-    attempt_result = await api.apply_and_rerun(
+    attempt_result = await get_diagnosis_service().apply_and_rerun(
         graph=graph,
         test_case=test_case,
         changes=changes,
@@ -1528,7 +1276,7 @@ async def revise_fix_endpoint(result_id: str, body: dict) -> dict:
     prev_changes = [PromptChangeModel.model_validate(c) for c in body["previous_changes"]]
     new_metrics = [MetricResult.model_validate(m) for m in body["new_metric_results"]]
 
-    fix = await api.revise_fix(
+    fix = await get_diagnosis_service().revise_fix(
         graph=graph,
         diagnosis=diagnosis,
         prev_changes=prev_changes,
@@ -1548,8 +1296,8 @@ async def save_fix(agent_id: str, body: dict) -> dict:
     agent, graph = _load_agent_graph(agent_id)
     changes = [PromptChangeModel.model_validate(c) for c in body.get("changes", [])]
 
-    modified_graph = api.apply_fix_to_graph(graph, changes)
-    _save_agent_graph(agent_id, agent, modified_graph)
+    modified_graph = get_diagnosis_service().apply_fix_to_graph(graph, changes)
+    get_agent_service().save_graph(agent_id, agent, modified_graph)
 
     return modified_graph.model_dump()
 
@@ -1594,22 +1342,17 @@ async def _execute_run(
     """Execute tests for a run in the background."""
     # _active_runs[run_id] is set up in start_run() before this task starts
 
-    agent_repo = get_agent_repo()
-    test_case_repo = get_test_case_repo()
-    run_repo = get_run_repo()
-
-    agent = agent_repo.get(agent_id)
-    if not agent:
-        return
+    agent_svc = get_agent_service()
+    tc_svc = get_test_case_service()
+    run_svc = get_run_service()
 
     try:
-        result = agent_repo.load_graph(agent)
-        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
+        _agent, graph = agent_svc.load_graph(agent_id)
     except (FileNotFoundError, ValueError):
         return
 
     # Load metrics config for global metrics
-    metrics_config = agent_repo.get_metrics_config(agent_id)
+    metrics_config = agent_svc.get_metrics_config(agent_id)
 
     try:
         for test_record in test_records:
@@ -1618,7 +1361,7 @@ async def _execute_run(
 
             # Check if this specific test was cancelled before it started
             if run_id in _active_runs and result_id in _active_runs[run_id]["cancelled_tests"]:
-                run_repo.mark_result_cancelled(result_id)
+                run_svc.mark_result_cancelled(result_id)
                 await _broadcast_run_update(
                     run_id,
                     {"type": "test_cancelled", "result_id": result_id},
@@ -1631,14 +1374,14 @@ async def _execute_run(
                 remaining_idx = test_records.index(test_record)
                 for remaining_record in test_records[remaining_idx:]:
                     remaining_result_id = result_ids[remaining_record["id"]]
-                    run_repo.mark_result_cancelled(remaining_result_id)
+                    run_svc.mark_result_cancelled(remaining_result_id)
                     await _broadcast_run_update(
                         run_id,
                         {"type": "test_cancelled", "result_id": remaining_result_id},
                     )
                 break
 
-            test_case = test_case_repo.to_model(test_record)
+            test_case = tc_svc.to_model(test_record)
 
             # Broadcast that test is now actively running
             await _broadcast_run_update(
@@ -1660,7 +1403,7 @@ async def _execute_run(
                     # Track transcript for error recovery
                     transcript_ref.clear()
                     transcript_ref.extend(transcript)
-                    run_repo.update_transcript(rid, transcript)
+                    run_svc.update_transcript(rid, transcript)
                     await _broadcast_run_update(
                         run_id,
                         {
@@ -1707,7 +1450,7 @@ async def _execute_run(
             last_transcript: list[Message] = []
 
             try:
-                result = await api.run_test(
+                result = await get_test_execution_service().run_test(
                     graph,
                     test_case,
                     options=options,
@@ -1716,7 +1459,7 @@ async def _execute_run(
                     on_token=make_on_token(result_id) if options.streaming else None,
                     on_error=make_on_error(result_id),
                 )
-                run_repo.complete_result(result_id, result)
+                run_svc.complete_result(result_id, result)
                 await _broadcast_run_update(
                     run_id,
                     {
@@ -1732,7 +1475,7 @@ async def _execute_run(
                     transcript=last_transcript,
                     error_message="Cancelled by user",
                 )
-                run_repo.complete_result(result_id, cancelled_result)
+                run_svc.complete_result(result_id, cancelled_result)
                 await _broadcast_run_update(
                     run_id,
                     {
@@ -1747,7 +1490,7 @@ async def _execute_run(
                     transcript=last_transcript,
                     error_message=str(e),
                 )
-                run_repo.complete_result(result_id, error_result)
+                run_svc.complete_result(result_id, error_result)
                 await _broadcast_run_update(
                     run_id,
                     {
@@ -1757,7 +1500,7 @@ async def _execute_run(
                     },
                 )
 
-        run_repo.complete(run_id)
+        run_svc.complete(run_id)
         await _broadcast_run_update(run_id, {"type": "run_completed"})
     finally:
         # Clean up after a delay to allow final messages
@@ -1777,7 +1520,7 @@ async def run_websocket(websocket: WebSocket, run_id: str):
     # Send current state BEFORE registering for broadcasts to avoid race condition
     # where test_started arrives before state and then state overwrites it
     try:
-        run = get_run_repo().get_with_results(run_id)
+        run = get_run_service().get_run(run_id)
         if not run:
             # Run not found - send error and close
             await websocket.send_json({"type": "error", "message": "Run not found"})
@@ -1860,11 +1603,10 @@ async def start_run(
     background_tasks: BackgroundTasks,
 ) -> dict:
     """Start a new test run. Tests execute in background, poll GET /runs/{id} for results."""
-    agent = _get_agent_or_404(agent_id)
+    _require_agent(agent_id)
 
-    test_case_repo = get_test_case_repo()
-    tests_paths = agent.get("tests_paths")
-    all_tests = test_case_repo.list_for_agent_with_linked(agent_id, tests_paths)
+    tc_svc = get_test_case_service()
+    all_tests = tc_svc.list_tests(agent_id)
 
     if request.test_ids:
         tests_by_id = {t["id"]: t for t in all_tests}
@@ -1875,16 +1617,14 @@ async def start_run(
     if not test_records:
         raise HTTPException(status_code=400, detail="No test cases to run")
 
-    run_repo = get_run_repo()
-    run = run_repo.create(agent_id)
+    run_svc = get_run_service()
+    run = run_svc.create_run(agent_id)
 
     # Create all pending results upfront so they appear immediately in UI
     # Map test_case_id -> result_id for the background task to use
     result_ids: dict[str, str] = {}
     for test_record in test_records:
-        result_id = run_repo.create_pending_result(
-            run["id"], test_record["id"], test_record["name"]
-        )
+        result_id = run_svc.create_pending_result(run["id"], test_record["id"], test_record["name"])
         result_ids[test_record["id"]] = result_id
 
     settings = load_settings()
@@ -1961,11 +1701,8 @@ async def start_call(agent_id: str, request: StartCallRequest | None = None) -> 
     Creates a LiveKit room and spawns an agent worker subprocess.
     Returns connection info including a token for the browser to join.
     """
-    agent = _get_agent_or_404(agent_id)
-
     try:
-        result = get_agent_repo().load_graph(agent)
-        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
+        _agent, graph = get_agent_service().load_graph(agent_id)
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
 
@@ -2065,8 +1802,7 @@ async def _save_call_as_run(call: dict) -> str | None:
     turn_count = len(transcript) // 2
 
     # Evaluate global metrics if agent has them configured
-    agent_repo = get_agent_repo()
-    metrics_config = agent_repo.get_metrics_config(agent_id)
+    metrics_config = get_agent_service().get_metrics_config(agent_id)
     metric_results: list[MetricResult] = []
 
     if metrics_config and metrics_config.global_metrics:
@@ -2074,7 +1810,7 @@ async def _save_call_as_run(call: dict) -> str | None:
         settings.apply_env()
         judge_model = resolve_model(settings.models.judge)
         try:
-            metric_results = await api.evaluate_global_metrics(
+            metric_results = await get_test_execution_service().evaluate_global_metrics(
                 transcript, metrics_config, judge_model=judge_model
             )
         except Exception:
@@ -2095,10 +1831,10 @@ async def _save_call_as_run(call: dict) -> str | None:
         end_reason="user_ended",
     )
 
-    run_repo = get_run_repo()
-    run = run_repo.create(agent_id)
-    run_repo.add_result_from_call(run["id"], call_id, test_result)
-    run_repo.complete(run["id"])
+    run_svc = get_run_service()
+    run = run_svc.create_run(agent_id)
+    run_svc.add_result_from_call(run["id"], call_id, test_result)
+    run_svc.complete(run["id"])
 
     return run["id"]
 
@@ -2159,11 +1895,8 @@ async def start_chat(agent_id: str, request: StartChatRequest | None = None) -> 
     Creates a ConversationEngine in-process (no LiveKit or subprocess needed).
     Returns a chat_id for WebSocket connection.
     """
-    agent = _get_agent_or_404(agent_id)
-
     try:
-        result = get_agent_repo().load_graph(agent)
-        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
+        _agent, graph = get_agent_service().load_graph(agent_id)
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
 
@@ -2268,80 +2001,21 @@ async def chat_websocket(websocket: WebSocket, chat_id: str):
 # Platform integration endpoints
 
 
-def _get_platform_registry():
-    """Get the platform registry from the DI container."""
-    return get_container().resolve(PlatformRegistry)
-
-
-def _validate_platform(platform: str) -> None:
-    """Validate platform name using registry."""
-    registry = _get_platform_registry()
-    if not registry.has_platform(platform):
-        raise HTTPException(status_code=400, detail=f"Invalid platform: {platform}")
-
-
-def _is_platform_configured(platform: str) -> bool:
-    """Check if a platform is configured using registry."""
-    registry = _get_platform_registry()
-    settings = load_settings()
-    return registry.is_configured(platform, settings)
-
-
-def _get_platform_api_key(platform: str) -> str | None:
-    """Get API key for a platform using registry."""
-    registry = _get_platform_registry()
-    settings = load_settings()
-    return registry.get_api_key(platform, settings)
-
-
-def _get_configured_platform_client(platform: str) -> tuple[Any, Any]:
-    """Get validated, configured platform client and SDK client.
-
-    Args:
-        platform: Platform identifier.
-
-    Returns:
-        Tuple of (PlatformClient, SDK client).
-
-    Raises:
-        HTTPException: If platform invalid or not configured.
-    """
-    _validate_platform(platform)
-    if not _is_platform_configured(platform):
-        raise HTTPException(status_code=400, detail=f"{platform} API key not configured")
-    api_key = _get_platform_api_key(platform)
-    registry = _get_platform_registry()
-    platform_client = registry.get(platform)
-    client = platform_client.get_client(api_key)
-    return platform_client, client
-
-
 @router.get("/platforms", response_model=list[PlatformInfo])
 async def list_platforms() -> list[PlatformInfo]:
     """List all available platforms and their configuration status."""
-    registry = _get_platform_registry()
-    settings = load_settings()
-    platforms = []
-    for platform_name in registry.list_platforms():
-        platforms.append(
-            PlatformInfo(
-                name=platform_name,
-                configured=registry.is_configured(platform_name, settings),
-                env_key=registry.get_env_key(platform_name),
-                required_env_keys=registry.get_required_env_keys(platform_name),
-            )
-        )
-    return platforms
+    platforms = get_platform_service().list_platforms()
+    return [PlatformInfo(**p) for p in platforms]
 
 
 @router.get("/platforms/{platform}/status", response_model=PlatformStatusResponse)
 async def get_platform_status(platform: str) -> PlatformStatusResponse:
     """Check if a platform API key is configured."""
-    _validate_platform(platform)
-    return PlatformStatusResponse(
-        configured=_is_platform_configured(platform),
-        platform=platform,
-    )
+    try:
+        result = get_platform_service().get_status(platform)
+        return PlatformStatusResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 @router.post("/platforms/{platform}/configure", response_model=PlatformStatusResponse)
@@ -2349,43 +2023,23 @@ async def configure_platform(
     platform: str, request: ConfigurePlatformRequest
 ) -> PlatformStatusResponse:
     """Configure platform credentials. Returns 409 if already configured."""
-    _validate_platform(platform)
-
-    if _is_platform_configured(platform):
-        raise HTTPException(
-            status_code=409,
-            detail=f"{platform} credentials are already configured. Use Settings to change them.",
-        )
-
-    registry = _get_platform_registry()
-    required_keys = registry.get_required_env_keys(platform)
-    settings = load_settings()
-
-    # Set the primary API key
-    env_key = registry.get_env_key(platform)
-    settings.env[env_key] = request.api_key
-
-    # Set the API secret if provided and required
-    if request.api_secret and len(required_keys) > 1:
-        # Find the secret key (usually ends with _SECRET)
-        secret_keys = [k for k in required_keys if k.endswith("_SECRET")]
-        if secret_keys:
-            settings.env[secret_keys[0]] = request.api_secret
-
-    save_settings(settings)
-    settings.apply_env()
-
-    return PlatformStatusResponse(configured=True, platform=platform)
+    try:
+        result = get_platform_service().configure(platform, request.api_key, request.api_secret)
+        return PlatformStatusResponse(**result)
+    except ValueError as e:
+        detail = str(e)
+        status = 409 if "already configured" in detail.lower() else 400
+        raise HTTPException(status_code=status, detail=detail) from None
 
 
 @router.get("/platforms/{platform}/agents", response_model=list[RemoteAgentInfo])
 async def list_platform_agents(platform: str) -> list[RemoteAgentInfo]:
     """List agents from any supported platform."""
-    platform_client, client = _get_configured_platform_client(platform)
-
     try:
-        agents = platform_client.list_agents(client)
+        agents = get_platform_service().list_remote_agents(platform)
         return [RemoteAgentInfo(**a) for a in agents]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to list {platform} agents: {e}"
@@ -2395,15 +2049,10 @@ async def list_platform_agents(platform: str) -> list[RemoteAgentInfo]:
 @router.post("/platforms/{platform}/agents/{agent_id}/import", response_model=AgentGraph)
 async def import_platform_agent(platform: str, agent_id: str) -> AgentGraph:
     """Import an agent from any supported platform by ID."""
-    platform_client, client = _get_configured_platform_client(platform)
-
     try:
-        registry = _get_platform_registry()
-        config = platform_client.get_agent(client, agent_id)
-        importer = registry.get_importer(platform)
-        if not importer:
-            raise ValueError(f"No importer for platform: {platform}")
-        return importer.import_agent(config)
+        return get_platform_service().import_from_platform(platform, agent_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to import {platform} agent: {e}"
@@ -2415,21 +2064,11 @@ async def export_to_platform(
     platform: str, request: ExportToPlatformRequest
 ) -> ExportToPlatformResponse:
     """Export an agent graph to any supported platform."""
-    platform_client, client = _get_configured_platform_client(platform)
-
     try:
-        registry = _get_platform_registry()
-        exporter = registry.get_exporter(platform)
-        if not exporter:
-            raise ValueError(f"No exporter for platform: {platform}")
-        config = exporter(request.graph)
-
-        result = platform_client.create_agent(client, config, request.name)
-        return ExportToPlatformResponse(
-            id=result["id"],
-            name=result["name"],
-            platform=platform,
-        )
+        result = get_platform_service().export_to_platform(platform, request.graph, request.name)
+        return ExportToPlatformResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to export to {platform}: {e}"
@@ -2439,114 +2078,22 @@ async def export_to_platform(
 @router.get("/agents/{agent_id}/sync-status", response_model=SyncStatusResponse)
 async def get_sync_status(agent_id: str) -> SyncStatusResponse:
     """Check if an agent can be synced to its source platform."""
-    agent = _get_agent_or_404(agent_id)
-
-    try:
-        result = get_agent_repo().load_graph(agent)
-        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
-    except (FileNotFoundError, ValueError):
-        return SyncStatusResponse(
-            can_sync=False,
-            reason="Agent graph not available",
-        )
-
-    source_metadata = graph.source_metadata or {}
-    source_type = graph.source_type
-
-    registry = _get_platform_registry()
-    if not registry.has_platform(source_type):
-        return SyncStatusResponse(
-            can_sync=False,
-            reason=f"Source '{source_type}' is not a supported platform",
-        )
-
-    if not registry.supports_update(source_type):
-        return SyncStatusResponse(
-            can_sync=False,
-            reason=f"{source_type} does not support syncing",
-            platform=source_type,
-        )
-
-    remote_id_key = registry.get_remote_id_key(source_type)
-    if not remote_id_key:
-        return SyncStatusResponse(
-            can_sync=False,
-            reason=f"{source_type} does not track remote IDs",
-            platform=source_type,
-        )
-
-    remote_id = source_metadata.get(remote_id_key)
-    if not remote_id:
-        return SyncStatusResponse(
-            can_sync=False,
-            reason=f"No remote ID found (missing {remote_id_key} in source_metadata)",
-            platform=source_type,
-        )
-
-    if not _is_platform_configured(source_type):
-        return SyncStatusResponse(
-            can_sync=False,
-            reason=f"{source_type} API key not configured",
-            platform=source_type,
-            remote_id=remote_id,
-            needs_configuration=True,
-        )
-
-    return SyncStatusResponse(
-        can_sync=True,
-        platform=source_type,
-        remote_id=remote_id,
-    )
+    _require_agent(agent_id)
+    result = get_platform_service().get_sync_status(agent_id)
+    return SyncStatusResponse(**result)
 
 
 @router.post("/agents/{agent_id}/sync", response_model=SyncToPlatformResponse)
 async def sync_to_platform(agent_id: str, request: SyncToPlatformRequest) -> SyncToPlatformResponse:
     """Sync an agent to its source platform."""
-    _get_agent_or_404(agent_id)
-
-    graph = request.graph
-    source_metadata = graph.source_metadata or {}
-    source_type = graph.source_type
-
-    registry = _get_platform_registry()
-    if not registry.has_platform(source_type):
-        raise HTTPException(
-            status_code=400, detail=f"Source '{source_type}' is not a supported platform"
-        )
-
-    if not registry.supports_update(source_type):
-        raise HTTPException(status_code=400, detail=f"{source_type} does not support syncing")
-
-    remote_id_key = registry.get_remote_id_key(source_type)
-    if not remote_id_key:
-        raise HTTPException(status_code=400, detail=f"{source_type} does not track remote IDs")
-
-    remote_id = source_metadata.get(remote_id_key)
-    if not remote_id:
-        raise HTTPException(
-            status_code=400,
-            detail=f"No remote ID found (missing {remote_id_key} in source_metadata)",
-        )
-
-    platform_client, client = _get_configured_platform_client(source_type)
-
+    _require_agent(agent_id)
     try:
-        exporter = registry.get_exporter(source_type)
-        if not exporter:
-            raise ValueError(f"No exporter for platform: {source_type}")
-        config = exporter(graph)
-
-        result = platform_client.update_agent(client, remote_id, config)
-        return SyncToPlatformResponse(
-            id=result["id"],
-            name=result["name"],
-            platform=source_type,
-            synced=True,
-        )
+        result = get_platform_service().sync_to_platform(agent_id, request.graph)
+        return SyncToPlatformResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to sync to {source_type}: {e}"
-        ) from None
+        raise HTTPException(status_code=500, detail=f"Failed to sync: {e}") from None
 
 
 def create_app() -> FastAPI:

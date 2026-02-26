@@ -285,6 +285,43 @@ class TestCLIDown:
         assert "down" in calls[1]
 
 
+class TestSyncGuards:
+    """Verify CLI stays in sync with service registries."""
+
+    def test_export_choices_match_registry(self):
+        """CLI export format choices must include every registered format."""
+        from voicetest.services import get_discovery_service
+
+        registry_formats = {f["id"] for f in get_discovery_service().list_export_formats()}
+        assert len(registry_formats) > 0, "Expected at least one export format in registry"
+
+        from voicetest.cli import LazyExportChoice
+
+        choice = LazyExportChoice()
+        # LazyExportChoice defers to the registry at validation time
+        for fmt in registry_formats:
+            assert choice.convert(fmt, None, None) == fmt
+
+    def test_exporters_command_lists_all_formats(self, cli_runner):
+        """The exporters command must list every registered export format."""
+        from voicetest.cli import main
+        from voicetest.services import get_discovery_service
+
+        result = cli_runner.invoke(main, ["exporters"])
+        assert result.exit_code == 0
+
+        for fmt in get_discovery_service().list_export_formats():
+            assert fmt["id"] in result.output, f"Missing format '{fmt['id']}' in exporters output"
+
+    def test_main_help_shows_exporters(self, cli_runner):
+        """The --help output must include the exporters command."""
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["--help"])
+        assert result.exit_code == 0
+        assert "exporters" in result.output
+
+
 class TestCompose:
     """Tests for the compose module."""
 

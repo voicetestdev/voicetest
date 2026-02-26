@@ -101,9 +101,9 @@ class TestOllamaExecution:
     @pytest.mark.asyncio
     async def test_run_single_test(self, simple_graph, simple_test_case, ollama_options):
         """Test running a single test case with Ollama."""
-        from voicetest import api
+        from voicetest.services.testing.execution import TestExecutionService
 
-        result = await api.run_test(
+        result = await TestExecutionService().run_test(
             simple_graph,
             simple_test_case,
             options=ollama_options,
@@ -119,9 +119,9 @@ class TestOllamaExecution:
     @pytest.mark.asyncio
     async def test_conversation_has_content(self, simple_graph, simple_test_case, ollama_options):
         """Test that the conversation actually produces meaningful content."""
-        from voicetest import api
+        from voicetest.services.testing.execution import TestExecutionService
 
-        result = await api.run_test(
+        result = await TestExecutionService().run_test(
             simple_graph,
             simple_test_case,
             options=ollama_options,
@@ -136,9 +136,9 @@ class TestOllamaExecution:
         self, simple_graph, simple_test_case, ollama_options
     ):
         """Test that the user simulator generates contextual responses."""
-        from voicetest import api
+        from voicetest.services.testing.execution import TestExecutionService
 
-        result = await api.run_test(
+        result = await TestExecutionService().run_test(
             simple_graph,
             simple_test_case,
             options=ollama_options,
@@ -155,9 +155,9 @@ class TestOllamaExecution:
         self, simple_graph, simple_test_case, ollama_options
     ):
         """Test that metric evaluation includes reasoning."""
-        from voicetest import api
+        from voicetest.services.testing.execution import TestExecutionService
 
-        result = await api.run_test(
+        result = await TestExecutionService().run_test(
             simple_graph,
             simple_test_case,
             options=ollama_options,
@@ -174,7 +174,7 @@ class TestOllamaMultipleTests:
     @pytest.mark.asyncio
     async def test_run_multiple_tests(self, simple_graph, ollama_options):
         """Test running multiple test cases."""
-        from voicetest import api
+        from voicetest.services.testing.execution import TestExecutionService
 
         test_cases = [
             TestCase(
@@ -189,7 +189,9 @@ class TestOllamaMultipleTests:
             ),
         ]
 
-        run = await api.run_tests(simple_graph, test_cases, options=ollama_options)
+        run = await TestExecutionService().run_tests(
+            simple_graph, test_cases, options=ollama_options
+        )
 
         assert len(run.results) == 2
         assert run.results[0].test_id == "Greeting test"

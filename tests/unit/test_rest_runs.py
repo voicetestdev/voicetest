@@ -2,6 +2,18 @@
 
 import pytest
 
+from voicetest.container import get_container
+from voicetest.storage.repositories import RunRepository
+from voicetest.storage.repositories import TestCaseRepository
+
+
+def _get_run_repo():
+    return get_container().resolve(RunRepository)
+
+
+def _get_test_case_repo():
+    return get_container().resolve(TestCaseRepository)
+
 
 class TestRunWebSocket:
     """Tests for run WebSocket endpoint and message formats."""
@@ -71,7 +83,9 @@ class TestRunWebSocket:
 
         with (
             patch("voicetest.rest._broadcast_run_update", mock_broadcast),
-            patch("voicetest.rest.api.run_test") as mock_run_test,
+            patch(
+                "voicetest.services.testing.execution.TestExecutionService.run_test"
+            ) as mock_run_test,
         ):
             from voicetest.models.results import TestResult
 
@@ -133,7 +147,6 @@ class TestOrphanedRunDetection:
     def orphaned_run(self, db_client, sample_retell_config):
         """Create an orphaned run (not in _active_runs, not completed)."""
         from voicetest.rest import _active_runs
-        from voicetest.rest import get_run_repo
 
         # Create agent
         agent_response = db_client.post(
@@ -143,7 +156,7 @@ class TestOrphanedRunDetection:
         agent_id = agent_response.json()["id"]
 
         # Create run directly in DB (simulating a crashed run)
-        run_repo = get_run_repo()
+        run_repo = _get_run_repo()
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
@@ -185,7 +198,6 @@ class TestOrphanedRunDetection:
         import asyncio
 
         from voicetest.rest import _active_runs
-        from voicetest.rest import get_run_repo
 
         # Create agent
         agent_response = db_client.post(
@@ -195,7 +207,7 @@ class TestOrphanedRunDetection:
         agent_id = agent_response.json()["id"]
 
         # Create run
-        run_repo = get_run_repo()
+        run_repo = _get_run_repo()
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
@@ -222,15 +234,13 @@ class TestRunDeletion:
 
     def test_delete_run(self, db_client, sample_retell_config):
         """DELETE /runs/{id} should delete the run and its results."""
-        from voicetest.rest import get_run_repo
-
         agent_response = db_client.post(
             "/api/agents",
             json={"name": "Test Agent", "config": sample_retell_config},
         )
         agent_id = agent_response.json()["id"]
 
-        run_repo = get_run_repo()
+        run_repo = _get_run_repo()
         run = run_repo.create(agent_id)
         run_id = run["id"]
         run_repo.create_pending_result(run_id, "test-case-1", "Test Case 1")
@@ -253,7 +263,6 @@ class TestRunDeletion:
         import asyncio
 
         from voicetest.rest import _active_runs
-        from voicetest.rest import get_run_repo
 
         agent_response = db_client.post(
             "/api/agents",
@@ -261,7 +270,7 @@ class TestRunDeletion:
         )
         agent_id = agent_response.json()["id"]
 
-        run_repo = get_run_repo()
+        run_repo = _get_run_repo()
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
@@ -449,8 +458,6 @@ class TestDiagnosisEndpoints:
         from voicetest.models.results import MetricResult
         from voicetest.models.results import TestResult
         from voicetest.models.test_case import TestCase
-        from voicetest.rest import get_run_repo
-        from voicetest.rest import get_test_case_repo
 
         # Create agent with graph
         agent_response = db_client.post(
@@ -460,7 +467,7 @@ class TestDiagnosisEndpoints:
         agent_id = agent_response.json()["id"]
 
         # Create test case
-        test_case_repo = get_test_case_repo()
+        test_case_repo = _get_test_case_repo()
         tc = TestCase(
             name="Billing test",
             user_prompt="Ask about a refund",
@@ -470,7 +477,7 @@ class TestDiagnosisEndpoints:
         tc_id = tc_record["id"]
 
         # Create run + result
-        run_repo = get_run_repo()
+        run_repo = _get_run_repo()
         run = run_repo.create(agent_id)
         run_id = run["id"]
         result_id = run_repo.create_pending_result(run_id, tc_id, "Billing test")
@@ -548,7 +555,10 @@ class TestDiagnosisEndpoints:
             ),
         )
 
-        with patch("voicetest.rest.api.diagnose_failure", new_callable=AsyncMock) as mock_diag:
+        with patch(
+            "voicetest.services.diagnosis.DiagnosisService.diagnose_failure",
+            new_callable=AsyncMock,
+        ) as mock_diag:
             mock_diag.return_value = mock_result
             response = db_client.post(f"/api/results/{failed_result['result_id']}/diagnose")
 
@@ -578,7 +588,10 @@ class TestDiagnosisEndpoints:
             new_scores={"test": 0.5},
         )
 
-        with patch("voicetest.rest.api.apply_and_rerun", new_callable=AsyncMock) as mock_apply:
+        with patch(
+            "voicetest.services.diagnosis.DiagnosisService.apply_and_rerun",
+            new_callable=AsyncMock,
+        ) as mock_apply:
             mock_apply.return_value = mock_attempt
             response = db_client.post(
                 f"/api/results/{failed_result['result_id']}/apply-fix",
@@ -621,7 +634,10 @@ class TestDiagnosisEndpoints:
             confidence=0.9,
         )
 
-        with patch("voicetest.rest.api.revise_fix", new_callable=AsyncMock) as mock_revise:
+        with patch(
+            "voicetest.services.diagnosis.DiagnosisService.revise_fix",
+            new_callable=AsyncMock,
+        ) as mock_revise:
             mock_revise.return_value = mock_fix
             response = db_client.post(
                 f"/api/results/{failed_result['result_id']}/revise-fix",
@@ -695,7 +711,10 @@ class TestDiagnosisEndpoints:
             ),
         )
 
-        with patch("voicetest.rest.api.diagnose_failure", new_callable=AsyncMock) as mock_diag:
+        with patch(
+            "voicetest.services.diagnosis.DiagnosisService.diagnose_failure",
+            new_callable=AsyncMock,
+        ) as mock_diag:
             mock_diag.return_value = mock_result
             response = db_client.post(
                 f"/api/results/{failed_result['result_id']}/diagnose",
@@ -728,7 +747,10 @@ class TestDiagnosisEndpoints:
             ),
         )
 
-        with patch("voicetest.rest.api.diagnose_failure", new_callable=AsyncMock) as mock_diag:
+        with patch(
+            "voicetest.services.diagnosis.DiagnosisService.diagnose_failure",
+            new_callable=AsyncMock,
+        ) as mock_diag:
             mock_diag.return_value = mock_result
             # No body / empty body
             response = db_client.post(
@@ -752,7 +774,10 @@ class TestDiagnosisEndpoints:
             confidence=0.9,
         )
 
-        with patch("voicetest.rest.api.revise_fix", new_callable=AsyncMock) as mock_revise:
+        with patch(
+            "voicetest.services.diagnosis.DiagnosisService.revise_fix",
+            new_callable=AsyncMock,
+        ) as mock_revise:
             mock_revise.return_value = mock_fix
             response = db_client.post(
                 f"/api/results/{failed_result['result_id']}/revise-fix",
