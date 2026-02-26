@@ -19,8 +19,8 @@ from voicetest.importers.bland import BlandImporter
 
 
 if TYPE_CHECKING:
+    from voicetest.importers.base import SourceImporter
     from voicetest.models.agent import AgentGraph
-    from voicetest.platforms.base import SourceImporter
 
 BLAND_API_BASE = "https://api.bland.ai/v1"
 

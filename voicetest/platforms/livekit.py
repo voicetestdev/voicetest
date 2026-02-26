@@ -21,7 +21,7 @@ from voicetest.models.agent import AgentGraph
 
 
 if TYPE_CHECKING:
-    from voicetest.platforms.base import SourceImporter
+    from voicetest.importers.base import SourceImporter
 
 
 class LiveKitPlatformClient:

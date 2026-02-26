@@ -6,27 +6,11 @@ from typing import Any
 from typing import Protocol
 from typing import runtime_checkable
 
+from voicetest.importers.base import SourceImporter
+
 
 if TYPE_CHECKING:
     from voicetest.models.agent import AgentGraph
-
-
-@runtime_checkable
-class SourceImporter(Protocol):
-    """Protocol for source importers."""
-
-    @property
-    def source_type(self) -> str:
-        """Source type identifier."""
-        ...
-
-    def can_import(self, path_or_config: Any) -> bool:
-        """Check if this importer can handle the given input."""
-        ...
-
-    def import_agent(self, path_or_config: Any) -> "AgentGraph":
-        """Import agent configuration to AgentGraph."""
-        ...
 
 
 @runtime_checkable

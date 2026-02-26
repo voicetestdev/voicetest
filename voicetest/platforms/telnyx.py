@@ -18,8 +18,8 @@ from voicetest.importers.telnyx import TelnyxImporter
 
 
 if TYPE_CHECKING:
+    from voicetest.importers.base import SourceImporter
     from voicetest.models.agent import AgentGraph
-    from voicetest.platforms.base import SourceImporter
 
 
 class TelnyxPlatformClient:

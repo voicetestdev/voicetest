@@ -7,8 +7,8 @@ import os
 from typing import TYPE_CHECKING
 from typing import Any
 
+from voicetest.importers.base import SourceImporter
 from voicetest.platforms.base import PlatformClient
-from voicetest.platforms.base import SourceImporter
 
 
 if TYPE_CHECKING:
