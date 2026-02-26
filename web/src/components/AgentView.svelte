@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { api } from "../lib/api";
   import {
     agentGraph,
@@ -9,9 +8,14 @@
     refreshAgent,
     currentView,
   } from "../lib/stores";
-  import type { DryAnalysis, ExporterInfo, Platform, PlatformInfo, PlatformStatus, SyncStatus } from "../lib/types";
+  import type { SyncStatus } from "../lib/types";
   import CallView from "./CallView.svelte";
   import ChatView from "./ChatView.svelte";
+  import ExportModal from "./ExportModal.svelte";
+  import SnippetManager from "./SnippetManager.svelte";
+  import MetadataEditor from "./MetadataEditor.svelte";
+  import NodePromptModal from "./NodePromptModal.svelte";
+  import TransitionModal from "./TransitionModal.svelte";
 
   interface Props {
     theme?: "light" | "dark";
@@ -21,8 +25,6 @@
 
   let error = $state("");
   let mermaidSvg = $state("");
-  let exporters = $state<ExporterInfo[]>([]);
-  let exporting = $state(false);
   let showExportModal = $state(false);
   let lastGraphId = $state<string | null>(null);
   let lastTheme = $state<string | null>(null);
@@ -37,14 +39,6 @@
   let isPanning = $state(false);
   let panStart = { x: 0, y: 0, panX: 0, panY: 0 };
   let touchState = { distance: 0, centerX: 0, centerY: 0, initialZoom: 1, initialPanX: 0, initialPanY: 0 };
-
-  let platforms = $state<PlatformInfo[]>([]);
-  let platformStatus = $state<Record<string, PlatformStatus>>({});
-  let apiKeyInput = $state("");
-  let configuringPlatform = $state<string | null>(null);
-  let exportingToPlatform = $state<string | null>(null);
-  let exportSuccess = $state<{ platform: string; id: string; name: string } | null>(null);
-  let exportTab = $state<"file" | "platform">("file");
 
   let editingName = $state(false);
   let editedName = $state("");
@@ -64,21 +58,6 @@
   let generalPromptSaved = $state(false);
   let generalPromptTextarea: HTMLTextAreaElement;
 
-  let editingNodePrompt = $state(false);
-  let editingNodeId = $state("");
-  let editedNodePrompt = $state("");
-  let savingNodePrompt = $state(false);
-  let nodePromptSaved = $state(false);
-  let nodePromptTextarea: HTMLTextAreaElement;
-
-  let editingTransition = $state(false);
-  let transitionSourceId = $state("");
-  let transitionTargetId = $state("");
-  let editedTransitionCondition = $state("");
-  let savingTransition = $state(false);
-  let transitionSaved = $state(false);
-  let transitionTextarea: HTMLTextAreaElement;
-
   let refreshing = $state(false);
 
   let syncStatus = $state<SyncStatus | null>(null);
@@ -86,17 +65,11 @@
   let syncSuccess = $state(false);
   let syncError = $state("");
 
-  // Snippet management state
   let snippets = $state<Record<string, string>>({});
-  let addingSnippet = $state(false);
-  let newSnippetName = $state("");
-  let newSnippetText = $state("");
-  let savingSnippet = $state(false);
-  let editingSnippetName = $state<string | null>(null);
-  let editedSnippetText = $state("");
-  let dryAnalysis = $state<DryAnalysis | null>(null);
-  let analyzingDry = $state(false);
-  let applyingSnippets = $state(false);
+
+  // Child component refs
+  let nodePromptModal: NodePromptModal;
+  let transitionModal: TransitionModal;
 
   const platformDisplayNames: Record<string, string> = {
     retell: "Retell",
@@ -110,24 +83,6 @@
     return platformDisplayNames[platform] || platform.charAt(0).toUpperCase() + platform.slice(1);
   }
 
-  onMount(() => {
-    api.listExporters().then((list) => {
-      exporters = list;
-    });
-  });
-
-  $effect(() => {
-    if (showExportModal) {
-      api.listPlatforms().then((list) => {
-        platforms = list;
-        platformStatus = Object.fromEntries(
-          list.map((p) => [p.name, { platform: p.name, configured: p.configured }])
-        );
-      }).catch(() => {});
-      exportSuccess = null;
-    }
-  });
-
   $effect(() => {
     const agentId = $currentAgentId;
     if (agentId) {
@@ -139,17 +94,8 @@
       }).catch(() => {
         syncStatus = null;
       });
-      // Load snippets
-      api.getSnippets(agentId).then((data) => {
-        snippets = data.snippets;
-      }).catch(() => {
-        snippets = {};
-      });
-      dryAnalysis = null;
     } else {
       syncStatus = null;
-      snippets = {};
-      dryAnalysis = null;
     }
   });
 
@@ -293,7 +239,7 @@
       });
       node.addEventListener("click", () => {
         tooltip = { ...tooltip, show: false };
-        openNodePromptModal(matchedId, nodeData.state_prompt);
+        nodePromptModal?.open(matchedId, nodeData.state_prompt);
       });
     });
 
@@ -341,7 +287,7 @@
       label.addEventListener("click", () => {
         if (sourceNodeId && targetNodeId) {
           tooltip = { ...tooltip, show: false };
-          openTransitionModal(sourceNodeId, targetNodeId, fullCondition);
+          transitionModal?.open(sourceNodeId, targetNodeId, fullCondition);
         }
       });
     });
@@ -463,69 +409,6 @@
     isPanning = false;
   }
 
-  function getExportFilename(exp: ExporterInfo): string {
-    const agentName = $currentAgent?.name || "agent";
-    const safeName = agentName.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const suffix = exp.id.replace(/-/g, "_");
-    return `${safeName}_${suffix}.${exp.ext}`;
-  }
-
-  async function exportTo(exp: ExporterInfo) {
-    if (!$agentGraph) return;
-    exporting = true;
-    error = "";
-    try {
-      const result = await api.exportAgent($agentGraph, exp.id);
-      const blob = new Blob([result.content], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = getExportFilename(exp);
-      a.click();
-      URL.revokeObjectURL(url);
-      showExportModal = false;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    exporting = false;
-  }
-
-  async function exportToPlatform(platform: Platform) {
-    if (!$agentGraph) return;
-    exportingToPlatform = platform;
-    error = "";
-    try {
-      const name = $currentAgent?.name;
-      const result = await api.exportToPlatform(platform, $agentGraph, name);
-      exportSuccess = {
-        platform: result.platform,
-        id: result.id,
-        name: result.name,
-      };
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    exportingToPlatform = null;
-  }
-
-  async function configureAndExport(platform: Platform) {
-    if (!apiKeyInput.trim()) {
-      error = "Please enter an API key";
-      return;
-    }
-    configuringPlatform = platform;
-    error = "";
-    try {
-      const status = await api.configurePlatform(platform, apiKeyInput);
-      platformStatus = { ...platformStatus, [platform]: status };
-      apiKeyInput = "";
-      await exportToPlatform(platform);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    configuringPlatform = null;
-  }
-
   async function deleteCurrentAgent() {
     if (!$currentAgentId) return;
     if (!confirm("Are you sure you want to delete this agent?")) return;
@@ -540,19 +423,13 @@
     }
   }
 
-  function closeModal(e: MouseEvent) {
-    if ((e.target as HTMLElement).classList.contains("modal-backdrop")) {
-      showExportModal = false;
-    }
-  }
-
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape" && editingTransition) {
-      closeTransitionModal();
+    if (e.key === "Escape" && transitionModal?.isOpen()) {
+      transitionModal.close();
       return;
     }
-    if (e.key === "Escape" && editingNodePrompt) {
-      closeNodePromptModal();
+    if (e.key === "Escape" && nodePromptModal?.isOpen()) {
+      nodePromptModal.close();
       return;
     }
     if (e.key === "Escape" && showExportModal) {
@@ -711,215 +588,13 @@
     savingGeneralPrompt = false;
   }
 
-  function openNodePromptModal(nodeId: string, prompt: string) {
-    editingNodeId = nodeId;
-    editedNodePrompt = prompt;
-    editingNodePrompt = true;
-    nodePromptSaved = false;
-    requestAnimationFrame(() => {
-      nodePromptTextarea?.focus();
-    });
+  function handleChildError(msg: string) {
+    error = msg;
   }
 
-  async function saveNodePrompt() {
-    if (!$currentAgentId || !editingNodeId) return;
-    savingNodePrompt = true;
-    try {
-      const result = await api.updatePrompt($currentAgentId, editingNodeId, editedNodePrompt);
-      agentGraph.set(result);
-      nodePromptSaved = true;
-      setTimeout(() => {
-        nodePromptSaved = false;
-        editingNodePrompt = false;
-        editingNodeId = "";
-      }, 800);
-      requestAnimationFrame(() => setupTooltips());
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    savingNodePrompt = false;
+  function handleTooltipsChanged() {
+    requestAnimationFrame(() => setupTooltips());
   }
-
-  function closeNodePromptModal() {
-    if (savingNodePrompt) return;
-    editingNodePrompt = false;
-    editingNodeId = "";
-    editedNodePrompt = "";
-  }
-
-  function openTransitionModal(sourceId: string, targetId: string, condition: string) {
-    transitionSourceId = sourceId;
-    transitionTargetId = targetId;
-    editedTransitionCondition = condition;
-    editingTransition = true;
-    transitionSaved = false;
-    requestAnimationFrame(() => {
-      transitionTextarea?.focus();
-    });
-  }
-
-  async function saveTransition() {
-    if (!$currentAgentId || !transitionSourceId || !transitionTargetId) return;
-    savingTransition = true;
-    try {
-      const result = await api.updatePrompt(
-        $currentAgentId,
-        transitionSourceId,
-        editedTransitionCondition,
-        transitionTargetId,
-      );
-      agentGraph.set(result);
-      transitionSaved = true;
-      setTimeout(() => {
-        transitionSaved = false;
-        editingTransition = false;
-        transitionSourceId = "";
-        transitionTargetId = "";
-      }, 800);
-      requestAnimationFrame(() => setupTooltips());
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    savingTransition = false;
-  }
-
-  function closeTransitionModal() {
-    if (savingTransition) return;
-    editingTransition = false;
-    transitionSourceId = "";
-    transitionTargetId = "";
-    editedTransitionCondition = "";
-  }
-
-  async function addSnippet() {
-    if (!$currentAgentId || !newSnippetName.trim() || !newSnippetText.trim()) return;
-    savingSnippet = true;
-    try {
-      const result = await api.updateSnippet($currentAgentId, newSnippetName.trim(), newSnippetText.trim());
-      snippets = result.snippets;
-      newSnippetName = "";
-      newSnippetText = "";
-      addingSnippet = false;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    savingSnippet = false;
-  }
-
-  async function saveEditedSnippet() {
-    if (!$currentAgentId || !editingSnippetName) return;
-    savingSnippet = true;
-    try {
-      const result = await api.updateSnippet($currentAgentId, editingSnippetName, editedSnippetText);
-      snippets = result.snippets;
-      editingSnippetName = null;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    savingSnippet = false;
-  }
-
-  async function removeSnippet(name: string) {
-    if (!$currentAgentId) return;
-    try {
-      const result = await api.deleteSnippet($currentAgentId, name);
-      snippets = result.snippets;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-  }
-
-  async function runDryAnalysis() {
-    if (!$currentAgentId) return;
-    analyzingDry = true;
-    dryAnalysis = null;
-    try {
-      dryAnalysis = await api.analyzeDry($currentAgentId);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    analyzingDry = false;
-  }
-
-  async function applySingleSnippet(name: string, text: string) {
-    if (!$currentAgentId) return;
-    applyingSnippets = true;
-    try {
-      const result = await api.applySnippets($currentAgentId, [{ name, text }]);
-      agentGraph.set(result);
-      snippets = result.snippets ?? {};
-      dryAnalysis = null;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    applyingSnippets = false;
-  }
-
-  async function applyAllExactSnippets() {
-    if (!$currentAgentId || !dryAnalysis) return;
-    applyingSnippets = true;
-    try {
-      const items = dryAnalysis.exact.map((m, i) => ({
-        name: `snippet_${i + 1}`,
-        text: m.text,
-      }));
-      const result = await api.applySnippets($currentAgentId, items);
-      agentGraph.set(result);
-      snippets = result.snippets ?? {};
-      dryAnalysis = null;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    applyingSnippets = false;
-  }
-
-  function getExportFilenameForFormat(format: string, ext: string): string {
-    const agentName = $currentAgent?.name || "agent";
-    const safeName = agentName.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const suffix = format.replace(/-/g, "_");
-    return `${safeName}_${suffix}.${ext}`;
-  }
-
-  async function exportRawVtJson() {
-    if (!$agentGraph) return;
-    exporting = true;
-    error = "";
-    try {
-      const result = await api.exportAgent($agentGraph, "voicetest");
-      const blob = new Blob([result.content], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = getExportFilenameForFormat("voicetest", "vt.json");
-      a.click();
-      URL.revokeObjectURL(url);
-      showExportModal = false;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    exporting = false;
-  }
-
-  async function exportExpanded(exp: ExporterInfo) {
-    if (!$agentGraph) return;
-    exporting = true;
-    error = "";
-    try {
-      const result = await api.exportAgent($agentGraph, exp.id, true);
-      const blob = new Blob([result.content], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = getExportFilename(exp);
-      a.click();
-      URL.revokeObjectURL(url);
-      showExportModal = false;
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
-    exporting = false;
-  }
-
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -1038,117 +713,9 @@
       {/if}
     </section>
 
-    <section class="snippets-section">
-      <div class="snippets-header">
-        <h3>Snippets</h3>
-        <div class="snippets-actions">
-          <button class="btn-sm" onclick={() => { addingSnippet = !addingSnippet; }} title="Add a snippet">+ Add</button>
-          <button class="btn-sm" onclick={runDryAnalysis} disabled={analyzingDry} title="Analyze prompts for repeated text">
-            {analyzingDry ? "Analyzing..." : "Analyze DRY"}
-          </button>
-        </div>
-      </div>
-
-      {#if Object.keys(snippets).length > 0}
-        <div class="snippet-list">
-          {#each Object.entries(snippets) as [name, text]}
-            <div class="snippet-item">
-              <div class="snippet-name-row">
-                <code class="snippet-ref">{"{%"}{name}{"%}"}</code>
-                <div class="snippet-btns">
-                  <button class="btn-xs" onclick={() => { editingSnippetName = name; editedSnippetText = text; }}>Edit</button>
-                  <button class="btn-xs danger-text" onclick={() => removeSnippet(name)}>Delete</button>
-                </div>
-              </div>
-              {#if editingSnippetName === name}
-                <textarea
-                  class="snippet-textarea"
-                  bind:value={editedSnippetText}
-                  disabled={savingSnippet}
-                  rows="3"
-                ></textarea>
-                <div class="snippet-edit-actions">
-                  <button class="btn-xs" onclick={() => { editingSnippetName = null; }}>Cancel</button>
-                  <button class="btn-xs btn-primary" onclick={saveEditedSnippet} disabled={savingSnippet}>Save</button>
-                </div>
-              {:else}
-                <pre class="snippet-preview">{text}</pre>
-              {/if}
-            </div>
-          {/each}
-        </div>
-      {:else if !addingSnippet}
-        <p class="snippet-empty">No snippets defined. Use "Analyze DRY" to find repeated text or add snippets manually.</p>
-      {/if}
-
-      {#if addingSnippet}
-        <div class="snippet-add-form">
-          <input type="text" placeholder="Snippet name" class="snippet-name-input" bind:value={newSnippetName} />
-          <textarea
-            class="snippet-textarea"
-            placeholder="Snippet text..."
-            bind:value={newSnippetText}
-            rows="3"
-          ></textarea>
-          <div class="snippet-edit-actions">
-            <button class="btn-xs" onclick={() => { addingSnippet = false; newSnippetName = ""; newSnippetText = ""; }}>Cancel</button>
-            <button class="btn-xs btn-primary" onclick={addSnippet} disabled={savingSnippet || !newSnippetName.trim() || !newSnippetText.trim()}>
-              {savingSnippet ? "Saving..." : "Add Snippet"}
-            </button>
-          </div>
-        </div>
-      {/if}
-
-      {#if dryAnalysis}
-        <div class="dry-results">
-          <div class="dry-header">
-            <h4>DRY Analysis Results</h4>
-            {#if dryAnalysis.exact.length > 0}
-              <button class="btn-sm" onclick={applyAllExactSnippets} disabled={applyingSnippets}>
-                {applyingSnippets ? "Applying..." : `Apply All (${dryAnalysis.exact.length})`}
-              </button>
-            {/if}
-          </div>
-
-          {#if dryAnalysis.exact.length === 0 && dryAnalysis.fuzzy.length === 0}
-            <p class="dry-empty">No repeated text found. Prompts are already DRY.</p>
-          {/if}
-
-          {#if dryAnalysis.exact.length > 0}
-            <div class="dry-section">
-              <h5>Exact Matches</h5>
-              {#each dryAnalysis.exact as match, i}
-                <div class="dry-match">
-                  <pre class="dry-text">{match.text}</pre>
-                  <div class="dry-meta">
-                    <span class="dry-locations">Found in: {match.locations.join(", ")}</span>
-                    <button
-                      class="btn-xs"
-                      onclick={() => applySingleSnippet(`snippet_${i + 1}`, match.text)}
-                      disabled={applyingSnippets}
-                    >Apply</button>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {/if}
-
-          {#if dryAnalysis.fuzzy.length > 0}
-            <div class="dry-section">
-              <h5>Similar Text ({dryAnalysis.fuzzy.length})</h5>
-              {#each dryAnalysis.fuzzy as match}
-                <div class="dry-match">
-                  <div class="dry-similarity">{Math.round(match.similarity * 100)}% similar</div>
-                  {#each match.texts as text, ti}
-                    <pre class="dry-text">{match.locations[ti]}: {text}</pre>
-                  {/each}
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      {/if}
-    </section>
+    {#if $currentAgentId}
+      <SnippetManager agentId={$currentAgentId} bind:snippets onerror={handleChildError} />
+    {/if}
 
     <div class="actions">
       <ChatView />
@@ -1156,7 +723,6 @@
       <button
         class="btn-primary"
         onclick={() => (showExportModal = true)}
-        disabled={exporting}
       >
         Export Agent...
       </button>
@@ -1192,135 +758,7 @@
       <p class="error-message">{syncError}</p>
     {/if}
 
-    {#if showExportModal}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-      <div class="modal-backdrop" onclick={closeModal}>
-        <div class="modal">
-          <div class="modal-header">
-            <h3>Export Agent</h3>
-            <button class="close-btn" onclick={() => (showExportModal = false)}>&times;</button>
-          </div>
-          {#if exportSuccess}
-            <div class="modal-body">
-              <div class="export-success">
-                <div class="success-icon">&#10003;</div>
-                <p>Agent created in {getPlatformDisplayName(exportSuccess.platform)}!</p>
-                <p class="success-details">
-                  <strong>{exportSuccess.name}</strong><br />
-                  <span class="mono">{exportSuccess.id}</span>
-                </p>
-                <button onclick={() => (exportSuccess = null)}>Export Another</button>
-              </div>
-            </div>
-          {:else}
-            <div class="tabs">
-              <button
-                class="tab"
-                class:active={exportTab === "file"}
-                onclick={() => (exportTab = "file")}
-              >
-                Download File
-              </button>
-              <button
-                class="tab"
-                class:active={exportTab === "platform"}
-                onclick={() => (exportTab = "platform")}
-              >
-                To Platform
-              </button>
-            </div>
-            <div class="modal-body">
-              <div class="tab-panels">
-                <div class="tab-panel" class:active={exportTab === "file"}>
-                  <div class="export-options">
-                    {#if Object.keys(snippets).length > 0}
-                      <button
-                        class="export-option"
-                        onclick={() => exportRawVtJson()}
-                        disabled={exporting}
-                      >
-                        <span class="export-name">Raw (.vt.json)</span>
-                        <span class="export-desc">Preserves snippet references for sharing with teammates</span>
-                        <span class="export-ext">.vt.json</span>
-                      </button>
-                    {/if}
-                    {#each exporters as exp}
-                      {#if Object.keys(snippets).length > 0 && exp.id !== "voicetest"}
-                        <button
-                          class="export-option"
-                          onclick={() => exportExpanded(exp)}
-                          disabled={exporting}
-                        >
-                          <span class="export-name">{exp.name} (Expanded)</span>
-                          <span class="export-desc">{exp.description} &mdash; snippets resolved</span>
-                          <span class="export-ext">.{exp.ext}</span>
-                        </button>
-                      {:else}
-                        <button
-                          class="export-option"
-                          onclick={() => exportTo(exp)}
-                          disabled={exporting}
-                        >
-                          <span class="export-name">{exp.name}</span>
-                          <span class="export-desc">{exp.description}</span>
-                          <span class="export-ext">.{exp.ext}</span>
-                        </button>
-                      {/if}
-                    {/each}
-                  </div>
-                </div>
-                <div class="tab-panel" class:active={exportTab === "platform"}>
-                  <div class="platform-export-list">
-                    {#each platforms as platform}
-                      {@const status = platformStatus[platform.name]}
-                      {@const displayName = getPlatformDisplayName(platform.name)}
-                      {@const isExporting = exportingToPlatform === platform.name}
-                      {@const isConfiguring = configuringPlatform === platform.name}
-                      {@const isBusy = exportingToPlatform !== null || configuringPlatform !== null}
-                      <div class="platform-export-row">
-                        {#if !status?.configured}
-                          <div class="platform-setup">
-                            <span class="platform-label">{displayName}</span>
-                            <input
-                              type="password"
-                              bind:value={apiKeyInput}
-                              placeholder="API Key"
-                              class="api-key-input-small"
-                            />
-                            <button
-                              class="platform-action-btn"
-                              onclick={() => configureAndExport(platform.name)}
-                              disabled={isBusy || !apiKeyInput.trim()}
-                            >
-                              {isConfiguring || isExporting ? "..." : "Connect & Export"}
-                            </button>
-                          </div>
-                        {:else}
-                          <div class="platform-configured">
-                            <span class="platform-label">{displayName}</span>
-                            <span class="connected-badge-small">Connected</span>
-                            <button
-                              class="platform-action-btn"
-                              onclick={() => exportToPlatform(platform.name)}
-                              disabled={isBusy}
-                            >
-                              {isExporting ? "Creating..." : `Create in ${displayName}`}
-                            </button>
-                          </div>
-                        {/if}
-                      </div>
-                    {/each}
-                  </div>
-                </div>
-              </div>
-              {#if error}
-                <p class="modal-error">{error}</p>
-              {/if}
-            </div>
-          {/if}
-        </div>
-      </div>
-    {/if}
+    <ExportModal bind:show={showExportModal} {snippets} onerror={handleChildError} />
 
     <section class="graph-section">
       <div class="graph-header">
@@ -1352,6 +790,10 @@
       </div>
     </section>
 
+    {#if $currentAgentId}
+      <MetadataEditor agentId={$currentAgentId} onerror={handleChildError} />
+    {/if}
+
     {#if tooltip.show}
       <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
       <div
@@ -1369,10 +811,10 @@
           if (nid) {
             const nodeData = $agentGraph?.nodes[nid];
             if (nodeData) {
-              openNodePromptModal(nid, nodeData.state_prompt);
+              nodePromptModal?.open(nid, nodeData.state_prompt);
             }
           } else if (src && tgt) {
-            openTransitionModal(src, tgt, text);
+            transitionModal?.open(src, tgt, text);
           }
         }}
       >
@@ -1383,64 +825,19 @@
       </div>
     {/if}
 
-    {#if editingNodePrompt}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-      <div class="modal-backdrop" onclick={(e) => { if ((e.target as HTMLElement).classList.contains("modal-backdrop")) closeNodePromptModal(); }}>
-        <div class="modal node-prompt-modal">
-          <div class="modal-header">
-            <h3>Edit Prompt: {editingNodeId}</h3>
-            <button class="close-btn" onclick={closeNodePromptModal}>&times;</button>
-          </div>
-          <div class="modal-body">
-            <textarea
-              class="prompt-textarea"
-              bind:value={editedNodePrompt}
-              bind:this={nodePromptTextarea}
-              disabled={savingNodePrompt}
-              rows="15"
-            ></textarea>
-            <div class="modal-actions">
-              {#if nodePromptSaved}
-                <span class="save-indicator saved">Saved</span>
-              {/if}
-              <button onclick={closeNodePromptModal} disabled={savingNodePrompt}>Cancel</button>
-              <button class="btn-primary" onclick={saveNodePrompt} disabled={savingNodePrompt}>
-                {savingNodePrompt ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    {/if}
-
-    {#if editingTransition}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-      <div class="modal-backdrop" onclick={(e) => { if ((e.target as HTMLElement).classList.contains("modal-backdrop")) closeTransitionModal(); }}>
-        <div class="modal node-prompt-modal">
-          <div class="modal-header">
-            <h3>Edit Transition: {transitionSourceId} → {transitionTargetId}</h3>
-            <button class="close-btn" onclick={closeTransitionModal}>&times;</button>
-          </div>
-          <div class="modal-body">
-            <textarea
-              class="prompt-textarea"
-              bind:value={editedTransitionCondition}
-              bind:this={transitionTextarea}
-              disabled={savingTransition}
-              rows="6"
-            ></textarea>
-            <div class="modal-actions">
-              {#if transitionSaved}
-                <span class="save-indicator saved">Saved</span>
-              {/if}
-              <button onclick={closeTransitionModal} disabled={savingTransition}>Cancel</button>
-              <button class="btn-primary" onclick={saveTransition} disabled={savingTransition}>
-                {savingTransition ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+    {#if $currentAgentId}
+      <NodePromptModal
+        bind:this={nodePromptModal}
+        agentId={$currentAgentId}
+        onerror={handleChildError}
+        ontooltipschanged={handleTooltipsChanged}
+      />
+      <TransitionModal
+        bind:this={transitionModal}
+        agentId={$currentAgentId}
+        onerror={handleChildError}
+        ontooltipschanged={handleTooltipsChanged}
+      />
     {/if}
 
     <section class="danger-zone">
@@ -2336,5 +1733,92 @@
       margin-left: 0;
       width: 100%;
     }
+  }
+
+  .metadata-section {
+    margin-bottom: 1.5rem;
+    padding: var(--space-4);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+  }
+
+  .metadata-header {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .metadata-header h3 {
+    margin: 0;
+  }
+
+  .metadata-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .metadata-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .metadata-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+  }
+
+  .metadata-label code {
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+  }
+
+  .metadata-value.readonly {
+    margin: 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    line-height: 1.5;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--bg-tertiary);
+    padding: 0.5rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+  }
+
+  .metadata-value.editable {
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    transition: background 0.15s;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .metadata-value.editable:hover {
+    background: var(--bg-hover);
+  }
+
+  .metadata-textarea {
+    width: 100%;
+    padding: 0.5rem;
+    font-family: monospace;
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--accent-color, #6366f1);
+    border-radius: var(--radius-sm);
+    resize: vertical;
+    box-sizing: border-box;
   }
 </style>

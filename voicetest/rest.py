@@ -148,32 +148,31 @@ def _register_linked_agent(path: Path, tests_paths: list[str] | None = None) -> 
     )
 
 
-def get_agent_repo() -> AgentRepository:
-    """Get the agent repository from the DI container."""
+def _get_repo[T](repo_type: type[T]) -> T:
+    """Resolve a repository from the DI container, initializing storage if needed."""
     if not _initialized:
         init_storage()
-    return get_container().resolve(AgentRepository)
+    return get_container().resolve(repo_type)
+
+
+def get_agent_repo() -> AgentRepository:
+    """Get the agent repository from the DI container."""
+    return _get_repo(AgentRepository)
 
 
 def get_test_case_repo() -> TestCaseRepository:
     """Get the test case repository from the DI container."""
-    if not _initialized:
-        init_storage()
-    return get_container().resolve(TestCaseRepository)
+    return _get_repo(TestCaseRepository)
 
 
 def get_run_repo() -> RunRepository:
     """Get the run repository from the DI container."""
-    if not _initialized:
-        init_storage()
-    return get_container().resolve(RunRepository)
+    return _get_repo(RunRepository)
 
 
 def get_call_repo() -> CallRepository:
     """Get the call repository from the DI container."""
-    if not _initialized:
-        init_storage()
-    return get_container().resolve(CallRepository)
+    return _get_repo(CallRepository)
 
 
 def _find_linked_test(test_id: str) -> dict | None:
@@ -197,18 +196,9 @@ def _find_linked_test(test_id: str) -> dict | None:
 
 
 def _find_web_dist() -> Path | None:
-    """Find the web dist folder, checking both dev and installed locations."""
-    # Development: relative to package root
-    dev_path = Path(__file__).parent.parent / "web" / "dist"
-    if dev_path.exists():
-        return dev_path
-
-    # Installed: in site-packages alongside voicetest
-    installed_path = Path(__file__).parent.parent / "web" / "dist"
-    if installed_path.exists():
-        return installed_path
-
-    return None
+    """Find the web dist folder relative to the package root."""
+    dist = Path(__file__).parent.parent / "web" / "dist"
+    return dist if dist.exists() else None
 
 
 WEB_DIST = _find_web_dist()
@@ -382,6 +372,12 @@ class UpdatePromptRequest(BaseModel):
     node_id: str | None = None
     prompt_text: str
     transition_target_id: str | None = None
+
+
+class UpdateMetadataRequest(BaseModel):
+    """Request to merge updates into an agent's source_metadata."""
+
+    updates: dict[str, Any]
 
 
 class UpdateMetricsConfigRequest(BaseModel):
@@ -647,11 +643,7 @@ async def list_agents() -> list[dict]:
 @router.get("/agents/{agent_id}")
 async def get_agent(agent_id: str) -> dict:
     """Get agent by ID."""
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    return agent
+    return _get_agent_or_404(agent_id)
 
 
 @router.get("/agents/{agent_id}/graph", response_model=None)
@@ -665,10 +657,7 @@ async def get_agent_graph(
     For linked agents (source_path), uses file mtime for ETag-based caching.
     Returns 304 Not Modified if the file hasn't changed.
     """
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = _get_agent_or_404(agent_id)
 
     # For linked agents, use file mtime for caching
     source_path = agent.get("source_path")
@@ -690,7 +679,7 @@ async def get_agent_graph(
 
     # For non-linked agents, use updated_at for caching
     try:
-        result = repo.load_graph(agent)
+        result = get_agent_repo().load_graph(agent)
         if isinstance(result, Path):
             return get_importer_registry().import_agent(result)
 
@@ -715,16 +704,7 @@ async def get_agent_variables(agent_id: str) -> dict:
     Scans general_prompt and all node state_prompt values for {{var}} placeholders.
     Returns unique variable names in first-appearance order.
     """
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    try:
-        result = repo.load_graph(agent)
-        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
-    except (FileNotFoundError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
+    _agent, graph = _load_agent_graph(agent_id)
 
     # Collect all text that might contain {{var}} placeholders
     texts = []
@@ -741,18 +721,38 @@ async def get_agent_variables(agent_id: str) -> dict:
     return {"variables": variables}
 
 
-def _load_agent_graph(agent_id: str) -> tuple[dict, AgentGraph]:
-    """Load agent record and its graph. Raises HTTPException on failure."""
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
+def _get_agent_or_404(agent_id: str) -> dict:
+    """Fetch an agent by ID or raise 404."""
+    agent = get_agent_repo().get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    return agent
 
-    try:
-        result = repo.load_graph(agent)
-        graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
-    except (FileNotFoundError, ValueError) as e:
-        raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
+
+def _load_agent_graph(agent_id: str) -> tuple[dict, AgentGraph]:
+    """Load agent record and its graph. Raises HTTPException on failure.
+
+    Checks source_path first (for linked-file agents) before falling back
+    to the database via repo.load_graph.
+    """
+    agent = _get_agent_or_404(agent_id)
+
+    source_path = agent.get("source_path")
+    if source_path:
+        try:
+            graph = get_importer_registry().import_agent(resolve_path(source_path))
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=404, detail=f"Agent file not found: {source_path}"
+            ) from None
+    else:
+        try:
+            result = get_agent_repo().load_graph(agent)
+            graph = (
+                get_importer_registry().import_agent(result) if isinstance(result, Path) else result
+            )
+        except (FileNotFoundError, ValueError) as e:
+            raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
 
     return agent, graph
 
@@ -923,10 +923,7 @@ async def create_agent_from_file(
 @router.put("/agents/{agent_id}")
 async def update_agent(agent_id: str, request: UpdateAgentRequest) -> dict:
     """Update an agent."""
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = _get_agent_or_404(agent_id)
 
     graph_json = request.graph_json
     if graph_json is None and request.default_model is not None and agent.get("graph_json"):
@@ -935,7 +932,7 @@ async def update_agent(agent_id: str, request: UpdateAgentRequest) -> dict:
         graph_data["default_model"] = request.default_model if request.default_model else None
         graph_json = json.dumps(graph_data)
 
-    return repo.update(agent_id, name=request.name, graph_json=graph_json)
+    return get_agent_repo().update(agent_id, name=request.name, graph_json=graph_json)
 
 
 @router.put("/agents/{agent_id}/prompts", response_model=AgentGraph)
@@ -946,29 +943,7 @@ async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGra
     When node_id is set, updates that node's state_prompt.
     For linked-file agents, writes back to the source file on disk.
     """
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    # Load the current graph
-    source_path = agent.get("source_path")
-    if source_path:
-        try:
-            graph = get_importer_registry().import_agent(resolve_path(source_path))
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=404, detail=f"Agent file not found: {source_path}"
-            ) from None
-    else:
-        try:
-            result = repo.load_graph(agent)
-            if isinstance(result, Path):
-                graph = get_importer_registry().import_agent(result)
-            else:
-                graph = result
-        except (FileNotFoundError, ValueError) as e:
-            raise HTTPException(status_code=404, detail=str(e)) from None
+    agent, graph = _load_agent_graph(agent_id)
 
     # Apply the prompt update
     if request.node_id is None:
@@ -999,18 +974,7 @@ async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGra
             )
         node.state_prompt = request.prompt_text
 
-    # Persist the change
-    if source_path:
-        try:
-            _write_graph_to_linked_file(graph, source_path, agent)
-        except OSError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot write to linked file: {e}",
-            ) from None
-    else:
-        repo.update(agent_id, graph_json=graph.model_dump_json())
-
+    _save_agent_graph(agent_id, agent, graph)
     return graph
 
 
@@ -1041,53 +1005,50 @@ def _write_graph_to_linked_file(graph: AgentGraph, source_path: str, agent: dict
     )
 
 
+@router.put("/agents/{agent_id}/metadata", response_model=AgentGraph)
+async def update_metadata(agent_id: str, request: UpdateMetadataRequest) -> AgentGraph:
+    """Merge updates into an agent's source_metadata.
+
+    Supports linked-file agents via _load_agent_graph / _save_agent_graph.
+    """
+    agent, graph = _load_agent_graph(agent_id)
+    graph.source_metadata.update(request.updates)
+    _save_agent_graph(agent_id, agent, graph)
+    return graph
+
+
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str) -> dict:
     """Delete an agent."""
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    repo.delete(agent_id)
+    _get_agent_or_404(agent_id)
+    get_agent_repo().delete(agent_id)
     return {"status": "deleted", "id": agent_id}
 
 
 @router.get("/agents/{agent_id}/metrics-config")
 async def get_metrics_config(agent_id: str) -> dict:
     """Get an agent's metrics configuration."""
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    config = repo.get_metrics_config(agent_id)
+    _get_agent_or_404(agent_id)
+    config = get_agent_repo().get_metrics_config(agent_id)
     return config.model_dump()
 
 
 @router.put("/agents/{agent_id}/metrics-config")
 async def update_metrics_config(agent_id: str, request: UpdateMetricsConfigRequest) -> dict:
     """Update an agent's metrics configuration."""
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
+    _get_agent_or_404(agent_id)
     config = MetricsConfig(
         threshold=request.threshold,
         global_metrics=request.global_metrics,
     )
-    repo.update_metrics_config(agent_id, config)
+    get_agent_repo().update_metrics_config(agent_id, config)
     return config.model_dump()
 
 
 @router.get("/agents/{agent_id}/tests")
 async def list_tests_for_agent(agent_id: str) -> list[dict]:
     """List all test cases for an agent, including file-based linked tests."""
-    agent = get_agent_repo().get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
+    agent = _get_agent_or_404(agent_id)
     tests_paths = agent.get("tests_paths")
     return get_test_case_repo().list_for_agent_with_linked(agent_id, tests_paths)
 
@@ -1099,10 +1060,7 @@ async def link_test_file(agent_id: str, request: LinkTestFileRequest) -> dict:
     The file must exist, contain valid JSON, and be a JSON array.
     Tests from the file will appear alongside DB tests via list_for_agent_with_linked.
     """
-    agent_repo = get_agent_repo()
-    agent = agent_repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = _get_agent_or_404(agent_id)
 
     path = resolve_file(request.path)
     resolved = str(path)
@@ -1122,7 +1080,7 @@ async def link_test_file(agent_id: str, request: LinkTestFileRequest) -> dict:
         raise HTTPException(status_code=409, detail="File already linked")
 
     updated_paths = current_paths + [resolved]
-    agent_repo.update(agent_id, tests_paths=updated_paths)
+    get_agent_repo().update(agent_id, tests_paths=updated_paths)
 
     return {
         "path": resolved,
@@ -1137,10 +1095,7 @@ async def unlink_test_file(agent_id: str, path: str) -> dict:
 
     Removes the path from tests_paths. The file itself is not deleted.
     """
-    agent_repo = get_agent_repo()
-    agent = agent_repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = _get_agent_or_404(agent_id)
 
     resolved = str(resolve_path(path))
     current_paths = agent.get("tests_paths") or []
@@ -1149,7 +1104,7 @@ async def unlink_test_file(agent_id: str, path: str) -> dict:
         raise HTTPException(status_code=404, detail="File not linked to this agent")
 
     updated_paths = [p for p in current_paths if p != resolved]
-    agent_repo.update(agent_id, tests_paths=updated_paths)
+    get_agent_repo().update(agent_id, tests_paths=updated_paths)
 
     return {
         "path": resolved,
@@ -1905,10 +1860,7 @@ async def start_run(
     background_tasks: BackgroundTasks,
 ) -> dict:
     """Start a new test run. Tests execute in background, poll GET /runs/{id} for results."""
-    agent_repo = get_agent_repo()
-    agent = agent_repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = _get_agent_or_404(agent_id)
 
     test_case_repo = get_test_case_repo()
     tests_paths = agent.get("tests_paths")
@@ -2009,13 +1961,10 @@ async def start_call(agent_id: str, request: StartCallRequest | None = None) -> 
     Creates a LiveKit room and spawns an agent worker subprocess.
     Returns connection info including a token for the browser to join.
     """
-    agent_repo = get_agent_repo()
-    agent = agent_repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = _get_agent_or_404(agent_id)
 
     try:
-        result = agent_repo.load_graph(agent)
+        result = get_agent_repo().load_graph(agent)
         graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
@@ -2210,13 +2159,10 @@ async def start_chat(agent_id: str, request: StartChatRequest | None = None) -> 
     Creates a ConversationEngine in-process (no LiveKit or subprocess needed).
     Returns a chat_id for WebSocket connection.
     """
-    agent_repo = get_agent_repo()
-    agent = agent_repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = _get_agent_or_404(agent_id)
 
     try:
-        result = agent_repo.load_graph(agent)
+        result = get_agent_repo().load_graph(agent)
         graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
@@ -2493,13 +2439,10 @@ async def export_to_platform(
 @router.get("/agents/{agent_id}/sync-status", response_model=SyncStatusResponse)
 async def get_sync_status(agent_id: str) -> SyncStatusResponse:
     """Check if an agent can be synced to its source platform."""
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    agent = _get_agent_or_404(agent_id)
 
     try:
-        result = repo.load_graph(agent)
+        result = get_agent_repo().load_graph(agent)
         graph = get_importer_registry().import_agent(result) if isinstance(result, Path) else result
     except (FileNotFoundError, ValueError):
         return SyncStatusResponse(
@@ -2559,10 +2502,7 @@ async def get_sync_status(agent_id: str) -> SyncStatusResponse:
 @router.post("/agents/{agent_id}/sync", response_model=SyncToPlatformResponse)
 async def sync_to_platform(agent_id: str, request: SyncToPlatformRequest) -> SyncToPlatformResponse:
     """Sync an agent to its source platform."""
-    repo = get_agent_repo()
-    agent = repo.get(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
+    _get_agent_or_404(agent_id)
 
     graph = request.graph
     source_metadata = graph.source_metadata or {}

@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+from fastapi.testclient import TestClient
 import pytest
 
 
@@ -14,6 +15,44 @@ def reset_di_container():
     reset_container()
     yield
     reset_container()
+
+
+@pytest.fixture
+def db_client(tmp_path, monkeypatch):
+    """Create a test client with isolated database."""
+    db_path = tmp_path / "test.duckdb"
+    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+    monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+    from voicetest.rest import app
+    from voicetest.rest import init_storage
+
+    init_storage()
+
+    return TestClient(app)
+
+
+@pytest.fixture
+def platform_client(tmp_path, monkeypatch):
+    """Create a test client with isolated database, cleared API keys, and temp settings dir."""
+    db_path = tmp_path / "test.duckdb"
+    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+    monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
+
+    monkeypatch.delenv("RETELL_API_KEY", raising=False)
+    monkeypatch.delenv("VAPI_API_KEY", raising=False)
+    monkeypatch.delenv("LIVEKIT_API_KEY", raising=False)
+    monkeypatch.delenv("LIVEKIT_API_SECRET", raising=False)
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".voicetest").mkdir()
+
+    from voicetest.rest import app
+    from voicetest.rest import init_storage
+
+    init_storage()
+
+    return TestClient(app)
 
 
 # fixtures_dir is inherited from tests/conftest.py

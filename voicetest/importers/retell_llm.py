@@ -15,6 +15,26 @@ from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 
 
+_LLM_KEYS = {
+    "llm_id",
+    "model",
+    "general_prompt",
+    "begin_message",
+    "general_tools",
+    "states",
+    "retellLlmData",
+}
+
+
+def _extract_agent_envelope(config: dict[str, Any]) -> dict[str, Any]:
+    """Extract agent-level fields (voice_id, language, etc.) from the raw config.
+
+    These live alongside the LLM data at the top level of a Retell agent
+    export and are needed when re-wrapping for the Retell UI import.
+    """
+    return {k: v for k, v in config.items() if k not in _LLM_KEYS}
+
+
 class RetellLLMTool(BaseModel):
     """Retell LLM tool definition."""
 
@@ -25,6 +45,8 @@ class RetellLLMTool(BaseModel):
     description: str = ""
     url: str | None = None
     parameters: dict[str, Any] | None = None
+    transfer_destination: dict[str, Any] | None = None
+    transfer_option: dict[str, Any] | None = None
 
 
 class RetellLLMEdge(BaseModel):
@@ -113,8 +135,9 @@ class RetellLLMImporter:
 
     def import_agent(self, path_or_config: str | Path | dict) -> AgentGraph:
         """Convert Retell LLM JSON to AgentGraph."""
-        raw_config = self._load_config(path_or_config)
-        raw_config = self._unwrap_config(raw_config)
+        full_config = self._load_config(path_or_config)
+        agent_envelope = _extract_agent_envelope(full_config)
+        raw_config = self._unwrap_config(full_config)
         llm_config = RetellLLMConfig.model_validate(raw_config)
 
         nodes: dict[str, AgentNode] = {}
@@ -147,16 +170,20 @@ class RetellLLMImporter:
             )
             entry_node_id = "main"
 
+        source_metadata: dict[str, Any] = {
+            "llm_id": llm_config.llm_id,
+            "model": llm_config.model,
+            "begin_message": llm_config.begin_message,
+            "general_prompt": llm_config.general_prompt,  # Stored separately
+        }
+        if agent_envelope:
+            source_metadata["agent_envelope"] = agent_envelope
+
         return AgentGraph(
             nodes=nodes,
             entry_node_id=entry_node_id,
             source_type="retell-llm",
-            source_metadata={
-                "llm_id": llm_config.llm_id,
-                "model": llm_config.model,
-                "begin_message": llm_config.begin_message,
-                "general_prompt": llm_config.general_prompt,  # Stored separately
-            },
+            source_metadata=source_metadata,
             default_model=llm_config.model,
         )
 
@@ -183,13 +210,21 @@ class RetellLLMImporter:
 
         Retell's LLM format declares built-in actions (end_call, transfer_call)
         as type=custom. This method resolves the actual type from the tool name.
+        Transfer tools carry transfer_destination and transfer_option in metadata
+        so the CF exporter can emit proper transfer_call nodes.
         """
         tool_type = _resolve_tool_type(tool.name, tool.type)
+        metadata: dict[str, Any] = {}
+        if tool.transfer_destination:
+            metadata["transfer_destination"] = tool.transfer_destination
+        if tool.transfer_option:
+            metadata["transfer_option"] = tool.transfer_option
         return ToolDefinition(
             name=tool.name,
             description=tool.description,
             parameters=tool.parameters or {},
             type=tool_type,
+            metadata=metadata,
         )
 
 

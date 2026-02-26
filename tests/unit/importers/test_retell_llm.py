@@ -313,3 +313,62 @@ class TestRetellLLMDashboardExport:
         tool = graph.nodes["main"].tools[0]
         assert tool.name == "lookup_patient"
         assert tool.type == "custom"
+
+    def test_extract_agent_envelope(self):
+        """_extract_agent_envelope filters LLM keys, keeps agent fields."""
+        from voicetest.importers.retell_llm import _extract_agent_envelope
+
+        config = {
+            "voice_id": "voice_abc",
+            "language": "en-US",
+            "agent_name": "My Agent",
+            "general_prompt": "You are helpful.",
+            "llm_id": "llm_123",
+            "model": "gpt-4o",
+            "begin_message": "Hello!",
+            "general_tools": [],
+            "states": [],
+            "retellLlmData": {"nested": "data"},
+        }
+
+        envelope = _extract_agent_envelope(config)
+        assert envelope["voice_id"] == "voice_abc"
+        assert envelope["language"] == "en-US"
+        assert envelope["agent_name"] == "My Agent"
+        # LLM keys should be filtered out
+        assert "general_prompt" not in envelope
+        assert "llm_id" not in envelope
+        assert "model" not in envelope
+        assert "begin_message" not in envelope
+        assert "general_tools" not in envelope
+        assert "states" not in envelope
+        assert "retellLlmData" not in envelope
+
+    def test_agent_envelope_stored_in_metadata(self):
+        """Full agent export -> agent_envelope in source_metadata."""
+        from voicetest.importers.retell_llm import RetellLLMImporter
+
+        config = {
+            "voice_id": "voice_xyz",
+            "language": "ja-JP",
+            "general_prompt": "You are a helpful agent.",
+            "model": "gpt-4o",
+            "general_tools": [],
+            "states": [
+                {
+                    "name": "main",
+                    "state_prompt": "Help the user.",
+                    "edges": [],
+                    "tools": [],
+                },
+            ],
+        }
+
+        importer = RetellLLMImporter()
+        graph = importer.import_agent(config)
+
+        assert "agent_envelope" in graph.source_metadata
+        envelope = graph.source_metadata["agent_envelope"]
+        assert envelope["voice_id"] == "voice_xyz"
+        assert envelope["language"] == "ja-JP"
+        assert "general_prompt" not in envelope

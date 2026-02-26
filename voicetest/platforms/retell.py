@@ -18,8 +18,8 @@ from voicetest.importers.retell import RetellImporter
 
 
 if TYPE_CHECKING:
+    from voicetest.importers.base import SourceImporter
     from voicetest.models.agent import AgentGraph
-    from voicetest.platforms.base import SourceImporter
 
 
 _READONLY_FIELDS = {"conversation_flow_id", "version"}
