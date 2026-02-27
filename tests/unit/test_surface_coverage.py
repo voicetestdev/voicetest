@@ -146,6 +146,8 @@ CLI_SURFACED = {
     "TestExecutionService.run_test",
     "TestExecutionService.run_tests",
     # Run history
+    "RunService.create_run",
+    "RunService.add_result",
     "RunService.list_runs",
     "RunService.get_run",
     "RunService.delete_run",
@@ -211,6 +213,22 @@ INTERNAL_ONLY = {
     "DiscoveryService.list_platforms": "REST-only (platforms are a web UI feature)",
 }
 
+# REST methods intentionally not in the CLI, with justifications.
+CLI_EXCLUDED_FROM_REST = {
+    "AgentService.get_graph_with_etag": "HTTP caching optimization (ETag), not relevant for CLI",
+    "AgentService.get_variables": "Web UI helper for variable picker, CLI uses file-based workflow",
+    "AgentService.update_prompt": "Web UI inline edit, CLI edits files directly",
+    "AgentService.update_metadata": "Web UI inline edit, CLI edits files directly",
+    "AgentService.get_metrics_config": "Web UI metrics panel, CLI uses file-based workflow",
+    "AgentService.update_metrics_config": "Web UI metrics panel, CLI uses file-based workflow",
+    "EvaluationService.audio_eval_result": "Audio pipeline callback, not a user operation",
+    "PlatformService.get_sync_status": "Web UI sync indicator, CLI uses explicit push/import",
+    "PlatformService.sync_to_platform": "Web UI one-click sync, CLI uses explicit push",
+    "TestExecutionService.evaluate_global_metrics": (
+        "Called internally by run_test, not a standalone operation"
+    ),
+}
+
 # Combined set of all accounted-for methods
 ALL_SURFACED = REST_SURFACED | CLI_SURFACED | TUI_SURFACED | set(INTERNAL_ONLY.keys())
 
@@ -266,6 +284,33 @@ class TestSurfaceCoverage:
             pytest.skip(
                 "Methods in both INTERNAL_ONLY and a transport set (review if intentional):\n"
                 + "\n".join(f"  - {m}" for m in sorted(overlap))
+            )
+
+    def test_cli_covers_rest_endpoints(self):
+        """Every REST-surfaced method should also be CLI-surfaced, unless excluded."""
+        rest_only = REST_SURFACED - CLI_SURFACED - set(CLI_EXCLUDED_FROM_REST.keys())
+        assert not rest_only, (
+            "REST method(s) not in CLI_SURFACED or CLI_EXCLUDED_FROM_REST:\n"
+            + "\n".join(f"  - {m}" for m in sorted(rest_only))
+            + "\n\nAdd to CLI_SURFACED (implement in CLI) or "
+            "CLI_EXCLUDED_FROM_REST with a justification."
+        )
+
+    def test_cli_excluded_entries_have_justifications(self):
+        """Every CLI_EXCLUDED_FROM_REST entry must have a non-empty justification."""
+        for key, reason in CLI_EXCLUDED_FROM_REST.items():
+            assert reason and reason.strip(), (
+                f"CLI_EXCLUDED_FROM_REST['{key}'] has no justification"
+            )
+
+    def test_cli_excluded_entries_are_in_rest(self):
+        """CLI_EXCLUDED_FROM_REST entries must actually be REST-only methods."""
+        for key in CLI_EXCLUDED_FROM_REST:
+            assert key in REST_SURFACED, (
+                f"CLI_EXCLUDED_FROM_REST['{key}'] is not in REST_SURFACED — remove it"
+            )
+            assert key not in CLI_SURFACED, (
+                f"CLI_EXCLUDED_FROM_REST['{key}'] is in CLI_SURFACED — remove from exclusion list"
             )
 
     def test_discovery_finds_services(self):

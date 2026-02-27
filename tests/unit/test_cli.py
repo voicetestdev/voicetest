@@ -139,6 +139,45 @@ class TestCLIRun:
         assert result.exit_code != 0
 
 
+class TestCLIRunSaveOption:
+    """Tests for the --save-run option on the run command."""
+
+    def test_run_help_shows_save_run(self, cli_runner):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["run", "--help"])
+
+        assert result.exit_code == 0
+        assert "--save-run" in result.output
+
+    def test_run_help_shows_agent_id(self, cli_runner):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["run", "--help"])
+
+        assert result.exit_code == 0
+        assert "--agent-id" in result.output
+
+    def test_save_run_requires_agent_id(self, cli_runner, temp_agent_file, temp_tests_file):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "run",
+                "--agent",
+                str(temp_agent_file),
+                "--tests",
+                str(temp_tests_file),
+                "--all",
+                "--save-run",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--agent-id" in result.output
+
+
 class TestCLIMain:
     """Tests for main entry point."""
 

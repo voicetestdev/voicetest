@@ -123,6 +123,8 @@ def main(ctx, json_mode):
 @click.option("--all", "run_all", is_flag=True, help="Run all tests")
 @click.option("--test", "test_names", multiple=True, help="Run specific test(s) by name")
 @click.option("--max-turns", type=int, default=None, help="Maximum conversation turns")
+@click.option("--save-run", is_flag=True, help="Save run to database (requires --agent-id)")
+@click.option("--agent-id", default=None, help="Agent ID in database (for --save-run)")
 @click.pass_context
 def run(
     ctx,
@@ -135,8 +137,12 @@ def run(
     run_all: bool,
     test_names: tuple[str, ...],
     max_turns: int | None,
+    save_run: bool,
+    agent_id: str | None,
 ):
     """Run tests against an agent definition."""
+    if save_run and not agent_id:
+        raise click.UsageError("--save-run requires --agent-id")
     json_mode = ctx.obj.get("json", False)
     if interactive:
         _run_tui(agent, tests, source, verbose)
@@ -152,6 +158,8 @@ def run(
                 test_names,
                 max_turns,
                 json_mode=json_mode,
+                save_run=save_run,
+                agent_id=agent_id,
             )
         )
 
@@ -193,6 +201,8 @@ async def _run_cli(
     max_turns: int | None,
     *,
     json_mode: bool = False,
+    save_run: bool = False,
+    agent_id: str | None = None,
 ) -> None:
     """Run tests in CLI mode."""
     settings = load_settings()
@@ -237,6 +247,15 @@ async def _run_cli(
         )
 
     run_result = await run_ctx.run_all(on_error=on_error)
+
+    # Save to database if requested
+    if save_run and agent_id:
+        run_svc = get_run_service()
+        db_run = run_svc.create_run(agent_id)
+        for result in run_result.results:
+            run_svc.add_result(db_run["id"], "", result)
+        run_svc.complete(db_run["id"])
+        _echo(f"[dim]Run saved to database: {db_run['id']}[/dim]")
 
     # Display
     if json_mode:
