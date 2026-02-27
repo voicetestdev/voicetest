@@ -73,11 +73,13 @@ packages = ["voicetest"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "web/dist" = "web/dist"
+"claude-plugin" = "voicetest/claude_plugin"
 
 [tool.hatch.build.targets.sdist]
 include = [
     "voicetest/**",
     "web/dist/**",
+    "claude-plugin/**",
     "pyproject.toml",
     "README.md",
 ]
@@ -128,6 +130,7 @@ dev = [
     "ruff>=0.8",
     "httpx>=0.28",
     "pre-commit>=4.0",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.uv]

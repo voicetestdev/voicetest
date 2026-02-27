@@ -120,15 +120,59 @@ REST_SURFACED = {
 
 # CLI commands in voicetest/cli.py
 CLI_SURFACED = {
+    # Agent CRUD + graph
     "AgentService.import_agent",
     "AgentService.export_agent",
     "AgentService.create_agent",
     "AgentService.list_agents",
+    "AgentService.get_agent",
+    "AgentService.update_agent",
+    "AgentService.delete_agent",
+    "AgentService.load_graph",
+    "AgentService.save_graph",
+    # Discovery
     "DiscoveryService.list_importers",
     "DiscoveryService.list_export_formats",
+    # Test case CRUD
     "TestCaseService.create_test",
+    "TestCaseService.list_tests",
+    "TestCaseService.get_test",
+    "TestCaseService.update_test",
+    "TestCaseService.delete_test",
+    "TestCaseService.link_test_file",
+    "TestCaseService.unlink_test_file",
+    "TestCaseService.export_tests",
+    # Test execution
     "TestExecutionService.run_test",
     "TestExecutionService.run_tests",
+    # Run history
+    "RunService.list_runs",
+    "RunService.get_run",
+    "RunService.delete_run",
+    # Snippets
+    "SnippetService.get_snippets",
+    "SnippetService.update_all_snippets",
+    "SnippetService.update_snippet",
+    "SnippetService.delete_snippet",
+    "SnippetService.analyze_dry",
+    "SnippetService.apply_snippets",
+    # Settings
+    "SettingsService.get_settings",
+    "SettingsService.update_settings",
+    "SettingsService.get_defaults",
+    # Platforms
+    "PlatformService.list_platforms",
+    "PlatformService.get_status",
+    "PlatformService.configure",
+    "PlatformService.list_remote_agents",
+    "PlatformService.import_from_platform",
+    "PlatformService.export_to_platform",
+    # Evaluation
+    "EvaluationService.evaluate_transcript",
+    # Diagnosis
+    "DiagnosisService.diagnose_failure",
+    "DiagnosisService.apply_and_rerun",
+    "DiagnosisService.revise_fix",
 }
 
 # TUI shell commands in voicetest/tui/shell.py

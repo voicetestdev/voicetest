@@ -1,0 +1,7 @@
+{
+  "name": "voicetest",
+  "description": "Test voice agents from Retell, VAPI, LiveKit, Bland, Telnyx. Slash commands for running tests, exporting agents, and format conversion.",
+  "version": "0.26",
+  "author": { "name": "voicetestdev" },
+  "keywords": ["voicetest", "voice-agent", "testing", "retell", "vapi", "livekit"]
+}
