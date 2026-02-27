@@ -58,12 +58,19 @@ class RunSettings(BaseModel):
     )
 
 
+class ExportSettings(BaseModel):
+    """Export configuration."""
+
+    layout: bool = Field(default=True, description="Compute display positions for exported nodes")
+
+
 class Settings(BaseModel):
     """Voicetest settings."""
 
     models: ModelSettings = Field(default_factory=ModelSettings)
     run: RunSettings = Field(default_factory=RunSettings)
     audio: AudioSettings = Field(default_factory=AudioSettings)
+    export: ExportSettings = Field(default_factory=ExportSettings)
     env: dict[str, str] = Field(
         default_factory=dict,
         description="Environment variables to set (e.g., API keys for LLM providers)",
@@ -130,6 +137,10 @@ def _to_toml(settings: Settings) -> str:
     lines.append("[audio]")
     lines.append(f'tts_url = "{settings.audio.tts_url}"')
     lines.append(f'stt_url = "{settings.audio.stt_url}"')
+    lines.append("")
+
+    lines.append("[export]")
+    lines.append(f"layout = {str(settings.export.layout).lower()}")
     lines.append("")
 
     if settings.env:

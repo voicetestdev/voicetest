@@ -80,6 +80,7 @@ class RetellNode(BaseModel):
     type: str
     instruction: RetellInstruction
     edges: list[RetellEdge] = []
+    display_position: dict[str, float] | None = None
 
 
 class RetellConfig(BaseModel):
@@ -99,6 +100,7 @@ class RetellConfig(BaseModel):
     start_speaker: str | None = None
     knowledge_base_ids: list[str] = []
     default_dynamic_variables: dict[str, str] = {}
+    begin_tag_display_position: dict[str, float] | None = None
 
     @field_validator("tools", mode="before")
     @classmethod
@@ -169,12 +171,16 @@ class RetellImporter:
         for retell_node in retell.nodes:
             transitions = [self._convert_edge(edge) for edge in retell_node.edges]
 
+            metadata: dict[str, Any] = {"retell_type": retell_node.type}
+            if retell_node.display_position:
+                metadata["display_position"] = retell_node.display_position
+
             nodes[retell_node.id] = AgentNode(
                 id=retell_node.id,
                 state_prompt=retell_node.instruction.text,  # State-specific only
                 tools=global_tools if global_tools else [],
                 transitions=transitions,
-                metadata={"retell_type": retell_node.type},
+                metadata=metadata,
             )
 
         source_metadata: dict[str, Any] = {
@@ -195,6 +201,8 @@ class RetellImporter:
             source_metadata["knowledge_base_ids"] = retell.knowledge_base_ids
         if retell.default_dynamic_variables:
             source_metadata["default_dynamic_variables"] = retell.default_dynamic_variables
+        if retell.begin_tag_display_position:
+            source_metadata["begin_tag_display_position"] = retell.begin_tag_display_position
         if agent_envelope:
             source_metadata["agent_envelope"] = agent_envelope
 
