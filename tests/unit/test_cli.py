@@ -1056,3 +1056,36 @@ class TestCLIChat:
 
         assert result.exit_code == 0
         assert "chat" in result.output
+
+
+class TestCLIDecompose:
+    """Tests for the decompose command."""
+
+    def test_decompose_help(self, cli_runner):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["decompose", "--help"])
+
+        assert result.exit_code == 0
+        assert "--agent" in result.output or "-a" in result.output
+        assert "--output" in result.output or "-o" in result.output
+        assert "--num-agents" in result.output or "-n" in result.output
+        assert "--model" in result.output or "-m" in result.output
+
+    def test_decompose_missing_agent(self, cli_runner, tmp_path):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(
+            main,
+            ["decompose", "-a", "/nonexistent/agent.json", "-o", str(tmp_path / "out")],
+        )
+
+        assert result.exit_code != 0
+
+    def test_decompose_shown_in_main_help(self, cli_runner):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["--help"])
+
+        assert result.exit_code == 0
+        assert "decompose" in result.output

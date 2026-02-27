@@ -6,6 +6,7 @@ that resolve services from the DI container.
 
 from voicetest.container import get_container
 from voicetest.services.agents import AgentService
+from voicetest.services.decompose import DecomposeService
 from voicetest.services.diagnosis import DiagnosisService
 from voicetest.services.discovery import DiscoveryService
 from voicetest.services.evaluation import EvaluationService
@@ -37,6 +38,10 @@ def get_evaluation_service() -> EvaluationService:
     return get_container().resolve(EvaluationService)
 
 
+def get_decompose_service() -> DecomposeService:
+    return get_container().resolve(DecomposeService)
+
+
 def get_diagnosis_service() -> DiagnosisService:
     return get_container().resolve(DiagnosisService)
 
@@ -59,6 +64,7 @@ def get_settings_service() -> SettingsService:
 
 __all__ = [
     "AgentService",
+    "DecomposeService",
     "DiagnosisService",
     "DiscoveryService",
     "EvaluationService",
@@ -69,6 +75,7 @@ __all__ = [
     "TestCaseService",
     "TestExecutionService",
     "get_agent_service",
+    "get_decompose_service",
     "get_diagnosis_service",
     "get_discovery_service",
     "get_evaluation_service",

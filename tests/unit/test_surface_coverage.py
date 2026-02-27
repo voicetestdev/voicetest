@@ -87,6 +87,8 @@ REST_SURFACED = {
     # Evaluation
     "EvaluationService.evaluate_transcript",
     "EvaluationService.audio_eval_result",
+    # Decompose
+    "DecomposeService.decompose",
     # Diagnosis
     "DiagnosisService.diagnose_failure",
     "DiagnosisService.apply_and_rerun",
@@ -171,6 +173,8 @@ CLI_SURFACED = {
     "PlatformService.export_to_platform",
     # Evaluation
     "EvaluationService.evaluate_transcript",
+    # Decompose
+    "DecomposeService.decompose",
     # Diagnosis
     "DiagnosisService.diagnose_failure",
     "DiagnosisService.apply_and_rerun",
@@ -200,6 +204,9 @@ INTERNAL_ONLY = {
     "RunService.update_transcript": "Called by call WebSocket handler",
     "RunService.update_audio_eval": "Called by REST audio_eval_result handler",
     "RunService.add_result_from_call": "Called by REST _save_call_as_run handler",
+    # DecomposeService — helpers called by decompose pipeline
+    "DecomposeService.build_sub_graph": "Called by decompose internally for each sub-agent",
+    "DecomposeService.build_manifest": "Called by decompose internally to build manifest",
     # DiagnosisService — helpers called by other diagnosis methods
     "DiagnosisService.apply_fix_to_graph": "Called by apply_and_rerun and save-fix handler",
     "DiagnosisService.scores_improved": "Called by apply_and_rerun internally",
@@ -318,6 +325,7 @@ class TestSurfaceCoverage:
         services = _discover_service_methods()
         expected = {
             "AgentService",
+            "DecomposeService",
             "DiagnosisService",
             "DiscoveryService",
             "EvaluationService",

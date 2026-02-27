@@ -55,6 +55,7 @@ from voicetest.models.test_case import TestCase
 from voicetest.pathutil import resolve_within
 from voicetest.retry import RetryError
 from voicetest.services import get_agent_service
+from voicetest.services import get_decompose_service
 from voicetest.services import get_diagnosis_service
 from voicetest.services import get_discovery_service
 from voicetest.services import get_evaluation_service
@@ -1300,6 +1301,32 @@ async def save_fix(agent_id: str, body: dict) -> dict:
     get_agent_service().save_graph(agent_id, agent, modified_graph)
 
     return modified_graph.model_dump()
+
+
+@router.post("/agents/{agent_id}/decompose")
+async def decompose_agent(agent_id: str, request: Request) -> dict:
+    """Decompose an agent into sub-agents with orchestrator manifest.
+
+    Optional body: {"model": "provider/model-name", "num_agents": 0}
+    """
+    _agent, graph = _load_agent_graph(agent_id)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    settings = get_settings_service().get_settings()
+    model = body.get("model") or resolve_model(settings.models.judge)
+    num_agents = body.get("num_agents", 0)
+
+    result = await get_decompose_service().decompose(
+        graph=graph,
+        model=model,
+        num_agents=num_agents,
+    )
+
+    return result.model_dump()
 
 
 async def _broadcast_run_update(run_id: str, data: dict) -> None:
