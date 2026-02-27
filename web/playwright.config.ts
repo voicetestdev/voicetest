@@ -15,7 +15,9 @@ export default defineConfig({
   },
   outputDir: "../docs/demos/test-results",
   projects: [
-    { name: "web", testMatch: "web-demo.ts" },
-    { name: "dry", testMatch: "dry-demo.ts" },
+    { name: "web-light", testMatch: "web-demo.ts", use: { colorScheme: "light" } },
+    { name: "web-dark", testMatch: "web-demo.ts", use: { colorScheme: "dark" } },
+    { name: "dry-light", testMatch: "dry-demo.ts", use: { colorScheme: "light" } },
+    { name: "dry-dark", testMatch: "dry-demo.ts", use: { colorScheme: "dark" } },
   ],
 });

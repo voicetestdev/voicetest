@@ -23,7 +23,7 @@ test("record DRY analysis demo", async ({ page }) => {
     data: {
       name: "Meridian Claims Assistant",
       config: dryAgent,
-      source: "retell_llm",
+      source: "retell-llm",
     },
   });
 

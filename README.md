@@ -47,7 +47,9 @@ The demo includes a healthcare receptionist agent with 8 test cases covering app
 
 ![CLI Demo](docs/demos/cli-demo.gif)
 
-![Web UI Demo](docs/demos/web-demo.gif)
+![Web UI Demo (light)](docs/demos/web-demo-light.gif)
+
+![DRY Analysis Demo (light)](docs/demos/dry-demo-light.gif)
 
 ## Quick Start
 
@@ -550,17 +552,17 @@ This invokes the `claude` CLI via subprocess, using your existing Claude Code au
 
 The project uses Punq for dependency injection. Key singletons:
 
-- `duckdb.DuckDBPyConnection` - Database connection (singleton for data visibility)
+- `Engine`, `sessionmaker`, `Session` - SQLAlchemy database layer (DuckDB-backed)
 - `ImporterRegistry`, `ExporterRegistry`, `PlatformRegistry` - Registries
 
-Repositories are transient but share the singleton connection:
+Repositories are transient but share the singleton session:
 
-- `AgentRepository`, `TestCaseRepository`, `RunRepository`
+- `AgentRepository`, `TestCaseRepository`, `RunRepository`, `CallRepository`
 
 Get instances via `voicetest.container`:
 
 ```python
-from voicetest.container import get_db_connection, get_importer_registry
+from voicetest.container import get_session, get_importer_registry
 ```
 
 **When to use DI:**
@@ -568,7 +570,7 @@ from voicetest.container import get_db_connection, get_importer_registry
 - Use `get_*` helpers for app code (REST handlers, CLI commands)
 - Use `container.resolve(Type)` when you need the container directly
 - For tests, use `reset_container()` to get fresh state
-- Don't instantiate repositories directly; let Punq inject the connection
+- Don't instantiate repositories directly; let Punq inject the session
 
 ### DSPy Signatures
 
@@ -610,7 +612,7 @@ Post-run failure diagnosis and auto-fix flow:
 
 - `voicetest/models/diagnosis.py` - Pydantic models (Diagnosis, FixSuggestion, PromptChange, etc.)
 - `voicetest/judges/diagnosis.py` - DSPy signatures and DiagnosisJudge class
-- `voicetest/api.py` - `diagnose_failure()`, `apply_and_rerun()`, `revise_fix()`, `apply_fix_to_graph()`
+- `voicetest/services/diagnosis.py` - `DiagnosisService`: `diagnose_failure()`, `apply_and_rerun()`, `revise_fix()`, `apply_fix_to_graph()`
 - `voicetest/rest.py` - REST endpoints: `/results/{id}/diagnose`, `/results/{id}/apply-fix`, `/results/{id}/revise-fix`, `/agents/{id}/save-fix`
 - `web/src/components/RunsView.svelte` - UI: diagnose button, model input, edit-before-apply textareas, auto-fix loop with progress
 
@@ -801,10 +803,10 @@ The frontend uses minimal dependencies by design. Consider adding a library when
 ```
 voicetest/
 ├── voicetest/           # Python package
-│   ├── api.py           # Core API
 │   ├── cli.py           # CLI
 │   ├── rest.py          # REST API server + WebSocket + SPA serving
 │   ├── container.py     # Dependency injection (Punq)
+│   ├── services/        # Service layer (agents, diagnosis, evaluation, runs, snippets, etc.)
 │   ├── compose/         # Bundled Docker Compose for infrastructure services
 │   ├── models/          # Pydantic models
 │   ├── importers/       # Source importers (retell, vapi, bland, telnyx, livekit, xlsform, custom)
