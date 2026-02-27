@@ -93,7 +93,7 @@ class TestCaseService:
         resolved = resolve_file(path)
         resolved_str = str(resolved)
 
-        content = json.loads(resolved.read_text())
+        content = json.loads(resolved.read_text())  # nosec - path validated by resolve_file()
         if not isinstance(content, list):
             raise ValueError("File must contain a JSON array")
 

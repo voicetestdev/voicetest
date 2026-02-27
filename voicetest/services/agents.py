@@ -113,7 +113,7 @@ class AgentService:
         absolute_path: str | None = None
         if path:
             resolved = resolve_file(path)
-            resolved.read_text()  # validates access
+            resolved.read_text()  # validates access  # nosec - path validated by resolve_file()
             absolute_path = str(resolved)
 
         import_source = absolute_path if absolute_path else config
