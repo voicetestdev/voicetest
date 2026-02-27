@@ -966,7 +966,7 @@ The frontend uses minimal dependencies by design. Consider adding a library when
 ```
 voicetest/
 ├── voicetest/           # Python package
-│   ├── cli.py           # CLI
+│   ├── cli.py           # CLI (40+ commands)
 │   ├── rest.py          # REST API server + WebSocket + SPA serving
 │   ├── container.py     # Dependency injection (Punq)
 │   ├── services/        # Service layer (agents, diagnosis, evaluation, runs, snippets, etc.)
@@ -980,6 +980,9 @@ voicetest/
 │   ├── judges/          # Evaluation judges (metric, rule)
 │   ├── storage/         # DuckDB persistence layer
 │   └── tui/             # TUI and shell
+├── claude-plugin/       # Claude Code plugin (commands + skills)
+│   ├── commands/        # Slash commands (/voicetest-run, etc.)
+│   └── skills/          # Auto-activating skill + references
 ├── web/                 # Frontend (Bun + Svelte + Vite)
 │   ├── src/
 │   │   ├── components/  # Svelte components
