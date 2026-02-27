@@ -1,6 +1,7 @@
 """Tests for voicetest.exporters.retell_cf module."""
 
 import json
+from unittest.mock import patch
 
 import pytest
 
@@ -12,6 +13,7 @@ from voicetest.models.agent import AgentNode
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
+from voicetest.settings import Settings
 
 
 def _find_node(nodes: list[dict], node_id: str) -> dict | None:
@@ -1010,3 +1012,190 @@ class TestRetellCFExporter:
         # No end node exists, so failure edge should point to entry_node_id
         failure_edge = transfer_nodes[0]["edge"]
         assert failure_edge["destination_node_id"] == "main"
+
+
+class TestDisplayPosition:
+    """Tests for display_position on exported nodes."""
+
+    _PATCH_TARGET = "voicetest.exporters.retell_cf.load_settings"
+
+    def _patch_layout(self, enabled: bool):
+        settings = Settings(export={"layout": enabled})
+        return patch(self._PATCH_TARGET, return_value=settings)
+
+    def test_nodes_have_display_position(self):
+        """Every exported node has display_position with x and y."""
+        graph = AgentGraph(
+            nodes={
+                "a": AgentNode(
+                    id="a",
+                    state_prompt="Node A.",
+                    transitions=[
+                        Transition(
+                            target_node_id="b",
+                            condition=TransitionCondition(type="llm_prompt", value="go"),
+                        ),
+                    ],
+                ),
+                "b": AgentNode(id="b", state_prompt="Node B.", transitions=[]),
+            },
+            entry_node_id="a",
+            source_type="test",
+        )
+
+        with self._patch_layout(True):
+            result = export_retell_cf(graph)
+
+        for node in result["nodes"]:
+            assert "display_position" in node, f"Node {node['id']} missing display_position"
+            assert "x" in node["display_position"]
+            assert "y" in node["display_position"]
+
+    def test_entry_node_leftmost(self):
+        """Entry node has the smallest x position."""
+        graph = AgentGraph(
+            nodes={
+                "start": AgentNode(
+                    id="start",
+                    state_prompt="Start.",
+                    transitions=[
+                        Transition(
+                            target_node_id="mid",
+                            condition=TransitionCondition(type="llm_prompt", value="go"),
+                        ),
+                    ],
+                ),
+                "mid": AgentNode(
+                    id="mid",
+                    state_prompt="Mid.",
+                    transitions=[
+                        Transition(
+                            target_node_id="end_node",
+                            condition=TransitionCondition(type="llm_prompt", value="go"),
+                        ),
+                    ],
+                ),
+                "end_node": AgentNode(
+                    id="end_node",
+                    state_prompt="End.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="start",
+            source_type="test",
+        )
+
+        with self._patch_layout(True):
+            result = export_retell_cf(graph)
+
+        positions = {n["id"]: n["display_position"] for n in result["nodes"]}
+        entry_x = positions["start"]["x"]
+        for node_id, pos in positions.items():
+            assert pos["x"] >= entry_x, f"Node {node_id} has x < entry node"
+
+    def test_preserved_position_wins(self):
+        """Node with metadata['display_position'] keeps its value."""
+        graph = AgentGraph(
+            nodes={
+                "a": AgentNode(
+                    id="a",
+                    state_prompt="Node A.",
+                    transitions=[],
+                    metadata={
+                        "retell_type": "conversation",
+                        "display_position": {"x": 999, "y": 888},
+                    },
+                ),
+            },
+            entry_node_id="a",
+            source_type="retell",
+        )
+
+        with self._patch_layout(True):
+            result = export_retell_cf(graph)
+
+        node_a = next(n for n in result["nodes"] if n["id"] == "a")
+        assert node_a["display_position"]["x"] == 999
+        assert node_a["display_position"]["y"] == 888
+
+    def test_begin_tag_display_position_present(self):
+        """Flow-level begin_tag_display_position is emitted."""
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(id="main", state_prompt="Main.", transitions=[]),
+            },
+            entry_node_id="main",
+            source_type="test",
+        )
+
+        with self._patch_layout(True):
+            result = export_retell_cf(graph)
+
+        assert "begin_tag_display_position" in result
+        assert "x" in result["begin_tag_display_position"]
+        assert "y" in result["begin_tag_display_position"]
+
+    def test_begin_tag_display_position_preserved_from_import(self):
+        """begin_tag_display_position from source_metadata is preserved."""
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(id="main", state_prompt="Main.", transitions=[]),
+            },
+            entry_node_id="main",
+            source_type="retell",
+            source_metadata={
+                "begin_tag_display_position": {"x": -200, "y": 50},
+            },
+        )
+
+        with self._patch_layout(True):
+            result = export_retell_cf(graph)
+
+        assert result["begin_tag_display_position"]["x"] == -200
+        assert result["begin_tag_display_position"]["y"] == 50
+
+    def test_synthesized_nodes_have_position(self):
+        """Synthesized end/transfer nodes get display_position."""
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(
+                    id="main",
+                    state_prompt="Help user. Use end_call when done.",
+                    tools=[
+                        ToolDefinition(
+                            name="end_call",
+                            description="End",
+                            type="end_call",
+                        ),
+                    ],
+                    transitions=[],
+                ),
+            },
+            entry_node_id="main",
+            source_type="test",
+        )
+
+        with self._patch_layout(True):
+            result = export_retell_cf(graph)
+
+        synth_nodes = [n for n in result["nodes"] if n["id"].startswith("synth_")]
+        assert len(synth_nodes) >= 1
+        for node in synth_nodes:
+            assert "display_position" in node, f"Synthesized node {node['id']} missing position"
+
+    def test_layout_disabled_skips_positions(self):
+        """When export.layout is False, no display_position is emitted."""
+        graph = AgentGraph(
+            nodes={
+                "a": AgentNode(id="a", state_prompt="Node A.", transitions=[]),
+            },
+            entry_node_id="a",
+            source_type="test",
+        )
+
+        with self._patch_layout(False):
+            result = export_retell_cf(graph)
+
+        for node in result["nodes"]:
+            assert "display_position" not in node
+        assert "begin_tag_display_position" not in result

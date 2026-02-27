@@ -82,8 +82,6 @@ class TestAgentWorkerInDocker:
             "invalid-token",  # Will fail to connect but should start
             "--backend",
             "local",
-            "--ollama-url",
-            "http://host.docker.internal:11434/v1",
             "--whisper-url",
             "http://whisper:8000/v1",
             "--kokoro-url",
@@ -179,8 +177,6 @@ print(token.to_jwt())
             token,
             "--backend",
             "local",
-            "--ollama-url",
-            "http://host.docker.internal:11434/v1",
             "--whisper-url",
             "http://whisper:8000/v1",
             "--kokoro-url",
@@ -377,9 +373,9 @@ class TestCallAPIInDocker:
         print(f"Backend logs:\n{logs_result.stdout}")
 
         # Look for our spawn log line
-        assert (
-            "[agent-worker] spawning:" in logs_result.stdout or "agent_worker" in logs_result.stdout
-        ), f"Expected agent-worker spawn log. Logs:\n{logs_result.stdout}"
+        assert "[agent-worker]" in logs_result.stdout, (
+            f"Expected agent-worker log. Logs:\n{logs_result.stdout}"
+        )
 
         # Clean up
         httpx.post(f"{api_base_url}/api/calls/{call_id}/end", timeout=10)

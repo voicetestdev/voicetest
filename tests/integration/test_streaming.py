@@ -49,7 +49,7 @@ class TestStreamingWithLLM:
     @pytest.mark.asyncio
     async def test_streaming_with_real_llm(self, simple_graph, simple_test_case):
         """Test streaming with actual LLM call."""
-        from voicetest import api
+        from voicetest.services.testing.execution import TestExecutionService
 
         tokens_received: list[tuple[str, str]] = []
 
@@ -64,7 +64,7 @@ class TestStreamingWithLLM:
             judge_model=DEFAULT_MODEL,
         )
 
-        result = await api.run_test(
+        result = await TestExecutionService().run_test(
             simple_graph,
             simple_test_case,
             options=options,

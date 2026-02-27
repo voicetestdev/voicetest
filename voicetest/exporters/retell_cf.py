@@ -5,9 +5,13 @@ import re
 from typing import Any
 
 from voicetest.exporters.base import ExporterInfo
+from voicetest.exporters.layout import X_SPACING
+from voicetest.exporters.layout import Y_SPACING
+from voicetest.exporters.layout import compute_layout
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import ToolDefinition
+from voicetest.settings import load_settings
 
 
 _TERMINAL_TOOL_TYPES = {"end_call", "transfer_call"}
@@ -54,6 +58,12 @@ def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
         Dictionary in Retell Conversation Flow JSON format.
     """
     metadata = graph.source_metadata or {}
+    settings = load_settings()
+    layout_enabled = settings.export.layout
+
+    positions: dict[str, dict[str, float]] = {}
+    if layout_enabled:
+        positions = compute_layout(graph)
 
     default_model = graph.default_model or "gpt-4o"
     model_choice = metadata.get("model_choice", {"type": "cascading", "model": default_model})
@@ -62,7 +72,7 @@ def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
 
     result: dict[str, Any] = {
         "start_node_id": graph.entry_node_id,
-        "nodes": _build_nodes(graph, graph.entry_node_id, begin_message),
+        "nodes": _build_nodes(graph, graph.entry_node_id, begin_message, positions),
         "start_speaker": metadata.get("start_speaker", "agent"),
         "model_choice": model_choice,
     }
@@ -87,6 +97,17 @@ def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
         result["knowledge_base_ids"] = metadata["knowledge_base_ids"]
     if "default_dynamic_variables" in metadata:
         result["default_dynamic_variables"] = metadata["default_dynamic_variables"]
+
+    if layout_enabled:
+        preserved = metadata.get("begin_tag_display_position")
+        if preserved:
+            result["begin_tag_display_position"] = preserved
+        else:
+            entry_pos = positions.get(graph.entry_node_id, {"x": 0, "y": 0})
+            result["begin_tag_display_position"] = {
+                "x": entry_pos["x"] - X_SPACING,
+                "y": entry_pos["y"],
+            }
 
     return result
 
@@ -116,9 +137,12 @@ def _has_node_of_type(graph: AgentGraph, retell_type: str) -> bool:
     return any(node.metadata.get("retell_type") == retell_type for node in graph.nodes.values())
 
 
-def _synthesize_end_node(tool: ToolDefinition) -> dict[str, Any]:
+def _synthesize_end_node(
+    tool: ToolDefinition,
+    display_position: dict[str, float] | None = None,
+) -> dict[str, Any]:
     """Build a CF end node dict from an end_call tool."""
-    return {
+    node: dict[str, Any] = {
         "id": f"synth_{tool.name}",
         "type": "end",
         "instruction": {
@@ -126,13 +150,20 @@ def _synthesize_end_node(tool: ToolDefinition) -> dict[str, Any]:
             "text": tool.description or "End the call.",
         },
     }
+    if display_position:
+        node["display_position"] = display_position
+    return node
 
 
 _DEFAULT_TRANSFER_DESTINATION = {"type": "predefined", "number": "+16505555555"}
 _DEFAULT_TRANSFER_OPTION = {"type": "cold_transfer", "show_transferee_as_caller": True}
 
 
-def _synthesize_transfer_node(tool: ToolDefinition, failure_dest_id: str) -> dict[str, Any]:
+def _synthesize_transfer_node(
+    tool: ToolDefinition,
+    failure_dest_id: str,
+    display_position: dict[str, float] | None = None,
+) -> dict[str, Any]:
     """Build a CF transfer_call node dict from a transfer_call tool.
 
     Retell's transfer_call nodes use a singular ``edge`` (failure edge)
@@ -144,7 +175,7 @@ def _synthesize_transfer_node(tool: ToolDefinition, failure_dest_id: str) -> dic
     node_id = f"synth_{tool.name}"
     transfer_dest = tool.metadata.get("transfer_destination", _DEFAULT_TRANSFER_DESTINATION)
     transfer_opt = tool.metadata.get("transfer_option", _DEFAULT_TRANSFER_OPTION)
-    return {
+    node: dict[str, Any] = {
         "id": node_id,
         "type": "transfer_call",
         "instruction": {
@@ -163,16 +194,30 @@ def _synthesize_transfer_node(tool: ToolDefinition, failure_dest_id: str) -> dic
             },
         },
     }
+    if display_position:
+        node["display_position"] = display_position
+    return node
 
 
-def _build_nodes(graph: AgentGraph, entry_node_id: str, begin_message: str) -> list[dict[str, Any]]:
+def _build_nodes(
+    graph: AgentGraph,
+    entry_node_id: str,
+    begin_message: str,
+    positions: dict[str, dict[str, float]] | None = None,
+) -> list[dict[str, Any]]:
     """Build nodes array from graph, synthesizing terminal nodes from tools.
 
     Processes end_call tools first so the end node ID is available as
     the failure destination for transfer_call nodes.
     """
+    positions = positions or {}
     nodes = [
-        _convert_node(node, is_entry=(node.id == entry_node_id), begin_message=begin_message)
+        _convert_node(
+            node,
+            is_entry=(node.id == entry_node_id),
+            begin_message=begin_message,
+            display_position=positions.get(node.id),
+        )
         for node in graph.nodes.values()
     ]
 
@@ -180,12 +225,18 @@ def _build_nodes(graph: AgentGraph, entry_node_id: str, begin_message: str) -> l
     end_tools = [t for t in terminal_tools if t.type == "end_call"]
     transfer_tools = [t for t in terminal_tools if t.type == "transfer_call"]
 
+    # Compute position for synthesized nodes: one layer right of deepest real node
+    synth_position = _synth_node_position(positions) if positions else None
+    synth_index = 0
+
     # Synthesize end nodes first
     end_node_id: str | None = None
     for tool in end_tools:
         if _has_node_of_type(graph, "end"):
             break
-        synth_node = _synthesize_end_node(tool)
+        pos = _offset_synth_position(synth_position, synth_index) if synth_position else None
+        synth_index += 1
+        synth_node = _synthesize_end_node(tool, display_position=pos)
         end_node_id = synth_node["id"]
         _wire_edges_for_tool(nodes, graph, tool, synth_node)
         nodes.append(synth_node)
@@ -201,8 +252,10 @@ def _build_nodes(graph: AgentGraph, entry_node_id: str, begin_message: str) -> l
     for tool in transfer_tools:
         if _has_node_of_type(graph, "transfer_call"):
             break
+        pos = _offset_synth_position(synth_position, synth_index) if synth_position else None
+        synth_index += 1
         failure_dest = end_node_id or entry_node_id
-        synth_node = _synthesize_transfer_node(tool, failure_dest)
+        synth_node = _synthesize_transfer_node(tool, failure_dest, display_position=pos)
         _wire_edges_for_tool(nodes, graph, tool, synth_node)
         nodes.append(synth_node)
 
@@ -238,7 +291,11 @@ def _wire_edges_for_tool(
 
 
 def _convert_node(
-    node: AgentNode, *, is_entry: bool = False, begin_message: str = ""
+    node: AgentNode,
+    *,
+    is_entry: bool = False,
+    begin_message: str = "",
+    display_position: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Convert an AgentNode to a Retell Conversation Flow node."""
     node_type = node.metadata.get("retell_type", "conversation")
@@ -247,7 +304,7 @@ def _convert_node(
     if is_entry and begin_message:
         prompt_text = f"[Begin message: {begin_message}]\n\n{prompt_text}"
 
-    return {
+    result: dict[str, Any] = {
         "id": node.id,
         "type": node_type,
         "instruction": {
@@ -258,6 +315,15 @@ def _convert_node(
             _convert_transition_to_edge(t, node.id, i) for i, t in enumerate(node.transitions)
         ],
     }
+
+    # Preserved position from import wins over computed position
+    preserved = node.metadata.get("display_position")
+    if preserved:
+        result["display_position"] = preserved
+    elif display_position:
+        result["display_position"] = display_position
+
+    return result
 
 
 def _convert_transition_to_edge(transition, source_node_id: str, index: int) -> dict[str, Any]:
@@ -279,6 +345,19 @@ def _convert_transition_to_edge(transition, source_node_id: str, index: int) -> 
         }
 
     return edge
+
+
+def _synth_node_position(positions: dict[str, dict[str, float]]) -> dict[str, float]:
+    """Compute base position for synthesized nodes (one layer right of deepest real node)."""
+    if not positions:
+        return {"x": float(X_SPACING), "y": 0.0}
+    max_x = max(p["x"] for p in positions.values())
+    return {"x": max_x + X_SPACING, "y": 0.0}
+
+
+def _offset_synth_position(base: dict[str, float], index: int) -> dict[str, float]:
+    """Offset a synthesized node position vertically by index."""
+    return {"x": base["x"], "y": base["y"] + index * Y_SPACING}
 
 
 def _collect_all_tools(graph: AgentGraph) -> list[ToolDefinition]:

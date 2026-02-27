@@ -1,14 +1,19 @@
-"""Tests for diagnosis API functions in voicetest.api."""
+"""Tests for diagnosis service functions."""
 
 import pytest
 
-from voicetest.api import apply_fix_to_graph
-from voicetest.api import scores_improved
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.diagnosis import PromptChange
+from voicetest.services.diagnosis import DiagnosisService
+from voicetest.services.testing.execution import TestExecutionService
+
+
+_diag_svc = DiagnosisService(TestExecutionService())
+apply_fix_to_graph = _diag_svc.apply_fix_to_graph
+scores_improved = _diag_svc.scores_improved
 
 
 @pytest.fixture

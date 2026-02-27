@@ -47,7 +47,9 @@ The demo includes a healthcare receptionist agent with 8 test cases covering app
 
 ![CLI Demo](docs/demos/cli-demo.gif)
 
-![Web UI Demo](docs/demos/web-demo.gif)
+![Web UI Demo (light)](docs/demos/web-demo-light.gif)
+
+![DRY Analysis Demo (light)](docs/demos/dry-demo-light.gif)
 
 ## Quick Start
 
@@ -71,7 +73,7 @@ uv run voicetest
 voicetest importers
 
 # Run tests against an agent definition
-voicetest run --agent agent.json --tests tests.json
+voicetest run --agent agent.json --tests tests.json --all
 
 # Export agent to different formats
 voicetest export --agent agent.json --format mermaid         # Diagram
@@ -95,6 +97,132 @@ voicetest up
 
 # Stop infrastructure services
 voicetest down
+```
+
+### Agent Management
+
+```bash
+# List agents in the database
+voicetest agent list
+
+# Create an agent from a definition file
+voicetest agent create -a agent.json --name "My Agent"
+
+# Get agent details
+voicetest agent get <agent-id>
+
+# Update agent properties
+voicetest agent update <agent-id> --name "Renamed" --model openai/gpt-4o
+
+# Delete an agent
+voicetest agent delete <agent-id>
+
+# Display agent graph structure
+voicetest agent graph <agent-id>
+```
+
+### Test Case Management
+
+```bash
+# List test cases for an agent
+voicetest test list <agent-id>
+
+# Create a test case from a JSON file
+voicetest test create <agent-id> -f test.json
+
+# Link/unlink external test files
+voicetest test link <agent-id> tests.json
+voicetest test unlink <agent-id> tests.json
+
+# Export test cases
+voicetest test export <agent-id>
+```
+
+### Run History
+
+```bash
+# List past test runs
+voicetest runs list <agent-id>
+
+# View run details with results
+voicetest runs get <run-id>
+
+# Delete a run
+voicetest runs delete <run-id>
+```
+
+### Snippet Management
+
+```bash
+# Analyze agent prompts for repeated text
+voicetest snippet analyze --agent agent.json
+
+# List defined snippets
+voicetest snippet list --agent agent.json
+
+# Create or update a snippet
+voicetest snippet set --agent agent.json greeting "Hello, how can I help?"
+
+# Apply snippets to prompts
+voicetest snippet apply --agent agent.json --snippets '[{"name": "greeting", "text": "Hello!"}]'
+```
+
+### Evaluation and Diagnosis
+
+```bash
+# Evaluate a transcript against metrics (no simulation)
+voicetest evaluate -t transcript.json -m "Agent was polite" -m "Agent resolved the issue"
+
+# Diagnose test failures and suggest fixes
+voicetest diagnose -a agent.json -t tests.json
+
+# Auto-fix with iterative diagnosis
+voicetest diagnose -a agent.json -t tests.json --auto-fix --save fixed_agent.json
+```
+
+### Interactive Chat
+
+```bash
+# Chat with an agent interactively
+voicetest chat -a agent.json
+
+# With custom model and variables
+voicetest chat -a agent.json --model openai/gpt-4o --var name=Jane --var account=12345
+```
+
+### Settings and Platforms
+
+```bash
+# Show current settings
+voicetest settings
+
+# Set a configuration value
+voicetest settings --set models.agent=openai/gpt-4o
+
+# List available platforms with configuration status
+voicetest platforms
+
+# Configure platform credentials
+voicetest platform configure retell --api-key sk-xxx
+
+# List agents on a remote platform
+voicetest platform list-agents retell
+
+# Import an agent from a platform
+voicetest platform import retell <agent-id> -o imported.json
+
+# Push a local agent to a platform
+voicetest platform push retell -a agent.json
+```
+
+### JSON Output
+
+All commands support `--json` for machine-parseable output (progress goes to stderr):
+
+```bash
+voicetest --json agent list
+voicetest --json run -a agent.json -t tests.json --all
+voicetest --json snippet analyze --agent agent.json
 ```
 
 ### Live Voice Calls
@@ -544,23 +672,60 @@ Available model strings:
 
 This invokes the `claude` CLI via subprocess, using your existing Claude Code authentication.
 
+### Claude Code Plugin
+
+voicetest ships with a Claude Code plugin for agent-assisted voice testing. Slash commands
+and auto-activating skills help Claude Code discover importers/exporters, run tests, export
+agents, and convert between formats.
+
+**For repo contributors** (automatic):
+
+Skills and commands load automatically from `.claude/` (symlinked to `claude-plugin/`).
+
+**Install as a marketplace plugin:**
+
+```
+/plugin marketplace add voicetestdev/voicetest
+/plugin install voicetest@voicetest-plugins
+```
+
+**For pip-installed users:**
+
+```bash
+cd your-project
+voicetest init-claude
+```
+
+**Available slash commands:**
+
+- `/voicetest-run` — Run tests against an agent
+- `/voicetest-export` — Export agent to a different format
+- `/voicetest-convert` — Convert between platform formats
+- `/voicetest-info` — List importers, exporters, platforms, and settings
+
+**Plugin path** (for manual plugin loading):
+
+```bash
+claude --plugin-dir $(voicetest claude-plugin-path)
+```
+
 ## Architecture
 
 ### DI Container (Punq)
 
 The project uses Punq for dependency injection. Key singletons:
 
-- `duckdb.DuckDBPyConnection` - Database connection (singleton for data visibility)
+- `Engine`, `sessionmaker`, `Session` - SQLAlchemy database layer (DuckDB-backed)
 - `ImporterRegistry`, `ExporterRegistry`, `PlatformRegistry` - Registries
 
-Repositories are transient but share the singleton connection:
+Repositories are transient but share the singleton session:
 
-- `AgentRepository`, `TestCaseRepository`, `RunRepository`
+- `AgentRepository`, `TestCaseRepository`, `RunRepository`, `CallRepository`
 
 Get instances via `voicetest.container`:
 
 ```python
-from voicetest.container import get_db_connection, get_importer_registry
+from voicetest.container import get_session, get_importer_registry
 ```
 
 **When to use DI:**
@@ -568,7 +733,7 @@ from voicetest.container import get_db_connection, get_importer_registry
 - Use `get_*` helpers for app code (REST handlers, CLI commands)
 - Use `container.resolve(Type)` when you need the container directly
 - For tests, use `reset_container()` to get fresh state
-- Don't instantiate repositories directly; let Punq inject the connection
+- Don't instantiate repositories directly; let Punq inject the session
 
 ### DSPy Signatures
 
@@ -610,7 +775,7 @@ Post-run failure diagnosis and auto-fix flow:
 
 - `voicetest/models/diagnosis.py` - Pydantic models (Diagnosis, FixSuggestion, PromptChange, etc.)
 - `voicetest/judges/diagnosis.py` - DSPy signatures and DiagnosisJudge class
-- `voicetest/api.py` - `diagnose_failure()`, `apply_and_rerun()`, `revise_fix()`, `apply_fix_to_graph()`
+- `voicetest/services/diagnosis.py` - `DiagnosisService`: `diagnose_failure()`, `apply_and_rerun()`, `revise_fix()`, `apply_fix_to_graph()`
 - `voicetest/rest.py` - REST endpoints: `/results/{id}/diagnose`, `/results/{id}/apply-fix`, `/results/{id}/revise-fix`, `/agents/{id}/save-fix`
 - `web/src/components/RunsView.svelte` - UI: diagnose button, model input, edit-before-apply textareas, auto-fix loop with progress
 
@@ -801,10 +966,10 @@ The frontend uses minimal dependencies by design. Consider adding a library when
 ```
 voicetest/
 ├── voicetest/           # Python package
-│   ├── api.py           # Core API
-│   ├── cli.py           # CLI
+│   ├── cli.py           # CLI (40+ commands)
 │   ├── rest.py          # REST API server + WebSocket + SPA serving
 │   ├── container.py     # Dependency injection (Punq)
+│   ├── services/        # Service layer (agents, diagnosis, evaluation, runs, snippets, etc.)
 │   ├── compose/         # Bundled Docker Compose for infrastructure services
 │   ├── models/          # Pydantic models
 │   ├── importers/       # Source importers (retell, vapi, bland, telnyx, livekit, xlsform, custom)
@@ -815,6 +980,9 @@ voicetest/
 │   ├── judges/          # Evaluation judges (metric, rule)
 │   ├── storage/         # DuckDB persistence layer
 │   └── tui/             # TUI and shell
+├── claude-plugin/       # Claude Code plugin (commands + skills)
+│   ├── commands/        # Slash commands (/voicetest-run, etc.)
+│   └── skills/          # Auto-activating skill + references
 ├── web/                 # Frontend (Bun + Svelte + Vite)
 │   ├── src/
 │   │   ├── components/  # Svelte components

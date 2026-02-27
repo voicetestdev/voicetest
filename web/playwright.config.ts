@@ -2,7 +2,6 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./demo",
-  testMatch: "web-demo.ts",
   timeout: 60000,
   use: {
     baseURL: "http://localhost:8000",
@@ -15,4 +14,10 @@ export default defineConfig({
     },
   },
   outputDir: "../docs/demos/test-results",
+  projects: [
+    { name: "web-light", testMatch: "web-demo.ts", use: { colorScheme: "light" } },
+    { name: "web-dark", testMatch: "web-demo.ts", use: { colorScheme: "dark" } },
+    { name: "dry-light", testMatch: "dry-demo.ts", use: { colorScheme: "light" } },
+    { name: "dry-dark", testMatch: "dry-demo.ts", use: { colorScheme: "dark" } },
+  ],
 });

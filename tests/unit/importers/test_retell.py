@@ -234,6 +234,96 @@ class TestRetellImporterTransferMetadata:
         assert transfer_tool.metadata["transfer_option"]["type"] == "warm_transfer"
 
 
+class TestRetellImporterDisplayPosition:
+    """Tests for importing display_position data from Retell CF."""
+
+    def test_display_position_preserved_on_import(self):
+        """Nodes with display_position in JSON have it stored in metadata."""
+        config = {
+            "start_node_id": "greeting",
+            "nodes": [
+                {
+                    "id": "greeting",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Hello."},
+                    "edges": [],
+                    "display_position": {"x": 100, "y": 200},
+                },
+                {
+                    "id": "farewell",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Bye."},
+                    "edges": [],
+                    "display_position": {"x": 600, "y": 200},
+                },
+            ],
+        }
+
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        assert graph.nodes["greeting"].metadata["display_position"] == {"x": 100, "y": 200}
+        assert graph.nodes["farewell"].metadata["display_position"] == {"x": 600, "y": 200}
+
+    def test_display_position_absent_not_in_metadata(self):
+        """Nodes without display_position don't have it in metadata."""
+        config = {
+            "start_node_id": "main",
+            "nodes": [
+                {
+                    "id": "main",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Hi."},
+                    "edges": [],
+                },
+            ],
+        }
+
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        assert "display_position" not in graph.nodes["main"].metadata
+
+    def test_begin_tag_display_position_preserved(self):
+        """begin_tag_display_position at flow level is stored in source_metadata."""
+        config = {
+            "start_node_id": "main",
+            "nodes": [
+                {
+                    "id": "main",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Hi."},
+                    "edges": [],
+                },
+            ],
+            "begin_tag_display_position": {"x": -150, "y": 0},
+        }
+
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        assert graph.source_metadata["begin_tag_display_position"] == {"x": -150, "y": 0}
+
+    def test_begin_tag_display_position_absent(self):
+        """When begin_tag_display_position is missing, it's not in source_metadata."""
+        config = {
+            "start_node_id": "main",
+            "nodes": [
+                {
+                    "id": "main",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Hi."},
+                    "edges": [],
+                },
+            ],
+        }
+
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        assert "begin_tag_display_position" not in graph.source_metadata
+
+
 class TestRetellImporterWrappedFormat:
     """Tests for importing Retell UI agent wrapper format."""
 

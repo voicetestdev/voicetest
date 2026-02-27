@@ -144,6 +144,44 @@ class TestSettingsPersistence:
         assert "[env]" not in content
 
 
+class TestExportSettings:
+    """Tests for ExportSettings and the [export] TOML section."""
+
+    def test_export_layout_default_true(self):
+        """export.layout defaults to True."""
+        settings = Settings()
+        assert settings.export.layout is True
+
+    def test_export_layout_false(self):
+        """export.layout can be set to False."""
+        settings = Settings(export={"layout": False})
+        assert settings.export.layout is False
+
+    def test_export_layout_roundtrip_toml(self, tmp_path):
+        """[export] section survives save/load roundtrip."""
+        settings_file = tmp_path / ".voicetest.toml"
+
+        original = Settings(export={"layout": False})
+        save_settings(original, settings_file)
+
+        content = settings_file.read_text()
+        assert "[export]" in content
+        assert "layout = false" in content
+
+        loaded = load_settings(settings_file)
+        assert loaded.export.layout is False
+
+    def test_export_layout_true_roundtrip_toml(self, tmp_path):
+        """[export] section with layout=true survives save/load."""
+        settings_file = tmp_path / ".voicetest.toml"
+
+        original = Settings(export={"layout": True})
+        save_settings(original, settings_file)
+
+        loaded = load_settings(settings_file)
+        assert loaded.export.layout is True
+
+
 class TestResolveModel:
     """Tests for resolve_model utility."""
 

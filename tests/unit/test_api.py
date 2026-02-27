@@ -2,8 +2,6 @@
 
 import pytest
 
-from voicetest.api import evaluate_global_metrics
-from voicetest.api import run_test
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import GlobalMetric
@@ -13,7 +11,13 @@ from voicetest.models.agent import TransitionCondition
 from voicetest.models.results import Message
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
+from voicetest.services.testing.execution import TestExecutionService
 from voicetest.settings import DEFAULT_MODEL
+
+
+_exec_svc = TestExecutionService()
+run_test = _exec_svc.run_test
+evaluate_global_metrics = _exec_svc.evaluate_global_metrics
 
 
 @pytest.fixture
@@ -335,7 +339,9 @@ class TestEvaluateGlobalMetrics:
             threshold=0.7,
         )
 
-        with patch("voicetest.api.MetricJudge.evaluate", new_callable=AsyncMock) as mock_eval:
+        with patch(
+            "voicetest.services.testing.execution.MetricJudge.evaluate", new_callable=AsyncMock
+        ) as mock_eval:
             mock_eval.return_value = mock_result
             results = await evaluate_global_metrics(
                 transcript, config, judge_model="openai/gpt-4o-mini"
@@ -369,7 +375,9 @@ class TestEvaluateGlobalMetrics:
             threshold=0.9,
         )
 
-        with patch("voicetest.api.MetricJudge.evaluate", new_callable=AsyncMock) as mock_eval:
+        with patch(
+            "voicetest.services.testing.execution.MetricJudge.evaluate", new_callable=AsyncMock
+        ) as mock_eval:
             mock_eval.return_value = mock_result
             results = await evaluate_global_metrics(
                 transcript, config, judge_model="openai/gpt-4o-mini"
