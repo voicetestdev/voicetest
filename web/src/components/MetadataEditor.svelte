@@ -84,7 +84,7 @@
                 class="metadata-editable"
                 onclick={() => startEditingMetadata(key, value)}
                 title="Click to edit"
-              >{String(value) || "(empty)"}</span>
+              >{value === null || value === undefined ? "(not set)" : String(value) || "(empty)"}</span>
             {/if}
             {#if savingMetadata === key}
               <span class="save-indicator">Saving...</span>

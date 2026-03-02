@@ -45,6 +45,7 @@
   let exportError = $state("");
 
   // Import modal tab state
+  let showJsonEditor = $state(false);
   let importTab = $state<"import" | "link">("import");
   let linkPath = $state("");
   let linkError = $state("");
@@ -290,6 +291,7 @@
     jsonImport = "";
     importError = "";
     importTab = "import";
+    showJsonEditor = false;
     linkPath = "";
     linkError = "";
     showImportModal = true;
@@ -854,14 +856,21 @@
                   onchange={handleFileUpload}
                 />
               </label>
-              <span class="file-hint">or paste JSON below</span>
+              {#if jsonImport}
+                <span class="file-status">File loaded, {jsonImport.length.toLocaleString()} chars</span>
+              {/if}
             </div>
-            <textarea
-              class="json-input"
-              bind:value={jsonImport}
-              placeholder="Paste test case JSON (single or array)..."
-              rows={10}
-            ></textarea>
+            <button class="link-toggle" onclick={() => showJsonEditor = !showJsonEditor}>
+              {showJsonEditor ? "▼" : "▶"} {jsonImport ? "Edit JSON" : "Paste JSON"}
+            </button>
+            {#if showJsonEditor}
+              <textarea
+                class="json-input"
+                bind:value={jsonImport}
+                placeholder="Paste test case JSON (single or array)..."
+                rows={10}
+              ></textarea>
+            {/if}
           </div>
           {#if importError}
             <p class="error-message">{importError}</p>
@@ -1368,6 +1377,24 @@
   .file-hint {
     color: var(--text-muted);
     font-size: 0.85rem;
+  }
+
+  .link-toggle {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem 0;
+    font-size: 0.85rem;
+  }
+
+  .link-toggle:hover {
+    color: var(--text-primary);
+  }
+
+  .file-status {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
   }
 
   .import-fields {

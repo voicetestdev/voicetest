@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api } from "../lib/api";
-  import { loadAgents, selectAgent } from "../lib/stores";
-  import type { ImporterInfo, Platform, PlatformInfo, PlatformStatus, RemoteAgentInfo } from "../lib/types";
+  import { agents, loadAgents, selectAgent } from "../lib/stores";
+  import type { Platform, PlatformInfo, PlatformStatus, RemoteAgentInfo } from "../lib/types";
 
   let configText = $state("");
   let agentName = $state("");
@@ -11,10 +11,8 @@
   let importing = $state(false);
   let loadingDemo = $state(false);
   let error = $state("");
-  let importers = $state<ImporterInfo[]>([]);
 
-  let activeTab = $state<string>("file");
-  let showServerPath = $state(false);
+  let activeMethod = $state<string>("dropzone");
   let platforms = $state<PlatformInfo[]>([]);
   let platformStatus = $state<Record<string, PlatformStatus>>({});
   let platformAgents = $state<Record<string, RemoteAgentInfo[]>>({});
@@ -23,10 +21,17 @@
   let apiKeyInput = $state("");
   let apiSecretInput = $state("");
   let configuringPlatform = $state(false);
+  let fetchedGraph = $state<object | null>(null);
 
-  function platformNeedsSecret(platform: string): boolean {
-    return platform === "livekit";
-  }
+  let showJson = $state(false);
+  let demoDismissed = $state(false);
+  let dragging = $state(false);
+
+  let fileInputRef = $state<HTMLInputElement | null>(null);
+
+  let hasInput = $derived(!!configText || !!selectedFile || !!filePath || !!fetchedGraph);
+  let showDemo = $derived($agents.length === 0 && !demoDismissed);
+  let jsonToggleLabel = $derived(hasInput ? "View JSON" : "Paste or view JSON");
 
   const binaryExtensions = [".xlsx", ".xls"];
 
@@ -42,10 +47,18 @@
     return platformDisplayNames[platform] || platform.charAt(0).toUpperCase() + platform.slice(1);
   }
 
+  function platformNeedsSecret(platform: string): boolean {
+    return platform === "livekit";
+  }
+
+  // All non-active methods listed as toggles
+  type MethodDef = { id: string; label: string };
+  let allMethods = $derived<MethodDef[]>([
+    { id: "dropzone", label: "Upload a file" },
+    { id: "serverpath", label: "Link to server file" },
+    ...platforms.map((p) => ({ id: p.name, label: `Import from ${getPlatformDisplayName(p.name)}` })),
+  ]);
   onMount(() => {
-    api.listImporters().then((list) => {
-      importers = list;
-    });
     api.listPlatforms().then((list) => {
       platforms = list;
       platformStatus = Object.fromEntries(
@@ -53,6 +66,28 @@
       );
     }).catch(() => {});
   });
+
+  function clearData() {
+    configText = "";
+    agentName = "";
+    filePath = "";
+    selectedFile = null;
+    fetchedGraph = null;
+    selectedRemoteAgent = null;
+    apiKeyInput = "";
+    apiSecretInput = "";
+    error = "";
+    showJson = false;
+    if (fileInputRef) fileInputRef.value = "";
+  }
+
+  function switchMethod(method: string) {
+    clearData();
+    activeMethod = method;
+    if (method !== "dropzone" && method !== "serverpath" && platformStatus[method]?.configured) {
+      loadRemoteAgents(method);
+    }
+  }
 
   async function loadDemo() {
     loadingDemo = true;
@@ -73,7 +108,7 @@
       return;
     }
     if (!configText && !filePath && !selectedFile) {
-      error = "Please provide a file path, upload a file, or paste JSON config";
+      error = "Please provide a file, path, or JSON config";
       return;
     }
     importing = true;
@@ -90,21 +125,14 @@
       }
       await loadAgents();
       await selectAgent(agent.id, "config");
-      configText = "";
-      agentName = "";
-      filePath = "";
-      selectedFile = null;
+      clearData();
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
     importing = false;
   }
 
-  async function handleFile(e: Event) {
-    const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-
+  function processFile(file: File) {
     const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
     const isBinary = binaryExtensions.includes(ext);
 
@@ -113,13 +141,40 @@
       configText = `[Binary file: ${file.name}]`;
     } else {
       selectedFile = null;
-      configText = await file.text();
+      file.text().then((text) => {
+        configText = text;
+      });
     }
 
     filePath = "";
+    fetchedGraph = null;
     if (!agentName) {
       agentName = file.name.replace(/\.(json|xlsx|xls)$/i, "");
     }
+  }
+
+  function handleFile(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    processFile(file);
+  }
+
+  function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    dragging = false;
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    processFile(file);
+  }
+
+  function handleDragOver(e: DragEvent) {
+    e.preventDefault();
+    dragging = true;
+  }
+
+  function handleDragLeave() {
+    dragging = false;
   }
 
   function handlePathBlur() {
@@ -129,24 +184,20 @@
     }
   }
 
-  function switchTab(tab: string) {
-    activeTab = tab;
-    error = "";
-    selectedRemoteAgent = null;
-    apiKeyInput = "";
-    apiSecretInput = "";
-
-    if (tab !== "file" && platformStatus[tab]?.configured) {
-      loadRemoteAgents(tab);
-    }
+  function changeFile() {
+    configText = "";
+    selectedFile = null;
+    agentName = "";
+    fetchedGraph = null;
+    if (fileInputRef) fileInputRef.value = "";
   }
 
   async function loadRemoteAgents(platform: Platform) {
     loadingAgents = true;
     error = "";
     try {
-      const agents = await api.listRemoteAgents(platform);
-      platformAgents = { ...platformAgents, [platform]: agents };
+      const remoteAgents = await api.listRemoteAgents(platform);
+      platformAgents = { ...platformAgents, [platform]: remoteAgents };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       // If credentials are missing/invalid, show the setup form instead of error
@@ -183,194 +234,191 @@
     configuringPlatform = false;
   }
 
-  async function importRemoteAgent(platform: Platform) {
-    if (!selectedRemoteAgent) {
-      error = "Please select an agent to import";
-      return;
-    }
-    importing = true;
+  async function selectRemoteAgent(platform: Platform, agent: RemoteAgentInfo) {
+    selectedRemoteAgent = agent;
     error = "";
     try {
-      const graph = await api.importRemoteAgent(platform, selectedRemoteAgent.id);
-      const name = agentName.trim() || selectedRemoteAgent.name;
-      const agent = await api.createAgent(name, graph);
-      await loadAgents();
-      await selectAgent(agent.id, "config");
-      selectedRemoteAgent = null;
-      agentName = "";
+      const graph = await api.importRemoteAgent(platform, agent.id);
+      fetchedGraph = graph;
+      configText = JSON.stringify(graph, null, 2);
+      if (!agentName) {
+        agentName = agent.name;
+      }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
+      fetchedGraph = null;
     }
-    importing = false;
   }
 </script>
 
 <div class="import-view">
   <h2>Import Agent</h2>
 
-  <div class="demo-section">
-    <p>Try voicetest with a sample healthcare receptionist agent:</p>
-    <button class="demo-button" onclick={loadDemo} disabled={loadingDemo}>
-      {loadingDemo ? "Loading..." : "Load Demo"}
-    </button>
-  </div>
-
-  <div class="divider">or import your own</div>
-
-  <div class="tabs">
-    <button
-      class="tab"
-      class:active={activeTab === "file"}
-      onclick={() => switchTab("file")}
-    >
-      From File
-    </button>
-    {#each platforms as platform}
-      <button
-        class="tab"
-        class:active={activeTab === platform.name}
-        onclick={() => switchTab(platform.name)}
-      >
-        From {getPlatformDisplayName(platform.name)}
+  {#if showDemo}
+    <div class="demo-banner">
+      <span>New here? Try a sample agent.</span>
+      <button class="demo-button" onclick={loadDemo} disabled={loadingDemo}>
+        {loadingDemo ? "Loading..." : "Load Demo"}
       </button>
-    {/each}
-  </div>
-
-  {#if activeTab === "file"}
-    <div class="importers">
-      <span>Supported formats:</span>
-      {#each importers as imp}
-        <span class="tag">{imp.source_type}</span>
-      {/each}
-    </div>
-
-    <div class="form-row">
-      <label>
-        Name:
-        <input type="text" bind:value={agentName} placeholder="Agent name" />
-      </label>
-    </div>
-
-    <div class="import-options">
-      <label class="file-upload">
-        <input type="file" accept=".json,.xlsx,.xls" onchange={handleFile} />
-        Upload File
-      </label>
-      <span class="file-hint">.json, .xlsx (XLSForm)</span>
-    </div>
-
-    <textarea
-      bind:value={configText}
-      placeholder="Or paste agent config JSON here..."
-      rows={12}
-    ></textarea>
-
-    <div class="button-row">
-      <button onclick={importAgent} disabled={importing || (!configText && !filePath && !selectedFile)}>
-        {importing ? "Importing..." : "Import Agent"}
-      </button>
-    </div>
-
-    <div class="server-path-section">
-      <button class="link-toggle" onclick={() => showServerPath = !showServerPath}>
-        {showServerPath ? "▼" : "▶"} Link to server file
-      </button>
-      {#if showServerPath}
-        <div class="server-path-input">
-          <input
-            type="text"
-            bind:value={filePath}
-            placeholder="/path/to/agent.json"
-            onblur={handlePathBlur}
-          />
-          <button
-            onclick={importAgent}
-            disabled={importing || !filePath}
-          >
-            {importing ? "Linking..." : "Link"}
-          </button>
-        </div>
-        <p class="hint">Link using an absolute path on the server. Changes to the file will be reflected when reloading.</p>
-      {/if}
-    </div>
-  {:else}
-    {@const platform = activeTab}
-    {@const status = platformStatus[platform]}
-    {@const agents = platformAgents[platform] || []}
-    {@const displayName = getPlatformDisplayName(platform)}
-
-    <div class="platform-section">
-      {#if !status?.configured}
-        <div class="api-key-setup">
-          <p>Connect your {displayName} account to import agents directly.</p>
-          <div class="api-key-form">
-            <input
-              type="password"
-              bind:value={apiKeyInput}
-              placeholder="{displayName} API Key"
-              class="api-key-input"
-            />
-            {#if platformNeedsSecret(platform)}
-              <input
-                type="password"
-                bind:value={apiSecretInput}
-                placeholder="{displayName} API Secret"
-                class="api-key-input"
-              />
-            {/if}
-            <button
-              onclick={() => configurePlatform(platform)}
-              disabled={configuringPlatform || !apiKeyInput.trim() || (platformNeedsSecret(platform) && !apiSecretInput.trim())}
-            >
-              {configuringPlatform ? "Connecting..." : "Connect"}
-            </button>
-          </div>
-          <p class="hint">Your credentials are stored locally in settings.</p>
-        </div>
-      {:else}
-        <div class="connected-status">
-          <span class="connected-badge">Connected</span>
-          <span class="hint">To change the API key, go to Settings.</span>
-        </div>
-
-        <div class="form-row">
-          <label>
-            Name (optional):
-            <input type="text" bind:value={agentName} placeholder="Override agent name" />
-          </label>
-        </div>
-
-        {#if loadingAgents}
-          <p class="loading">Loading agents...</p>
-        {:else if agents.length === 0}
-          <p class="empty-state">No agents found in your {displayName} account.</p>
-        {:else}
-          <div class="agents-list">
-            <p class="list-label">Select an agent to import:</p>
-            {#each agents as agent}
-              <button
-                class="agent-item"
-                class:selected={selectedRemoteAgent?.id === agent.id}
-                onclick={() => (selectedRemoteAgent = agent)}
-              >
-                <span class="agent-name">{agent.name}</span>
-                <span class="agent-id">{agent.id}</span>
-              </button>
-            {/each}
-          </div>
-
-          <div class="button-row">
-            <button
-              onclick={() => importRemoteAgent(platform)}
-              disabled={importing || !selectedRemoteAgent}
-            >
-              {importing ? "Importing..." : "Import Selected"}
-            </button>
-          </div>
-        {/if}
-      {/if}
+      <button class="dismiss-button" onclick={() => demoDismissed = true} aria-label="Dismiss">&times;</button>
     </div>
   {/if}
+
+  <!-- Source Section -->
+  <div class="section">
+    <div class="section-header">Source</div>
+    <div class="section-body">
+
+      {#each allMethods as method}
+        {@const isActive = method.id === activeMethod}
+        <div class="method-entry" class:active={isActive}>
+          <button
+            class="method-toggle"
+            onclick={() => switchMethod(isActive ? "" : method.id)}
+          >
+            <span class="caret" class:open={isActive}>▶</span> {method.label}
+          </button>
+
+          {#if isActive}
+            <div class="method-content">
+              {#if method.id === "dropzone"}
+                {#if selectedFile || (configText && !configText.startsWith("[Binary file:"))}
+                  <div class="file-status">
+                    <span class="file-status-check">&#10003;</span>
+                    <span class="file-status-name">{selectedFile?.name || "file loaded"}</span>
+                    <button class="change-button" onclick={changeFile}>Change</button>
+                  </div>
+                {:else}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div
+                    class="drop-zone"
+                    class:dragging
+                    ondrop={handleDrop}
+                    ondragover={handleDragOver}
+                    ondragleave={handleDragLeave}
+                  >
+                    <p>Drop a file here or click to upload</p>
+                    <label class="choose-file-button">
+                      <input
+                        type="file"
+                        accept=".json,.xlsx,.xls"
+                        onchange={handleFile}
+                        bind:this={fileInputRef}
+                      />
+                      Choose File
+                    </label>
+                    <span class="file-types">.json, .xlsx</span>
+                  </div>
+                {/if}
+
+              {:else if method.id === "serverpath"}
+                <input
+                  type="text"
+                  bind:value={filePath}
+                  placeholder="/path/to/agent.json"
+                  onblur={handlePathBlur}
+                />
+                <p class="hint">File stays linked — changes sync on reload.</p>
+
+              {:else}
+                {@const platform = method.id}
+                {@const status = platformStatus[platform]}
+                {@const remoteAgents = platformAgents[platform] || []}
+                {@const displayName = getPlatformDisplayName(platform)}
+
+                {#if !status?.configured}
+                  <p class="platform-prompt">Connect your {displayName} account.</p>
+                  <div class="api-key-form">
+                    <input
+                      type="password"
+                      bind:value={apiKeyInput}
+                      placeholder="API Key"
+                      class="api-key-input"
+                    />
+                    {#if platformNeedsSecret(platform)}
+                      <input
+                        type="password"
+                        bind:value={apiSecretInput}
+                        placeholder="API Secret"
+                        class="api-key-input"
+                      />
+                    {/if}
+                    <button
+                      onclick={() => configurePlatform(platform)}
+                      disabled={configuringPlatform || !apiKeyInput.trim() || (platformNeedsSecret(platform) && !apiSecretInput.trim())}
+                    >
+                      {configuringPlatform ? "Connecting..." : "Connect"}
+                    </button>
+                  </div>
+                  <p class="hint">Credentials stored locally.</p>
+                {:else}
+                  <div class="connected-status">
+                    <span class="connected-badge">&#10003; Connected to {displayName}</span>
+                  </div>
+
+                  {#if loadingAgents}
+                    <p class="loading">Loading agents...</p>
+                  {:else if remoteAgents.length === 0}
+                    <p class="empty-state">No agents found in your {displayName} account.</p>
+                  {:else}
+                    <div class="agents-list">
+                      {#each remoteAgents as agent}
+                        <button
+                          class="agent-item"
+                          class:selected={selectedRemoteAgent?.id === agent.id}
+                          onclick={() => selectRemoteAgent(platform, agent)}
+                        >
+                          <span class="agent-radio">{selectedRemoteAgent?.id === agent.id ? "◉" : "○"}</span>
+                          <span class="agent-name">{agent.name}</span>
+                          <span class="agent-id">{agent.id}</span>
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                {/if}
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  </div>
+
+  <!-- Details Section -->
+  <div class="section">
+    <div class="section-header">Details</div>
+    <div class="section-body">
+      <div class="form-row">
+        <label>
+          Name:
+          <input type="text" bind:value={agentName} placeholder="Agent name" />
+        </label>
+      </div>
+
+      <button class="method-toggle" onclick={() => showJson = !showJson}>
+        <span class="caret" class:open={showJson}>▶</span> {jsonToggleLabel}
+      </button>
+
+      {#if showJson}
+        <textarea
+          bind:value={configText}
+          placeholder="Paste agent config JSON here..."
+          rows={12}
+          class="json-editor"
+        ></textarea>
+      {/if}
+
+      <div class="button-row">
+        <button
+          class="import-button"
+          onclick={importAgent}
+          disabled={importing || !hasInput}
+        >
+          {importing ? "Importing..." : "Import Agent"}
+        </button>
+      </div>
+    </div>
+  </div>
 
   {#if error}
     <p class="error-message">{error}</p>
@@ -389,215 +437,170 @@
     margin-top: 0;
   }
 
-  .demo-section {
+  /* Demo banner */
+  .demo-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
     background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
+    border: 1px dashed var(--border-color);
     border-radius: var(--radius-md);
-    padding: var(--space-4);
-    margin-bottom: 1.5rem;
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: 1rem;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
   }
 
-  .demo-section p {
+  .demo-banner .demo-button {
+    background: var(--accent);
+    color: #ffffff;
+    border: 1px solid var(--accent);
+    padding: 0.35rem 1rem;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    cursor: pointer;
+    font-size: var(--text-sm);
+  }
+
+  .demo-banner .demo-button:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  .demo-banner .demo-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .dismiss-button {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0 0.25rem;
+    line-height: 1;
+  }
+
+  .dismiss-button:hover {
+    color: var(--text-primary);
+  }
+
+  /* Sections */
+  .section {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    margin-bottom: 1rem;
+    overflow: hidden;
+  }
+
+  .section-header {
+    background: var(--bg-secondary);
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .section-body {
+    padding: var(--space-4);
+  }
+
+  /* Drop zone */
+  .drop-zone {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 2rem;
+    text-align: center;
+    transition: border-color 120ms ease-out, background 120ms ease-out;
+  }
+
+  .drop-zone.dragging {
+    border-color: var(--accent-blue);
+    background: rgba(31, 111, 235, 0.05);
+  }
+
+  .drop-zone p {
     margin: 0 0 0.75rem 0;
     color: var(--text-secondary);
     font-size: var(--text-sm);
   }
 
-  .demo-button {
-    background: var(--accent);
-    color: #ffffff;
-    border: 1px solid var(--accent);
-    padding: 0.5rem 1.25rem;
-    border-radius: var(--radius-md);
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .demo-button:hover:not(:disabled) {
-    background: var(--accent-hover);
-    border-color: var(--accent-hover);
-  }
-
-  .demo-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .tabs {
-    display: flex;
-    gap: 0;
-    margin-bottom: 1.5rem;
-    border-bottom: 1px solid var(--border-color);
-    flex-wrap: wrap;
-  }
-
-  .tab {
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    padding: var(--space-3) var(--space-4);
-    margin-bottom: -1px;
-    cursor: pointer;
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-    transition: color 80ms ease-out, border-color 80ms ease-out;
-  }
-
-  .tab:hover {
-    color: var(--text-primary);
-    background: transparent;
-  }
-
-  .tab.active {
-    color: var(--text-primary);
-    font-weight: 600;
-    border-bottom-color: var(--tab-highlight);
-    background: transparent;
-  }
-
-  .importers {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    margin-bottom: 1.5rem;
-  }
-
-  .tag {
-    background: var(--bg-tertiary);
-    padding: 0.15rem 0.5rem;
-    border-radius: 9999px;
-    font-size: var(--text-xs);
-    border: 1px solid var(--border-color);
-  }
-
-  .form-row {
-    margin-bottom: 1rem;
-  }
-
-  .form-row label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: var(--text-secondary);
-  }
-
-  .form-row input {
-    flex: 1;
-  }
-
-  .import-options {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-
-  .file-upload {
+  .choose-file-button {
     display: inline-block;
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 1rem;
     background: var(--bg-hover);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
   }
 
-  .file-upload:hover {
+  .choose-file-button:hover {
     background: var(--border-color);
   }
 
-  .file-upload input {
+  .choose-file-button input {
     display: none;
   }
 
-  .file-hint {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
+  .file-types {
+    display: block;
+    margin-top: 0.5rem;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
   }
 
-  .divider {
+  /* File status line */
+  .file-status {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    color: var(--text-secondary);
-    font-size: 0.85rem;
-    margin: 1rem 0;
-  }
-
-  .divider::before,
-  .divider::after {
-    content: "";
-    flex: 1;
-    border-top: 1px solid var(--border-color);
-  }
-
-  textarea {
-    width: 100%;
-    box-sizing: border-box;
-    resize: vertical;
-    font-family: monospace;
-    margin-bottom: 1rem;
-  }
-
-  .button-row {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .server-path-section {
-    margin-top: 1.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border-color);
-  }
-
-  .link-toggle {
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 0.25rem 0;
-    font-size: 0.85rem;
-  }
-
-  .link-toggle:hover {
-    color: var(--text-primary);
-  }
-
-  .server-path-input {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-  }
-
-  .server-path-input input {
-    flex: 1;
-    font-family: monospace;
-  }
-
-  .error-message {
-    color: #f87171;
-    background: rgba(248, 113, 113, 0.1);
-    border: 1px solid rgba(248, 113, 113, 0.4);
-    border-radius: var(--radius-md);
-    padding: 0.75rem 1rem;
-    margin: 1rem 0 0 0;
+    gap: var(--space-3);
     font-size: var(--text-sm);
   }
 
-  .platform-section {
-    padding: 0.5rem 0;
+  .file-status-check {
+    color: var(--color-pass);
+    font-weight: 600;
   }
 
-  .api-key-setup {
-    background: var(--bg-secondary);
+  .file-status-name {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .change-button {
+    margin-left: auto;
+    background: transparent;
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    padding: var(--space-4);
+    color: var(--text-secondary);
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: var(--text-xs);
   }
 
-  .api-key-setup p {
-    margin: 0 0 1rem 0;
+  .change-button:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  /* Server path */
+  .method-content input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .method-content input[type="text"][placeholder*="/path"] {
+    font-family: monospace;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Platform */
+  .platform-prompt {
+    margin: 0 0 0.75rem 0;
     color: var(--text-secondary);
     font-size: var(--text-sm);
   }
@@ -605,7 +608,7 @@
   .api-key-form {
     display: flex;
     gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
   }
 
   .api-key-input {
@@ -613,60 +616,46 @@
     font-family: monospace;
   }
 
-  .hint {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    margin: 0;
-  }
-
   .connected-status {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
   }
 
   .connected-badge {
-    background: var(--status-pass-bg);
     color: var(--color-pass);
-    padding: 0.2rem 0.6rem;
-    border-radius: 9999px;
-    font-size: var(--text-xs);
+    font-size: var(--text-sm);
     font-weight: 500;
-    border: 1px solid rgba(63, 185, 80, 0.3);
   }
 
   .loading {
     color: var(--text-secondary);
     font-style: italic;
+    font-size: var(--text-sm);
+    margin: 0;
   }
 
   .empty-state {
     color: var(--text-secondary);
     font-style: italic;
-    padding: 2rem 0;
+    font-size: var(--text-sm);
+    padding: 1rem 0;
+    margin: 0;
   }
 
   .agents-list {
-    margin-bottom: 1rem;
-  }
-
-  .list-label {
-    color: var(--text-secondary);
-    font-size: 0.85rem;
-    margin: 0 0 0.75rem 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
   }
 
   .agent-item {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    gap: var(--space-3);
     width: 100%;
-    padding: var(--space-3) var(--space-4);
+    padding: var(--space-2) var(--space-3);
     background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
-    margin-bottom: 0.5rem;
     cursor: pointer;
     text-align: left;
     transition: background 80ms ease-out, border-color 80ms ease-out;
@@ -681,34 +670,155 @@
     background: var(--bg-hover);
   }
 
+  .agent-radio {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+  }
+
+  .agent-item.selected .agent-radio {
+    color: var(--accent-blue);
+  }
+
   .agent-name {
     font-weight: 500;
     color: var(--text-primary);
+    font-size: var(--text-sm);
   }
 
   .agent-id {
+    margin-left: auto;
     font-family: monospace;
-    font-size: 0.8rem;
+    font-size: var(--text-xs);
     color: var(--text-muted);
   }
 
-  @media (max-width: 480px) {
-    .importers {
-      flex-wrap: wrap;
-    }
+  /* Method entries */
+  .method-entry {
+    border: 1px dashed transparent;
+    border-radius: var(--radius-md);
+    padding: var(--space-3);
+    margin-bottom: 2px;
+  }
 
+  .method-entry.active {
+    border-color: var(--border-color);
+    margin-bottom: var(--space-2);
+  }
+
+  .method-content {
+    padding-top: var(--space-3);
+  }
+
+  /* Method toggles */
+  .method-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.35rem 0;
+    font-size: var(--text-sm);
+    text-align: left;
+    width: 100%;
+  }
+
+  .method-toggle:hover {
+    color: var(--text-primary);
+  }
+
+  /* Animated caret */
+  .caret {
+    display: inline-block;
+    transition: transform 150ms ease-out;
+    font-size: 0.7em;
+  }
+
+  .caret.open {
+    transform: rotate(90deg);
+  }
+
+  /* Details section */
+  .form-row {
+    margin-bottom: 0.75rem;
+  }
+
+  .form-row label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+  }
+
+  .form-row input {
+    flex: 1;
+  }
+
+  .json-editor {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    font-family: monospace;
+    font-size: var(--text-sm);
+    margin: 0.5rem 0 0.75rem 0;
+  }
+
+  .button-row {
+    margin-top: 0.75rem;
+  }
+
+  .import-button {
+    background: var(--accent);
+    color: #ffffff;
+    border: 1px solid var(--accent);
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    cursor: pointer;
+    font-size: var(--text-sm);
+  }
+
+  .import-button:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  .import-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .hint {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    margin: 0;
+  }
+
+  .error-message {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1rem;
+    margin: 0;
+    font-size: var(--text-sm);
+  }
+
+  @media (max-width: 480px) {
     .form-row label {
       flex-direction: column;
       align-items: stretch;
       gap: 0.25rem;
     }
 
-    .tabs {
-      flex-wrap: wrap;
-    }
-
     .api-key-form {
       flex-direction: column;
+    }
+
+    .drop-zone {
+      padding: 1.5rem 1rem;
     }
   }
 </style>

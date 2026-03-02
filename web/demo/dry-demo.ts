@@ -16,7 +16,7 @@
  */
 
 import { test } from "@playwright/test";
-import { installCursor } from "./cursor";
+import { click, installCursor, smoothScroll } from "./cursor";
 
 test("record DRY analysis demo", async ({ page }) => {
   await installCursor(page);
@@ -33,35 +33,34 @@ test("record DRY analysis demo", async ({ page }) => {
   await page.waitForTimeout(2000);
 
   // Click the Optimize tab
-  await page.click('button:has-text("Optimize")');
+  await click(page.locator('button:has-text("Optimize")'));
   await page.waitForSelector(".optimize-view", { timeout: 10000 });
   await page.waitForTimeout(1500);
 
   // Scroll to the Snippets section
   const snippetsSection = page.locator("section.snippets-section");
-  await snippetsSection.scrollIntoViewIfNeeded();
+  await smoothScroll(snippetsSection);
   await page.waitForTimeout(1000);
 
   // Click "Analyze DRY" button
-  await page.click('button:has-text("Analyze DRY")');
+  await click(page.locator('button:has-text("Analyze DRY")'));
 
   // Wait for DRY analysis results to render, then scroll to show them
   const dryResults = page.locator("div.dry-results");
   await dryResults.waitFor({ timeout: 30000 });
-  await dryResults.scrollIntoViewIfNeeded();
+  await smoothScroll(dryResults);
   await page.waitForTimeout(3000);
 
   // Click "Apply All (N)" button
-  await page.click('div.dry-header button:has-text("Apply All")');
+  await click(page.locator('div.dry-header button:has-text("Apply All")'));
   await page.waitForTimeout(1500);
 
   // Scroll down to show the newly applied snippets
   const snippetsList = page.locator("section.snippets-section .snippet-item, section.snippets-section table");
   if ((await snippetsList.count()) > 0) {
-    await snippetsList.last().scrollIntoViewIfNeeded();
+    await smoothScroll(snippetsList.last());
   } else {
-    // Fallback: scroll the snippets section to the bottom
-    await snippetsSection.evaluate((el) => el.scrollTop = el.scrollHeight);
+    await smoothScroll(snippetsSection);
   }
   await page.waitForTimeout(3000);
 });

@@ -15,7 +15,7 @@
  */
 
 import { test } from "@playwright/test";
-import { installCursor } from "./cursor";
+import { click, installCursor } from "./cursor";
 
 test("record web UI demo", async ({ page }) => {
   await installCursor(page);
@@ -34,17 +34,17 @@ test("record web UI demo", async ({ page }) => {
   const rowCheckboxes = page.locator('tbody input[type="checkbox"]');
   const checkboxCount = await rowCheckboxes.count();
   for (let i = 0; i < Math.min(3, checkboxCount); i++) {
-    await rowCheckboxes.nth(i).click();
+    await click(rowCheckboxes.nth(i));
     await page.waitForTimeout(300);
   }
   await page.waitForTimeout(500);
 
   // Click Run Selected button
-  await page.click("button:has-text('Run Selected')");
+  await click(page.locator("button:has-text('Run Selected')"));
   await page.waitForTimeout(500);
 
   // Click Runs tab to ensure navigation (workaround for auto-switch issue)
-  await page.click('button.tab-item:has-text("Runs")');
+  await click(page.locator('button.tab-item:has-text("Runs")'));
   await page.waitForTimeout(1000);
 
   // Poll for the results list to appear
@@ -58,7 +58,7 @@ test("record web UI demo", async ({ page }) => {
   await page.waitForTimeout(500);
   const resultBtn = page.locator(".result-select-btn").first();
   if ((await resultBtn.count()) > 0) {
-    await resultBtn.click();
+    await click(resultBtn);
   }
 
   // Watch the conversation flow
