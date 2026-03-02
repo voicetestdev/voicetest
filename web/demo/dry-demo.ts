@@ -25,10 +25,15 @@ test("record DRY analysis demo", async ({ page }) => {
   );
   if (!meridian) throw new Error("Meridian Insurance agent not found — did globalSetup run?");
 
-  // Navigate directly to the agent's optimize view
-  await page.goto(`/#/agent/${meridian.id}/optimize`);
-  await page.waitForSelector(".optimize-view", { timeout: 10000 });
+  // Start on the Config page so the viewer sees the agent context
+  await page.goto(`/#/agent/${meridian.id}/config`);
+  await page.waitForSelector("section.general-prompt", { timeout: 10000 });
   await page.waitForTimeout(2000);
+
+  // Click the Optimize tab
+  await page.click('button:has-text("Optimize")');
+  await page.waitForSelector(".optimize-view", { timeout: 10000 });
+  await page.waitForTimeout(1500);
 
   // Scroll to the Snippets section
   const snippetsSection = page.locator("section.snippets-section");
