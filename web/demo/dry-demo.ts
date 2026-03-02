@@ -16,8 +16,10 @@
  */
 
 import { test } from "@playwright/test";
+import { installCursor } from "./cursor";
 
 test("record DRY analysis demo", async ({ page }) => {
+  await installCursor(page);
   // Find the Meridian Insurance agent (created by globalSetup)
   const agents = await (await page.request.get("/api/agents")).json();
   const meridian = agents.find(

@@ -15,8 +15,10 @@
  */
 
 import { test } from "@playwright/test";
+import { installCursor } from "./cursor";
 
 test("record web UI demo", async ({ page }) => {
+  await installCursor(page);
   // Find the healthcare agent (created by globalSetup)
   const agents = await (await page.request.get("/api/agents")).json();
   const healthcare = agents.find(
