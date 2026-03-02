@@ -43,10 +43,10 @@ class DiscoveryService:
         """List available platforms with configuration status."""
         return [
             {
-                "name": p.name,
-                "configured": p.is_configured(),
-                "env_key": p.env_key,
-                "required_env_keys": p.required_env_keys,
+                "name": name,
+                "configured": self._platforms.is_configured(name),
+                "env_key": self._platforms.get_env_key(name),
+                "required_env_keys": self._platforms.get_required_env_keys(name),
             }
-            for p in self._platforms.list_platforms()
+            for name in self._platforms.list_platforms()
         ]

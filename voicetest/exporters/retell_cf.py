@@ -144,6 +144,7 @@ def _synthesize_end_node(
     """Build a CF end node dict from an end_call tool."""
     node: dict[str, Any] = {
         "id": f"synth_{tool.name}",
+        "name": f"synth_{tool.name}",
         "type": "end",
         "instruction": {
             "type": "prompt",
@@ -177,6 +178,7 @@ def _synthesize_transfer_node(
     transfer_opt = tool.metadata.get("transfer_option", _DEFAULT_TRANSFER_OPTION)
     node: dict[str, Any] = {
         "id": node_id,
+        "name": node_id,
         "type": "transfer_call",
         "instruction": {
             "type": "prompt",
@@ -306,6 +308,7 @@ def _convert_node(
 
     result: dict[str, Any] = {
         "id": node.id,
+        "name": node.metadata.get("name", node.id),
         "type": node_type,
         "instruction": {
             "type": "prompt",

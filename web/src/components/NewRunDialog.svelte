@@ -189,74 +189,10 @@
 {/if}
 
 <style>
-	.modal-backdrop {
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		background: rgba(0, 0, 0, 0.5);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 1000;
-	}
-
 	.modal {
-		background: var(--bg-secondary);
-		border: 1px solid var(--border-color);
-		border-radius: var(--radius-md, 12px);
 		width: 90%;
 		max-width: 500px;
 		max-height: 80vh;
-		display: flex;
-		flex-direction: column;
-		overflow: hidden;
-		box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-	}
-
-	.modal-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		padding: var(--space-4, 1rem) var(--space-4, 1.5rem);
-		border-bottom: 1px solid var(--border-color);
-		background: var(--bg-tertiary);
-	}
-
-	.modal-header h3 {
-		margin: 0;
-		font-size: 1.25rem;
-	}
-
-	.close-btn {
-		background: transparent;
-		border: none;
-		font-size: 1.5rem;
-		cursor: pointer;
-		color: var(--text-secondary);
-		padding: 0;
-		line-height: 1;
-	}
-
-	.close-btn:hover {
-		color: var(--text-primary);
-		background: transparent;
-	}
-
-	.modal-body {
-		padding: var(--space-4, 1.5rem);
-		overflow-y: auto;
-		flex: 1;
-	}
-
-	.modal-footer {
-		display: flex;
-		justify-content: flex-end;
-		gap: var(--space-2, 0.75rem);
-		padding-top: var(--space-4, 1rem);
-		border-top: 1px solid var(--border-color);
-		margin-top: var(--space-4, 1rem);
 	}
 
 	.form-group {
