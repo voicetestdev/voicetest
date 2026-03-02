@@ -13,6 +13,7 @@
     refreshAgent,
   } from "../lib/stores";
   import type { TestCase, TestCaseRecord } from "../lib/types";
+  import Modal from "./Modal.svelte";
 
   let newTest = $state<Partial<TestCase>>({
     name: "",
@@ -658,15 +659,7 @@
   {/if}
 </div>
 
-{#if showNewTestModal}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus a11y_click_events_have_key_events -->
-  <div class="modal-backdrop" role="dialog" aria-modal="true" onclick={closeNewTestModal}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <div class="modal" role="document" onclick={(e) => e.stopPropagation()}>
-      <div class="modal-header">
-        <h3>{editingId ? "Edit Test" : "New Test"}</h3>
-        <button class="close-btn" onclick={closeNewTestModal}>x</button>
-      </div>
+<Modal bind:open={showNewTestModal} title={editingId ? "Edit Test" : "New Test"} onclose={closeNewTestModal}>
       <div class="modal-body">
         <div class="form-group">
           <label for="test-name">Name</label>
@@ -818,19 +811,9 @@
           {saving ? "Saving..." : editingId ? "Update Test" : "Create Test"}
         </button>
       </div>
-    </div>
-  </div>
-{/if}
+</Modal>
 
-{#if showImportModal}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus a11y_click_events_have_key_events -->
-  <div class="modal-backdrop" role="dialog" aria-modal="true" onclick={closeImportModal}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <div class="modal" role="document" onclick={(e) => e.stopPropagation()}>
-      <div class="modal-header">
-        <h3>Add Tests</h3>
-        <button class="close-btn" onclick={closeImportModal}>x</button>
-      </div>
+<Modal bind:open={showImportModal} title="Add Tests" onclose={closeImportModal}>
       <div class="modal-tabs">
         <button
           class="modal-tab"
@@ -905,19 +888,9 @@
           </button>
         {/if}
       </div>
-    </div>
-  </div>
-{/if}
+</Modal>
 
-{#if showExportModal}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus a11y_click_events_have_key_events -->
-  <div class="modal-backdrop" role="dialog" aria-modal="true" onclick={closeExportModal}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <div class="modal" role="document" onclick={(e) => e.stopPropagation()}>
-      <div class="modal-header">
-        <h3>Export Tests</h3>
-        <button class="close-btn" onclick={closeExportModal}>x</button>
-      </div>
+<Modal bind:open={showExportModal} title="Export Tests" onclose={closeExportModal}>
       <div class="modal-body">
         <div class="form-group">
           <label for="export-format">Format</label>
@@ -946,9 +919,7 @@
           {exporting ? "Exporting..." : "Export"}
         </button>
       </div>
-    </div>
-  </div>
-{/if}
+</Modal>
 
 <style>
   .tests-view {

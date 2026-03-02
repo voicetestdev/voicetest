@@ -3,6 +3,7 @@
   import {
     agentGraph,
   } from "../lib/stores";
+  import Modal from "./Modal.svelte";
 
   interface Props {
     agentId: string;
@@ -69,32 +70,38 @@
   }
 </script>
 
-{#if editing}
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div class="modal-backdrop" onclick={(e) => { if ((e.target as HTMLElement).classList.contains("modal-backdrop")) close(); }}>
-    <div class="modal node-prompt-modal">
-      <div class="modal-header">
-        <h3>Edit Transition: {sourceId} → {targetId}</h3>
-        <button class="close-btn" onclick={close}>&times;</button>
-      </div>
-      <div class="modal-body">
-        <textarea
-          class="prompt-textarea"
-          bind:value={editedCondition}
-          bind:this={transitionTextarea}
-          disabled={saving}
-          rows="6"
-        ></textarea>
-        <div class="modal-actions">
-          {#if saved}
-            <span class="save-indicator saved">Saved</span>
-          {/if}
-          <button onclick={close} disabled={saving}>Cancel</button>
-          <button class="btn-primary" onclick={saveTransition} disabled={saving}>
-            {saving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </div>
+<Modal open={editing} title="Edit Transition: {sourceId} → {targetId}" onclose={close} class="node-prompt-modal">
+  <div class="modal-body">
+    <textarea
+      class="prompt-textarea"
+      bind:value={editedCondition}
+      bind:this={transitionTextarea}
+      disabled={saving}
+      rows="6"
+    ></textarea>
+    <div class="modal-actions">
+      {#if saved}
+        <span class="save-indicator saved">Saved</span>
+      {/if}
+      <button onclick={close} disabled={saving}>Cancel</button>
+      <button class="btn-primary" onclick={saveTransition} disabled={saving}>
+        {saving ? "Saving..." : "Save"}
+      </button>
     </div>
   </div>
-{/if}
+</Modal>
+
+<style>
+  :global(dialog.node-prompt-modal) {
+    min-width: 500px;
+    max-width: 700px;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: var(--space-3);
+  }
+</style>

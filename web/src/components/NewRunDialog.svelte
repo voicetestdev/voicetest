@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { RunResult, TestCaseRecord } from '../lib/types';
 	import { api } from '../lib/api';
+	import Modal from './Modal.svelte';
 
 	interface Props {
 		agentId: string;
@@ -11,7 +12,7 @@
 		extras?: Snippet;
 	}
 
-	let { agentId, open, onclose, onsubmit, extras }: Props = $props();
+	let { agentId, open = $bindable(), onclose, onsubmit, extras }: Props = $props();
 
 	let tests = $state<TestCaseRecord[]>([]);
 	let selectedTestIds = $state<string[]>([]);
@@ -83,118 +84,90 @@
 			submitting = false;
 		}
 	}
-
-	function handleBackdropClick() {
-		onclose();
-	}
-
-	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape' && open) {
-			onclose();
-		}
-	}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<Modal bind:open title="Start New Run" onclose={onclose}>
+	{#if submitResult}
+		<div class="modal-body">
+			<div class="success-message">
+				<div class="success-icon">&#10003;</div>
+				<h3>Run Queued</h3>
+				{#if submitResult.message}
+					<p>{submitResult.message}</p>
+				{/if}
+				<p class="run-id">Run ID: <code>{submitResult.run_id}</code></p>
+				{#if submitResult.details}
+					<p class="run-details">
+						{#each Object.entries(submitResult.details) as [key, value]}
+							{key}: {value}
+							{' '}
+						{/each}
+					</p>
+				{/if}
+				<button class="btn btn-primary" onclick={onclose}>Close</button>
+			</div>
+		</div>
+	{:else}
+		<form class="modal-body" onsubmit={handleSubmit}>
+			{#if submitError}
+				<div class="error-message">{submitError}</div>
+			{/if}
 
-{#if open}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="modal-backdrop" onclick={handleBackdropClick}>
-		<div class="modal" role="dialog" aria-modal="true" onclick={(e) => e.stopPropagation()}>
-			<div class="modal-header">
-				<h3>Start New Run</h3>
-				<button class="close-btn" onclick={onclose}>&times;</button>
+			{#if extras}
+				{@render extras()}
+			{/if}
+
+			<div class="form-group">
+				<label>
+					Tests to Run
+					{#if tests.length > 0}
+						<span class="test-count">({selectedTestIds.length} of {tests.length} selected)</span>
+					{/if}
+				</label>
+
+				{#if loadingTests}
+					<div class="loading">Loading tests...</div>
+				{:else if tests.length === 0}
+					<div class="no-tests">No tests found for this agent. Create tests first.</div>
+				{:else}
+					<div class="test-actions">
+						<button type="button" class="btn btn-sm" onclick={selectAll}>Select All</button>
+						<button type="button" class="btn btn-sm" onclick={clearSelection}>Clear</button>
+					</div>
+					<div class="test-list">
+						{#each tests as test}
+							<label class="test-item" class:selected={selectedTestIds.includes(test.id)}>
+								<input
+									type="checkbox"
+									checked={selectedTestIds.includes(test.id)}
+									onchange={() => toggleTest(test.id)}
+								/>
+								<span class="test-name">{test.name}</span>
+							</label>
+						{/each}
+					</div>
+				{/if}
 			</div>
 
-			{#if submitResult}
-				<div class="modal-body">
-					<div class="success-message">
-						<div class="success-icon">&#10003;</div>
-						<h3>Run Queued</h3>
-						{#if submitResult.message}
-							<p>{submitResult.message}</p>
-						{/if}
-						<p class="run-id">Run ID: <code>{submitResult.run_id}</code></p>
-						{#if submitResult.details}
-							<p class="run-details">
-								{#each Object.entries(submitResult.details) as [key, value]}
-									{key}: {value}
-									{' '}
-								{/each}
-							</p>
-						{/if}
-						<button class="btn btn-primary" onclick={onclose}>Close</button>
-					</div>
-				</div>
-			{:else}
-				<form class="modal-body" onsubmit={handleSubmit}>
-					{#if submitError}
-						<div class="error-message">{submitError}</div>
+			<div class="modal-footer">
+				<button type="button" class="btn" onclick={onclose}>Cancel</button>
+				<button
+					type="submit"
+					class="btn btn-primary"
+					disabled={selectedTestIds.length === 0 || submitting}
+				>
+					{#if submitting}
+						Running...
+					{:else}
+						Start Run ({selectedTestIds.length} tests)
 					{/if}
-
-					{#if extras}
-						{@render extras()}
-					{/if}
-
-					<div class="form-group">
-						<label>
-							Tests to Run
-							{#if tests.length > 0}
-								<span class="test-count">({selectedTestIds.length} of {tests.length} selected)</span>
-							{/if}
-						</label>
-
-						{#if loadingTests}
-							<div class="loading">Loading tests...</div>
-						{:else if tests.length === 0}
-							<div class="no-tests">No tests found for this agent. Create tests first.</div>
-						{:else}
-							<div class="test-actions">
-								<button type="button" class="btn btn-sm" onclick={selectAll}>Select All</button>
-								<button type="button" class="btn btn-sm" onclick={clearSelection}>Clear</button>
-							</div>
-							<div class="test-list">
-								{#each tests as test}
-									<label class="test-item" class:selected={selectedTestIds.includes(test.id)}>
-										<input
-											type="checkbox"
-											checked={selectedTestIds.includes(test.id)}
-											onchange={() => toggleTest(test.id)}
-										/>
-										<span class="test-name">{test.name}</span>
-									</label>
-								{/each}
-							</div>
-						{/if}
-					</div>
-
-					<div class="modal-footer">
-						<button type="button" class="btn" onclick={onclose}>Cancel</button>
-						<button
-							type="submit"
-							class="btn btn-primary"
-							disabled={selectedTestIds.length === 0 || submitting}
-						>
-							{#if submitting}
-								Running...
-							{:else}
-								Start Run ({selectedTestIds.length} tests)
-							{/if}
-						</button>
-					</div>
-				</form>
-			{/if}
-		</div>
-	</div>
-{/if}
+				</button>
+			</div>
+		</form>
+	{/if}
+</Modal>
 
 <style>
-	.modal {
-		width: 90%;
-		max-width: 500px;
-		max-height: 80vh;
-	}
-
 	.form-group {
 		margin-bottom: 1.25rem;
 	}

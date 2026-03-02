@@ -1256,21 +1256,5 @@
     border-color: var(--danger-border);
   }
 
-  .modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: var(--space-3);
-  }
-
-  .node-prompt-modal {
-    min-width: 500px;
-    max-width: 700px;
-  }
-
-  .node-prompt-modal .prompt-textarea {
-    min-height: 250px;
-  }
 
 </style>
