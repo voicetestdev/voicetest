@@ -1161,73 +1161,9 @@
     font-size: var(--text-sm);
   }
 
-  /* Modal styles */
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-  }
-
   .modal {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
     width: 90%;
     max-width: 600px;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-4);
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
-  }
-
-  .modal-header h3 {
-    color: var(--text-primary);
-    font-size: var(--text-sm);
-  }
-
-  .close-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 1.25rem;
-    cursor: pointer;
-    padding: 0.25rem 0.5rem;
-  }
-
-  .close-btn:hover {
-    color: var(--text-primary);
-    background: transparent;
-  }
-
-  .modal-body {
-    padding: var(--space-4);
-    overflow-y: auto;
-    flex: 1;
-  }
-
-  .modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    padding: var(--space-4);
-    border-top: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
   }
 
   .form-group {

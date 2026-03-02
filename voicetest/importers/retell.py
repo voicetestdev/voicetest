@@ -78,6 +78,7 @@ class RetellNode(BaseModel):
 
     id: str
     type: str
+    name: str | None = None
     instruction: RetellInstruction
     edges: list[RetellEdge] = []
     display_position: dict[str, float] | None = None
@@ -172,6 +173,8 @@ class RetellImporter:
             transitions = [self._convert_edge(edge) for edge in retell_node.edges]
 
             metadata: dict[str, Any] = {"retell_type": retell_node.type}
+            if retell_node.name:
+                metadata["name"] = retell_node.name
             if retell_node.display_position:
                 metadata["display_position"] = retell_node.display_position
 

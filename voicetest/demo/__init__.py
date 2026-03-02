@@ -28,3 +28,22 @@ def get_demo_tests() -> list[dict[str, Any]]:
     demo_files = resources.files("voicetest.demo")
     tests_json = demo_files.joinpath("tests.json").read_text()
     return json.loads(tests_json)
+
+
+def get_showcase_agents() -> list[tuple[str, dict[str, Any]]]:
+    """Load all bundled showcase agent configurations.
+
+    Returns:
+        List of (name, config) tuples for each showcase agent.
+    """
+    demo_files = resources.files("voicetest.demo")
+    agents = [
+        ("Acme Healthcare", "agent.json"),
+        ("Skyline Travel", "travel-agent.json"),
+        ("TechCorp IT Support", "helpdesk-agent.json"),
+    ]
+    result = []
+    for name, filename in agents:
+        config = json.loads(demo_files.joinpath(filename).read_text())
+        result.append((name, config))
+    return result

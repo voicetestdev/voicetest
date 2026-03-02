@@ -1,6 +1,8 @@
 /**
  * Playwright script to record web UI demo.
  *
+ * Prerequisites: globalSetup seeds showcase agents and configures groq.
+ *
  * Run with:
  *   # Terminal 1: Start server
  *   uv run voicetest demo --serve
@@ -15,18 +17,16 @@
 import { test } from "@playwright/test";
 
 test("record web UI demo", async ({ page }) => {
-  // Navigate to the app (starts on import view when no agents exist)
-  await page.goto("/");
-  await page.waitForTimeout(1000);
+  // Find the healthcare agent (created by globalSetup)
+  const agents = await (await page.request.get("/api/agents")).json();
+  const healthcare = agents.find(
+    (a: { name: string }) => a.name === "Acme Healthcare",
+  );
+  if (!healthcare) throw new Error("Acme Healthcare agent not found — did globalSetup run?");
 
-  // Click Load Demo button
-  await page.click("button.demo-button");
+  // Navigate to the healthcare agent's Tests tab
+  await page.goto(`/#/agent/${healthcare.id}/tests`);
   await page.waitForTimeout(2000);
-
-  // Should now be on the agent config view
-  // Navigate to Tests tab
-  await page.click("text=Tests");
-  await page.waitForTimeout(1000);
 
   // Select first 3 tests by clicking row checkboxes (skip header checkbox)
   const rowCheckboxes = page.locator('tbody input[type="checkbox"]');
