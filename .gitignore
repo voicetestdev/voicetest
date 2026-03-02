@@ -27,3 +27,6 @@ docs/demos/test-results
 # Test data and results
 web/test-results
 test-data
+
+# Credentials
+.env
