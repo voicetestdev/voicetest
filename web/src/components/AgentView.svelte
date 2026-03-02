@@ -12,7 +12,6 @@
   import CallView from "./CallView.svelte";
   import ChatView from "./ChatView.svelte";
   import ExportModal from "./ExportModal.svelte";
-  import SnippetManager from "./SnippetManager.svelte";
   import MetadataEditor from "./MetadataEditor.svelte";
   import NodePromptModal from "./NodePromptModal.svelte";
   import TransitionModal from "./TransitionModal.svelte";
@@ -64,8 +63,6 @@
   let syncing = $state(false);
   let syncSuccess = $state(false);
   let syncError = $state("");
-
-  let snippets = $state<Record<string, string>>({});
 
   // Child component refs
   let nodePromptModal: NodePromptModal;
@@ -628,48 +625,46 @@
     </div>
 
     <section class="agent-info">
-      <div class="info-row">
-        <span class="label">Source:</span>
-        <span class="tag">{$agentGraph.source_type}</span>
-      </div>
-      <div class="info-row">
-        <span class="label">LLM:</span>
-        <span class="model-value">
-          {#if editingModel}
-            <input
-              type="text"
-              class="model-input"
-              bind:value={editedModel}
-              bind:this={modelInput}
-              onblur={saveModel}
-              onkeydown={handleModelKeydown}
-              disabled={savingModel}
-              placeholder="e.g. openai/gpt-4o"
-            />
-          {:else}
-            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-            <span class="editable-model" onclick={startEditingModel} title="Click to edit">
-              {$agentGraph.default_model || "Not set"}
-            </span>
-          {/if}
-          {#if savingModel}
-            <span class="model-save-indicator">Saving...</span>
-          {:else if modelSaved}
-            <span class="model-save-indicator saved">Saved</span>
-          {/if}
+      <div class="info-summary">
+        <span class="info-item">
+          <span class="label">LLM:</span>
+          <span class="model-value">
+            {#if editingModel}
+              <input
+                type="text"
+                class="model-input"
+                bind:value={editedModel}
+                bind:this={modelInput}
+                onblur={saveModel}
+                onkeydown={handleModelKeydown}
+                disabled={savingModel}
+                placeholder="e.g. openai/gpt-4o"
+              />
+            {:else}
+              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+              <span class="editable-model" onclick={startEditingModel} title="Click to edit">
+                {$agentGraph.default_model || "Not set"}
+              </span>
+            {/if}
+            {#if savingModel}
+              <span class="model-save-indicator">Saving...</span>
+            {:else if modelSaved}
+              <span class="model-save-indicator saved">Saved</span>
+            {/if}
+          </span>
+        </span>
+        <span class="info-item">
+          <span class="label">Entry:</span>
+          <span>{$agentGraph.entry_node_id}</span>
+        </span>
+        <span class="info-item">
+          <span class="label">Nodes:</span>
+          <span>{Object.keys($agentGraph.nodes).length}</span>
         </span>
       </div>
-      <div class="info-row">
-        <span class="label">Entry Node:</span>
-        <span>{$agentGraph.entry_node_id}</span>
-      </div>
-      <div class="info-row">
-        <span class="label">Nodes:</span>
-        <span>{Object.keys($agentGraph.nodes).length}</span>
-      </div>
       {#if $currentAgent.source_path}
-        <div class="info-row">
-          <span class="label">Linked File:</span>
+        <div class="linked-file-row">
+          <span class="label">Linked:</span>
           <span class="linked-file">
             <span class="mono">{$currentAgent.source_path}</span>
             <button
@@ -683,7 +678,47 @@
           </span>
         </div>
       {/if}
+      <div class="actions">
+        <ChatView />
+        <CallView />
+        <button
+          class="btn-primary"
+          onclick={() => (showExportModal = true)}
+        >
+          Export Agent...
+        </button>
+        {#if syncStatus}
+          {#if syncStatus.can_sync}
+            <button
+              class="sync-btn"
+              onclick={syncToSource}
+              disabled={syncing}
+            >
+              {#if syncing}
+                Syncing...
+              {:else if syncSuccess}
+                Synced!
+              {:else}
+                Sync to {getPlatformDisplayName(syncStatus.platform || "")}
+              {/if}
+            </button>
+          {:else if syncStatus.platform}
+            <span class="sync-unavailable" title={syncStatus.reason || ""}>
+              Sync unavailable
+              {#if syncStatus.needs_configuration}
+                (configure {getPlatformDisplayName(syncStatus.platform)} first)
+              {/if}
+            </span>
+          {/if}
+        {/if}
+      </div>
     </section>
+    {#if error}
+      <p class="error-message">{error}</p>
+    {/if}
+    {#if syncError}
+      <p class="error-message">{syncError}</p>
+    {/if}
 
     <section class="general-prompt">
       <div class="prompt-header">
@@ -713,52 +748,7 @@
       {/if}
     </section>
 
-    {#if $currentAgentId}
-      <SnippetManager agentId={$currentAgentId} bind:snippets onerror={handleChildError} />
-    {/if}
-
-    <div class="actions">
-      <ChatView />
-      <CallView />
-      <button
-        class="btn-primary"
-        onclick={() => (showExportModal = true)}
-      >
-        Export Agent...
-      </button>
-      {#if syncStatus}
-        {#if syncStatus.can_sync}
-          <button
-            class="sync-btn"
-            onclick={syncToSource}
-            disabled={syncing}
-          >
-            {#if syncing}
-              Syncing...
-            {:else if syncSuccess}
-              Synced!
-            {:else}
-              Sync to {getPlatformDisplayName(syncStatus.platform || "")}
-            {/if}
-          </button>
-        {:else if syncStatus.platform}
-          <span class="sync-unavailable" title={syncStatus.reason || ""}>
-            Sync unavailable
-            {#if syncStatus.needs_configuration}
-              (configure {getPlatformDisplayName(syncStatus.platform)} first)
-            {/if}
-          </span>
-        {/if}
-      {/if}
-    </div>
-    {#if error}
-      <p class="error-message">{error}</p>
-    {/if}
-    {#if syncError}
-      <p class="error-message">{syncError}</p>
-    {/if}
-
-    <ExportModal bind:show={showExportModal} {snippets} onerror={handleChildError} />
+    <ExportModal bind:show={showExportModal} onerror={handleChildError} />
 
     <section class="graph-section">
       <div class="graph-header">
@@ -911,18 +901,10 @@
     font-style: italic;
   }
 
-  .tag {
-    background: var(--bg-tertiary);
-    padding: 0.2rem 0.5rem;
-    border-radius: var(--radius-sm);
-    font-size: var(--text-xs);
-    border: 1px solid var(--border-color);
-  }
-
   .agent-info {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: var(--space-2) var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
     margin-bottom: 1.5rem;
     padding: var(--space-4);
     background: var(--bg-secondary);
@@ -930,8 +912,25 @@
     border-radius: var(--radius-md);
   }
 
-  .info-row {
-    display: contents;
+  .info-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    align-items: center;
+  }
+
+  .info-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-sm);
+  }
+
+  .linked-file-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-sm);
   }
 
   .label {
@@ -1233,199 +1232,6 @@
 
   .node-tooltip.clickable:hover {
     border-color: var(--accent-color, #6366f1);
-  }
-
-
-  .snippets-section {
-    margin-bottom: 1.5rem;
-    padding: var(--space-4);
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-  }
-
-  .snippets-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.75rem;
-  }
-
-  .snippets-actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .btn-sm {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.8rem;
-  }
-
-  .btn-xs {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.75rem;
-  }
-
-  .danger-text {
-    color: var(--danger-text);
-  }
-
-  .snippet-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .snippet-item {
-    padding: 0.5rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-  }
-
-  .snippet-name-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.25rem;
-  }
-
-  .snippet-ref {
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: var(--accent-color, #6366f1);
-  }
-
-  .snippet-btns {
-    display: flex;
-    gap: 0.25rem;
-  }
-
-  .snippet-preview {
-    margin: 0;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    max-height: 80px;
-    overflow-y: auto;
-  }
-
-  .snippet-textarea {
-    width: 100%;
-    padding: 0.4rem;
-    font-family: monospace;
-    font-size: 0.8rem;
-    line-height: 1.4;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border: 1px solid var(--accent-color, #6366f1);
-    border-radius: var(--radius-sm);
-    resize: vertical;
-    outline: none;
-  }
-
-  .snippet-edit-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.25rem;
-    margin-top: 0.25rem;
-  }
-
-  .snippet-add-form {
-    margin-top: 0.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .snippet-name-input {
-    padding: 0.3rem 0.5rem;
-    font-family: monospace;
-    font-size: 0.8rem;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    outline: none;
-  }
-
-  .snippet-empty {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    font-style: italic;
-    margin: 0;
-  }
-
-  .dry-results {
-    margin-top: 0.75rem;
-    padding: 0.75rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-  }
-
-  .dry-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-  }
-
-  .dry-header h4 {
-    margin: 0;
-    font-size: 0.9rem;
-    color: var(--text-primary);
-  }
-
-  .dry-section h5 {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin: 0.5rem 0 0.25rem;
-  }
-
-  .dry-match {
-    padding: 0.5rem;
-    margin-bottom: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: var(--bg-secondary);
-  }
-
-  .dry-text {
-    margin: 0;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    max-height: 80px;
-    overflow-y: auto;
-  }
-
-  .dry-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 0.25rem;
-  }
-
-  .dry-locations {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .dry-similarity {
-    font-size: 0.75rem;
-    color: var(--accent-color, #6366f1);
-    font-weight: 500;
-    margin-bottom: 0.25rem;
-  }
-
-  .dry-empty {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    font-style: italic;
-    margin: 0;
   }
 
   .danger-zone {

@@ -9,11 +9,12 @@
 
   interface Props {
     show: boolean;
-    snippets?: Record<string, string>;
     onerror?: (msg: string) => void;
   }
 
-  let { show = $bindable(false), snippets = {}, onerror }: Props = $props();
+  let { show = $bindable(false), onerror }: Props = $props();
+
+  let snippets = $derived($agentGraph?.snippets ?? {});
 
   let exporters = $state<ExporterInfo[]>([]);
   let exporting = $state(false);

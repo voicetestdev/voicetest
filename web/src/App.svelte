@@ -18,6 +18,7 @@
   import RunsView from "./components/RunsView.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import ImportView from "./components/ImportView.svelte";
+  import OptimizeView from "./components/OptimizeView.svelte";
 
   let initialized = $state(false);
   let error = $state<string | null>(null);
@@ -60,7 +61,7 @@
     }
   });
 
-  async function switchView(view: "config" | "tests" | "metrics" | "runs") {
+  async function switchView(view: "config" | "tests" | "metrics" | "runs" | "optimize") {
     currentView.set(view);
     if (view === "runs") {
       const runs = get(runHistory);
@@ -169,6 +170,11 @@
                 <span class="tab-count">{runs.length}</span>
               {/if}
             </button>
+            <button
+              class="tab-item"
+              class:active={view === "optimize"}
+              onclick={() => switchView("optimize")}
+            >Optimize</button>
           </div>
           <div class="view-content">
             {#if view === "config"}
@@ -179,6 +185,8 @@
               <MetricsView />
             {:else if view === "runs"}
               <RunsView />
+            {:else if view === "optimize"}
+              <OptimizeView />
             {/if}
           </div>
         {:else}

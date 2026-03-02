@@ -43,7 +43,7 @@ if (typeof window !== "undefined") {
   expandedRuns.subscribe((v) => localStorage.setItem("expandedRuns", String(v)));
 }
 
-export type NavView = "config" | "tests" | "runs" | "metrics" | "settings" | "import";
+export type NavView = "config" | "tests" | "runs" | "metrics" | "optimize" | "settings" | "import";
 export const currentView = writable<NavView>("import");
 
 // Persist expandedAgents to localStorage

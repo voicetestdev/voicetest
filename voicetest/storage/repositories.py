@@ -157,11 +157,15 @@ class AgentRepository:
         return MetricsConfig()
 
     def delete(self, agent_id: str) -> None:
-        """Delete an agent."""
+        """Delete an agent and all associated runs, test cases, and calls."""
         agent = self.session.get(Agent, agent_id)
         if agent:
-            self.session.delete(agent)
-            self.session.commit()
+            try:
+                self.session.delete(agent)
+                self.session.commit()
+            except Exception:
+                self.session.rollback()
+                raise
 
     def load_graph(self, agent: dict) -> AgentGraph | Path:
         """Load the AgentGraph for an agent.
