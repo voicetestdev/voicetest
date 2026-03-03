@@ -34,6 +34,7 @@ from pydantic import BaseModel
 from starlette.websockets import WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
+from voicetest.cache import setup_cache_from_settings
 from voicetest.calls import get_call_manager
 from voicetest.chat import get_chat_manager
 from voicetest.container import get_container
@@ -2146,6 +2147,9 @@ async def sync_to_platform(agent_id: str, request: SyncToPlatformRequest) -> Syn
 
 def create_app() -> FastAPI:
     """Create the FastAPI app (for programmatic use)."""
+    settings = load_settings()
+    settings.apply_env()
+    setup_cache_from_settings(settings.cache)
     return app
 
 

@@ -56,6 +56,10 @@ postgres = [
 re2 = [
     "google-re2>=1.1",
 ]
+s3 = [
+    "boto3>=1.35",
+    "cloudpickle>=3.0",
+]
 macos = [
     "mlx-audio>=0.3",
     "misaki[en]>=0.1",
@@ -131,6 +135,8 @@ dev = [
     "httpx>=0.28",
     "pre-commit>=4.0",
     "pyyaml>=6.0.3",
+    "boto3>=1.35",
+    "cloudpickle>=3.0",
 ]
 
 [tool.uv]
