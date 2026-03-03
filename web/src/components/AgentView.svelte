@@ -685,29 +685,20 @@
         >
           Export Agent...
         </button>
-        {#if syncStatus}
-          {#if syncStatus.can_sync}
-            <button
-              class="sync-btn"
-              onclick={syncToSource}
-              disabled={syncing}
-            >
-              {#if syncing}
-                Syncing...
-              {:else if syncSuccess}
-                Synced!
-              {:else}
-                Sync to {getPlatformDisplayName(syncStatus.platform || "")}
-              {/if}
-            </button>
-          {:else if syncStatus.platform}
-            <span class="sync-unavailable" title={syncStatus.reason || ""}>
-              Sync unavailable
-              {#if syncStatus.needs_configuration}
-                (configure {getPlatformDisplayName(syncStatus.platform)} first)
-              {/if}
-            </span>
-          {/if}
+        {#if syncStatus?.can_sync}
+          <button
+            class="sync-btn"
+            onclick={syncToSource}
+            disabled={syncing}
+          >
+            {#if syncing}
+              Syncing...
+            {:else if syncSuccess}
+              Synced!
+            {:else}
+              Sync to {getPlatformDisplayName(syncStatus.platform || "")}
+            {/if}
+          </button>
         {/if}
       </div>
     </section>
