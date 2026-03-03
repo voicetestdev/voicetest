@@ -89,7 +89,19 @@
   }
 
   :global(dialog.node-prompt-modal .prompt-textarea) {
+    width: 100%;
     min-height: 250px;
+    padding: 0.5rem;
+    font-family: monospace;
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--accent-color, #6366f1);
+    border-radius: var(--radius-sm);
+    resize: vertical;
+    outline: none;
+    box-sizing: border-box;
   }
 
   .modal-actions {

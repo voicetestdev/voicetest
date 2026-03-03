@@ -1174,7 +1174,7 @@
 
   .mermaid-container {
     overflow: hidden;
-    height: 100vh;
+    height: calc(100dvh - 11rem);
     min-height: 400px;
     cursor: grab;
     user-select: none;
