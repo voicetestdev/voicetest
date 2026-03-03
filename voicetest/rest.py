@@ -10,6 +10,7 @@ Or: uvicorn voicetest.rest:app --reload
 import asyncio
 from datetime import UTC
 from datetime import datetime
+from importlib.metadata import version as pkg_version
 import json
 import logging
 import os
@@ -177,7 +178,7 @@ WEB_DIST = _find_web_dist()
 app = FastAPI(
     title="voicetest",
     description="Voice agent test harness API",
-    version="0.1.0",
+    version=pkg_version("voicetest"),
 )
 
 # Add CORS middleware to allow cross-origin requests
@@ -1478,14 +1479,17 @@ async def _execute_run(
             last_transcript: list[Message] = []
 
             try:
-                result = await get_test_execution_service().run_test(
-                    graph,
-                    test_case,
-                    options=options,
-                    metrics_config=metrics_config,
-                    on_turn=await make_on_turn(result_id, last_transcript),
-                    on_token=make_on_token(result_id) if options.streaming else None,
-                    on_error=make_on_error(result_id),
+                result = await asyncio.wait_for(
+                    get_test_execution_service().run_test(
+                        graph,
+                        test_case,
+                        options=options,
+                        metrics_config=metrics_config,
+                        on_turn=await make_on_turn(result_id, last_transcript),
+                        on_token=make_on_token(result_id) if options.streaming else None,
+                        on_error=make_on_error(result_id),
+                    ),
+                    timeout=options.timeout_seconds,
                 )
                 run_svc.complete_result(result_id, result)
                 await _broadcast_run_update(
@@ -1509,6 +1513,22 @@ async def _execute_run(
                     {
                         "type": "test_cancelled",
                         "result_id": result_id,
+                    },
+                )
+            except TimeoutError:
+                timeout_result = TestResult(
+                    test_name=test_case.name,
+                    status="error",
+                    transcript=last_transcript,
+                    error_message=f"Test timed out after {options.timeout_seconds}s",
+                )
+                run_svc.complete_result(result_id, timeout_result)
+                await _broadcast_run_update(
+                    run_id,
+                    {
+                        "type": "test_error",
+                        "result_id": result_id,
+                        "error": f"Test timed out after {options.timeout_seconds}s",
                     },
                 )
             except Exception as e:
