@@ -22,7 +22,7 @@ from voicetest.retry import with_retry
 OnTokenCallback = Callable[[str], Awaitable[None] | None]
 
 
-def _create_lm(model: str, cache_salt: str | None = None) -> dspy.LM:
+def _create_lm(model: str, cache_salt: str | None = None, no_cache: bool = False) -> dspy.LM:
     """Create an LM instance for the given model string.
 
     Handles custom providers like claudecode/ prefix.
@@ -39,6 +39,8 @@ def _create_lm(model: str, cache_salt: str | None = None) -> dspy.LM:
     extra: dict = {}
     if cache_salt:
         extra["metadata"] = {"_cache_salt": cache_salt}
+    if no_cache:
+        extra["cache"] = False
     return dspy.LM(model, **extra)
 
 
@@ -57,6 +59,7 @@ async def call_llm(
     on_error: OnErrorCallback | None = None,
     *,
     cache_salt: str | None = None,
+    no_cache: bool = False,
     **kwargs,
 ) -> dspy.Prediction:
     if on_token:
@@ -69,6 +72,7 @@ async def call_llm(
             stream_field,
             on_error,
             cache_salt=cache_salt,
+            no_cache=no_cache,
             **kwargs,
         )
     else:
@@ -77,6 +81,7 @@ async def call_llm(
             signature_class,
             on_error,
             cache_salt=cache_salt,
+            no_cache=no_cache,
             **kwargs,
         )
 
@@ -87,10 +92,11 @@ async def _call_llm_sync(
     on_error: OnErrorCallback | None = None,
     *,
     cache_salt: str | None = None,
+    no_cache: bool = False,
     **kwargs,
 ) -> dspy.Prediction:
     """Non-streaming LLM call with BAMLAdapter for better structured output."""
-    lm = _create_lm(model, cache_salt=cache_salt)
+    lm = _create_lm(model, cache_salt=cache_salt, no_cache=no_cache)
     adapter = BAMLAdapter()
 
     def run_predictor():
@@ -113,12 +119,13 @@ async def _call_llm_streaming(
     on_error: OnErrorCallback | None = None,
     *,
     cache_salt: str | None = None,
+    no_cache: bool = False,
     **kwargs,
 ) -> dspy.Prediction:
     """Streaming LLM call with token callbacks."""
 
     async def stream():
-        lm = _create_lm(model, cache_salt=cache_salt)
+        lm = _create_lm(model, cache_salt=cache_salt, no_cache=no_cache)
         predictor = dspy.Predict(signature_class)
         stream_listeners = [StreamListener(signature_field_name=stream_field)]
 

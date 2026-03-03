@@ -62,6 +62,7 @@ class ConversationEngine:
         self._dynamic_variables = dynamic_variables or {}
 
         self._split_transitions = self.options.split_transitions if self.options else False
+        self._no_cache = self.options.no_cache if self.options else False
         self._module = ConversationModule(graph, use_split_transitions=self._split_transitions)
 
         # State
@@ -180,6 +181,7 @@ class ConversationEngine:
             stream_field="response" if on_token else None,
             on_error=on_error,
             cache_salt=cache_salt,
+            no_cache=self._no_cache,
             **response_kwargs,
         )
 
@@ -193,6 +195,7 @@ class ConversationEngine:
                 self.model,
                 self._module._transition_signature,
                 on_error=on_error,
+                no_cache=self._no_cache,
                 conversation_history=ctx.conversation_history,
                 agent_response=result.response,
                 available_transitions=ctx.available_transitions,

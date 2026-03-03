@@ -215,3 +215,89 @@ class TestConversationEngineCacheSalt:
                 all_salts.append(salts[0])  # first call is response
 
         assert all_salts[0] != all_salts[1]
+
+
+class TestCreateLmNoCache:
+    """_create_lm with no_cache=True disables DSPy caching."""
+
+    def test_no_cache_false_by_default(self):
+        lm = _create_lm("openai/gpt-4o-mini")
+        assert lm.cache is True
+
+    def test_no_cache_true_sets_cache_false(self):
+        lm = _create_lm("openai/gpt-4o-mini", no_cache=True)
+        assert lm.cache is False
+
+    def test_no_cache_with_salt(self):
+        """no_cache and cache_salt can coexist."""
+        lm = _create_lm("openai/gpt-4o-mini", cache_salt="abc", no_cache=True)
+        assert lm.cache is False
+        assert lm.kwargs["metadata"] == {"_cache_salt": "abc"}
+
+
+class TestConversationEngineNoCache:
+    """ConversationEngine passes no_cache from RunOptions to call_llm."""
+
+    @pytest.mark.asyncio
+    async def test_no_cache_option_passed_to_call_llm(self):
+        """RunOptions(no_cache=True) should pass no_cache=True to call_llm."""
+        from unittest.mock import patch
+
+        from voicetest.engine.conversation import ConversationEngine
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.test_case import RunOptions
+
+        graph = AgentGraph(
+            nodes={
+                "a": AgentNode(id="a", state_prompt="Greet."),
+            },
+            entry_node_id="a",
+            source_type="custom",
+            source_metadata={"general_prompt": "Be helpful."},
+        )
+
+        options = RunOptions(no_cache=True)
+        engine = ConversationEngine(graph=graph, model="openai/gpt-4o-mini", options=options)
+
+        call_args = []
+
+        async def mock_call_llm(model, sig, *, cache_salt=None, no_cache=False, **kwargs):
+            call_args.append({"no_cache": no_cache})
+            return dspy.Prediction(response="Hello!", transition_to="none")
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.process_turn("hi")
+
+        assert call_args[0]["no_cache"] is True
+
+    @pytest.mark.asyncio
+    async def test_no_cache_default_false(self):
+        """Default RunOptions should pass no_cache=False to call_llm."""
+        from unittest.mock import patch
+
+        from voicetest.engine.conversation import ConversationEngine
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
+
+        graph = AgentGraph(
+            nodes={
+                "a": AgentNode(id="a", state_prompt="Greet."),
+            },
+            entry_node_id="a",
+            source_type="custom",
+            source_metadata={"general_prompt": "Be helpful."},
+        )
+
+        engine = ConversationEngine(graph=graph, model="openai/gpt-4o-mini")
+
+        call_args = []
+
+        async def mock_call_llm(model, sig, *, cache_salt=None, no_cache=False, **kwargs):
+            call_args.append({"no_cache": no_cache})
+            return dspy.Prediction(response="Hello!", transition_to="none")
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.process_turn("hi")
+
+        assert call_args[0]["no_cache"] is False

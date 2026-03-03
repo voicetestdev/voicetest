@@ -118,6 +118,7 @@ export interface RunOptions {
   agent_model: string;
   simulator_model: string;
   judge_model: string;
+  no_cache?: boolean;
 }
 
 export interface Settings {

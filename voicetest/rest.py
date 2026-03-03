@@ -547,6 +547,7 @@ def _build_run_options(settings: Settings, request_options: RunOptions | None) -
         audio_eval=(
             (request_options.audio_eval if request_options else False) or settings.run.audio_eval
         ),
+        no_cache=(request_options.no_cache if request_options else False),
     )
 
 

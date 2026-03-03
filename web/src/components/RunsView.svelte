@@ -421,12 +421,12 @@
     rerunnableResults.find((r) => r.id === selectedResultId) ?? null
   );
 
-  async function rerunTests(testIds: string[]) {
+  async function rerunTests(testIds: string[], noCache = false) {
     const agentId = $currentAgentId;
     if (!agentId || testIds.length === 0) return;
     rerunOpen = false;
     currentView.set("runs");
-    await startRun(agentId, testIds);
+    await startRun(agentId, testIds, noCache ? { no_cache: true } : undefined);
   }
 
   function rerunAll() {
@@ -545,6 +545,28 @@
                     <button onclick={rerunSelected}>
                       Re-run {selectedRerunResult.test_name.length > 30
                         ? selectedRerunResult.test_name.slice(0, 30) + "..."
+                        : selectedRerunResult.test_name}
+                    </button>
+                  </li>
+                {/if}
+                <li class="menu-separator"></li>
+                <li>
+                  <button onclick={() => rerunTests(rerunnableResults.map(r => r.test_case_id!), true)}>
+                    Re-run all without cache ({rerunnableResults.length})
+                  </button>
+                </li>
+                {#if failedResults.length > 0}
+                  <li>
+                    <button onclick={() => rerunTests(failedResults.map(r => r.test_case_id!), true)}>
+                      Re-run failed without cache ({failedResults.length})
+                    </button>
+                  </li>
+                {/if}
+                {#if selectedRerunResult}
+                  <li>
+                    <button onclick={() => rerunTests([selectedRerunResult.test_case_id!], true)}>
+                      Re-run without cache: {selectedRerunResult.test_name.length > 20
+                        ? selectedRerunResult.test_name.slice(0, 20) + "..."
                         : selectedRerunResult.test_name}
                     </button>
                   </li>
@@ -1278,6 +1300,12 @@
 
   .rerun-menu li button:hover {
     background: var(--bg-hover) !important;
+  }
+
+  .rerun-menu .menu-separator {
+    height: 1px;
+    margin: 0.25rem 0;
+    background: var(--border-color);
   }
 
   .delete-run-btn {

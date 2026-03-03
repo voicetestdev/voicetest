@@ -3,6 +3,7 @@ import type {
   AgentGraph,
   AgentRecord,
   RetryInfo,
+  RunOptions,
   RunRecord,
   RunResultRecord,
   RunWithResults,
@@ -335,12 +336,12 @@ export async function loadRun(runId: string): Promise<void> {
   }
 }
 
-export async function startRun(agentId: string, testIds?: string[]): Promise<string> {
+export async function startRun(agentId: string, testIds?: string[], options?: Partial<RunOptions>): Promise<string> {
   disconnectRunWebSocket();
   isRunning.set(true);
   currentRunWithResults.set(null);
 
-  const response = await api.startRun(agentId, testIds);
+  const response = await api.startRun(agentId, testIds, options);
   currentRunId.set(response.id);
 
   // Add new run to history immediately so it appears in sidebar
