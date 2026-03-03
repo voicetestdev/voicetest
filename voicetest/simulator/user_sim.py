@@ -153,9 +153,12 @@ class UserSimulator:
             turn_number=turn_number,
         )
 
+        # Enforce: user always continues on turn 1 regardless of model output
+        should_continue = result.should_continue if turn_number > 1 else True
+
         return SimulatorResponse(
-            message=result.message if result.should_continue else "",
-            should_end=not result.should_continue,
+            message=result.message if should_continue else "",
+            should_end=not should_continue,
             reasoning=result.reasoning,
         )
 

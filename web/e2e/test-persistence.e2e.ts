@@ -43,8 +43,11 @@ test.describe("Test Case Persistence", () => {
       ],
     });
 
-    // Fill in agent name and config
+    // Fill in agent name
     await page.locator("input[placeholder='Agent name']").fill(agent1Name);
+
+    // Expand the JSON editor (hidden behind toggle by default)
+    await page.locator("button:has-text('Paste or view JSON')").click();
     await page.locator("textarea").fill(agent1Config);
 
     // Click the submit button (not the nav button)
@@ -61,7 +64,8 @@ test.describe("Test Case Persistence", () => {
 
     // Import test cases for agent 1
     await page.click("main button:has-text('Import')");
-    await expect(page.locator(".modal")).toBeVisible();
+    const importModal = page.locator("dialog[open]");
+    await expect(importModal).toBeVisible();
 
     const testCases = JSON.stringify([
       {
@@ -78,8 +82,10 @@ test.describe("Test Case Persistence", () => {
       },
     ]);
 
-    await page.locator(".modal textarea").fill(testCases);
-    await page.click(".modal-footer button:has-text('Import')");
+    // Expand the JSON editor (hidden behind toggle by default)
+    await importModal.locator("button:has-text('Paste JSON')").click();
+    await importModal.locator("textarea").fill(testCases);
+    await importModal.locator(".modal-footer button:has-text('Import')").click();
 
     // Wait for tests to appear (async import needs API roundtrips)
     await expect(page.locator("table")).toBeVisible({ timeout: 10000 });
@@ -107,8 +113,11 @@ test.describe("Test Case Persistence", () => {
       ],
     });
 
-    // Fill in agent name and config
+    // Fill in agent name
     await page.locator("input[placeholder='Agent name']").fill(agent2Name);
+
+    // Expand the JSON editor (hidden behind toggle by default)
+    await page.locator("button:has-text('Paste or view JSON')").click();
     await page.locator("textarea").fill(agent2Config);
 
     // Click the submit button (not the nav button)

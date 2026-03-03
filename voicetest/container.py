@@ -126,6 +126,7 @@ def create_container() -> punq.Container:
 
     # Services — deferred imports to avoid circular dependency with services/__init__.py
     from voicetest.services.agents import AgentService  # noqa: PLC0415
+    from voicetest.services.decompose import DecomposeService  # noqa: PLC0415
     from voicetest.services.diagnosis import DiagnosisService  # noqa: PLC0415
     from voicetest.services.discovery import DiscoveryService  # noqa: PLC0415
     from voicetest.services.evaluation import EvaluationService  # noqa: PLC0415
@@ -137,6 +138,7 @@ def create_container() -> punq.Container:
     from voicetest.services.testing.execution import TestExecutionService  # noqa: PLC0415
 
     container.register(DiscoveryService)
+    container.register(DecomposeService)
     container.register(AgentService)
     container.register(TestExecutionService)
     container.register(TestCaseService)

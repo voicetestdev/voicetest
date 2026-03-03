@@ -26,6 +26,8 @@ Or with pip:
 pip install voicetest
 ```
 
+![Web UI Demo (light)](docs/demos/web-demo-light.gif)
+
 ## Quick Demo
 
 Try voicetest with a sample healthcare receptionist agent and tests:
@@ -46,10 +48,6 @@ voicetest demo --serve
 The demo includes a healthcare receptionist agent with 8 test cases covering appointment scheduling, identity verification, and more.
 
 ![CLI Demo](docs/demos/cli-demo.gif)
-
-![Web UI Demo (light)](docs/demos/web-demo-light.gif)
-
-![DRY Analysis Demo (light)](docs/demos/dry-demo-light.gif)
 
 ## Quick Start
 
@@ -427,6 +425,8 @@ Click **Analyze DRY** to scan all prompts for repeated or near-identical text:
 - **Exact matches**: Sentences that appear verbatim in 2+ nodes. Click "Apply" to extract into a snippet and replace all occurrences with `{%ref%}`.
 - **Fuzzy matches**: Sentences that are similar (above 80% match). Review and decide whether to unify them.
 - **Apply All**: Applies all exact-match suggestions at once.
+
+![DRY Analysis Demo (light)](docs/demos/dry-demo-light.gif)
 
 ### Export Modes
 

@@ -114,6 +114,70 @@ class TestRunWebSocket:
             assert msg["test_case_id"] == test_id, "test_case_id should match the test ID"
 
 
+class TestTimeoutEnforcement:
+    """Tests for timeout_seconds enforcement on test execution."""
+
+    @pytest.fixture
+    def agent_with_test(self, db_client, sample_retell_config):
+        """Create an agent with a test case."""
+        agent_response = db_client.post(
+            "/api/agents",
+            json={"name": "Timeout Test Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_response.json()["id"]
+
+        test_response = db_client.post(
+            f"/api/agents/{agent_id}/tests",
+            json={
+                "name": "Timeout Test",
+                "user_prompt": "Say hello",
+                "metrics": [],
+            },
+        )
+        test_id = test_response.json()["id"]
+
+        return {"agent_id": agent_id, "test_id": test_id}
+
+    def test_timeout_reports_error_when_test_exceeds_limit(self, db_client, agent_with_test):
+        """When a test exceeds timeout_seconds, it should be reported as status=error."""
+        import asyncio
+        import time
+        from unittest.mock import patch
+
+        agent_id = agent_with_test["agent_id"]
+        test_id = agent_with_test["test_id"]
+
+        broadcast_calls = []
+
+        async def mock_broadcast(run_id, data):
+            broadcast_calls.append(data)
+
+        async def slow_run_test(*args, **kwargs):
+            await asyncio.sleep(300)
+
+        with (
+            patch("voicetest.rest._broadcast_run_update", mock_broadcast),
+            patch(
+                "voicetest.services.testing.execution.TestExecutionService.run_test",
+                side_effect=slow_run_test,
+            ),
+        ):
+            response = db_client.post(
+                f"/api/agents/{agent_id}/runs",
+                json={
+                    "test_ids": [test_id],
+                    "options": {"timeout_seconds": 0.1},
+                },
+            )
+            assert response.status_code == 200
+
+            time.sleep(1.0)
+
+        error_msgs = [c for c in broadcast_calls if c.get("type") == "test_error"]
+        assert len(error_msgs) >= 1, "Should have a test_error message for timeout"
+        assert "timed out" in error_msgs[0]["error"].lower()
+
+
 class TestTranscriptUpdate:
     """Tests for transcript streaming functionality."""
 

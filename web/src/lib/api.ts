@@ -3,6 +3,7 @@ import type {
   AgentRecord,
   ApplyFixResponse,
   CallRecord,
+  DecompositionResult,
   DiagnoseResponse,
   Diagnosis,
   DryAnalysis,
@@ -402,6 +403,12 @@ export const api = {
 
   saveFix: (agentId: string, changes: PromptChange[]) =>
     post<AgentGraph>(`/agents/${agentId}/save-fix`, { changes }),
+
+  decomposeAgent: (agentId: string, model?: string, numAgents?: number) =>
+    post<DecompositionResult>(`/agents/${agentId}/decompose`, {
+      model: model || undefined,
+      num_agents: numAgents ?? 0,
+    }),
 
   getWebSocketUrl: (path: string): string => {
     const baseUrl = globalConfig.baseUrl || "/api";

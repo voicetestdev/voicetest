@@ -37,8 +37,11 @@ class Agent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
-    test_cases: Mapped[list["TestCase"]] = relationship(back_populates="agent")
-    runs: Mapped[list["Run"]] = relationship(back_populates="agent")
+    test_cases: Mapped[list["TestCase"]] = relationship(
+        back_populates="agent", cascade="all, delete-orphan"
+    )
+    runs: Mapped[list["Run"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
+    calls: Mapped[list["Call"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
 
     def to_dict(self) -> dict:
         """Convert model to dictionary for API responses."""
@@ -138,7 +141,7 @@ class Call(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    agent: Mapped["Agent"] = relationship()
+    agent: Mapped["Agent"] = relationship(back_populates="calls")
 
     def to_dict(self) -> dict:
         """Convert model to dictionary for API responses."""

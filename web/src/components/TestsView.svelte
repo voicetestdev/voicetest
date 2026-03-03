@@ -13,6 +13,7 @@
     refreshAgent,
   } from "../lib/stores";
   import type { TestCase, TestCaseRecord } from "../lib/types";
+  import Modal from "./Modal.svelte";
 
   let newTest = $state<Partial<TestCase>>({
     name: "",
@@ -45,6 +46,7 @@
   let exportError = $state("");
 
   // Import modal tab state
+  let showJsonEditor = $state(false);
   let importTab = $state<"import" | "link">("import");
   let linkPath = $state("");
   let linkError = $state("");
@@ -290,6 +292,7 @@
     jsonImport = "";
     importError = "";
     importTab = "import";
+    showJsonEditor = false;
     linkPath = "";
     linkError = "";
     showImportModal = true;
@@ -656,15 +659,7 @@
   {/if}
 </div>
 
-{#if showNewTestModal}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus a11y_click_events_have_key_events -->
-  <div class="modal-backdrop" role="dialog" aria-modal="true" onclick={closeNewTestModal}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <div class="modal" role="document" onclick={(e) => e.stopPropagation()}>
-      <div class="modal-header">
-        <h3>{editingId ? "Edit Test" : "New Test"}</h3>
-        <button class="close-btn" onclick={closeNewTestModal}>x</button>
-      </div>
+<Modal bind:open={showNewTestModal} title={editingId ? "Edit Test" : "New Test"} onclose={closeNewTestModal}>
       <div class="modal-body">
         <div class="form-group">
           <label for="test-name">Name</label>
@@ -722,7 +717,16 @@
               <ul class="tag-list">
                 {#each newTest.metrics as metric, i}
                   <li>
-                    <span>{metric}</span>
+                    <input
+                      type="text"
+                      value={metric}
+                      oninput={(e) => {
+                        if (newTest.metrics) {
+                          newTest.metrics[i] = e.currentTarget.value;
+                          newTest.metrics = [...newTest.metrics];
+                        }
+                      }}
+                    />
                     <button class="small danger" onclick={() => removeMetric(i)}>x</button>
                   </li>
                 {/each}
@@ -816,19 +820,9 @@
           {saving ? "Saving..." : editingId ? "Update Test" : "Create Test"}
         </button>
       </div>
-    </div>
-  </div>
-{/if}
+</Modal>
 
-{#if showImportModal}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus a11y_click_events_have_key_events -->
-  <div class="modal-backdrop" role="dialog" aria-modal="true" onclick={closeImportModal}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <div class="modal" role="document" onclick={(e) => e.stopPropagation()}>
-      <div class="modal-header">
-        <h3>Add Tests</h3>
-        <button class="close-btn" onclick={closeImportModal}>x</button>
-      </div>
+<Modal bind:open={showImportModal} title="Add Tests" onclose={closeImportModal}>
       <div class="modal-tabs">
         <button
           class="modal-tab"
@@ -854,14 +848,21 @@
                   onchange={handleFileUpload}
                 />
               </label>
-              <span class="file-hint">or paste JSON below</span>
+              {#if jsonImport}
+                <span class="file-status">File loaded, {jsonImport.length.toLocaleString()} chars</span>
+              {/if}
             </div>
-            <textarea
-              class="json-input"
-              bind:value={jsonImport}
-              placeholder="Paste test case JSON (single or array)..."
-              rows={10}
-            ></textarea>
+            <button class="link-toggle" onclick={() => showJsonEditor = !showJsonEditor}>
+              {showJsonEditor ? "▼" : "▶"} {jsonImport ? "Edit JSON" : "Paste JSON"}
+            </button>
+            {#if showJsonEditor}
+              <textarea
+                class="json-input"
+                bind:value={jsonImport}
+                placeholder="Paste test case JSON (single or array)..."
+                rows={10}
+              ></textarea>
+            {/if}
           </div>
           {#if importError}
             <p class="error-message">{importError}</p>
@@ -896,19 +897,9 @@
           </button>
         {/if}
       </div>
-    </div>
-  </div>
-{/if}
+</Modal>
 
-{#if showExportModal}
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_interactive_supports_focus a11y_click_events_have_key_events -->
-  <div class="modal-backdrop" role="dialog" aria-modal="true" onclick={closeExportModal}>
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <div class="modal" role="document" onclick={(e) => e.stopPropagation()}>
-      <div class="modal-header">
-        <h3>Export Tests</h3>
-        <button class="close-btn" onclick={closeExportModal}>x</button>
-      </div>
+<Modal bind:open={showExportModal} title="Export Tests" onclose={closeExportModal}>
       <div class="modal-body">
         <div class="form-group">
           <label for="export-format">Format</label>
@@ -937,9 +928,7 @@
           {exporting ? "Exporting..." : "Export"}
         </button>
       </div>
-    </div>
-  </div>
-{/if}
+</Modal>
 
 <style>
   .tests-view {
@@ -1161,73 +1150,9 @@
     font-size: var(--text-sm);
   }
 
-  /* Modal styles */
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-  }
-
   .modal {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
     width: 90%;
     max-width: 600px;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-4);
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
-  }
-
-  .modal-header h3 {
-    color: var(--text-primary);
-    font-size: var(--text-sm);
-  }
-
-  .close-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    font-size: 1.25rem;
-    cursor: pointer;
-    padding: 0.25rem 0.5rem;
-  }
-
-  .close-btn:hover {
-    color: var(--text-primary);
-    background: transparent;
-  }
-
-  .modal-body {
-    padding: var(--space-4);
-    overflow-y: auto;
-    flex: 1;
-  }
-
-  .modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    padding: var(--space-4);
-    border-top: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
   }
 
   .form-group {
@@ -1288,6 +1213,16 @@
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
     font-size: 0.85rem;
+  }
+
+  .tag-list li input[type="text"] {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: inherit;
+    padding: 0;
+    outline: none;
   }
 
   .tag-list.includes li {
@@ -1432,6 +1367,24 @@
   .file-hint {
     color: var(--text-muted);
     font-size: 0.85rem;
+  }
+
+  .link-toggle {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem 0;
+    font-size: 0.85rem;
+  }
+
+  .link-toggle:hover {
+    color: var(--text-primary);
+  }
+
+  .file-status {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
   }
 
   .import-fields {

@@ -41,7 +41,7 @@ dry: dry-demo-light.gif dry-demo-dark.gif
 # ---------------------------------------------------------------------------
 %.gif: %.webm
 	ffmpeg -y -i $< \
-		-vf "fps=10,scale=600:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" \
+		-vf "fps=10,scale=800:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" \
 		$@
 
 # ---------------------------------------------------------------------------
@@ -51,8 +51,8 @@ dry: dry-demo-light.gif dry-demo-dark.gif
 define RECORD
 $(1).webm:
 	@echo "── Recording $(2) ──"
-	@rm -f ~/.voicetest/data.duckdb ~/.voicetest/data.duckdb.wal
-	(cd ../.. && uv run voicetest demo --serve) &
+	@rm -f ../../.voicetest/data.duckdb ../../.voicetest/data.duckdb.wal
+	(cd ../.. && DSPY_CACHEDIR=dist/.dspy_cache uv run voicetest demo --serve) &
 	@sleep 5
 	cd ../../web && mise exec -- bunx playwright test --project=$(2) || true
 	@pkill -f "voicetest demo" || true
@@ -72,3 +72,4 @@ clean:
 	rm -f web-demo-light.gif web-demo-light.webm web-demo-dark.gif web-demo-dark.webm
 	rm -f dry-demo-light.gif dry-demo-light.webm dry-demo-dark.gif dry-demo-dark.webm
 	rm -rf test-results/
+	rm -rf ../../dist/.dspy_cache

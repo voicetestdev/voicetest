@@ -12,7 +12,6 @@
   import CallView from "./CallView.svelte";
   import ChatView from "./ChatView.svelte";
   import ExportModal from "./ExportModal.svelte";
-  import SnippetManager from "./SnippetManager.svelte";
   import MetadataEditor from "./MetadataEditor.svelte";
   import NodePromptModal from "./NodePromptModal.svelte";
   import TransitionModal from "./TransitionModal.svelte";
@@ -29,7 +28,7 @@
   let lastGraphId = $state<string | null>(null);
   let lastTheme = $state<string | null>(null);
   let renderCounter = 0;
-  let mermaidContainer: HTMLDivElement;
+  let mermaidContainer = $state<HTMLDivElement>();
   let tooltip = $state({ show: false, x: 0, y: 0, text: "", title: "", nodeId: "", sourceNodeId: "", targetNodeId: "" });
   let tooltipHideTimer: ReturnType<typeof setTimeout> | null = null;
   const TOOLTIP_HIDE_DELAY = 200;
@@ -44,19 +43,19 @@
   let editedName = $state("");
   let savingName = $state(false);
   let nameSaved = $state(false);
-  let nameInput: HTMLInputElement;
+  let nameInput = $state<HTMLInputElement>();
 
   let editingModel = $state(false);
   let editedModel = $state("");
   let savingModel = $state(false);
   let modelSaved = $state(false);
-  let modelInput: HTMLInputElement;
+  let modelInput = $state<HTMLInputElement>();
 
   let editingGeneralPrompt = $state(false);
   let editedGeneralPrompt = $state("");
   let savingGeneralPrompt = $state(false);
   let generalPromptSaved = $state(false);
-  let generalPromptTextarea: HTMLTextAreaElement;
+  let generalPromptTextarea = $state<HTMLTextAreaElement>();
 
   let refreshing = $state(false);
 
@@ -65,11 +64,9 @@
   let syncSuccess = $state(false);
   let syncError = $state("");
 
-  let snippets = $state<Record<string, string>>({});
-
   // Child component refs
-  let nodePromptModal: NodePromptModal;
-  let transitionModal: TransitionModal;
+  let nodePromptModal = $state<NodePromptModal>();
+  let transitionModal = $state<TransitionModal>();
 
   const platformDisplayNames: Record<string, string> = {
     retell: "Retell",
@@ -425,11 +422,11 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && transitionModal?.isOpen()) {
-      transitionModal.close();
+      transitionModal?.close();
       return;
     }
     if (e.key === "Escape" && nodePromptModal?.isOpen()) {
-      nodePromptModal.close();
+      nodePromptModal?.close();
       return;
     }
     if (e.key === "Escape" && showExportModal) {
@@ -615,10 +612,9 @@
           disabled={savingName}
         />
       {:else}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-        <h2 class="editable-name" onclick={startEditingName} title="Click to edit">
+        <button class="editable-name" onclick={startEditingName} title="Click to edit">
           {$currentAgent.name}
-        </h2>
+        </button>
       {/if}
       {#if savingName}
         <span class="save-indicator">Saving...</span>
@@ -628,48 +624,45 @@
     </div>
 
     <section class="agent-info">
-      <div class="info-row">
-        <span class="label">Source:</span>
-        <span class="tag">{$agentGraph.source_type}</span>
-      </div>
-      <div class="info-row">
-        <span class="label">LLM:</span>
-        <span class="model-value">
-          {#if editingModel}
-            <input
-              type="text"
-              class="model-input"
-              bind:value={editedModel}
-              bind:this={modelInput}
-              onblur={saveModel}
-              onkeydown={handleModelKeydown}
-              disabled={savingModel}
-              placeholder="e.g. openai/gpt-4o"
-            />
-          {:else}
-            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-            <span class="editable-model" onclick={startEditingModel} title="Click to edit">
-              {$agentGraph.default_model || "Not set"}
-            </span>
-          {/if}
-          {#if savingModel}
-            <span class="model-save-indicator">Saving...</span>
-          {:else if modelSaved}
-            <span class="model-save-indicator saved">Saved</span>
-          {/if}
+      <div class="info-summary">
+        <span class="info-item">
+          <span class="label">LLM:</span>
+          <span class="model-value">
+            {#if editingModel}
+              <input
+                type="text"
+                class="model-input"
+                bind:value={editedModel}
+                bind:this={modelInput}
+                onblur={saveModel}
+                onkeydown={handleModelKeydown}
+                disabled={savingModel}
+                placeholder="e.g. openai/gpt-4o"
+              />
+            {:else}
+              <button class="editable-model" onclick={startEditingModel} title="Click to edit">
+                {$agentGraph.default_model || "Not set"}
+              </button>
+            {/if}
+            {#if savingModel}
+              <span class="model-save-indicator">Saving...</span>
+            {:else if modelSaved}
+              <span class="model-save-indicator saved">Saved</span>
+            {/if}
+          </span>
+        </span>
+        <span class="info-item">
+          <span class="label">Entry:</span>
+          <span>{$agentGraph.entry_node_id}</span>
+        </span>
+        <span class="info-item">
+          <span class="label">Nodes:</span>
+          <span>{Object.keys($agentGraph.nodes).length}</span>
         </span>
       </div>
-      <div class="info-row">
-        <span class="label">Entry Node:</span>
-        <span>{$agentGraph.entry_node_id}</span>
-      </div>
-      <div class="info-row">
-        <span class="label">Nodes:</span>
-        <span>{Object.keys($agentGraph.nodes).length}</span>
-      </div>
       {#if $currentAgent.source_path}
-        <div class="info-row">
-          <span class="label">Linked File:</span>
+        <div class="linked-file-row">
+          <span class="label">Linked:</span>
           <span class="linked-file">
             <span class="mono">{$currentAgent.source_path}</span>
             <button
@@ -683,7 +676,38 @@
           </span>
         </div>
       {/if}
+      <div class="actions">
+        <ChatView />
+        <CallView />
+        <button
+          class="btn-primary"
+          onclick={() => (showExportModal = true)}
+        >
+          Export Agent...
+        </button>
+        {#if syncStatus?.can_sync}
+          <button
+            class="sync-btn"
+            onclick={syncToSource}
+            disabled={syncing}
+          >
+            {#if syncing}
+              Syncing...
+            {:else if syncSuccess}
+              Synced!
+            {:else}
+              Sync to {getPlatformDisplayName(syncStatus.platform || "")}
+            {/if}
+          </button>
+        {/if}
+      </div>
     </section>
+    {#if error}
+      <p class="error-message">{error}</p>
+    {/if}
+    {#if syncError}
+      <p class="error-message">{syncError}</p>
+    {/if}
 
     <section class="general-prompt">
       <div class="prompt-header">
@@ -704,61 +728,15 @@
           rows="10"
         ></textarea>
       {:else}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-        <pre
+        <button
           class="prompt-text clickable"
           onclick={startEditingGeneralPrompt}
           title="Click to edit"
-        >{$agentGraph.source_metadata?.general_prompt || "(No general prompt — click to add)"}</pre>
+        >{$agentGraph.source_metadata?.general_prompt || "(No general prompt — click to add)"}</button>
       {/if}
     </section>
 
-    {#if $currentAgentId}
-      <SnippetManager agentId={$currentAgentId} bind:snippets onerror={handleChildError} />
-    {/if}
-
-    <div class="actions">
-      <ChatView />
-      <CallView />
-      <button
-        class="btn-primary"
-        onclick={() => (showExportModal = true)}
-      >
-        Export Agent...
-      </button>
-      {#if syncStatus}
-        {#if syncStatus.can_sync}
-          <button
-            class="sync-btn"
-            onclick={syncToSource}
-            disabled={syncing}
-          >
-            {#if syncing}
-              Syncing...
-            {:else if syncSuccess}
-              Synced!
-            {:else}
-              Sync to {getPlatformDisplayName(syncStatus.platform || "")}
-            {/if}
-          </button>
-        {:else if syncStatus.platform}
-          <span class="sync-unavailable" title={syncStatus.reason || ""}>
-            Sync unavailable
-            {#if syncStatus.needs_configuration}
-              (configure {getPlatformDisplayName(syncStatus.platform)} first)
-            {/if}
-          </span>
-        {/if}
-      {/if}
-    </div>
-    {#if error}
-      <p class="error-message">{error}</p>
-    {/if}
-    {#if syncError}
-      <p class="error-message">{syncError}</p>
-    {/if}
-
-    <ExportModal bind:show={showExportModal} {snippets} onerror={handleChildError} />
+    <ExportModal bind:show={showExportModal} onerror={handleChildError} />
 
     <section class="graph-section">
       <div class="graph-header">
@@ -795,8 +773,8 @@
     {/if}
 
     {#if tooltip.show}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-      <div
+      <button
+        type="button"
         class="node-tooltip"
         class:clickable={tooltip.nodeId !== "" || (tooltip.sourceNodeId !== "" && tooltip.targetNodeId !== "")}
         style="left: {tooltip.x}px; top: {tooltip.y}px;"
@@ -822,7 +800,7 @@
           <div class="tooltip-title">{tooltip.title}</div>
         {/if}
         <div class="tooltip-text">{tooltip.text}</div>
-      </div>
+      </button>
     {/if}
 
     {#if $currentAgentId}
@@ -856,9 +834,6 @@
     flex: 1;
   }
 
-  h2 {
-    margin-top: 0;
-  }
 
   .name-row {
     display: flex;
@@ -873,6 +848,12 @@
     margin: -0.25rem -0.5rem;
     border-radius: 4px;
     transition: background 0.15s;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--text-primary);
+    text-align: left;
   }
 
   .editable-name:hover {
@@ -911,18 +892,10 @@
     font-style: italic;
   }
 
-  .tag {
-    background: var(--bg-tertiary);
-    padding: 0.2rem 0.5rem;
-    border-radius: var(--radius-sm);
-    font-size: var(--text-xs);
-    border: 1px solid var(--border-color);
-  }
-
   .agent-info {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: var(--space-2) var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
     margin-bottom: 1.5rem;
     padding: var(--space-4);
     background: var(--bg-secondary);
@@ -930,8 +903,25 @@
     border-radius: var(--radius-md);
   }
 
-  .info-row {
-    display: contents;
+  .info-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    align-items: center;
+  }
+
+  .info-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-sm);
+  }
+
+  .linked-file-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: var(--text-sm);
   }
 
   .label {
@@ -1015,6 +1005,12 @@
     margin: -0.5rem;
     border-radius: var(--radius-sm);
     transition: background 0.15s;
+    background: none;
+    border: none;
+    font-family: monospace;
+    text-align: left;
+    width: 100%;
+    color: var(--text-secondary);
   }
 
   .prompt-text.clickable:hover {
@@ -1055,6 +1051,8 @@
     font-family: monospace;
     font-size: 0.85rem;
     color: var(--text-secondary);
+    background: none;
+    border: none;
   }
 
   .editable-model:hover {
@@ -1167,7 +1165,7 @@
 
   .mermaid-container {
     overflow: hidden;
-    height: 100vh;
+    height: calc(100dvh - 11rem);
     min-height: 400px;
     cursor: grab;
     user-select: none;
@@ -1213,6 +1211,9 @@
     white-space: pre-wrap;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 100;
+    text-align: left;
+    font-family: inherit;
+    color: inherit;
   }
 
   .tooltip-title {
@@ -1233,199 +1234,6 @@
 
   .node-tooltip.clickable:hover {
     border-color: var(--accent-color, #6366f1);
-  }
-
-
-  .snippets-section {
-    margin-bottom: 1.5rem;
-    padding: var(--space-4);
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-  }
-
-  .snippets-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.75rem;
-  }
-
-  .snippets-actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .btn-sm {
-    padding: 0.3rem 0.6rem;
-    font-size: 0.8rem;
-  }
-
-  .btn-xs {
-    padding: 0.2rem 0.5rem;
-    font-size: 0.75rem;
-  }
-
-  .danger-text {
-    color: var(--danger-text);
-  }
-
-  .snippet-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .snippet-item {
-    padding: 0.5rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-  }
-
-  .snippet-name-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.25rem;
-  }
-
-  .snippet-ref {
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: var(--accent-color, #6366f1);
-  }
-
-  .snippet-btns {
-    display: flex;
-    gap: 0.25rem;
-  }
-
-  .snippet-preview {
-    margin: 0;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    max-height: 80px;
-    overflow-y: auto;
-  }
-
-  .snippet-textarea {
-    width: 100%;
-    padding: 0.4rem;
-    font-family: monospace;
-    font-size: 0.8rem;
-    line-height: 1.4;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border: 1px solid var(--accent-color, #6366f1);
-    border-radius: var(--radius-sm);
-    resize: vertical;
-    outline: none;
-  }
-
-  .snippet-edit-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.25rem;
-    margin-top: 0.25rem;
-  }
-
-  .snippet-add-form {
-    margin-top: 0.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .snippet-name-input {
-    padding: 0.3rem 0.5rem;
-    font-family: monospace;
-    font-size: 0.8rem;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    outline: none;
-  }
-
-  .snippet-empty {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    font-style: italic;
-    margin: 0;
-  }
-
-  .dry-results {
-    margin-top: 0.75rem;
-    padding: 0.75rem;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-  }
-
-  .dry-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-  }
-
-  .dry-header h4 {
-    margin: 0;
-    font-size: 0.9rem;
-    color: var(--text-primary);
-  }
-
-  .dry-section h5 {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    margin: 0.5rem 0 0.25rem;
-  }
-
-  .dry-match {
-    padding: 0.5rem;
-    margin-bottom: 0.5rem;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    background: var(--bg-secondary);
-  }
-
-  .dry-text {
-    margin: 0;
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    max-height: 80px;
-    overflow-y: auto;
-  }
-
-  .dry-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 0.25rem;
-  }
-
-  .dry-locations {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-  }
-
-  .dry-similarity {
-    font-size: 0.75rem;
-    color: var(--accent-color, #6366f1);
-    font-weight: 500;
-    margin-bottom: 0.25rem;
-  }
-
-  .dry-empty {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    font-style: italic;
-    margin: 0;
   }
 
   .danger-zone {
@@ -1450,289 +1258,5 @@
     border-color: var(--danger-border);
   }
 
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-  }
-
-  .modal {
-    background: var(--bg-secondary);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
-    min-width: 400px;
-    max-width: 550px;
-    max-height: 80vh;
-    overflow: hidden;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--space-4);
-    border-bottom: 1px solid var(--border-color);
-    background: var(--bg-tertiary);
-  }
-
-  .modal-header h3 {
-    margin: 0;
-    color: var(--text-primary);
-    font-size: var(--text-sm);
-  }
-
-  .tabs {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .tab {
-    flex: 1;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
-    padding: var(--space-3) var(--space-4);
-    margin-bottom: -1px;
-    cursor: pointer;
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-    transition: color 80ms ease-out, border-color 80ms ease-out;
-  }
-
-  .tab:hover {
-    color: var(--text-primary);
-    background: transparent;
-  }
-
-  .tab.active {
-    color: var(--text-primary);
-    font-weight: 600;
-    border-bottom-color: var(--tab-highlight);
-    background: transparent;
-  }
-
-  .close-btn {
-    background: transparent;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: var(--text-secondary);
-    padding: 0;
-    line-height: 1;
-  }
-
-  .close-btn:hover {
-    color: var(--text-primary);
-    background: transparent;
-  }
-
-  .modal-body {
-    padding: var(--space-4);
-    overflow-y: auto;
-    max-height: calc(80vh - 100px);
-  }
-
-  .modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: var(--space-3);
-  }
-
-  .node-prompt-modal {
-    min-width: 500px;
-    max-width: 700px;
-  }
-
-  .node-prompt-modal .prompt-textarea {
-    min-height: 250px;
-  }
-
-  .tab-panels {
-    display: grid;
-  }
-
-  .tab-panel {
-    grid-area: 1 / 1;
-    visibility: hidden;
-  }
-
-  .tab-panel.active {
-    visibility: visible;
-  }
-
-  .export-options {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .export-option {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto;
-    gap: 0.25rem 1rem;
-    padding: var(--space-3);
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    text-align: left;
-    cursor: pointer;
-    transition: background 80ms ease-out, border-color 80ms ease-out;
-  }
-
-  .export-option:hover {
-    background: var(--bg-hover);
-    border-color: var(--text-muted);
-  }
-
-  .export-option:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .export-name {
-    font-weight: 600;
-    color: var(--text-primary);
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .export-desc {
-    color: var(--text-secondary);
-    font-size: 0.85rem;
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .export-ext {
-    color: var(--text-muted);
-    font-family: monospace;
-    font-size: 0.8rem;
-    grid-column: 2;
-    grid-row: 1 / 3;
-    align-self: center;
-  }
-
-  .platform-export-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .platform-export-row {
-    margin-bottom: 0;
-  }
-
-  .platform-setup,
-  .platform-configured {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .platform-label {
-    font-weight: 500;
-    min-width: 60px;
-  }
-
-  .api-key-input-small {
-    flex: 1;
-    min-width: 120px;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.85rem;
-    font-family: monospace;
-  }
-
-  .connected-badge-small {
-    background: #166534;
-    color: white;
-    padding: 0.2rem 0.5rem;
-    border-radius: 9999px;
-    font-size: 0.7rem;
-    font-weight: 500;
-  }
-
-  .platform-action-btn {
-    margin-left: auto;
-    min-width: 140px;
-    text-align: center;
-  }
-
-  .modal-error {
-    color: #f87171;
-    margin: 1rem 0 0 0;
-    font-size: 0.85rem;
-  }
-
-  .export-success {
-    text-align: center;
-    padding: 1rem;
-  }
-
-  .success-icon {
-    width: 48px;
-    height: 48px;
-    background: #166534;
-    color: white;
-    border-radius: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.5rem;
-    margin-bottom: 1rem;
-  }
-
-  .export-success p {
-    margin: 0 0 0.5rem 0;
-  }
-
-  .success-details {
-    background: var(--bg-hover);
-    padding: 0.75rem;
-    border-radius: 6px;
-    margin-bottom: 1rem;
-  }
-
-  .success-details .mono {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  @media (max-width: 768px) {
-    .modal {
-      min-width: unset;
-      max-width: unset;
-      width: calc(100% - 2rem);
-      margin: 1rem;
-    }
-
-    .export-option {
-      padding: 0.75rem;
-    }
-
-    .platform-setup,
-    .platform-configured {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
-    .platform-action-btn {
-      margin-left: 0;
-      width: 100%;
-    }
-  }
 
 </style>

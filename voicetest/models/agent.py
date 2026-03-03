@@ -33,6 +33,15 @@ class Transition(BaseModel):
     description: str | None = None
 
 
+class TransitionOption(BaseModel):
+    """Structured transition option for LLM signature input."""
+
+    target: str
+    condition: str
+    condition_type: Literal["llm_prompt", "equation", "tool_call", "always"]
+    description: str | None = None
+
+
 class ToolDefinition(BaseModel):
     """Definition of a tool/function available to the agent."""
 

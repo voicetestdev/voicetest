@@ -98,14 +98,14 @@ test.describe("Settings Reactivity", () => {
 });
 
 test.describe("Agent Config Reactivity", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+  test.beforeEach(async ({ page, baseURL }) => {
+    // Ensure a valid agent exists by calling the idempotent demo endpoint
+    const demoRes = await fetch(`${baseURL}/api/demo`, { method: "POST" });
+    const demo = await demoRes.json();
 
-    const demoButton = page.locator("button.demo-button");
-    if (await demoButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await demoButton.click();
-      await expect(page.locator(".agent-list")).toBeVisible();
-    }
+    // Navigate directly to the demo agent's config view
+    await page.goto(`/#/agent/${demo.agent_id}/config`);
+    await expect(page.locator(".editable-name")).toBeVisible({ timeout: 5000 });
   });
 
   test("agent name edit reflects changes immediately", async ({ page }) => {
@@ -140,11 +140,7 @@ test.describe("Agent Config Reactivity", () => {
   });
 
   test("agent LLM edit updates correctly", async ({ page }) => {
-    // Select the Demo Healthcare Agent explicitly to ensure consistency
-    await page.locator(".agent-list button", { hasText: "Demo Healthcare Agent" }).click();
-
-    // Wait for the agent to load
-    await expect(page.locator("h2")).toContainText("Demo Healthcare Agent");
+    // beforeEach already selects the first agent
     await expect(page.locator(".agent-info")).toBeVisible();
 
     // Find and click the LLM field to edit

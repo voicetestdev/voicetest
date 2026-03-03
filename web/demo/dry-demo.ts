@@ -2,6 +2,7 @@
  * Playwright script to record DRY analysis demo.
  *
  * Shows the Analyze DRY → Apply All workflow in SnippetManager.
+ * Prerequisites: globalSetup seeds showcase agents and configures groq.
  *
  * Run with:
  *   # Terminal 1: Start server
@@ -15,42 +16,51 @@
  */
 
 import { test } from "@playwright/test";
-import dryAgent from "./dry-agent.json" with { type: "json" };
+import { click, installCursor, smoothScroll } from "./cursor";
 
 test("record DRY analysis demo", async ({ page }) => {
-  // Create the demo agent via API
-  const response = await page.request.post("/api/agents", {
-    data: {
-      name: "Meridian Claims Assistant",
-      config: dryAgent,
-      source: "retell-llm",
-    },
-  });
+  await installCursor(page);
+  // Find the Meridian Insurance agent (created by globalSetup)
+  const agents = await (await page.request.get("/api/agents")).json();
+  const meridian = agents.find(
+    (a: { name: string }) => a.name === "Meridian Insurance",
+  );
+  if (!meridian) throw new Error("Meridian Insurance agent not found — did globalSetup run?");
 
-  if (!response.ok()) {
-    throw new Error(`Failed to create agent: ${response.status()}`);
-  }
-
-  const agent = await response.json();
-
-  // Navigate directly to the created agent's config view
-  await page.goto(`/#/agent/${agent.id}/config`);
+  // Start on the Config page so the viewer sees the agent context
+  await page.goto(`/#/agent/${meridian.id}/config`);
   await page.waitForSelector("section.general-prompt", { timeout: 10000 });
   await page.waitForTimeout(2000);
 
+  // Click the Optimize tab
+  await click(page.locator('button:has-text("Optimize")'));
+  await page.waitForSelector(".optimize-view", { timeout: 10000 });
+  await page.waitForTimeout(1500);
+
   // Scroll to the Snippets section
   const snippetsSection = page.locator("section.snippets-section");
-  await snippetsSection.scrollIntoViewIfNeeded();
+  await smoothScroll(snippetsSection);
   await page.waitForTimeout(1000);
 
   // Click "Analyze DRY" button
-  await page.click('button:has-text("Analyze DRY")');
+  await click(page.locator('button:has-text("Analyze DRY")'));
 
-  // Wait for DRY analysis results to render
-  await page.waitForSelector("div.dry-results", { timeout: 30000 });
+  // Wait for DRY analysis results to render, then scroll to show them
+  const dryResults = page.locator("div.dry-results");
+  await dryResults.waitFor({ timeout: 30000 });
+  await smoothScroll(dryResults);
   await page.waitForTimeout(3000);
 
   // Click "Apply All (N)" button
-  await page.click('div.dry-header button:has-text("Apply All")');
+  await click(page.locator('div.dry-header button:has-text("Apply All")'));
+  await page.waitForTimeout(1500);
+
+  // Scroll down to show the newly applied snippets
+  const snippetsList = page.locator("section.snippets-section .snippet-item, section.snippets-section table");
+  if ((await snippetsList.count()) > 0) {
+    await smoothScroll(snippetsList.last());
+  } else {
+    await smoothScroll(snippetsSection);
+  }
   await page.waitForTimeout(3000);
 });

@@ -30,6 +30,7 @@ from voicetest.models.test_case import TestCase
 from voicetest.retry import RetryError
 from voicetest.runner import TestRunContext
 from voicetest.services import get_agent_service
+from voicetest.services import get_decompose_service
 from voicetest.services import get_diagnosis_service
 from voicetest.services import get_discovery_service
 from voicetest.services import get_evaluation_service
@@ -123,6 +124,8 @@ def main(ctx, json_mode):
 @click.option("--all", "run_all", is_flag=True, help="Run all tests")
 @click.option("--test", "test_names", multiple=True, help="Run specific test(s) by name")
 @click.option("--max-turns", type=int, default=None, help="Maximum conversation turns")
+@click.option("--save-run", is_flag=True, help="Save run to database (requires --agent-id)")
+@click.option("--agent-id", default=None, help="Agent ID in database (for --save-run)")
 @click.pass_context
 def run(
     ctx,
@@ -135,8 +138,12 @@ def run(
     run_all: bool,
     test_names: tuple[str, ...],
     max_turns: int | None,
+    save_run: bool,
+    agent_id: str | None,
 ):
     """Run tests against an agent definition."""
+    if save_run and not agent_id:
+        raise click.UsageError("--save-run requires --agent-id")
     json_mode = ctx.obj.get("json", False)
     if interactive:
         _run_tui(agent, tests, source, verbose)
@@ -152,6 +159,8 @@ def run(
                 test_names,
                 max_turns,
                 json_mode=json_mode,
+                save_run=save_run,
+                agent_id=agent_id,
             )
         )
 
@@ -193,6 +202,8 @@ async def _run_cli(
     max_turns: int | None,
     *,
     json_mode: bool = False,
+    save_run: bool = False,
+    agent_id: str | None = None,
 ) -> None:
     """Run tests in CLI mode."""
     settings = load_settings()
@@ -237,6 +248,15 @@ async def _run_cli(
         )
 
     run_result = await run_ctx.run_all(on_error=on_error)
+
+    # Save to database if requested
+    if save_run and agent_id:
+        run_svc = get_run_service()
+        db_run = run_svc.create_run(agent_id)
+        for result in run_result.results:
+            run_svc.add_result(db_run["id"], "", result)
+        run_svc.complete(db_run["id"])
+        _echo(f"[dim]Run saved to database: {db_run['id']}[/dim]")
 
     # Display
     if json_mode:
@@ -1819,6 +1839,90 @@ async def _diagnose(
 
     if not auto_fix or not fix_attempts or not fix_attempts[-1].get("test_passed"):
         raise SystemExit(1)
+
+
+# ---------------------------------------------------------------------------
+# Decompose command
+# ---------------------------------------------------------------------------
+
+
+@main.command()
+@click.option(
+    "--agent",
+    "-a",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Agent definition file",
+)
+@click.option(
+    "--output",
+    "-o",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Output directory for sub-agent files",
+)
+@click.option(
+    "--num-agents",
+    "-n",
+    default=0,
+    type=int,
+    help="Number of sub-agents (0 = LLM decides)",
+)
+@click.option("--model", "-m", default=None, help="LLM model override")
+@click.pass_context
+def decompose(ctx, agent, output, num_agents, model):
+    """Decompose an agent into sub-agents with orchestrator manifest."""
+    json_mode = ctx.obj.get("json", False)
+    asyncio.run(
+        _decompose(
+            agent,
+            output,
+            num_agents,
+            model,
+            json_mode=json_mode,
+        )
+    )
+
+
+async def _decompose(
+    agent_path: Path,
+    output_dir: Path,
+    num_agents: int,
+    model_override: str | None,
+    *,
+    json_mode: bool = False,
+) -> None:
+    """Async implementation of decompose command."""
+    settings = load_settings()
+    settings.apply_env()
+
+    agent_svc = get_agent_service()
+    decompose_svc = get_decompose_service()
+
+    graph = await agent_svc.import_agent(agent_path)
+
+    judge_model = model_override or settings.models.judge or "groq/llama-3.1-8b-instant"
+
+    result = await decompose_svc.decompose(graph, judge_model, num_agents)
+
+    # Write output files
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for sub_agent_id, sub_graph in result.sub_graphs.items():
+        sub_path = output_dir / f"{sub_agent_id}.json"
+        sub_path.write_text(sub_graph.model_dump_json(indent=2))
+
+    manifest_path = output_dir / "manifest.json"
+    manifest_path.write_text(result.manifest.model_dump_json(indent=2))
+
+    if json_mode:
+        click.echo(result.model_dump_json(indent=2))
+    else:
+        console.print(f"[bold]Decomposed into {result.plan.num_sub_agents} sub-agents[/bold]")
+        for entry in result.manifest.sub_agents:
+            console.print(f"  {entry.name}: {entry.filename}")
+        console.print(f"\n[bold]Manifest:[/bold] {manifest_path}")
+        console.print(f"[bold]Rationale:[/bold] {result.plan.rationale}")
 
 
 # ---------------------------------------------------------------------------

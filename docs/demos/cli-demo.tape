@@ -16,7 +16,7 @@ Sleep 500ms
 
 Type "uv run voicetest demo"
 Enter
-Sleep 3s
+Sleep 4s
 
 # The shell should now be open with demo loaded
 # Type run command to execute tests

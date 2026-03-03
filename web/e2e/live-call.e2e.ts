@@ -122,7 +122,7 @@ async function selectAgent(page: import("@playwright/test").Page) {
   await agentBtn.click();
 
   // Wait for agent view to load
-  await expect(page.locator("text=Export Agent")).toBeVisible({ timeout: 10000 });
+  await expect(page.locator("button:has-text('Export Agent')")).toBeVisible({ timeout: 10000 });
 }
 
 // End any active call and disconnect cleanly.

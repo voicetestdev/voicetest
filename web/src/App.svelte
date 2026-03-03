@@ -18,6 +18,7 @@
   import RunsView from "./components/RunsView.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import ImportView from "./components/ImportView.svelte";
+  import OptimizeView from "./components/OptimizeView.svelte";
 
   let initialized = $state(false);
   let error = $state<string | null>(null);
@@ -60,7 +61,7 @@
     }
   });
 
-  async function switchView(view: "config" | "tests" | "metrics" | "runs") {
+  async function switchView(view: "config" | "tests" | "metrics" | "runs" | "optimize") {
     currentView.set(view);
     if (view === "runs") {
       const runs = get(runHistory);
@@ -77,8 +78,7 @@
     {mobileNavOpen ? "✕" : "☰"}
   </button>
 
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <nav class:open={mobileNavOpen} onclick={() => mobileNavOpen = false}>
+  <nav class:open={mobileNavOpen}>
     <a href="/" class="logo-link">
       <img src={theme === "dark" ? "/logo-dark.svg" : "/logo-light.svg"} alt="voicetest" class="logo" />
     </a>
@@ -92,7 +92,7 @@
             <button
               class="agent-btn"
               class:selected={isSelected}
-              onclick={() => selectAgent(agent.id, "config")}
+              onclick={() => { selectAgent(agent.id, "config"); mobileNavOpen = false; }}
             >
               <span class="agent-name">{agent.name}</span>
             </button>
@@ -105,13 +105,13 @@
       <button
         class="import-btn"
         class:active={view === "import"}
-        onclick={() => currentView.set("import")}
+        onclick={() => { currentView.set("import"); mobileNavOpen = false; }}
       >
         + Import Agent
       </button>
       <button
         class:active={view === "settings"}
-        onclick={() => currentView.set("settings")}
+        onclick={() => { currentView.set("settings"); mobileNavOpen = false; }}
       >
         Settings
       </button>
@@ -169,6 +169,11 @@
                 <span class="tab-count">{runs.length}</span>
               {/if}
             </button>
+            <button
+              class="tab-item"
+              class:active={view === "optimize"}
+              onclick={() => switchView("optimize")}
+            >Optimize</button>
           </div>
           <div class="view-content">
             {#if view === "config"}
@@ -179,6 +184,8 @@
               <MetricsView />
             {:else if view === "runs"}
               <RunsView />
+            {:else if view === "optimize"}
+              <OptimizeView />
             {/if}
           </div>
         {:else}
@@ -631,28 +638,24 @@
   }
 
   /* Modal utilities */
-  :global(.modal-backdrop) {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-  }
-
-  :global(.modal) {
+  :global(dialog.modal) {
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     max-height: 90vh;
     overflow: hidden;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-    display: flex;
     flex-direction: column;
+    padding: 0;
+    color: var(--text-primary);
+  }
+
+  :global(dialog.modal[open]) {
+    display: flex;
+  }
+
+  :global(dialog.modal::backdrop) {
+    background: rgba(0, 0, 0, 0.5);
   }
 
   :global(.modal-header) {

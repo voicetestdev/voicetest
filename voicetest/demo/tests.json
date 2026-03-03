@@ -9,8 +9,7 @@
     ],
     "dynamic_variables": {},
     "tool_mocks": [],
-    "type": "simulation",
-    "llm_model": "gpt-4o-mini"
+    "type": "simulation"
   },
   {
     "name": "Office hours inquiry",
@@ -21,8 +20,7 @@
     ],
     "dynamic_variables": {},
     "tool_mocks": [],
-    "type": "simulation",
-    "llm_model": "gpt-4o-mini"
+    "type": "simulation"
   },
   {
     "name": "Cancel appointment",
@@ -34,8 +32,7 @@
     ],
     "dynamic_variables": {},
     "tool_mocks": [],
-    "type": "simulation",
-    "llm_model": "gpt-4o-mini"
+    "type": "simulation"
   },
   {
     "name": "Insurance question",
@@ -46,8 +43,7 @@
     ],
     "dynamic_variables": {},
     "tool_mocks": [],
-    "type": "simulation",
-    "llm_model": "gpt-4o-mini"
+    "type": "simulation"
   },
   {
     "name": "Transfer to nurse",
@@ -58,8 +54,7 @@
     ],
     "dynamic_variables": {},
     "tool_mocks": [],
-    "type": "simulation",
-    "llm_model": "gpt-4o-mini"
+    "type": "simulation"
   },
   {
     "name": "Greeting includes company name",

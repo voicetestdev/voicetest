@@ -79,12 +79,11 @@
                 rows={typeof value === "string" && value.length > 100 ? 6 : 2}
               ></textarea>
             {:else}
-              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-              <span
+              <button
                 class="metadata-editable"
                 onclick={() => startEditingMetadata(key, value)}
                 title="Click to edit"
-              >{String(value) || "(empty)"}</span>
+              >{value === null || value === undefined ? "(not set)" : String(value) || "(empty)"}</button>
             {/if}
             {#if savingMetadata === key}
               <span class="save-indicator">Saving...</span>
@@ -147,6 +146,10 @@
     transition: background 0.15s;
     white-space: pre-wrap;
     word-break: break-word;
+    background: none;
+    border: none;
+    text-align: left;
+    font-family: inherit;
   }
 
   .metadata-editable:hover {

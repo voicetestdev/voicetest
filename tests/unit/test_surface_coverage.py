@@ -87,6 +87,8 @@ REST_SURFACED = {
     # Evaluation
     "EvaluationService.evaluate_transcript",
     "EvaluationService.audio_eval_result",
+    # Decompose
+    "DecomposeService.decompose",
     # Diagnosis
     "DiagnosisService.diagnose_failure",
     "DiagnosisService.apply_and_rerun",
@@ -146,6 +148,8 @@ CLI_SURFACED = {
     "TestExecutionService.run_test",
     "TestExecutionService.run_tests",
     # Run history
+    "RunService.create_run",
+    "RunService.add_result",
     "RunService.list_runs",
     "RunService.get_run",
     "RunService.delete_run",
@@ -169,6 +173,8 @@ CLI_SURFACED = {
     "PlatformService.export_to_platform",
     # Evaluation
     "EvaluationService.evaluate_transcript",
+    # Decompose
+    "DecomposeService.decompose",
     # Diagnosis
     "DiagnosisService.diagnose_failure",
     "DiagnosisService.apply_and_rerun",
@@ -198,6 +204,9 @@ INTERNAL_ONLY = {
     "RunService.update_transcript": "Called by call WebSocket handler",
     "RunService.update_audio_eval": "Called by REST audio_eval_result handler",
     "RunService.add_result_from_call": "Called by REST _save_call_as_run handler",
+    # DecomposeService — helpers called by decompose pipeline
+    "DecomposeService.build_sub_graph": "Called by decompose internally for each sub-agent",
+    "DecomposeService.build_manifest": "Called by decompose internally to build manifest",
     # DiagnosisService — helpers called by other diagnosis methods
     "DiagnosisService.apply_fix_to_graph": "Called by apply_and_rerun and save-fix handler",
     "DiagnosisService.scores_improved": "Called by apply_and_rerun internally",
@@ -209,6 +218,22 @@ INTERNAL_ONLY = {
     "EvaluationService.evaluate_global_metrics": "Called by TestExecutionService.run_test",
     # DiscoveryService — REST-only, no CLI/TUI needed
     "DiscoveryService.list_platforms": "REST-only (platforms are a web UI feature)",
+}
+
+# REST methods intentionally not in the CLI, with justifications.
+CLI_EXCLUDED_FROM_REST = {
+    "AgentService.get_graph_with_etag": "HTTP caching optimization (ETag), not relevant for CLI",
+    "AgentService.get_variables": "Web UI helper for variable picker, CLI uses file-based workflow",
+    "AgentService.update_prompt": "Web UI inline edit, CLI edits files directly",
+    "AgentService.update_metadata": "Web UI inline edit, CLI edits files directly",
+    "AgentService.get_metrics_config": "Web UI metrics panel, CLI uses file-based workflow",
+    "AgentService.update_metrics_config": "Web UI metrics panel, CLI uses file-based workflow",
+    "EvaluationService.audio_eval_result": "Audio pipeline callback, not a user operation",
+    "PlatformService.get_sync_status": "Web UI sync indicator, CLI uses explicit push/import",
+    "PlatformService.sync_to_platform": "Web UI one-click sync, CLI uses explicit push",
+    "TestExecutionService.evaluate_global_metrics": (
+        "Called internally by run_test, not a standalone operation"
+    ),
 }
 
 # Combined set of all accounted-for methods
@@ -268,11 +293,39 @@ class TestSurfaceCoverage:
                 + "\n".join(f"  - {m}" for m in sorted(overlap))
             )
 
+    def test_cli_covers_rest_endpoints(self):
+        """Every REST-surfaced method should also be CLI-surfaced, unless excluded."""
+        rest_only = REST_SURFACED - CLI_SURFACED - set(CLI_EXCLUDED_FROM_REST.keys())
+        assert not rest_only, (
+            "REST method(s) not in CLI_SURFACED or CLI_EXCLUDED_FROM_REST:\n"
+            + "\n".join(f"  - {m}" for m in sorted(rest_only))
+            + "\n\nAdd to CLI_SURFACED (implement in CLI) or "
+            "CLI_EXCLUDED_FROM_REST with a justification."
+        )
+
+    def test_cli_excluded_entries_have_justifications(self):
+        """Every CLI_EXCLUDED_FROM_REST entry must have a non-empty justification."""
+        for key, reason in CLI_EXCLUDED_FROM_REST.items():
+            assert reason and reason.strip(), (
+                f"CLI_EXCLUDED_FROM_REST['{key}'] has no justification"
+            )
+
+    def test_cli_excluded_entries_are_in_rest(self):
+        """CLI_EXCLUDED_FROM_REST entries must actually be REST-only methods."""
+        for key in CLI_EXCLUDED_FROM_REST:
+            assert key in REST_SURFACED, (
+                f"CLI_EXCLUDED_FROM_REST['{key}'] is not in REST_SURFACED — remove it"
+            )
+            assert key not in CLI_SURFACED, (
+                f"CLI_EXCLUDED_FROM_REST['{key}'] is in CLI_SURFACED — remove from exclusion list"
+            )
+
     def test_discovery_finds_services(self):
         """Sanity check: AST scanner finds the expected service classes."""
         services = _discover_service_methods()
         expected = {
             "AgentService",
+            "DecomposeService",
             "DiagnosisService",
             "DiscoveryService",
             "EvaluationService",

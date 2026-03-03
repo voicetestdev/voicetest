@@ -6,6 +6,8 @@ If tests pass, real calls behave the same.
 
 from dataclasses import dataclass
 from dataclasses import field
+import hashlib
+import json
 
 from voicetest.engine.modules import ConversationModule
 from voicetest.engine.modules import RunContext
@@ -61,6 +63,7 @@ class ConversationEngine:
         self._dynamic_variables = dynamic_variables or {}
 
         self._split_transitions = self.options.split_transitions if self.options else False
+        self._no_cache = self.options.no_cache if self.options else False
         self._module = ConversationModule(graph, use_split_transitions=self._split_transitions)
 
         # State
@@ -162,8 +165,18 @@ class ConversationEngine:
         }
 
         # Only pass available_transitions when the signature expects it (combined mode)
+        cache_salt = None
         if state_module.transitions and not state_module.use_split_transitions:
             response_kwargs["available_transitions"] = ctx.available_transitions
+        elif state_module.use_split_transitions and state_module.transitions:
+            # Split mode: the response signature omits available_transitions,
+            # so the cache key won't change when outbound edges are modified.
+            # Inject a fingerprint via LM metadata to bust the cache.
+            cache_salt = hashlib.sha256(
+                json.dumps(
+                    [t.model_dump() for t in ctx.available_transitions], sort_keys=True
+                ).encode()
+            ).hexdigest()[:16]
 
         # Call LLM with the state module's signature
         result = await call_llm(
@@ -172,6 +185,8 @@ class ConversationEngine:
             on_token=on_token,
             stream_field="response" if on_token else None,
             on_error=on_error,
+            cache_salt=cache_salt,
+            no_cache=self._no_cache,
             **response_kwargs,
         )
 
@@ -185,6 +200,7 @@ class ConversationEngine:
                 self.model,
                 self._module._transition_signature,
                 on_error=on_error,
+                no_cache=self._no_cache,
                 conversation_history=ctx.conversation_history,
                 agent_response=result.response,
                 available_transitions=ctx.available_transitions,

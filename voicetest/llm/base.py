@@ -22,14 +22,26 @@ from voicetest.retry import with_retry
 OnTokenCallback = Callable[[str], Awaitable[None] | None]
 
 
-def _create_lm(model: str) -> dspy.LM:
+def _create_lm(model: str, cache_salt: str | None = None, no_cache: bool = False) -> dspy.LM:
     """Create an LM instance for the given model string.
 
     Handles custom providers like claudecode/ prefix.
+
+    Args:
+        model: LiteLLM model string.
+        cache_salt: Optional fingerprint injected into litellm metadata so it
+            participates in the DSPy cache key without appearing in the prompt.
+            Used by split-mode response calls to bust the cache when outbound
+            edges change.
     """
     if model.startswith("claudecode/"):
         return ClaudeCodeLM(model)
-    return dspy.LM(model)
+    extra: dict = {}
+    if cache_salt:
+        extra["metadata"] = {"_cache_salt": cache_salt}
+    if no_cache:
+        extra["cache"] = False
+    return dspy.LM(model, **extra)
 
 
 async def _invoke_callback(callback: Callable, *args) -> None:
@@ -45,26 +57,46 @@ async def call_llm(
     on_token: OnTokenCallback | None = None,
     stream_field: str | None = None,
     on_error: OnErrorCallback | None = None,
+    *,
+    cache_salt: str | None = None,
+    no_cache: bool = False,
     **kwargs,
 ) -> dspy.Prediction:
     if on_token:
         if not stream_field:
             raise ValueError("stream_field required when on_token is provided")
         return await _call_llm_streaming(
-            model, signature_class, on_token, stream_field, on_error, **kwargs
+            model,
+            signature_class,
+            on_token,
+            stream_field,
+            on_error,
+            cache_salt=cache_salt,
+            no_cache=no_cache,
+            **kwargs,
         )
     else:
-        return await _call_llm_sync(model, signature_class, on_error, **kwargs)
+        return await _call_llm_sync(
+            model,
+            signature_class,
+            on_error,
+            cache_salt=cache_salt,
+            no_cache=no_cache,
+            **kwargs,
+        )
 
 
 async def _call_llm_sync(
     model: str,
     signature_class: type,
     on_error: OnErrorCallback | None = None,
+    *,
+    cache_salt: str | None = None,
+    no_cache: bool = False,
     **kwargs,
 ) -> dspy.Prediction:
     """Non-streaming LLM call with BAMLAdapter for better structured output."""
-    lm = _create_lm(model)
+    lm = _create_lm(model, cache_salt=cache_salt, no_cache=no_cache)
     adapter = BAMLAdapter()
 
     def run_predictor():
@@ -85,12 +117,15 @@ async def _call_llm_streaming(
     on_token: OnTokenCallback,
     stream_field: str,
     on_error: OnErrorCallback | None = None,
+    *,
+    cache_salt: str | None = None,
+    no_cache: bool = False,
     **kwargs,
 ) -> dspy.Prediction:
     """Streaming LLM call with token callbacks."""
 
     async def stream():
-        lm = _create_lm(model)
+        lm = _create_lm(model, cache_salt=cache_salt, no_cache=no_cache)
         predictor = dspy.Predict(signature_class)
         stream_listeners = [StreamListener(signature_field_name=stream_field)]
 

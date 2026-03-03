@@ -139,6 +139,45 @@ class TestCLIRun:
         assert result.exit_code != 0
 
 
+class TestCLIRunSaveOption:
+    """Tests for the --save-run option on the run command."""
+
+    def test_run_help_shows_save_run(self, cli_runner):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["run", "--help"])
+
+        assert result.exit_code == 0
+        assert "--save-run" in result.output
+
+    def test_run_help_shows_agent_id(self, cli_runner):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["run", "--help"])
+
+        assert result.exit_code == 0
+        assert "--agent-id" in result.output
+
+    def test_save_run_requires_agent_id(self, cli_runner, temp_agent_file, temp_tests_file):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "run",
+                "--agent",
+                str(temp_agent_file),
+                "--tests",
+                str(temp_tests_file),
+                "--all",
+                "--save-run",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "--agent-id" in result.output
+
+
 class TestCLIMain:
     """Tests for main entry point."""
 
@@ -1017,3 +1056,36 @@ class TestCLIChat:
 
         assert result.exit_code == 0
         assert "chat" in result.output
+
+
+class TestCLIDecompose:
+    """Tests for the decompose command."""
+
+    def test_decompose_help(self, cli_runner):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["decompose", "--help"])
+
+        assert result.exit_code == 0
+        assert "--agent" in result.output or "-a" in result.output
+        assert "--output" in result.output or "-o" in result.output
+        assert "--num-agents" in result.output or "-n" in result.output
+        assert "--model" in result.output or "-m" in result.output
+
+    def test_decompose_missing_agent(self, cli_runner, tmp_path):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(
+            main,
+            ["decompose", "-a", "/nonexistent/agent.json", "-o", str(tmp_path / "out")],
+        )
+
+        assert result.exit_code != 0
+
+    def test_decompose_shown_in_main_help(self, cli_runner):
+        from voicetest.cli import main
+
+        result = cli_runner.invoke(main, ["--help"])
+
+        assert result.exit_code == 0
+        assert "decompose" in result.output

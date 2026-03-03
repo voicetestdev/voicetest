@@ -30,6 +30,10 @@ class RunService:
         """Get a run with all results."""
         return self._runs.get_with_results(run_id)
 
+    def add_result(self, run_id: str, test_case_id: str, result) -> None:
+        """Add a completed result to a run."""
+        self._runs.add_result(run_id, test_case_id, result)
+
     def delete_run(self, run_id: str) -> None:
         """Delete a run and all its results."""
         self._runs.delete(run_id)

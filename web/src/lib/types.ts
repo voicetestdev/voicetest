@@ -118,6 +118,7 @@ export interface RunOptions {
   agent_model: string;
   simulator_model: string;
   judge_model: string;
+  no_cache?: boolean;
 }
 
 export interface Settings {
@@ -393,3 +394,56 @@ export interface ApplyFixResponse {
 }
 
 export type AutoFixStopCondition = "improve" | "pass";
+
+export interface NodeAssignment {
+  node_id: string;
+  sub_agent_id: string;
+  rationale: string;
+}
+
+export interface PromptSegment {
+  sub_agent_id: string;
+  segment_text: string;
+  purpose: string;
+}
+
+export interface SubAgentSpec {
+  sub_agent_id: string;
+  name: string;
+  description: string;
+  node_ids: string[];
+  prompt_segments: PromptSegment[];
+}
+
+export interface HandoffRule {
+  source_sub_agent_id: string;
+  target_sub_agent_id: string;
+  condition: string;
+  description: string | null;
+}
+
+export interface DecompositionPlan {
+  num_sub_agents: number;
+  sub_agents: SubAgentSpec[];
+  handoff_rules: HandoffRule[];
+  rationale: string;
+}
+
+export interface SubAgentManifestEntry {
+  sub_agent_id: string;
+  name: string;
+  description: string;
+  filename: string;
+}
+
+export interface OrchestratorManifest {
+  entry_sub_agent_id: string;
+  sub_agents: SubAgentManifestEntry[];
+  handoff_rules: HandoffRule[];
+}
+
+export interface DecompositionResult {
+  plan: DecompositionPlan;
+  sub_graphs: Record<string, AgentGraph>;
+  manifest: OrchestratorManifest;
+}

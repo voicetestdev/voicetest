@@ -10,6 +10,7 @@ Or: uvicorn voicetest.rest:app --reload
 import asyncio
 from datetime import UTC
 from datetime import datetime
+from importlib.metadata import version as pkg_version
 import json
 import logging
 import os
@@ -55,6 +56,7 @@ from voicetest.models.test_case import TestCase
 from voicetest.pathutil import resolve_within
 from voicetest.retry import RetryError
 from voicetest.services import get_agent_service
+from voicetest.services import get_decompose_service
 from voicetest.services import get_diagnosis_service
 from voicetest.services import get_discovery_service
 from voicetest.services import get_evaluation_service
@@ -176,7 +178,7 @@ WEB_DIST = _find_web_dist()
 app = FastAPI(
     title="voicetest",
     description="Voice agent test harness API",
-    version="0.1.0",
+    version=pkg_version("voicetest"),
 )
 
 # Add CORS middleware to allow cross-origin requests
@@ -546,6 +548,7 @@ def _build_run_options(settings: Settings, request_options: RunOptions | None) -
         audio_eval=(
             (request_options.audio_eval if request_options else False) or settings.run.audio_eval
         ),
+        no_cache=(request_options.no_cache if request_options else False),
     )
 
 
@@ -1302,6 +1305,32 @@ async def save_fix(agent_id: str, body: dict) -> dict:
     return modified_graph.model_dump()
 
 
+@router.post("/agents/{agent_id}/decompose")
+async def decompose_agent(agent_id: str, request: Request) -> dict:
+    """Decompose an agent into sub-agents with orchestrator manifest.
+
+    Optional body: {"model": "provider/model-name", "num_agents": 0}
+    """
+    _agent, graph = _load_agent_graph(agent_id)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    settings = get_settings_service().get_settings()
+    model = body.get("model") or resolve_model(settings.models.judge)
+    num_agents = body.get("num_agents", 0)
+
+    result = await get_decompose_service().decompose(
+        graph=graph,
+        model=model,
+        num_agents=num_agents,
+    )
+
+    return result.model_dump()
+
+
 async def _broadcast_run_update(run_id: str, data: dict) -> None:
     """Broadcast update to all WebSocket clients watching this run."""
     if run_id not in _active_runs:
@@ -1450,14 +1479,17 @@ async def _execute_run(
             last_transcript: list[Message] = []
 
             try:
-                result = await get_test_execution_service().run_test(
-                    graph,
-                    test_case,
-                    options=options,
-                    metrics_config=metrics_config,
-                    on_turn=await make_on_turn(result_id, last_transcript),
-                    on_token=make_on_token(result_id) if options.streaming else None,
-                    on_error=make_on_error(result_id),
+                result = await asyncio.wait_for(
+                    get_test_execution_service().run_test(
+                        graph,
+                        test_case,
+                        options=options,
+                        metrics_config=metrics_config,
+                        on_turn=await make_on_turn(result_id, last_transcript),
+                        on_token=make_on_token(result_id) if options.streaming else None,
+                        on_error=make_on_error(result_id),
+                    ),
+                    timeout=options.timeout_seconds,
                 )
                 run_svc.complete_result(result_id, result)
                 await _broadcast_run_update(
@@ -1481,6 +1513,22 @@ async def _execute_run(
                     {
                         "type": "test_cancelled",
                         "result_id": result_id,
+                    },
+                )
+            except TimeoutError:
+                timeout_result = TestResult(
+                    test_name=test_case.name,
+                    status="error",
+                    transcript=last_transcript,
+                    error_message=f"Test timed out after {options.timeout_seconds}s",
+                )
+                run_svc.complete_result(result_id, timeout_result)
+                await _broadcast_run_update(
+                    run_id,
+                    {
+                        "type": "test_error",
+                        "result_id": result_id,
+                        "error": f"Test timed out after {options.timeout_seconds}s",
                     },
                 )
             except Exception as e:

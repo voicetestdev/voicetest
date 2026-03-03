@@ -1,6 +1,8 @@
 /**
  * Playwright script to record web UI demo.
  *
+ * Prerequisites: globalSetup seeds showcase agents and configures groq.
+ *
  * Run with:
  *   # Terminal 1: Start server
  *   uv run voicetest demo --serve
@@ -13,36 +15,36 @@
  */
 
 import { test } from "@playwright/test";
+import { click, installCursor } from "./cursor";
 
 test("record web UI demo", async ({ page }) => {
-  // Navigate to the app (starts on import view when no agents exist)
-  await page.goto("/");
-  await page.waitForTimeout(1000);
+  await installCursor(page);
+  // Find the healthcare agent (created by globalSetup)
+  const agents = await (await page.request.get("/api/agents")).json();
+  const healthcare = agents.find(
+    (a: { name: string }) => a.name === "Acme Healthcare",
+  );
+  if (!healthcare) throw new Error("Acme Healthcare agent not found — did globalSetup run?");
 
-  // Click Load Demo button
-  await page.click("button.demo-button");
+  // Navigate to the healthcare agent's Tests tab
+  await page.goto(`/#/agent/${healthcare.id}/tests`);
   await page.waitForTimeout(2000);
-
-  // Should now be on the agent config view
-  // Navigate to Tests tab
-  await page.click("text=Tests");
-  await page.waitForTimeout(1000);
 
   // Select first 3 tests by clicking row checkboxes (skip header checkbox)
   const rowCheckboxes = page.locator('tbody input[type="checkbox"]');
   const checkboxCount = await rowCheckboxes.count();
   for (let i = 0; i < Math.min(3, checkboxCount); i++) {
-    await rowCheckboxes.nth(i).click();
+    await click(rowCheckboxes.nth(i));
     await page.waitForTimeout(300);
   }
   await page.waitForTimeout(500);
 
   // Click Run Selected button
-  await page.click("button:has-text('Run Selected')");
+  await click(page.locator("button:has-text('Run Selected')"));
   await page.waitForTimeout(500);
 
   // Click Runs tab to ensure navigation (workaround for auto-switch issue)
-  await page.click('button.tab-item:has-text("Runs")');
+  await click(page.locator('button.tab-item:has-text("Runs")'));
   await page.waitForTimeout(1000);
 
   // Poll for the results list to appear
@@ -56,7 +58,7 @@ test("record web UI demo", async ({ page }) => {
   await page.waitForTimeout(500);
   const resultBtn = page.locator(".result-select-btn").first();
   if ((await resultBtn.count()) > 0) {
-    await resultBtn.click();
+    await click(resultBtn);
   }
 
   // Watch the conversation flow
