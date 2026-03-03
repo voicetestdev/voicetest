@@ -14,7 +14,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "cd .. && uv run voicetest demo --serve",
+    command: "cd .. && uv run voicetest serve",
     url: "http://localhost:8000",
     reuseExistingServer: !process.env.CI,
     timeout: 15000,
