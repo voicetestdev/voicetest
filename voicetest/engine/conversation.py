@@ -7,6 +7,7 @@ If tests pass, real calls behave the same.
 from dataclasses import dataclass
 from dataclasses import field
 import hashlib
+import json
 
 from voicetest.engine.modules import ConversationModule
 from voicetest.engine.modules import RunContext
@@ -171,7 +172,11 @@ class ConversationEngine:
             # Split mode: the response signature omits available_transitions,
             # so the cache key won't change when outbound edges are modified.
             # Inject a fingerprint via LM metadata to bust the cache.
-            cache_salt = hashlib.sha256(ctx.available_transitions.encode()).hexdigest()[:16]
+            cache_salt = hashlib.sha256(
+                json.dumps(
+                    [t.model_dump() for t in ctx.available_transitions], sort_keys=True
+                ).encode()
+            ).hexdigest()[:16]
 
         # Call LLM with the state module's signature
         result = await call_llm(

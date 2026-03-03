@@ -11,6 +11,7 @@ import dspy
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionOption
 from voicetest.templating import create_template_filler
 
 
@@ -25,7 +26,7 @@ class RunContext:
     conversation_history: str
     user_message: str
     dynamic_variables: dict[str, Any]
-    available_transitions: str
+    available_transitions: list[TransitionOption]
     general_instructions: str
     state_instructions: str
 
@@ -100,6 +101,7 @@ class StateModule(dspy.Module):
 
         if include_transitions:
             valid_targets = [t.target_node_id for t in self.transitions] + ["none"]
+            attrs["__annotations__"] = {"available_transitions": list[TransitionOption]}
             attrs["available_transitions"] = dspy.InputField(
                 desc="Available transitions to other states"
             )
@@ -209,13 +211,17 @@ class ConversationModule(dspy.Module):
 
         attrs: dict[str, Any] = {
             "__doc__": docstring,
+            "__annotations__": {"available_transitions": list[TransitionOption]},
             "conversation_history": dspy.InputField(desc="Full conversation so far"),
             "agent_response": dspy.InputField(desc="The response just generated"),
             "available_transitions": dspy.InputField(
                 desc="Valid transitions with their conditions"
             ),
             "transition_to": dspy.OutputField(
-                desc="State to transition to, or 'none' to stay in current state"
+                desc=(
+                    "Target from available_transitions to transition to, or 'none' to stay in "
+                    "current state"
+                )
             ),
         }
 
@@ -265,15 +271,18 @@ class ConversationModule(dspy.Module):
 
         return result
 
-    def format_transitions(self, node_id: str) -> str:
-        """Format available transitions for a node as a string for LLM input."""
+    def format_transitions(self, node_id: str) -> list[TransitionOption]:
+        """Format available transitions for a node as structured objects for LLM input."""
         node = self.graph.nodes.get(node_id)
         if not node or not node.transitions:
-            return "(no transitions available - stay in current state)"
+            return []
 
-        lines = []
-        for transition in node.transitions:
-            condition = transition.condition.value or "No condition specified"
-            lines.append(f"- {transition.target_node_id}: {condition}")
-
-        return "\n".join(lines) if lines else "(no transitions available)"
+        return [
+            TransitionOption(
+                target=t.target_node_id,
+                condition=t.condition.value or "No condition specified",
+                condition_type=t.condition.type,
+                description=t.description,
+            )
+            for t in node.transitions
+        ]
