@@ -324,6 +324,73 @@ class TestRetellImporterDisplayPosition:
         assert "begin_tag_display_position" not in graph.source_metadata
 
 
+class TestRetellImporterLogicSplit:
+    """Tests for Retell CF importer handling logic split nodes (no instruction)."""
+
+    def test_import_config_with_logic_split(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        assert graph.source_type == "retell"
+        assert graph.entry_node_id == "greeting"
+        assert len(graph.nodes) == 5
+
+    def test_logic_split_node_has_empty_prompt(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        router = graph.nodes["router"]
+        assert router.state_prompt == ""
+
+    def test_logic_split_node_preserves_type_metadata(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        router = graph.nodes["router"]
+        assert router.metadata["retell_type"] == "logic_split"
+        assert router.metadata["name"] == "Account Type Router"
+
+    def test_logic_split_node_preserves_display_position(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        router = graph.nodes["router"]
+        assert router.metadata["display_position"] == {"x": 300, "y": 150}
+
+    def test_logic_split_edges_imported(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        router = graph.nodes["router"]
+        assert len(router.transitions) == 2
+        targets = {t.target_node_id for t in router.transitions}
+        assert targets == {"premium_support", "standard_support"}
+
+    def test_logic_split_edge_conditions_are_equations(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        router = graph.nodes["router"]
+        for transition in router.transitions:
+            assert transition.condition.type == "equation"
+
+    def test_logic_split_from_file_path(self, sample_retell_config_logic_split_path):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split_path)
+
+        assert "router" in graph.nodes
+        assert graph.nodes["router"].state_prompt == ""
+
+    def test_conversation_nodes_unaffected(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        assert "Greet the caller" in graph.nodes["greeting"].state_prompt
+        assert "premium-tier" in graph.nodes["premium_support"].state_prompt
+        assert "standard support" in graph.nodes["standard_support"].state_prompt.lower()
+        assert "Thank the caller" in graph.nodes["farewell"].state_prompt
+
+
 class TestRetellImporterWrappedFormat:
     """Tests for importing Retell UI agent wrapper format."""
 

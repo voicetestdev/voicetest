@@ -124,6 +124,19 @@ def sample_retell_config_complex_path(retell_fixtures_dir: Path) -> Path:
 
 
 @pytest.fixture
+def sample_retell_config_logic_split(retell_fixtures_dir: Path) -> dict:
+    """Load Retell CF configuration with a logic split node (no instruction)."""
+    config_path = retell_fixtures_dir / "sample_config_logic_split.json"
+    return json.loads(config_path.read_text())
+
+
+@pytest.fixture
+def sample_retell_config_logic_split_path(retell_fixtures_dir: Path) -> Path:
+    """Return path to Retell CF configuration with logic split node."""
+    return retell_fixtures_dir / "sample_config_logic_split.json"
+
+
+@pytest.fixture
 def vapi_fixtures_dir(fixtures_dir: Path) -> Path:
     """Return path to VAPI test fixtures."""
     return fixtures_dir / "vapi"

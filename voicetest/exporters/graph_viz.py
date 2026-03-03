@@ -6,7 +6,9 @@ from voicetest.models.agent import AgentGraph
 
 def _escape_mermaid_text(text: str) -> str:
     """Escape special characters for Mermaid labels."""
-    return text.replace('"', "'").replace("\n", " ")
+    return (
+        text.replace('"', "'").replace("\n", " ").replace("{", "#lbrace;").replace("}", "#rbrace;")
+    )
 
 
 class MermaidExporter:
@@ -65,12 +67,15 @@ def export_mermaid(graph: AgentGraph) -> str:
     # Add edges
     for node_id, node in graph.nodes.items():
         for transition in node.transitions:
-            # Truncate long conditions
-            condition_label = transition.condition.value[:30]
-            if len(transition.condition.value) > 30:
-                condition_label += "..."
-            condition_label = _escape_mermaid_text(condition_label)
-            lines.append(f'    {node_id} -->|"{condition_label}"| {transition.target_node_id}')
+            condition_text = transition.condition.value.strip()
+            if condition_text:
+                condition_label = condition_text[:30]
+                if len(condition_text) > 30:
+                    condition_label += "..."
+                condition_label = _escape_mermaid_text(condition_label)
+                lines.append(f'    {node_id} -->|"{condition_label}"| {transition.target_node_id}')
+            else:
+                lines.append(f"    {node_id} --> {transition.target_node_id}")
 
     # Add end_call node and edges if any nodes have end_call tool
     if nodes_with_end_call:
