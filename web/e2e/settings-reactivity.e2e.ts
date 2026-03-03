@@ -98,22 +98,14 @@ test.describe("Settings Reactivity", () => {
 });
 
 test.describe("Agent Config Reactivity", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+  test.beforeEach(async ({ page, baseURL }) => {
+    // Ensure a valid agent exists by calling the idempotent demo endpoint
+    const demoRes = await fetch(`${baseURL}/api/demo`, { method: "POST" });
+    const demo = await demoRes.json();
 
-    // Load demo agents if needed (fresh server has no agents)
-    const demoButton = page.locator("button.demo-button");
-    if (await demoButton.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await demoButton.click();
-      await expect(page.locator(".agent-list")).toBeVisible();
-    }
-
-    // Ensure an agent is selected (loadDemo auto-selects, but
-    // with reuseExistingServer the page may land on Import view)
-    if (!(await page.locator(".editable-name").isVisible({ timeout: 1000 }).catch(() => false))) {
-      await page.locator(".agent-list button").first().click();
-    }
-    await expect(page.locator(".editable-name")).toBeVisible();
+    // Navigate directly to the demo agent's config view
+    await page.goto(`/#/agent/${demo.agent_id}/config`);
+    await expect(page.locator(".editable-name")).toBeVisible({ timeout: 5000 });
   });
 
   test("agent name edit reflects changes immediately", async ({ page }) => {
@@ -148,11 +140,7 @@ test.describe("Agent Config Reactivity", () => {
   });
 
   test("agent LLM edit updates correctly", async ({ page }) => {
-    // Select the Acme Healthcare agent explicitly to ensure consistency
-    await page.locator(".agent-list button", { hasText: "Acme Healthcare" }).click();
-
-    // Wait for the agent to load
-    await expect(page.locator(".editable-name")).toContainText("Acme Healthcare");
+    // beforeEach already selects the first agent
     await expect(page.locator(".agent-info")).toBeVisible();
 
     // Find and click the LLM field to edit
