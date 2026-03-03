@@ -79,7 +79,7 @@ class RetellNode(BaseModel):
     id: str
     type: str
     name: str | None = None
-    instruction: RetellInstruction
+    instruction: RetellInstruction | None = None
     edges: list[RetellEdge] = []
     display_position: dict[str, float] | None = None
 
@@ -180,7 +180,7 @@ class RetellImporter:
 
             nodes[retell_node.id] = AgentNode(
                 id=retell_node.id,
-                state_prompt=retell_node.instruction.text,  # State-specific only
+                state_prompt=retell_node.instruction.text if retell_node.instruction else "",
                 tools=global_tools if global_tools else [],
                 transitions=transitions,
                 metadata=metadata,

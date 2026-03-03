@@ -8,18 +8,25 @@
  */
 
 import { test, expect } from "@playwright/test";
+import { deleteAgentsByPrefix } from "./helpers";
+
+const TEST_PREFIX = "e2e_persist_";
 
 test.describe("Test Case Persistence", () => {
   // Use longer timeout for this test since it involves multiple imports
   test.setTimeout(30000);
+
+  test.afterEach(async ({ baseURL }) => {
+    await deleteAgentsByPrefix(baseURL!, TEST_PREFIX);
+  });
 
   test("imported tests persist when switching between agents", async ({
     page,
   }) => {
     // Generate unique names to avoid conflicts with existing agents
     const timestamp = Date.now();
-    const agent1Name = `e2e_billing_${timestamp}`;
-    const agent2Name = `e2e_support_${timestamp}`;
+    const agent1Name = `${TEST_PREFIX}billing_${timestamp}`;
+    const agent2Name = `${TEST_PREFIX}support_${timestamp}`;
 
     await page.goto("/");
 

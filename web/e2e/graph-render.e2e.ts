@@ -11,18 +11,24 @@
 import { test, expect } from "@playwright/test";
 import { dirname, resolve } from "path";
 import { fileURLToPath } from "url";
+import { deleteAgentsByPrefix } from "./helpers";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+const TEST_PREFIX = "e2e_graph_linked_";
+
 test.describe("Graph Rendering", () => {
   test.setTimeout(30000);
+
+  test.afterEach(async ({ baseURL }) => {
+    await deleteAgentsByPrefix(baseURL!, TEST_PREFIX);
+  });
 
   test("graph renders for linked file agent with template variables", async ({
     page,
   }) => {
-    const timestamp = Date.now();
-    const agentName = `e2e_graph_linked_${timestamp}`;
+    const agentName = `${TEST_PREFIX}${Date.now()}`;
 
     // Resolve the fixture path relative to the project root
     const fixturePath = resolve(

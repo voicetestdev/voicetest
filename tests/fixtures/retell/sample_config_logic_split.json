@@ -1,0 +1,98 @@
+{
+  "conversation_flow_id": "cf_logic_split_001",
+  "version": 1,
+  "start_node_id": "greeting",
+  "nodes": [
+    {
+      "id": "greeting",
+      "type": "conversation",
+      "name": "Greeting",
+      "instruction": {
+        "type": "prompt",
+        "text": "Greet the caller and ask for their account number."
+      },
+      "edges": [
+        {
+          "id": "edge-1",
+          "destination_node_id": "router",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Caller provided their account number"
+          }
+        }
+      ]
+    },
+    {
+      "id": "router",
+      "type": "logic_split",
+      "name": "Account Type Router",
+      "edges": [
+        {
+          "id": "edge-2",
+          "destination_node_id": "premium_support",
+          "transition_condition": {
+            "type": "equation",
+            "value": "account_type == 'premium'"
+          }
+        },
+        {
+          "id": "edge-3",
+          "destination_node_id": "standard_support",
+          "transition_condition": {
+            "type": "equation",
+            "value": "account_type == 'standard'"
+          }
+        }
+      ],
+      "display_position": {"x": 300, "y": 150}
+    },
+    {
+      "id": "premium_support",
+      "type": "conversation",
+      "name": "Premium Support",
+      "instruction": {
+        "type": "prompt",
+        "text": "Provide premium-tier support. Offer expedited resolution and a dedicated follow-up."
+      },
+      "edges": [
+        {
+          "id": "edge-4",
+          "destination_node_id": "farewell",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Issue is resolved"
+          }
+        }
+      ]
+    },
+    {
+      "id": "standard_support",
+      "type": "conversation",
+      "name": "Standard Support",
+      "instruction": {
+        "type": "prompt",
+        "text": "Provide standard support. Troubleshoot the issue step by step."
+      },
+      "edges": [
+        {
+          "id": "edge-5",
+          "destination_node_id": "farewell",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Issue is resolved"
+          }
+        }
+      ]
+    },
+    {
+      "id": "farewell",
+      "type": "conversation",
+      "name": "Farewell",
+      "instruction": {
+        "type": "prompt",
+        "text": "Thank the caller and end the conversation."
+      },
+      "edges": []
+    }
+  ]
+}
