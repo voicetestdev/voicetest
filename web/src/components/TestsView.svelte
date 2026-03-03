@@ -717,7 +717,16 @@
               <ul class="tag-list">
                 {#each newTest.metrics as metric, i}
                   <li>
-                    <span>{metric}</span>
+                    <input
+                      type="text"
+                      value={metric}
+                      oninput={(e) => {
+                        if (newTest.metrics) {
+                          newTest.metrics[i] = e.currentTarget.value;
+                          newTest.metrics = [...newTest.metrics];
+                        }
+                      }}
+                    />
                     <button class="small danger" onclick={() => removeMetric(i)}>x</button>
                   </li>
                 {/each}
@@ -1204,6 +1213,16 @@
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
     font-size: 0.85rem;
+  }
+
+  .tag-list li input[type="text"] {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: inherit;
+    padding: 0;
+    outline: none;
   }
 
   .tag-list.includes li {

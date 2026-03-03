@@ -645,10 +645,13 @@
     max-height: 90vh;
     overflow: hidden;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-    display: flex;
     flex-direction: column;
     padding: 0;
     color: var(--text-primary);
+  }
+
+  :global(dialog.modal[open]) {
+    display: flex;
   }
 
   :global(dialog.modal::backdrop) {
