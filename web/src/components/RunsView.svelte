@@ -318,8 +318,8 @@
   let selectedResultId = $state<string | null>(null);
   let deleting = $state(false);
   let rerunOpen = $state(false);
-  let rerunDropdownEl: HTMLElement;
-  let detailContainer: HTMLElement;
+  let rerunDropdownEl = $state<HTMLElement>();
+  let detailContainer = $state<HTMLElement>();
   let prevMessageCount = 0;
 
   // Auto-select: running test takes priority, otherwise first result
@@ -459,7 +459,9 @@
       if (messageCount > prevMessageCount) {
         prevMessageCount = messageCount;
         requestAnimationFrame(() => {
-          detailContainer.scrollTop = detailContainer.scrollHeight;
+          if (detailContainer) {
+            detailContainer.scrollTop = detailContainer.scrollHeight;
+          }
         });
       }
     }
@@ -2039,15 +2041,6 @@
     white-space: pre-wrap;
   }
 
-  .change-diff ins {
-    display: block;
-    background: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
-    text-decoration: none;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0 0 3px 3px;
-    white-space: pre-wrap;
-  }
 
   .proposed-text-edit {
     display: block;

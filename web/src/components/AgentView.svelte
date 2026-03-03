@@ -28,7 +28,7 @@
   let lastGraphId = $state<string | null>(null);
   let lastTheme = $state<string | null>(null);
   let renderCounter = 0;
-  let mermaidContainer: HTMLDivElement;
+  let mermaidContainer = $state<HTMLDivElement>();
   let tooltip = $state({ show: false, x: 0, y: 0, text: "", title: "", nodeId: "", sourceNodeId: "", targetNodeId: "" });
   let tooltipHideTimer: ReturnType<typeof setTimeout> | null = null;
   const TOOLTIP_HIDE_DELAY = 200;
@@ -43,19 +43,19 @@
   let editedName = $state("");
   let savingName = $state(false);
   let nameSaved = $state(false);
-  let nameInput: HTMLInputElement;
+  let nameInput = $state<HTMLInputElement>();
 
   let editingModel = $state(false);
   let editedModel = $state("");
   let savingModel = $state(false);
   let modelSaved = $state(false);
-  let modelInput: HTMLInputElement;
+  let modelInput = $state<HTMLInputElement>();
 
   let editingGeneralPrompt = $state(false);
   let editedGeneralPrompt = $state("");
   let savingGeneralPrompt = $state(false);
   let generalPromptSaved = $state(false);
-  let generalPromptTextarea: HTMLTextAreaElement;
+  let generalPromptTextarea = $state<HTMLTextAreaElement>();
 
   let refreshing = $state(false);
 
@@ -65,8 +65,8 @@
   let syncError = $state("");
 
   // Child component refs
-  let nodePromptModal: NodePromptModal;
-  let transitionModal: TransitionModal;
+  let nodePromptModal = $state<NodePromptModal>();
+  let transitionModal = $state<TransitionModal>();
 
   const platformDisplayNames: Record<string, string> = {
     retell: "Retell",
@@ -422,11 +422,11 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === "Escape" && transitionModal?.isOpen()) {
-      transitionModal.close();
+      transitionModal?.close();
       return;
     }
     if (e.key === "Escape" && nodePromptModal?.isOpen()) {
-      nodePromptModal.close();
+      nodePromptModal?.close();
       return;
     }
     if (e.key === "Escape" && showExportModal) {
@@ -612,10 +612,9 @@
           disabled={savingName}
         />
       {:else}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-        <h2 class="editable-name" onclick={startEditingName} title="Click to edit">
+        <button class="editable-name" onclick={startEditingName} title="Click to edit">
           {$currentAgent.name}
-        </h2>
+        </button>
       {/if}
       {#if savingName}
         <span class="save-indicator">Saving...</span>
@@ -641,10 +640,9 @@
                 placeholder="e.g. openai/gpt-4o"
               />
             {:else}
-              <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-              <span class="editable-model" onclick={startEditingModel} title="Click to edit">
+              <button class="editable-model" onclick={startEditingModel} title="Click to edit">
                 {$agentGraph.default_model || "Not set"}
-              </span>
+              </button>
             {/if}
             {#if savingModel}
               <span class="model-save-indicator">Saving...</span>
@@ -739,12 +737,11 @@
           rows="10"
         ></textarea>
       {:else}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-        <pre
+        <button
           class="prompt-text clickable"
           onclick={startEditingGeneralPrompt}
           title="Click to edit"
-        >{$agentGraph.source_metadata?.general_prompt || "(No general prompt — click to add)"}</pre>
+        >{$agentGraph.source_metadata?.general_prompt || "(No general prompt — click to add)"}</button>
       {/if}
     </section>
 
@@ -785,8 +782,8 @@
     {/if}
 
     {#if tooltip.show}
-      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-      <div
+      <button
+        type="button"
         class="node-tooltip"
         class:clickable={tooltip.nodeId !== "" || (tooltip.sourceNodeId !== "" && tooltip.targetNodeId !== "")}
         style="left: {tooltip.x}px; top: {tooltip.y}px;"
@@ -812,7 +809,7 @@
           <div class="tooltip-title">{tooltip.title}</div>
         {/if}
         <div class="tooltip-text">{tooltip.text}</div>
-      </div>
+      </button>
     {/if}
 
     {#if $currentAgentId}
@@ -846,9 +843,6 @@
     flex: 1;
   }
 
-  h2 {
-    margin-top: 0;
-  }
 
   .name-row {
     display: flex;
@@ -863,6 +857,12 @@
     margin: -0.25rem -0.5rem;
     border-radius: 4px;
     transition: background 0.15s;
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--text-primary);
+    text-align: left;
   }
 
   .editable-name:hover {
@@ -1014,6 +1014,12 @@
     margin: -0.5rem;
     border-radius: var(--radius-sm);
     transition: background 0.15s;
+    background: none;
+    border: none;
+    font-family: monospace;
+    text-align: left;
+    width: 100%;
+    color: var(--text-secondary);
   }
 
   .prompt-text.clickable:hover {
@@ -1054,6 +1060,8 @@
     font-family: monospace;
     font-size: 0.85rem;
     color: var(--text-secondary);
+    background: none;
+    border: none;
   }
 
   .editable-model:hover {
@@ -1212,6 +1220,9 @@
     white-space: pre-wrap;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 100;
+    text-align: left;
+    font-family: inherit;
+    color: inherit;
   }
 
   .tooltip-title {

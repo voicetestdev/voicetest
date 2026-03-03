@@ -78,8 +78,7 @@
     {mobileNavOpen ? "✕" : "☰"}
   </button>
 
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <nav class:open={mobileNavOpen} onclick={() => mobileNavOpen = false}>
+  <nav class:open={mobileNavOpen}>
     <a href="/" class="logo-link">
       <img src={theme === "dark" ? "/logo-dark.svg" : "/logo-light.svg"} alt="voicetest" class="logo" />
     </a>
@@ -93,7 +92,7 @@
             <button
               class="agent-btn"
               class:selected={isSelected}
-              onclick={() => selectAgent(agent.id, "config")}
+              onclick={() => { selectAgent(agent.id, "config"); mobileNavOpen = false; }}
             >
               <span class="agent-name">{agent.name}</span>
             </button>
@@ -106,13 +105,13 @@
       <button
         class="import-btn"
         class:active={view === "import"}
-        onclick={() => currentView.set("import")}
+        onclick={() => { currentView.set("import"); mobileNavOpen = false; }}
       >
         + Import Agent
       </button>
       <button
         class:active={view === "settings"}
-        onclick={() => currentView.set("settings")}
+        onclick={() => { currentView.set("settings"); mobileNavOpen = false; }}
       >
         Settings
       </button>

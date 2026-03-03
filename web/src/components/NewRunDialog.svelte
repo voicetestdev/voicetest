@@ -118,12 +118,12 @@
 			{/if}
 
 			<div class="form-group">
-				<label>
+				<span class="form-label">
 					Tests to Run
 					{#if tests.length > 0}
 						<span class="test-count">({selectedTestIds.length} of {tests.length} selected)</span>
 					{/if}
-				</label>
+				</span>
 
 				{#if loadingTests}
 					<div class="loading">Loading tests...</div>
@@ -172,7 +172,7 @@
 		margin-bottom: 1.25rem;
 	}
 
-	.form-group label {
+	.form-group .form-label {
 		display: block;
 		margin-bottom: 0.5rem;
 		font-weight: 500;
