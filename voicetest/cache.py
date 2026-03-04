@@ -1,20 +1,24 @@
 """Pluggable DSPy cache backend.
 
-DSPy caches LLM responses via `dspy.cache.disk_cache`, which supports
-dict-like access (__contains__, __getitem__, __setitem__). This module
-provides an S3-backed implementation so cached responses survive
-container restarts and can be shared across team members.
+DSPy supports custom cache implementations via subclassing
+``dspy.clients.Cache``. This module provides ``S3Cache``, a subclass
+that swaps the default ``diskcache.FanoutCache`` disk layer for an
+S3-backed store so cached responses survive container restarts and can
+be shared across team members.
 """
 
 import logging
+import threading
 from typing import Any
 from typing import Protocol
 from typing import runtime_checkable
 
 import boto3
 from botocore.exceptions import ClientError
+from cachetools import LRUCache
 import cloudpickle
 import dspy
+from dspy.clients.cache import Cache
 
 
 logger = logging.getLogger(__name__)
@@ -85,35 +89,60 @@ class S3CacheBackend:
             logger.warning("Failed to write cache key %s", key)
 
 
-def configure_cache(backend: CacheBackend) -> None:
-    """Replace DSPy's disk cache with a custom backend.
+class S3Cache(Cache):
+    """DSPy Cache subclass that uses S3 for persistent storage.
 
-    Sets `dspy.cache.disk_cache` to the provided backend and ensures
-    disk caching is enabled so DSPy actually reads/writes through it.
+    Replaces the default ``diskcache.FanoutCache`` with an
+    ``S3CacheBackend`` while preserving the in-memory LRU cache,
+    thread safety, cache key generation, and all other base class
+    behavior.
     """
-    dspy.cache.disk_cache = backend
-    dspy.cache.enable_disk_cache = True
+
+    def __init__(
+        self,
+        s3_bucket: str,
+        s3_prefix: str = "",
+        s3_region: str | None = None,
+        s3_client: Any = None,
+        enable_memory_cache: bool = True,
+        memory_max_entries: int = 1_000_000,
+        **kwargs: Any,
+    ):
+        # Skip Cache.__init__ — it would create a FanoutCache we don't need.
+        # Instead, set up the attributes it would have created.
+        self.enable_disk_cache = True
+        self.enable_memory_cache = enable_memory_cache
+        if self.enable_memory_cache:
+            self.memory_cache = LRUCache(maxsize=memory_max_entries)
+        else:
+            self.memory_cache = {}
+        self.disk_cache = S3CacheBackend(
+            bucket=s3_bucket,
+            prefix=s3_prefix,
+            region=s3_region,
+            client=s3_client,
+        )
+        self._lock = threading.RLock()
 
 
 def setup_cache_from_settings(cache_settings: Any) -> None:
     """Configure DSPy cache from voicetest CacheSettings.
 
     If backend is "s3" and a bucket is configured, creates an
-    S3CacheBackend and installs it. Otherwise does nothing
+    S3Cache and assigns it to ``dspy.cache``. Otherwise does nothing
     (DSPy uses its built-in local disk cache).
     """
-    if cache_settings.backend != "s3":
+    if cache_settings.cache_backend != "s3":
         return
     if not cache_settings.s3_bucket:
         logger.warning("Cache backend set to 's3' but no s3_bucket configured, using disk cache")
         return
 
-    backend = S3CacheBackend(
-        bucket=cache_settings.s3_bucket,
-        prefix=cache_settings.s3_prefix,
-        region=cache_settings.s3_region,
+    dspy.cache = S3Cache(
+        s3_bucket=cache_settings.s3_bucket,
+        s3_prefix=cache_settings.s3_prefix,
+        s3_region=cache_settings.s3_region,
     )
-    configure_cache(backend)
     logger.info(
         "DSPy cache configured with S3 backend: s3://%s/%s",
         cache_settings.s3_bucket,

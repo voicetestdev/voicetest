@@ -29,7 +29,9 @@ class ModelSettings(BaseModel):
 class CacheSettings(BaseModel):
     """DSPy cache backend configuration."""
 
-    backend: str = Field(default="disk", description="Cache backend: 'disk' (default) or 's3'")
+    cache_backend: str = Field(
+        default="disk", description="Cache backend: 'disk' (default) or 's3'"
+    )
     s3_bucket: str = Field(default="", description="S3 bucket for cache storage")
     s3_prefix: str = Field(default="dspy-cache/", description="S3 key prefix")
     s3_region: str | None = Field(default=None, description="AWS region (uses default if unset)")
@@ -154,9 +156,9 @@ def _to_toml(settings: Settings) -> str:
     lines.append("")
 
     # Only write [cache] section if non-default backend is configured
-    if settings.cache.backend != "disk":
+    if settings.cache.cache_backend != "disk":
         lines.append("[cache]")
-        lines.append(f'backend = "{settings.cache.backend}"')
+        lines.append(f'cache_backend = "{settings.cache.cache_backend}"')
         if settings.cache.s3_bucket:
             lines.append(f's3_bucket = "{settings.cache.s3_bucket}"')
         lines.append(f's3_prefix = "{settings.cache.s3_prefix}"')
