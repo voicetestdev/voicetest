@@ -24,9 +24,14 @@ logger = logging.getLogger(__name__)
 class CacheBackend(Protocol):
     """Dict-like interface matching DSPy's disk_cache access pattern."""
 
-    def __contains__(self, key: str) -> bool: ...
-    def __getitem__(self, key: str) -> Any: ...
-    def __setitem__(self, key: str, value: Any) -> None: ...
+    def __contains__(self, key: str) -> bool:
+        pass
+
+    def __getitem__(self, key: str) -> Any:
+        pass
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        pass
 
 
 class S3CacheBackend:
