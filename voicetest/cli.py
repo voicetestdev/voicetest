@@ -17,6 +17,7 @@ from rich.table import Table
 from rich.tree import Tree
 import uvicorn
 
+from voicetest.cache import setup_cache_from_settings
 from voicetest.compose import get_compose_path
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
@@ -174,6 +175,7 @@ def _run_tui(
     """Launch interactive TUI."""
     settings = load_settings()
     settings.apply_env()
+    setup_cache_from_settings(settings.cache)
     options = RunOptions(
         agent_model=settings.models.agent,
         simulator_model=settings.models.simulator,
@@ -208,6 +210,7 @@ async def _run_cli(
     """Run tests in CLI mode."""
     settings = load_settings()
     settings.apply_env()
+    setup_cache_from_settings(settings.cache)
     options = RunOptions(
         agent_model=settings.models.agent,
         simulator_model=settings.models.simulator,
@@ -533,6 +536,7 @@ async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
     """Run smoke test with bundled demo data."""
     settings = load_settings()
     settings.apply_env()
+    setup_cache_from_settings(settings.cache)
 
     _echo("[bold]Running smoke test...[/bold]")
 

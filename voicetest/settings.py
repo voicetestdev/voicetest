@@ -26,6 +26,15 @@ class ModelSettings(BaseModel):
     judge: str | None = Field(default=None, description="Model for evaluation")
 
 
+class CacheSettings(BaseModel):
+    """DSPy cache backend configuration."""
+
+    backend: str = Field(default="disk", description="Cache backend: 'disk' (default) or 's3'")
+    s3_bucket: str = Field(default="", description="S3 bucket for cache storage")
+    s3_prefix: str = Field(default="dspy-cache/", description="S3 key prefix")
+    s3_region: str | None = Field(default=None, description="AWS region (uses default if unset)")
+
+
 class AudioSettings(BaseModel):
     """TTS/STT service configuration for audio evaluation."""
 
@@ -71,6 +80,7 @@ class Settings(BaseModel):
     run: RunSettings = Field(default_factory=RunSettings)
     audio: AudioSettings = Field(default_factory=AudioSettings)
     export: ExportSettings = Field(default_factory=ExportSettings)
+    cache: CacheSettings = Field(default_factory=CacheSettings)
     env: dict[str, str] = Field(
         default_factory=dict,
         description="Environment variables to set (e.g., API keys for LLM providers)",
@@ -142,6 +152,17 @@ def _to_toml(settings: Settings) -> str:
     lines.append("[export]")
     lines.append(f"layout = {str(settings.export.layout).lower()}")
     lines.append("")
+
+    # Only write [cache] section if non-default backend is configured
+    if settings.cache.backend != "disk":
+        lines.append("[cache]")
+        lines.append(f'backend = "{settings.cache.backend}"')
+        if settings.cache.s3_bucket:
+            lines.append(f's3_bucket = "{settings.cache.s3_bucket}"')
+        lines.append(f's3_prefix = "{settings.cache.s3_prefix}"')
+        if settings.cache.s3_region:
+            lines.append(f's3_region = "{settings.cache.s3_region}"')
+        lines.append("")
 
     if settings.env:
         lines.append("[env]")
