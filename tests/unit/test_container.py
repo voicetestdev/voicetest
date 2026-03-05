@@ -23,10 +23,8 @@ def reset_container_fixture():
 
 
 @pytest.fixture
-def container(tmp_path, monkeypatch):
+def container():
     """Create a fresh container with test database."""
-    db_path = tmp_path / "test.duckdb"
-    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
     return create_container()
 
 
@@ -38,7 +36,7 @@ class TestContainerEngine:
         engine2 = container.resolve(Engine)
         assert engine1 is engine2
 
-    def test_engine_creates_schema(self, container, tmp_path, monkeypatch):
+    def test_engine_creates_schema(self, container):
         from sqlalchemy import inspect
 
         engine = container.resolve(Engine)
@@ -101,10 +99,7 @@ class TestContainerRepositories:
 class TestGetSession:
     """Tests for get_session helper."""
 
-    def test_get_session_returns_session(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "test.duckdb"
-        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
-
+    def test_get_session_returns_session(self):
         session = get_session()
         assert isinstance(session, Session)
 
@@ -112,18 +107,12 @@ class TestGetSession:
 class TestGetContainer:
     """Tests for get_container singleton."""
 
-    def test_get_container_returns_same_instance(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "test.duckdb"
-        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
-
+    def test_get_container_returns_same_instance(self):
         container1 = get_container()
         container2 = get_container()
         assert container1 is container2
 
-    def test_reset_container_creates_new_instance(self, tmp_path, monkeypatch):
-        db_path = tmp_path / "test.duckdb"
-        monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
-
+    def test_reset_container_creates_new_instance(self):
         container1 = get_container()
         reset_container()
         container2 = get_container()

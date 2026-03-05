@@ -2,12 +2,22 @@
 
 from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
 
 
 def _escape_mermaid_text(text: str) -> str:
     """Escape special characters for Mermaid labels."""
     return (
         text.replace('"', "'").replace("\n", " ").replace("{", "#lbrace;").replace("}", "#rbrace;")
+    )
+
+
+def _is_logic_node(node: AgentNode) -> bool:
+    """Check if a node is a logic/branch node (deterministic equation routing)."""
+    if not node.transitions:
+        return False
+    return all(t.condition.type in ("equation", "always") for t in node.transitions) and any(
+        t.condition.type == "equation" for t in node.transitions
     )
 
 
@@ -44,14 +54,20 @@ def export_mermaid(graph: AgentGraph) -> str:
 
     # Add nodes with truncated state prompts
     for node_id, node in graph.nodes.items():
-        # Truncate long state prompts
-        label = node.state_prompt[:50]
-        if len(node.state_prompt) > 50:
-            label += "..."
-        # Escape special characters for Mermaid
-        label = _escape_mermaid_text(label)
         escaped_node_id = _escape_mermaid_text(node_id)
-        lines.append(f'    {node_id}["{escaped_node_id}<br/>{label}"]')
+
+        if _is_logic_node(node):
+            # Logic split nodes get a diamond shape with their name
+            name = node.metadata.get("name", node_id)
+            name = _escape_mermaid_text(str(name))
+            lines.append(f'    {node_id}{{"Logic Split<br/>{name}"}}')
+        else:
+            # Truncate long state prompts
+            label = node.state_prompt[:50]
+            if len(node.state_prompt) > 50:
+                label += "..."
+            label = _escape_mermaid_text(label)
+            lines.append(f'    {node_id}["{escaped_node_id}<br/>{label}"]')
 
         # Check for end_call tool
         if node.tools:

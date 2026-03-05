@@ -245,11 +245,26 @@ class ConversationEngine:
 
         return turn_result
 
+    def _apply_transition(self, turn_result: TurnResult, target: str) -> None:
+        """Record a transition to the given target node."""
+        self._current_node = target
+        self._nodes_visited.append(target)
+        turn_result.transitioned_to = target
+        tool_call = ToolCall(
+            name=f"route_to_{target}",
+            arguments={},
+            result=target,
+        )
+        self._tools_called.append(tool_call)
+        turn_result.tool_calls.append(tool_call)
+
     def _is_logic_node(self, state_module: StateModule) -> bool:
-        """Check if a node is a logic node (all transitions are equations)."""
+        """Check if a node is a logic node (equation transitions with optional always fallback)."""
         if not state_module.transitions:
             return False
-        return all(t.condition.type == "equation" for t in state_module.transitions)
+        return all(
+            t.condition.type in ("equation", "always") for t in state_module.transitions
+        ) and any(t.condition.type == "equation" for t in state_module.transitions)
 
     def _evaluate_logic_node(self, state_module: StateModule) -> TurnResult:
         """Evaluate a logic node's equation transitions deterministically.
@@ -258,8 +273,12 @@ class ConversationEngine:
         evaluates each equation against dynamic variables, returns first match.
         """
         turn_result = TurnResult(response="")
+        fallback_target: str | None = None
 
         for transition in state_module.transitions:
+            if transition.condition.type == "always":
+                fallback_target = transition.target_node_id
+                continue
             if not transition.condition.equations:
                 continue
             # All clauses in a transition must match (AND logic)
@@ -267,18 +286,12 @@ class ConversationEngine:
                 evaluate_equation(clause, self._dynamic_variables)
                 for clause in transition.condition.equations
             ):
-                target = transition.target_node_id
-                self._current_node = target
-                self._nodes_visited.append(target)
-                turn_result.transitioned_to = target
-                tool_call = ToolCall(
-                    name=f"route_to_{target}",
-                    arguments={},
-                    result=target,
-                )
-                self._tools_called.append(tool_call)
-                turn_result.tool_calls.append(tool_call)
+                self._apply_transition(turn_result, transition.target_node_id)
                 break
+        else:
+            # No equation matched — use always fallback if present
+            if fallback_target:
+                self._apply_transition(turn_result, fallback_target)
 
         # Record empty response in transcript
         self._transcript.append(

@@ -10,8 +10,6 @@ from voicetest.services import get_snippet_service
 @pytest.fixture
 def agent_id(tmp_path, monkeypatch):
     """Create a temp agent with snippets-friendly prompts and return its ID."""
-    db_path = tmp_path / "test.duckdb"
-    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
 

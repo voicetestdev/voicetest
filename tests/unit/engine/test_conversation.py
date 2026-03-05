@@ -406,6 +406,93 @@ class TestLogicNodeHandling:
         assert len(result.tool_calls) == 1
         assert result.tool_calls[0].name == "route_to_standard_support"
 
+    @pytest.fixture
+    def logic_graph_with_fallback(self):
+        """Graph with a logic node that has equation edges + an always fallback."""
+        return AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="premium_support",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="account_type == premium",
+                                equations=[
+                                    EquationClause(
+                                        left="account_type",
+                                        operator="==",
+                                        right="premium",
+                                    )
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="fallback",
+                            condition=TransitionCondition(
+                                type="always",
+                                value="Else",
+                            ),
+                        ),
+                    ],
+                    metadata={"retell_type": "branch"},
+                ),
+                "premium_support": AgentNode(
+                    id="premium_support",
+                    state_prompt="Premium support.",
+                    transitions=[],
+                ),
+                "fallback": AgentNode(
+                    id="fallback",
+                    state_prompt="Fallback support.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="router",
+            source_type="retell",
+        )
+
+    @pytest.mark.asyncio
+    async def test_logic_node_with_always_fallback(self, logic_graph_with_fallback):
+        """When no equation matches, the always transition fires."""
+        from unittest.mock import patch
+
+        from voicetest.engine.conversation import ConversationEngine
+
+        engine = ConversationEngine(
+            logic_graph_with_fallback,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"account_type": "enterprise"},
+        )
+
+        with patch("voicetest.engine.conversation.call_llm") as mock_llm:
+            result = await engine.process_turn("test")
+
+        mock_llm.assert_not_called()
+        assert result.transitioned_to == "fallback"
+        assert engine.current_node == "fallback"
+
+    @pytest.mark.asyncio
+    async def test_logic_node_equation_takes_priority_over_always(self, logic_graph_with_fallback):
+        """When an equation matches, it fires instead of the always fallback."""
+        from unittest.mock import patch
+
+        from voicetest.engine.conversation import ConversationEngine
+
+        engine = ConversationEngine(
+            logic_graph_with_fallback,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"account_type": "premium"},
+        )
+
+        with patch("voicetest.engine.conversation.call_llm") as mock_llm:
+            result = await engine.process_turn("test")
+
+        mock_llm.assert_not_called()
+        assert result.transitioned_to == "premium_support"
+
     @pytest.mark.asyncio
     async def test_non_logic_node_still_calls_llm(self, logic_graph):
         """Regular conversation nodes still go through LLM as normal."""

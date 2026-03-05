@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from pydantic import BaseModel
@@ -15,6 +16,15 @@ from voicetest.models.agent import EquationClause
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
+
+
+_MUSTACHE_RE = re.compile(r"^\{\{(.+?)\}\}$")
+
+
+def _strip_mustache(value: str) -> str:
+    """Strip {{}} wrapper from Retell variable references."""
+    m = _MUSTACHE_RE.match(value.strip())
+    return m.group(1) if m else value
 
 
 class RetellEquation(BaseModel):
@@ -92,6 +102,7 @@ class RetellNode(BaseModel):
     name: str | None = None
     instruction: RetellInstruction | None = None
     edges: list[RetellEdge] = []
+    else_edge: RetellEdge | None = None
     display_position: dict[str, float] | None = None
 
 
@@ -182,6 +193,8 @@ class RetellImporter:
         nodes: dict[str, AgentNode] = {}
         for retell_node in retell.nodes:
             transitions = [self._convert_edge(edge) for edge in retell_node.edges]
+            if retell_node.else_edge:
+                transitions.append(self._convert_else_edge(retell_node.else_edge))
 
             metadata: dict[str, Any] = {"retell_type": retell_node.type}
             if retell_node.name:
@@ -261,9 +274,9 @@ class RetellImporter:
             if edge.transition_condition.equations:
                 equation_clauses = [
                     EquationClause(
-                        left=eq.left,
+                        left=_strip_mustache(eq.left),
                         operator=eq.operator,
-                        right=eq.right,
+                        right=_strip_mustache(eq.right),
                     )
                     for eq in edge.transition_condition.equations
                 ]
@@ -282,6 +295,16 @@ class RetellImporter:
                 type=condition_type,
                 value=condition_value,
                 equations=equation_clauses,
+            ),
+        )
+
+    def _convert_else_edge(self, edge: RetellEdge) -> Transition:
+        """Convert Retell else_edge to an always-type Transition."""
+        return Transition(
+            target_node_id=edge.destination_node_id,
+            condition=TransitionCondition(
+                type="always",
+                value="Else",
             ),
         )
 

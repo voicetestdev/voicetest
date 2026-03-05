@@ -12,8 +12,6 @@ from voicetest.services import get_agent_service
 @pytest.fixture
 def svc(tmp_path, monkeypatch):
     """AgentService backed by an isolated temp database."""
-    db_path = tmp_path / "test.duckdb"
-    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
     return get_agent_service()

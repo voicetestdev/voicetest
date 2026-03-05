@@ -12,8 +12,6 @@ from voicetest.services import get_test_case_service
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     """Create agent + test case service with isolated DB. Returns (agent_id, svc)."""
-    db_path = tmp_path / "test.duckdb"
-    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
 

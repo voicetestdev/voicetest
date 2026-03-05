@@ -6,6 +6,19 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _isolate_db(tmp_path, monkeypatch):
+    """Give every test its own temporary database.
+
+    Prevents test runs from polluting the local .voicetest/data.duckdb
+    or ~/.voicetest/data.duckdb. Each test gets a fresh, empty DB.
+    Tests that need to verify path-resolution behavior can still
+    override via their own monkeypatch calls.
+    """
+    db_path = tmp_path / "test.duckdb"
+    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+
+
 @pytest.fixture
 def fixtures_dir() -> Path:
     """Return path to shared test fixtures directory."""
