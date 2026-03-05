@@ -126,10 +126,9 @@ class TestS3CacheBackend:
         assert call_kwargs["Key"] == "key1"
 
     def test_creates_boto3_client_when_none_provided(self):
-        with patch("voicetest.cache.boto3") as mock_boto3:
-            mock_boto3.client.return_value = MagicMock()
+        with patch("boto3.client", return_value=MagicMock()) as mock_client:
             S3CacheBackend(bucket="b", region="us-west-2")
-            mock_boto3.client.assert_called_once_with("s3", region_name="us-west-2")
+            mock_client.assert_called_once_with("s3", region_name="us-west-2")
 
 
 class TestS3Cache:
@@ -141,8 +140,7 @@ class TestS3Cache:
 
     def test_uses_s3_backend_as_disk_cache(self):
         """S3Cache sets self.disk_cache to an S3CacheBackend."""
-        with patch("voicetest.cache.boto3") as mock_boto3:
-            mock_boto3.client.return_value = MagicMock()
+        with patch("boto3.client", return_value=MagicMock()):
             cache = S3Cache(
                 s3_bucket="my-bucket",
                 s3_prefix="pfx/",
@@ -155,15 +153,13 @@ class TestS3Cache:
 
     def test_memory_cache_enabled_by_default(self):
         """S3Cache enables memory cache by default."""
-        with patch("voicetest.cache.boto3") as mock_boto3:
-            mock_boto3.client.return_value = MagicMock()
+        with patch("boto3.client", return_value=MagicMock()):
             cache = S3Cache(s3_bucket="b")
         assert cache.enable_memory_cache is True
 
     def test_memory_cache_can_be_disabled(self):
         """S3Cache respects enable_memory_cache=False."""
-        with patch("voicetest.cache.boto3") as mock_boto3:
-            mock_boto3.client.return_value = MagicMock()
+        with patch("boto3.client", return_value=MagicMock()):
             cache = S3Cache(s3_bucket="b", enable_memory_cache=False)
         assert cache.enable_memory_cache is False
 
@@ -195,8 +191,7 @@ class TestS3Cache:
 
     def test_inherits_cache_key_generation(self):
         """S3Cache uses the base class cache_key method."""
-        with patch("voicetest.cache.boto3") as mock_boto3:
-            mock_boto3.client.return_value = MagicMock()
+        with patch("boto3.client", return_value=MagicMock()):
             cache = S3Cache(s3_bucket="b")
         # cache_key should work exactly like the base class
         key = cache.cache_key({"messages": [{"role": "user", "content": "test"}]})

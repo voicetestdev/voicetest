@@ -13,12 +13,19 @@ from typing import Any
 from typing import Protocol
 from typing import runtime_checkable
 
-import boto3
-from botocore.exceptions import ClientError
 from cachetools import LRUCache
 import cloudpickle
 import dspy
 from dspy.clients.cache import Cache
+
+
+try:
+    import boto3
+    from botocore.exceptions import ClientError
+
+    _HAS_BOTO3 = True
+except ImportError:
+    _HAS_BOTO3 = False
 
 
 logger = logging.getLogger(__name__)
@@ -38,6 +45,11 @@ class CacheBackend(Protocol):
         pass
 
 
+def _require_boto3() -> None:
+    if not _HAS_BOTO3:
+        raise ImportError("boto3 is required for S3 cache backend. Install it with: uv add boto3")
+
+
 class S3CacheBackend:
     """S3-backed cache backend using cloudpickle for serialization.
 
@@ -52,6 +64,7 @@ class S3CacheBackend:
         region: str | None = None,
         client: Any = None,
     ):
+        _require_boto3()
         self.bucket = bucket
         self.prefix = prefix
         self._client = client or boto3.client("s3", region_name=region)
@@ -108,6 +121,7 @@ class S3Cache(Cache):
         memory_max_entries: int = 1_000_000,
         **kwargs: Any,
     ):
+        _require_boto3()
         # Skip Cache.__init__ — it would create a FanoutCache we don't need.
         # Instead, set up the attributes it would have created.
         self.enable_disk_cache = True
