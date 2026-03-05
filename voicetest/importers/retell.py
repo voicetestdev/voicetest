@@ -11,9 +11,20 @@ from pydantic import field_validator
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import EquationClause
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
+
+
+class RetellEquation(BaseModel):
+    """Single equation clause from Retell's structured equation format."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    left: str
+    operator: str
+    right: str = ""
 
 
 class RetellTransitionCondition(BaseModel):
@@ -23,7 +34,7 @@ class RetellTransitionCondition(BaseModel):
 
     type: str
     prompt: str | None = None
-    equation: str | None = None
+    equations: list[RetellEquation] | None = None
 
 
 class RetellEdge(BaseModel):
@@ -243,16 +254,34 @@ class RetellImporter:
         """Convert Retell edge to Transition."""
         condition_type = "llm_prompt"
         condition_value = edge.transition_condition.prompt or ""
+        equation_clauses: list[EquationClause] = []
 
         if edge.transition_condition.type == "equation":
             condition_type = "equation"
-            condition_value = edge.transition_condition.equation or ""
+            if edge.transition_condition.equations:
+                equation_clauses = [
+                    EquationClause(
+                        left=eq.left,
+                        operator=eq.operator,
+                        right=eq.right,
+                    )
+                    for eq in edge.transition_condition.equations
+                ]
+                # Build a readable value string from structured equations
+                parts = []
+                for eq in equation_clauses:
+                    if eq.operator in ("exists", "not_exist"):
+                        parts.append(f"{eq.left} {eq.operator}")
+                    else:
+                        parts.append(f"{eq.left} {eq.operator} {eq.right}")
+                condition_value = " AND ".join(parts)
 
         return Transition(
             target_node_id=edge.destination_node_id,
             condition=TransitionCondition(
                 type=condition_type,
                 value=condition_value,
+                equations=equation_clauses,
             ),
         )
 

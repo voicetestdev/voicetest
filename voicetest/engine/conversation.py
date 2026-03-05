@@ -9,8 +9,10 @@ from dataclasses import field
 import hashlib
 import json
 
+from voicetest.engine.equations import evaluate_equation
 from voicetest.engine.modules import ConversationModule
 from voicetest.engine.modules import RunContext
+from voicetest.engine.modules import StateModule
 from voicetest.llm import OnTokenCallback
 from voicetest.llm import call_llm
 from voicetest.models.agent import AgentGraph
@@ -140,6 +142,10 @@ class ConversationEngine:
         if state_module is None:
             raise ValueError(f"Unknown node: {self._current_node}")
 
+        # Logic nodes: evaluate equations deterministically, skip LLM
+        if self._is_logic_node(state_module):
+            return self._evaluate_logic_node(state_module)
+
         # Expand static snippets first, then dynamic variables
         general_instructions = expand_snippets(self._module.instructions, self.graph.snippets)
         state_instructions = expand_snippets(state_module.instructions, self.graph.snippets)
@@ -233,6 +239,52 @@ class ConversationEngine:
             Message(
                 role="assistant",
                 content=result.response,
+                metadata={"node_id": self._current_node},
+            )
+        )
+
+        return turn_result
+
+    def _is_logic_node(self, state_module: StateModule) -> bool:
+        """Check if a node is a logic node (all transitions are equations)."""
+        if not state_module.transitions:
+            return False
+        return all(t.condition.type == "equation" for t in state_module.transitions)
+
+    def _evaluate_logic_node(self, state_module: StateModule) -> TurnResult:
+        """Evaluate a logic node's equation transitions deterministically.
+
+        Iterates transitions top-to-bottom (matching Retell's eval order),
+        evaluates each equation against dynamic variables, returns first match.
+        """
+        turn_result = TurnResult(response="")
+
+        for transition in state_module.transitions:
+            if not transition.condition.equations:
+                continue
+            # All clauses in a transition must match (AND logic)
+            if all(
+                evaluate_equation(clause, self._dynamic_variables)
+                for clause in transition.condition.equations
+            ):
+                target = transition.target_node_id
+                self._current_node = target
+                self._nodes_visited.append(target)
+                turn_result.transitioned_to = target
+                tool_call = ToolCall(
+                    name=f"route_to_{target}",
+                    arguments={},
+                    result=target,
+                )
+                self._tools_called.append(tool_call)
+                turn_result.tool_calls.append(tool_call)
+                break
+
+        # Record empty response in transcript
+        self._transcript.append(
+            Message(
+                role="assistant",
+                content="",
                 metadata={"node_id": self._current_node},
             )
         )

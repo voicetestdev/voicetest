@@ -374,6 +374,31 @@ class TestRetellImporterLogicSplit:
         for transition in router.transitions:
             assert transition.condition.type == "equation"
 
+    def test_logic_split_equation_clauses_preserved(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        router = graph.nodes["router"]
+        premium_transition = next(
+            t for t in router.transitions if t.target_node_id == "premium_support"
+        )
+        assert len(premium_transition.condition.equations) == 1
+        clause = premium_transition.condition.equations[0]
+        assert clause.left == "account_type"
+        assert clause.operator == "=="
+        assert clause.right == "premium"
+
+    def test_logic_split_equation_value_readable(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        router = graph.nodes["router"]
+        premium_transition = next(
+            t for t in router.transitions if t.target_node_id == "premium_support"
+        )
+        assert "account_type" in premium_transition.condition.value
+        assert "premium" in premium_transition.condition.value
+
     def test_logic_split_from_file_path(self, sample_retell_config_logic_split_path):
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_logic_split_path)

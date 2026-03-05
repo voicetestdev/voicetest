@@ -2,6 +2,12 @@
 
 import pytest
 
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.models.agent import EquationClause
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
+
 
 class TestConversationEngine:
     """Tests for ConversationEngine."""
@@ -229,3 +235,199 @@ class TestProcessTurn:
         assert "Acme Corp" in captured_kwargs["general_instructions"]
         assert "Alice" in captured_kwargs["state_instructions"]
         assert "active" in captured_kwargs["state_instructions"]
+
+
+class TestLogicNodeHandling:
+    """Tests for deterministic logic node transitions (no LLM call)."""
+
+    @pytest.fixture
+    def logic_graph(self):
+        """Graph with a logic_split node that has equation transitions."""
+        return AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet the user.",
+                    transitions=[
+                        Transition(
+                            target_node_id="router",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="User provided account"
+                            ),
+                        )
+                    ],
+                ),
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="premium_support",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="account_type == premium",
+                                equations=[
+                                    EquationClause(
+                                        left="account_type",
+                                        operator="==",
+                                        right="premium",
+                                    )
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="standard_support",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="account_type == standard",
+                                equations=[
+                                    EquationClause(
+                                        left="account_type",
+                                        operator="==",
+                                        right="standard",
+                                    )
+                                ],
+                            ),
+                        ),
+                    ],
+                    metadata={"retell_type": "logic_split"},
+                ),
+                "premium_support": AgentNode(
+                    id="premium_support",
+                    state_prompt="Premium support.",
+                    transitions=[],
+                ),
+                "standard_support": AgentNode(
+                    id="standard_support",
+                    state_prompt="Standard support.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="greeting",
+            source_type="retell",
+        )
+
+    @pytest.mark.asyncio
+    async def test_logic_node_transitions_to_matching_target(self, logic_graph):
+        """Logic node with matching variable transitions without LLM call."""
+        from unittest.mock import patch
+
+        from voicetest.engine.conversation import ConversationEngine
+
+        engine = ConversationEngine(
+            logic_graph,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"account_type": "premium"},
+        )
+        engine._current_node = "router"
+        engine._nodes_visited = ["greeting", "router"]
+
+        call_count = 0
+
+        async def mock_call_llm(model, signature, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            class MockResult:
+                response = "test"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            result = await engine.process_turn("test")
+
+        assert call_count == 0, "LLM should not be called for logic nodes"
+        assert result.transitioned_to == "premium_support"
+        assert engine.current_node == "premium_support"
+
+    @pytest.mark.asyncio
+    async def test_logic_node_no_match_stays_put(self, logic_graph):
+        """Logic node with no matching variable does not transition."""
+        from unittest.mock import patch
+
+        from voicetest.engine.conversation import ConversationEngine
+
+        engine = ConversationEngine(
+            logic_graph,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"account_type": "enterprise"},
+        )
+        engine._current_node = "router"
+        engine._nodes_visited = ["greeting", "router"]
+
+        with patch("voicetest.engine.conversation.call_llm") as mock_llm:
+            result = await engine.process_turn("test")
+
+        mock_llm.assert_not_called()
+        assert result.transitioned_to is None
+        assert engine.current_node == "router"
+
+    @pytest.mark.asyncio
+    async def test_logic_node_produces_empty_response(self, logic_graph):
+        """Logic node produces an empty string response."""
+        from unittest.mock import patch
+
+        from voicetest.engine.conversation import ConversationEngine
+
+        engine = ConversationEngine(
+            logic_graph,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"account_type": "premium"},
+        )
+        engine._current_node = "router"
+        engine._nodes_visited = ["greeting", "router"]
+
+        with patch("voicetest.engine.conversation.call_llm"):
+            result = await engine.process_turn("test")
+
+        assert result.response == ""
+
+    @pytest.mark.asyncio
+    async def test_logic_node_transition_recorded(self, logic_graph):
+        """Logic node transition is recorded in nodes_visited and tool_calls."""
+        from unittest.mock import patch
+
+        from voicetest.engine.conversation import ConversationEngine
+
+        engine = ConversationEngine(
+            logic_graph,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"account_type": "standard"},
+        )
+        engine._current_node = "router"
+        engine._nodes_visited = ["greeting", "router"]
+
+        with patch("voicetest.engine.conversation.call_llm"):
+            result = await engine.process_turn("test")
+
+        assert result.transitioned_to == "standard_support"
+        assert "standard_support" in engine.nodes_visited
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].name == "route_to_standard_support"
+
+    @pytest.mark.asyncio
+    async def test_non_logic_node_still_calls_llm(self, logic_graph):
+        """Regular conversation nodes still go through LLM as normal."""
+        from unittest.mock import patch
+
+        from voicetest.engine.conversation import ConversationEngine
+
+        engine = ConversationEngine(
+            logic_graph,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"account_type": "premium"},
+        )
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Hello!"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm) as mock_llm:
+            result = await engine.process_turn("Hi")
+
+        assert mock_llm.called
+        assert result.response == "Hello!"

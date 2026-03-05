@@ -11,6 +11,14 @@ from pydantic import BaseModel
 from pydantic import Field
 
 
+class EquationClause(BaseModel):
+    """Single comparison clause in a deterministic equation condition."""
+
+    left: str  # Variable name (e.g., "account_type")
+    operator: str  # ==, !=, >, >=, <, <=, contains, not_contains, exists, not_exist
+    right: str = ""  # Comparison value (empty for exists/not_exist)
+
+
 class TransitionCondition(BaseModel):
     """Condition that triggers a transition between nodes.
 
@@ -23,6 +31,7 @@ class TransitionCondition(BaseModel):
 
     type: Literal["llm_prompt", "equation", "tool_call", "always"]
     value: str
+    equations: list[EquationClause] = Field(default_factory=list)
 
 
 class Transition(BaseModel):
