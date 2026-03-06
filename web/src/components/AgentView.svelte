@@ -98,7 +98,8 @@
 
   $effect(() => {
     const graph = $agentGraph;
-    const graphId = graph ? `${graph.entry_node_id}-${Object.keys(graph.nodes).length}` : null;
+    const transitionCount = graph ? Object.values(graph.nodes).reduce((sum, n) => sum + n.transitions.length, 0) : 0;
+    const graphId = graph ? `${graph.entry_node_id}-${Object.keys(graph.nodes).length}-${transitionCount}` : null;
     const currentTheme = theme;
 
     if (graphId && (graphId !== lastGraphId || currentTheme !== lastTheme)) {
@@ -218,14 +219,15 @@
       const nodeData = $agentGraph?.nodes[matchedId];
       if (!nodeData) return;
 
+      const nodeInfo = nodeTooltipContent(matchedId, nodeData);
       node.addEventListener("mouseenter", (e) => {
         const rect = (e.target as Element).getBoundingClientRect();
         showTooltip(
           rect.left + rect.width / 2,
           rect.top - 8,
-          matchedId,
-          nodeData.state_prompt,
-          { nodeId: matchedId }
+          nodeInfo.title,
+          nodeInfo.text,
+          { nodeId: nodeInfo.editable ? matchedId : "" }
         );
       });
       node.addEventListener("mouseleave", () => {
@@ -235,6 +237,7 @@
         e.stopPropagation();
       });
       node.addEventListener("click", () => {
+        if (!nodeInfo.editable) return;
         tooltip = { ...tooltip, show: false };
         nodePromptModal?.open(matchedId, nodeData.state_prompt);
       });
@@ -250,6 +253,7 @@
       let fullCondition = labelText;
       let sourceNodeId = "";
       let targetNodeId = "";
+      let conditionType = "";
       for (const [nodeId, node] of Object.entries($agentGraph?.nodes || {})) {
         for (const transition of node.transitions) {
           const condValue = transition.condition.value;
@@ -258,21 +262,22 @@
             fullCondition = condValue;
             sourceNodeId = nodeId;
             targetNodeId = transition.target_node_id;
+            conditionType = transition.condition.type;
             break;
           }
         }
         if (targetNodeId) break;
       }
 
+      const edgeInfo = edgeTooltipContent(conditionType, sourceNodeId, targetNodeId, fullCondition);
       label.addEventListener("mouseenter", (e) => {
         const rect = (e.target as Element).getBoundingClientRect();
-        const title = targetNodeId ? `${sourceNodeId} → ${targetNodeId}` : "Transition";
         showTooltip(
           rect.left + rect.width / 2,
           rect.top - 8,
-          title,
-          fullCondition,
-          { sourceNodeId, targetNodeId }
+          edgeInfo.title,
+          edgeInfo.text,
+          { sourceNodeId: edgeInfo.editable ? sourceNodeId : "", targetNodeId: edgeInfo.editable ? targetNodeId : "" }
         );
       });
       label.addEventListener("mouseleave", () => {
@@ -282,10 +287,9 @@
         e.stopPropagation();
       });
       label.addEventListener("click", () => {
-        if (sourceNodeId && targetNodeId) {
-          tooltip = { ...tooltip, show: false };
-          transitionModal?.open(sourceNodeId, targetNodeId, fullCondition);
-        }
+        if (!edgeInfo.editable || !sourceNodeId || !targetNodeId) return;
+        tooltip = { ...tooltip, show: false };
+        transitionModal?.open(sourceNodeId, targetNodeId, fullCondition);
       });
     });
   }
@@ -583,6 +587,35 @@
       error = e instanceof Error ? e.message : String(e);
     }
     savingGeneralPrompt = false;
+  }
+
+  function isLogicNode(node: import("../lib/types").AgentNode): boolean {
+    if (!node.transitions.length) return false;
+    return node.transitions.every(t => t.condition.type === "equation" || t.condition.type === "always")
+      && node.transitions.some(t => t.condition.type === "equation");
+  }
+
+  function nodeTooltipContent(nodeId: string, nodeData: import("../lib/types").AgentNode): { title: string; text: string; editable: boolean } {
+    if (isLogicNode(nodeData)) {
+      return {
+        title: `Logic Split: ${nodeData.metadata?.name || nodeId}`,
+        text: "This node routes deterministically based on variable conditions. It has no editable prompt.",
+        editable: false,
+      };
+    }
+    return { title: nodeId, text: nodeData.state_prompt, editable: true };
+  }
+
+  function edgeTooltipContent(conditionType: string, sourceNodeId: string, targetNodeId: string, fullCondition: string): { title: string; text: string; editable: boolean } {
+    const title = targetNodeId ? `${sourceNodeId} → ${targetNodeId}` : "Transition";
+    if (conditionType === "always") {
+      return {
+        title,
+        text: "This is a fallback (else) edge. It activates when no other conditions match. It has no editable prompt.",
+        editable: false,
+      };
+    }
+    return { title, text: fullCondition, editable: true };
   }
 
   function handleChildError(msg: string) {

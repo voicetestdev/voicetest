@@ -2,36 +2,14 @@
 
 import pytest
 
+from voicetest.exporters.graph_viz import _is_logic_node
 from voicetest.exporters.graph_viz import export_mermaid
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import EquationClause
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
-
-
-@pytest.fixture
-def simple_graph() -> AgentGraph:
-    """Create a simple two-node graph for testing."""
-    return AgentGraph(
-        nodes={
-            "greeting": AgentNode(
-                id="greeting",
-                state_prompt="Greet the user warmly.",
-                transitions=[
-                    Transition(
-                        target_node_id="farewell",
-                        condition=TransitionCondition(type="llm_prompt", value="User wants to end"),
-                    )
-                ],
-            ),
-            "farewell": AgentNode(
-                id="farewell", state_prompt="Say goodbye politely.", transitions=[]
-            ),
-        },
-        entry_node_id="greeting",
-        source_type="custom",
-    )
 
 
 @pytest.fixture
@@ -198,3 +176,177 @@ class TestMermaidEndCallNode:
 
         # Description should be in the edge label
         assert "End the call" in result
+
+
+class TestMermaidLogicNode:
+    """Tests for logic/branch node rendering in mermaid export."""
+
+    @pytest.fixture
+    def logic_graph(self) -> AgentGraph:
+        """Graph with a logic split node that routes based on equations."""
+        return AgentGraph(
+            nodes={
+                "start": AgentNode(
+                    id="start",
+                    state_prompt="Welcome the caller.",
+                    transitions=[
+                        Transition(
+                            target_node_id="router",
+                            condition=TransitionCondition(
+                                type="llm_prompt",
+                                value="User identified",
+                            ),
+                        )
+                    ],
+                ),
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="premium",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="account_type == premium",
+                                equations=[
+                                    EquationClause(
+                                        left="account_type",
+                                        operator="==",
+                                        right="premium",
+                                    )
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="standard",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    metadata={"retell_type": "logic_split", "name": "Account Router"},
+                ),
+                "premium": AgentNode(
+                    id="premium",
+                    state_prompt="Handle premium customer.",
+                    transitions=[],
+                ),
+                "standard": AgentNode(
+                    id="standard",
+                    state_prompt="Handle standard customer.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="start",
+            source_type="retell",
+        )
+
+    def test_logic_node_rendered_as_diamond(self, logic_graph):
+        """Logic split nodes use Mermaid diamond shape syntax."""
+        result = export_mermaid(logic_graph)
+        assert 'router{"Logic Split<br/>Account Router"}' in result
+
+    def test_logic_node_not_rendered_as_rectangle(self, logic_graph):
+        """Logic split nodes should not use the standard rectangle format."""
+        result = export_mermaid(logic_graph)
+        assert 'router["' not in result
+
+    def test_regular_nodes_still_rectangles(self, logic_graph):
+        """Non-logic nodes should still use rectangle format."""
+        result = export_mermaid(logic_graph)
+        assert 'start["start<br/>' in result
+        assert 'premium["premium<br/>' in result
+
+    def test_logic_node_uses_id_when_no_name(self):
+        """Logic node without a name in metadata falls back to node ID."""
+        graph = AgentGraph(
+            nodes={
+                "branch1": AgentNode(
+                    id="branch1",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="a",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="x == 1",
+                                equations=[EquationClause(left="x", operator="==", right="1")],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="b",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    metadata={"retell_type": "branch"},
+                ),
+                "a": AgentNode(id="a", state_prompt="A", transitions=[]),
+                "b": AgentNode(id="b", state_prompt="B", transitions=[]),
+            },
+            entry_node_id="branch1",
+            source_type="retell",
+        )
+        result = export_mermaid(graph)
+        assert 'branch1{"Logic Split<br/>branch1"}' in result
+
+
+class TestIsLogicNode:
+    """Tests for _is_logic_node helper."""
+
+    def test_equation_only_is_logic(self):
+        node = AgentNode(
+            id="n",
+            state_prompt="",
+            transitions=[
+                Transition(
+                    target_node_id="a",
+                    condition=TransitionCondition(type="equation", value="x == 1"),
+                ),
+            ],
+        )
+        assert _is_logic_node(node) is True
+
+    def test_equation_plus_always_is_logic(self):
+        node = AgentNode(
+            id="n",
+            state_prompt="",
+            transitions=[
+                Transition(
+                    target_node_id="a",
+                    condition=TransitionCondition(type="equation", value="x == 1"),
+                ),
+                Transition(
+                    target_node_id="b",
+                    condition=TransitionCondition(type="always", value="Else"),
+                ),
+            ],
+        )
+        assert _is_logic_node(node) is True
+
+    def test_llm_prompt_not_logic(self):
+        node = AgentNode(
+            id="n",
+            state_prompt="Talk",
+            transitions=[
+                Transition(
+                    target_node_id="a",
+                    condition=TransitionCondition(type="llm_prompt", value="done"),
+                ),
+            ],
+        )
+        assert _is_logic_node(node) is False
+
+    def test_no_transitions_not_logic(self):
+        node = AgentNode(id="n", state_prompt="", transitions=[])
+        assert _is_logic_node(node) is False
+
+    def test_only_always_not_logic(self):
+        node = AgentNode(
+            id="n",
+            state_prompt="",
+            transitions=[
+                Transition(
+                    target_node_id="a",
+                    condition=TransitionCondition(type="always", value="Else"),
+                ),
+            ],
+        )
+        assert _is_logic_node(node) is False

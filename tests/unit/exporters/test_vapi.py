@@ -1,4 +1,4 @@
-"""Tests for the VAPI exporter."""
+"""Tests for voicetest.exporters.vapi module."""
 
 from voicetest.exporters.vapi import export_vapi_assistant
 from voicetest.exporters.vapi import export_vapi_squad
@@ -6,8 +6,90 @@ from voicetest.importers.vapi import VapiImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import ToolDefinition
-from voicetest.models.agent import Transition
-from voicetest.models.agent import TransitionCondition
+
+
+class TestVAPISquadBasic:
+    """Baseline squad export tests."""
+
+    def test_squad_has_members(self, simple_graph):
+        result = export_vapi_squad(simple_graph)
+        assert len(result["members"]) == 2
+
+    def test_squad_entry_node_first(self, simple_graph):
+        result = export_vapi_squad(simple_graph)
+        assert result["members"][0]["assistant"]["name"] == "greeting"
+
+    def test_handoff_tool_created(self, simple_graph):
+        result = export_vapi_squad(simple_graph)
+        greeting_tools = result["members"][0]["assistant"]["model"]["tools"]
+        handoff = next(t for t in greeting_tools if t["type"] == "handoff")
+        assert handoff["destinations"][0]["assistantName"] == "farewell"
+
+
+class TestVAPISquadLogicSplit:
+    """Logic split nodes should be skipped in squad export.
+
+    When a logic split node sits between conversation nodes, the squad
+    exporter should wire predecessors directly to successors using
+    the equation conditions as handoff descriptions.
+    """
+
+    def test_logic_node_excluded_from_members(self, logic_split_graph):
+        """Logic split nodes should not appear as squad members."""
+        result = export_vapi_squad(logic_split_graph)
+        member_names = [m["assistant"]["name"] for m in result["members"]]
+        assert "router" not in member_names
+
+    def test_predecessor_gets_direct_handoffs(self, logic_split_graph):
+        """Greeting node should handoff directly to premium/standard."""
+        result = export_vapi_squad(logic_split_graph)
+        greeting = next(m for m in result["members"] if m["assistant"]["name"] == "greeting")
+        tools = greeting["assistant"]["model"]["tools"]
+        handoff = next(t for t in tools if t["type"] == "handoff")
+        dest_names = {d["assistantName"] for d in handoff["destinations"]}
+        assert dest_names == {"premium", "standard"}
+
+    def test_equation_condition_in_handoff_description(self, logic_split_graph):
+        """Equation conditions become handoff descriptions."""
+        result = export_vapi_squad(logic_split_graph)
+        greeting = next(m for m in result["members"] if m["assistant"]["name"] == "greeting")
+        tools = greeting["assistant"]["model"]["tools"]
+        handoff = next(t for t in tools if t["type"] == "handoff")
+        premium_dest = next(d for d in handoff["destinations"] if d["assistantName"] == "premium")
+        assert "account_type" in premium_dest["description"]
+        assert "premium" in premium_dest["description"]
+
+    def test_else_condition_in_handoff_description(self, logic_split_graph):
+        """Always/else conditions get a readable fallback description."""
+        result = export_vapi_squad(logic_split_graph)
+        greeting = next(m for m in result["members"] if m["assistant"]["name"] == "greeting")
+        tools = greeting["assistant"]["model"]["tools"]
+        handoff = next(t for t in tools if t["type"] == "handoff")
+        standard_dest = next(d for d in handoff["destinations"] if d["assistantName"] == "standard")
+        # Should indicate this is a fallback/else path
+        assert (
+            "else" in standard_dest["description"].lower()
+            or "fallback" in standard_dest["description"].lower()
+        )
+
+    def test_total_member_count(self, logic_split_graph):
+        """Should have 4 members (greeting, premium, standard, farewell)."""
+        result = export_vapi_squad(logic_split_graph)
+        assert len(result["members"]) == 4
+
+
+class TestVAPIAssistantLogicSplit:
+    """Logic split nodes should be omitted from merged assistant prompt."""
+
+    def test_logic_node_prompt_excluded(self, logic_split_graph):
+        """Empty logic node prompts shouldn't add blank lines to output."""
+        result = export_vapi_assistant(logic_split_graph)
+        # The assistant format merges all nodes into one — logic node
+        # has empty state_prompt so it shouldn't add noise
+        model_messages = result["model"]["messages"]
+        system_content = model_messages[0]["content"]
+        # Should not have consecutive blank lines from empty logic node
+        assert "\n\n\n" not in system_content
 
 
 class TestVapiExporterBasic:
@@ -116,44 +198,6 @@ class TestVapiExporterBasic:
 class TestVapiExporterMultiNode:
     """Test VAPI export with multi-node graphs (exports as squad)."""
 
-    def test_export_multi_node_creates_squad(self):
-        """Multi-node graphs export as squads with separate assistants."""
-        graph = AgentGraph(
-            nodes={
-                "greeting": AgentNode(
-                    id="greeting",
-                    state_prompt="Greet the user warmly.",
-                    tools=[],
-                    transitions=[],
-                ),
-                "help": AgentNode(
-                    id="help",
-                    state_prompt="Provide helpful assistance.",
-                    tools=[],
-                    transitions=[],
-                ),
-            },
-            entry_node_id="greeting",
-            source_type="retell-llm",
-            source_metadata={},
-        )
-
-        result = export_vapi_squad(graph)
-
-        # Should export as squad
-        assert "members" in result
-        assert len(result["members"]) == 2
-
-        # Each assistant has its own instructions
-        greeting_member = next(m for m in result["members"] if m["assistant"]["name"] == "greeting")
-        help_member = next(m for m in result["members"] if m["assistant"]["name"] == "help")
-
-        greeting_content = greeting_member["assistant"]["model"]["messages"][0]["content"]
-        help_content = help_member["assistant"]["model"]["messages"][0]["content"]
-
-        assert "Greet the user warmly" in greeting_content
-        assert "Provide helpful assistance" in help_content
-
     def test_export_multi_node_tools_per_member(self):
         """Each squad member keeps its own tools."""
         graph = AgentGraph(
@@ -189,113 +233,6 @@ class TestVapiExporterMultiNode:
 
         assert "tool1" in node1_tool_names
         assert "tool2" in node2_tool_names
-
-    def test_export_entry_node_first(self):
-        """Entry node is first member in squad."""
-        graph = AgentGraph(
-            nodes={
-                "node1": AgentNode(
-                    id="node1",
-                    state_prompt="Node 1",
-                    tools=[],
-                    transitions=[],
-                ),
-                "entry": AgentNode(
-                    id="entry",
-                    state_prompt="Entry node",
-                    tools=[],
-                    transitions=[],
-                ),
-            },
-            entry_node_id="entry",
-            source_type="custom",
-            source_metadata={},
-        )
-
-        result = export_vapi_squad(graph)
-
-        first_member = result["members"][0]["assistant"]
-        assert first_member["name"] == "entry"
-
-
-class TestVapiSquadExport:
-    """Test VAPI squad export."""
-
-    def test_export_multi_node_as_squad(self):
-        """Multi-node graphs export as squads."""
-        graph = AgentGraph(
-            nodes={
-                "greeting": AgentNode(
-                    id="greeting",
-                    state_prompt="Greet the user.",
-                    tools=[],
-                    transitions=[
-                        Transition(
-                            target_node_id="help",
-                            condition=TransitionCondition(
-                                type="llm_prompt", value="User needs help"
-                            ),
-                            description="User needs help",
-                        )
-                    ],
-                ),
-                "help": AgentNode(
-                    id="help",
-                    state_prompt="Help the user.",
-                    tools=[],
-                    transitions=[],
-                ),
-            },
-            entry_node_id="greeting",
-            source_type="custom",
-            source_metadata={},
-        )
-
-        result = export_vapi_squad(graph)
-
-        assert "members" in result
-        assert len(result["members"]) == 2
-
-        # First member should be entry node
-        first_member = result["members"][0]["assistant"]
-        assert first_member["name"] == "greeting"
-
-    def test_export_squad_handoff_tools(self):
-        """Transitions become handoff tools in squad export."""
-        graph = AgentGraph(
-            nodes={
-                "node1": AgentNode(
-                    id="node1",
-                    state_prompt="Node 1",
-                    tools=[],
-                    transitions=[
-                        Transition(
-                            target_node_id="node2",
-                            condition=TransitionCondition(type="llm_prompt", value="Go to node2"),
-                            description="Transfer to node2",
-                        )
-                    ],
-                ),
-                "node2": AgentNode(
-                    id="node2",
-                    state_prompt="Node 2",
-                    tools=[],
-                    transitions=[],
-                ),
-            },
-            entry_node_id="node1",
-            source_type="custom",
-            source_metadata={},
-        )
-
-        result = export_vapi_squad(graph)
-
-        node1_member = result["members"][0]["assistant"]
-        tools = node1_member["model"].get("tools", [])
-
-        handoff_tools = [t for t in tools if t.get("type") == "handoff"]
-        assert len(handoff_tools) == 1
-        assert handoff_tools[0]["destinations"][0]["assistantName"] == "node2"
 
 
 class TestVapiRoundTrip:

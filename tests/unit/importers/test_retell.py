@@ -374,6 +374,31 @@ class TestRetellImporterLogicSplit:
         for transition in router.transitions:
             assert transition.condition.type == "equation"
 
+    def test_logic_split_equation_clauses_preserved(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        router = graph.nodes["router"]
+        premium_transition = next(
+            t for t in router.transitions if t.target_node_id == "premium_support"
+        )
+        assert len(premium_transition.condition.equations) == 1
+        clause = premium_transition.condition.equations[0]
+        assert clause.left == "account_type"
+        assert clause.operator == "=="
+        assert clause.right == "premium"
+
+    def test_logic_split_equation_value_readable(self, sample_retell_config_logic_split):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_logic_split)
+
+        router = graph.nodes["router"]
+        premium_transition = next(
+            t for t in router.transitions if t.target_node_id == "premium_support"
+        )
+        assert "account_type" in premium_transition.condition.value
+        assert "premium" in premium_transition.condition.value
+
     def test_logic_split_from_file_path(self, sample_retell_config_logic_split_path):
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_logic_split_path)
@@ -389,6 +414,254 @@ class TestRetellImporterLogicSplit:
         assert "premium-tier" in graph.nodes["premium_support"].state_prompt
         assert "standard support" in graph.nodes["standard_support"].state_prompt.lower()
         assert "Thank the caller" in graph.nodes["farewell"].state_prompt
+
+
+class TestRetellImporterElseEdge:
+    """Tests for Retell CF importer handling else_edge on logic/branch nodes."""
+
+    def test_else_edge_imported_as_always_transition(self):
+        config = {
+            "start_node_id": "greeting",
+            "nodes": [
+                {
+                    "id": "greeting",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Hello."},
+                    "edges": [
+                        {
+                            "id": "edge-1",
+                            "destination_node_id": "router",
+                            "transition_condition": {"type": "prompt", "prompt": "Ready"},
+                        }
+                    ],
+                },
+                {
+                    "id": "router",
+                    "type": "branch",
+                    "edges": [
+                        {
+                            "id": "edge-2",
+                            "destination_node_id": "premium",
+                            "transition_condition": {
+                                "type": "equation",
+                                "equations": [
+                                    {"left": "tier", "operator": "==", "right": "premium"}
+                                ],
+                            },
+                        },
+                    ],
+                    "else_edge": {
+                        "id": "edge-else",
+                        "destination_node_id": "fallback",
+                        "transition_condition": {
+                            "type": "prompt",
+                            "prompt": "Else",
+                        },
+                    },
+                },
+                {
+                    "id": "premium",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Premium."},
+                    "edges": [],
+                },
+                {
+                    "id": "fallback",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Fallback."},
+                    "edges": [],
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        router = graph.nodes["router"]
+        assert len(router.transitions) == 2
+
+        else_transition = router.transitions[-1]
+        assert else_transition.target_node_id == "fallback"
+        assert else_transition.condition.type == "always"
+
+    def test_else_edge_appended_after_equation_edges(self):
+        config = {
+            "start_node_id": "router",
+            "nodes": [
+                {
+                    "id": "router",
+                    "type": "branch",
+                    "edges": [
+                        {
+                            "id": "edge-1",
+                            "destination_node_id": "a",
+                            "transition_condition": {
+                                "type": "equation",
+                                "equations": [{"left": "x", "operator": "==", "right": "1"}],
+                            },
+                        },
+                        {
+                            "id": "edge-2",
+                            "destination_node_id": "b",
+                            "transition_condition": {
+                                "type": "equation",
+                                "equations": [{"left": "x", "operator": "==", "right": "2"}],
+                            },
+                        },
+                    ],
+                    "else_edge": {
+                        "id": "edge-else",
+                        "destination_node_id": "c",
+                        "transition_condition": {"type": "prompt", "prompt": "Else"},
+                    },
+                },
+                {
+                    "id": "a",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "A."},
+                    "edges": [],
+                },
+                {
+                    "id": "b",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "B."},
+                    "edges": [],
+                },
+                {
+                    "id": "c",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "C."},
+                    "edges": [],
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        router = graph.nodes["router"]
+        assert len(router.transitions) == 3
+        assert router.transitions[0].condition.type == "equation"
+        assert router.transitions[1].condition.type == "equation"
+        assert router.transitions[2].condition.type == "always"
+        assert router.transitions[2].target_node_id == "c"
+
+
+class TestRetellImporterMustacheStripping:
+    """Tests for stripping {{}} from equation variable names during import."""
+
+    def test_mustache_stripped_from_equation_left(self):
+        config = {
+            "start_node_id": "router",
+            "nodes": [
+                {
+                    "id": "router",
+                    "type": "branch",
+                    "edges": [
+                        {
+                            "id": "edge-1",
+                            "destination_node_id": "target",
+                            "transition_condition": {
+                                "type": "equation",
+                                "equations": [
+                                    {
+                                        "left": "{{patient_is_minor}}",
+                                        "operator": "==",
+                                        "right": "True",
+                                    }
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    "id": "target",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Target."},
+                    "edges": [],
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        clause = graph.nodes["router"].transitions[0].condition.equations[0]
+        assert clause.left == "patient_is_minor"
+
+    def test_mustache_stripped_from_equation_right(self):
+        config = {
+            "start_node_id": "router",
+            "nodes": [
+                {
+                    "id": "router",
+                    "type": "branch",
+                    "edges": [
+                        {
+                            "id": "edge-1",
+                            "destination_node_id": "target",
+                            "transition_condition": {
+                                "type": "equation",
+                                "equations": [
+                                    {
+                                        "left": "status",
+                                        "operator": "==",
+                                        "right": "{{expected_status}}",
+                                    }
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    "id": "target",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Target."},
+                    "edges": [],
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        clause = graph.nodes["router"].transitions[0].condition.equations[0]
+        assert clause.right == "expected_status"
+
+    def test_plain_values_unchanged(self):
+        config = {
+            "start_node_id": "router",
+            "nodes": [
+                {
+                    "id": "router",
+                    "type": "branch",
+                    "edges": [
+                        {
+                            "id": "edge-1",
+                            "destination_node_id": "target",
+                            "transition_condition": {
+                                "type": "equation",
+                                "equations": [
+                                    {
+                                        "left": "account_type",
+                                        "operator": "==",
+                                        "right": "premium",
+                                    }
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    "id": "target",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Target."},
+                    "edges": [],
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        clause = graph.nodes["router"].transitions[0].condition.equations[0]
+        assert clause.left == "account_type"
+        assert clause.right == "premium"
 
 
 class TestRetellImporterWrappedFormat:

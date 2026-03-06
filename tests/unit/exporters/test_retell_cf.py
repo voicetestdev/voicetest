@@ -22,48 +22,6 @@ def _find_node(nodes: list[dict], node_id: str) -> dict | None:
 
 
 @pytest.fixture
-def simple_graph() -> AgentGraph:
-    """Create a simple agent graph for testing."""
-    return AgentGraph(
-        nodes={
-            "greeting": AgentNode(
-                id="greeting",
-                state_prompt="Greet the user warmly.",
-                transitions=[
-                    Transition(
-                        target_node_id="help",
-                        condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User needs help with something",
-                        ),
-                    ),
-                ],
-            ),
-            "help": AgentNode(
-                id="help",
-                state_prompt="Help the user with their request.",
-                transitions=[
-                    Transition(
-                        target_node_id="closing",
-                        condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User request is complete",
-                        ),
-                    ),
-                ],
-            ),
-            "closing": AgentNode(
-                id="closing",
-                state_prompt="Thank the user and end the conversation.",
-                transitions=[],
-            ),
-        },
-        entry_node_id="greeting",
-        source_type="test",
-    )
-
-
-@pytest.fixture
 def graph_with_tools() -> AgentGraph:
     """Create an agent graph with tools for testing."""
     lookup_tool = ToolDefinition(
@@ -524,17 +482,17 @@ class TestTerminalToolSynthesis:
 class TestRetellCFExporter:
     """Tests for Retell Conversation Flow exporter."""
 
-    def test_export_returns_dict(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_returns_dict(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         assert isinstance(result, dict)
 
-    def test_export_has_required_fields(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_has_required_fields(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         assert "start_node_id" in result
         assert "nodes" in result
 
-    def test_export_creates_nodes(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_creates_nodes(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         assert len(result["nodes"]) == 3
 
         node_ids = [n["id"] for n in result["nodes"]]
@@ -542,25 +500,25 @@ class TestRetellCFExporter:
         assert "help" in node_ids
         assert "closing" in node_ids
 
-    def test_export_start_node_id_correct(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_start_node_id_correct(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         assert result["start_node_id"] == "greeting"
 
-    def test_export_node_instruction_format(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_node_instruction_format(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         greeting_node = next(n for n in result["nodes"] if n["id"] == "greeting")
 
         assert "instruction" in greeting_node
         assert greeting_node["instruction"]["type"] == "prompt"
         assert "Greet the user warmly" in greeting_node["instruction"]["text"]
 
-    def test_export_node_type(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_node_type(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         greeting_node = next(n for n in result["nodes"] if n["id"] == "greeting")
         assert greeting_node["type"] == "conversation"
 
-    def test_export_transitions_become_edges(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_transitions_become_edges(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         greeting_node = next(n for n in result["nodes"] if n["id"] == "greeting")
 
         assert len(greeting_node["edges"]) == 1
@@ -569,8 +527,8 @@ class TestRetellCFExporter:
         assert edge["transition_condition"]["type"] == "prompt"
         assert "needs help" in edge["transition_condition"]["prompt"]
 
-    def test_export_edge_has_id(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_edge_has_id(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         greeting_node = next(n for n in result["nodes"] if n["id"] == "greeting")
         assert "id" in greeting_node["edges"][0]
 
@@ -892,10 +850,10 @@ class TestRetellCFExporter:
             f"Duplicate edge IDs found: {all_edge_ids}"
         )
 
-    def test_exporter_produces_retell_ui_agent_wrapper(self, simple_graph):
+    def test_exporter_produces_retell_ui_agent_wrapper(self, three_node_graph):
         """RetellCFExporter.export() wraps CF in agent envelope for Retell UI import."""
         exporter = RetellCFExporter()
-        raw = json.loads(exporter.export(simple_graph))
+        raw = json.loads(exporter.export(three_node_graph))
 
         assert raw["response_engine"]["type"] == "conversation-flow"
         assert "conversationFlow" in raw
@@ -904,10 +862,10 @@ class TestRetellCFExporter:
         assert "start_node_id" in cf
         assert cf["start_node_id"] == "greeting"
 
-    def test_exporter_wrapper_cf_matches_bare_export(self, simple_graph):
+    def test_exporter_wrapper_cf_matches_bare_export(self, three_node_graph):
         """The conversationFlow inside the wrapper matches export_retell_cf output."""
-        bare = export_retell_cf(simple_graph)
-        wrapped = json.loads(RetellCFExporter().export(simple_graph))
+        bare = export_retell_cf(three_node_graph)
+        wrapped = json.loads(RetellCFExporter().export(three_node_graph))
         cf = wrapped["conversationFlow"]
 
         assert cf["nodes"] == bare["nodes"]
@@ -1199,3 +1157,80 @@ class TestDisplayPosition:
         for node in result["nodes"]:
             assert "display_position" not in node
         assert "begin_tag_display_position" not in result
+
+
+class TestLogicSplitExport:
+    """Logic split nodes should export with else_edge and structured equations."""
+
+    def test_logic_node_exported_as_logic_split_type(self, logic_split_graph):
+        """Logic split nodes should have type=logic_split in the export."""
+        result = export_retell_cf(logic_split_graph)
+        router = next(n for n in result["nodes"] if n["id"] == "router")
+        assert router["type"] == "logic_split"
+
+    def test_else_edge_separate_from_edges(self, logic_split_graph):
+        """Always-type transition should be exported as else_edge, not in edges."""
+        result = export_retell_cf(logic_split_graph)
+        router = next(n for n in result["nodes"] if n["id"] == "router")
+        # The always/else transition should be in else_edge
+        assert "else_edge" in router
+        assert router["else_edge"]["destination_node_id"] == "standard"
+        # edges array should only have the equation transitions
+        edge_types = [e["transition_condition"]["type"] for e in router["edges"]]
+        assert all(t == "equation" for t in edge_types)
+
+    def test_structured_equations_in_edge(self, logic_split_graph):
+        """Equation edges should have structured equations array."""
+        result = export_retell_cf(logic_split_graph)
+        router = next(n for n in result["nodes"] if n["id"] == "router")
+        equation_edge = router["edges"][0]
+        tc = equation_edge["transition_condition"]
+        assert tc["type"] == "equation"
+        assert "equations" in tc
+        assert len(tc["equations"]) == 1
+        eq = tc["equations"][0]
+        assert eq["left"] == "account_type"
+        assert eq["operator"] == "=="
+        assert eq["right"] == "premium"
+
+    def test_equation_edge_no_plain_equation_string(self, logic_split_graph):
+        """Equation edges should not have the old 'equation' string key."""
+        result = export_retell_cf(logic_split_graph)
+        router = next(n for n in result["nodes"] if n["id"] == "router")
+        equation_edge = router["edges"][0]
+        tc = equation_edge["transition_condition"]
+        assert "equation" not in tc
+
+    def test_else_edge_has_retell_format(self, logic_split_graph):
+        """else_edge should have proper Retell edge structure."""
+        result = export_retell_cf(logic_split_graph)
+        router = next(n for n in result["nodes"] if n["id"] == "router")
+        else_edge = router["else_edge"]
+        assert "id" in else_edge
+        assert "destination_node_id" in else_edge
+
+    def test_non_logic_nodes_unchanged(self, logic_split_graph):
+        """Non-logic nodes should still export normally."""
+        result = export_retell_cf(logic_split_graph)
+        greeting = next(n for n in result["nodes"] if n["id"] == "greeting")
+        assert greeting["type"] == "conversation"
+        assert "else_edge" not in greeting
+        # Should have an edge to the router
+        assert any(e["destination_node_id"] == "router" for e in greeting["edges"])
+
+    def test_roundtrip_logic_split(self, logic_split_graph):
+        """Import → export → re-import preserves logic split structure."""
+        exported = export_retell_cf(logic_split_graph)
+        # Re-import the exported data
+        importer = RetellImporter()
+        reimported = importer.import_agent(exported)
+        router = reimported.nodes["router"]
+        assert router.is_logic_node()
+        # Equation transition preserved
+        eq_transitions = [t for t in router.transitions if t.condition.type == "equation"]
+        assert len(eq_transitions) == 1
+        assert eq_transitions[0].condition.equations[0].left == "account_type"
+        # Always transition preserved
+        always_transitions = [t for t in router.transitions if t.condition.type == "always"]
+        assert len(always_transitions) == 1
+        assert always_transitions[0].target_node_id == "standard"

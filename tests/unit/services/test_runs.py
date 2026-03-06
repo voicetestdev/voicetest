@@ -9,8 +9,6 @@ from voicetest.services import get_run_service
 @pytest.fixture
 def svc(tmp_path, monkeypatch):
     """RunService backed by an isolated temp database."""
-    db_path = tmp_path / "test.duckdb"
-    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
     return get_run_service()
@@ -19,8 +17,6 @@ def svc(tmp_path, monkeypatch):
 @pytest.fixture
 def agent_id(tmp_path, monkeypatch):
     """Create a temp agent and return its ID."""
-    db_path = tmp_path / "test.duckdb"
-    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
 

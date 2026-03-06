@@ -4,8 +4,6 @@ import pytest
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
-from voicetest.models.agent import Transition
-from voicetest.models.agent import TransitionCondition
 from voicetest.models.decompose import DecompositionPlan
 from voicetest.models.decompose import HandoffRule
 from voicetest.models.decompose import PromptSegment
@@ -16,60 +14,6 @@ from voicetest.services.decompose import DecomposeService
 @pytest.fixture
 def service():
     return DecomposeService()
-
-
-@pytest.fixture
-def multi_node_graph():
-    return AgentGraph(
-        nodes={
-            "greeting": AgentNode(
-                id="greeting",
-                state_prompt="Greet the customer warmly and ask how you can help.",
-                transitions=[
-                    Transition(
-                        target_node_id="billing",
-                        condition=TransitionCondition(
-                            type="llm_prompt", value="User has billing question"
-                        ),
-                    ),
-                    Transition(
-                        target_node_id="support",
-                        condition=TransitionCondition(
-                            type="llm_prompt", value="User needs technical support"
-                        ),
-                    ),
-                ],
-            ),
-            "billing": AgentNode(
-                id="billing",
-                state_prompt="Help the customer with billing inquiries.",
-                transitions=[
-                    Transition(
-                        target_node_id="end",
-                        condition=TransitionCondition(type="llm_prompt", value="Billing resolved"),
-                    )
-                ],
-            ),
-            "support": AgentNode(
-                id="support",
-                state_prompt="Provide technical support.",
-                transitions=[
-                    Transition(
-                        target_node_id="end",
-                        condition=TransitionCondition(type="llm_prompt", value="Support complete"),
-                    )
-                ],
-            ),
-            "end": AgentNode(
-                id="end",
-                state_prompt="Thank the customer and end the call politely.",
-                transitions=[],
-            ),
-        },
-        entry_node_id="greeting",
-        source_type="custom",
-        source_metadata={"general_prompt": "You are a professional customer service agent."},
-    )
 
 
 @pytest.fixture

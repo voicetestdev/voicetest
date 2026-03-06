@@ -133,32 +133,75 @@ def _export_squad(graph: AgentGraph) -> dict[str, Any]:
         if "name" in graph.source_metadata:
             result["name"] = graph.source_metadata["name"]
 
+    # Build map of logic node IDs to their resolved transitions.
+    # Logic split nodes are skipped in the squad; their predecessors
+    # get direct handoffs to the logic node's successors.
+    logic_rewrites = _build_logic_rewrites(graph)
+
     members: list[dict[str, Any]] = []
 
-    # Build ordered list starting with entry node
+    # Build ordered list starting with entry node, excluding logic nodes
     ordered_nodes: list[AgentNode] = []
     entry_node = graph.nodes.get(graph.entry_node_id)
-    if entry_node:
+    if entry_node and not entry_node.is_logic_node():
         ordered_nodes.append(entry_node)
 
     for node_id, node in graph.nodes.items():
-        if node_id != graph.entry_node_id:
+        if node_id != graph.entry_node_id and not node.is_logic_node():
             ordered_nodes.append(node)
 
     # Convert each node to a squad member (only entry node gets general_prompt)
     for i, node in enumerate(ordered_nodes):
         is_entry = i == 0
-        member = _convert_node_to_member(node, graph, is_entry=is_entry)
+        member = _convert_node_to_member(
+            node,
+            graph,
+            is_entry=is_entry,
+            logic_rewrites=logic_rewrites,
+        )
         members.append(member)
 
     result["members"] = members
     return result
 
 
+def _build_logic_rewrites(
+    graph: AgentGraph,
+) -> dict[str, list[dict[str, str]]]:
+    """Map logic node IDs to their resolved handoff destinations.
+
+    For each logic split node, returns a list of dicts with
+    ``assistantName`` and ``description`` that predecessors should use
+    as handoff destinations instead of handing off to the logic node.
+    """
+    rewrites: dict[str, list[dict[str, str]]] = {}
+    for node_id, node in graph.nodes.items():
+        if not node.is_logic_node():
+            continue
+        destinations: list[dict[str, str]] = []
+        for transition in node.transitions:
+            if transition.condition.type == "always":
+                desc = "Fallback (else) — when no other conditions match"
+            else:
+                desc = transition.condition.value
+            destinations.append(
+                {
+                    "assistantName": transition.target_node_id,
+                    "description": desc,
+                }
+            )
+        rewrites[node_id] = destinations
+    return rewrites
+
+
 def _convert_node_to_member(
-    node: AgentNode, graph: AgentGraph, is_entry: bool = False
+    node: AgentNode,
+    graph: AgentGraph,
+    is_entry: bool = False,
+    logic_rewrites: dict[str, list[dict[str, str]]] | None = None,
 ) -> dict[str, Any]:
     """Convert an AgentNode to a VAPI squad member."""
+    logic_rewrites = logic_rewrites or {}
     assistant: dict[str, Any] = {
         "name": node.id,
     }
@@ -184,17 +227,28 @@ def _convert_node_to_member(
     for tool in node.tools:
         tools.append(_convert_tool(tool))
 
-    # Convert transitions to handoff tools
+    # Convert transitions to handoff tools, resolving logic nodes
     if node.transitions:
         handoff_destinations: list[dict[str, Any]] = []
         for transition in node.transitions:
-            handoff_destinations.append(
-                {
-                    "type": "assistant",
-                    "assistantName": transition.target_node_id,
-                    "description": transition.description or transition.condition.value,
-                }
-            )
+            target_id = transition.target_node_id
+            if target_id in logic_rewrites:
+                # Logic node: replace with its resolved destinations
+                for dest in logic_rewrites[target_id]:
+                    handoff_destinations.append(
+                        {
+                            "type": "assistant",
+                            **dest,
+                        }
+                    )
+            else:
+                handoff_destinations.append(
+                    {
+                        "type": "assistant",
+                        "assistantName": target_id,
+                        "description": (transition.description or transition.condition.value),
+                    }
+                )
 
         if handoff_destinations:
             tools.append(

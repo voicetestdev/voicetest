@@ -35,7 +35,12 @@ def _create_lm(model: str, cache_salt: str | None = None, no_cache: bool = False
             edges change.
     """
     if model.startswith("claudecode/"):
-        return ClaudeCodeLM(model)
+        extra_cc: dict = {}
+        if cache_salt:
+            extra_cc["metadata"] = {"_cache_salt": cache_salt}
+        if no_cache:
+            extra_cc["cache"] = False
+        return ClaudeCodeLM(model, **extra_cc)
     extra: dict = {}
     if cache_salt:
         extra["metadata"] = {"_cache_salt": cache_salt}

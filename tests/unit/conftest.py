@@ -20,8 +20,6 @@ def reset_di_container():
 @pytest.fixture
 def db_client(tmp_path, monkeypatch):
     """Create a test client with isolated database."""
-    db_path = tmp_path / "test.duckdb"
-    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
     from voicetest.rest import app
@@ -35,8 +33,6 @@ def db_client(tmp_path, monkeypatch):
 @pytest.fixture
 def platform_client(tmp_path, monkeypatch):
     """Create a test client with isolated database, cleared API keys, and temp settings dir."""
-    db_path = tmp_path / "test.duckdb"
-    monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
     monkeypatch.delenv("RETELL_API_KEY", raising=False)
@@ -369,6 +365,7 @@ def multi_node_graph():
         },
         entry_node_id="greeting",
         source_type="custom",
+        source_metadata={"general_prompt": "You are a professional customer service agent."},
     )
 
 

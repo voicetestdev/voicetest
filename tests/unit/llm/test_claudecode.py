@@ -61,7 +61,7 @@ class TestClaudeCodeLMCall:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result) as mock_run,
         ):
-            lm = ClaudeCodeLM(model="claudecode/sonnet")
+            lm = ClaudeCodeLM(model="claudecode/sonnet", cache=False)
             lm("What is 2+2?")
 
             mock_run.assert_called_once()
@@ -72,7 +72,7 @@ class TestClaudeCodeLMCall:
             assert "json" in args
             assert "--model" in args
             assert "sonnet" in args
-            assert "What is 2+2?" in args
+            assert "User: What is 2+2?" in args
 
     def test_clears_anthropic_api_key_from_env(self):
         """Should remove ANTHROPIC_API_KEY to use Max quota."""
@@ -87,7 +87,7 @@ class TestClaudeCodeLMCall:
             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-test-key"}),
             patch("subprocess.run", return_value=mock_result) as mock_run,
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             lm("prompt")
 
             # Check the env kwarg doesn't contain ANTHROPIC_API_KEY
@@ -107,7 +107,7 @@ class TestClaudeCodeLMCall:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result),
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             result = lm("What is 2+2?")
 
             assert isinstance(result, list)
@@ -127,7 +127,7 @@ class TestClaudeCodeLMCall:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result),
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             with pytest.raises(RuntimeError, match="Claude Code failed"):
                 lm("test prompt")
 
@@ -148,7 +148,7 @@ class TestClaudeCodeLMCall:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result),
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             with pytest.raises(RuntimeError, match="Credit balance is too low"):
                 lm("test prompt")
 
@@ -160,7 +160,7 @@ class TestClaudeCodeLMCall:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", side_effect=subprocess.TimeoutExpired("claude", 120)),
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             with pytest.raises(subprocess.TimeoutExpired):
                 lm("test prompt")
 
@@ -176,7 +176,7 @@ class TestClaudeCodeLMCall:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result) as mock_run,
         ):
-            lm = ClaudeCodeLM(model="claudecode/haiku")
+            lm = ClaudeCodeLM(model="claudecode/haiku", cache=False)
             lm("prompt")
 
             args = mock_run.call_args[0][0]
@@ -195,7 +195,7 @@ class TestClaudeCodeLMCall:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result) as mock_run,
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             lm("prompt", timeout=300)
 
             call_kwargs = mock_run.call_args[1]
@@ -219,11 +219,12 @@ class TestClaudeCodeLMCallEdgeCases:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result) as mock_run,
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             lm(prompt)
 
             args = mock_run.call_args[0][0]
-            assert prompt in args
+            # Prompt goes through _messages_to_prompt which adds "User: " prefix
+            assert f"User: {prompt}" in args
 
     def test_handles_special_characters_in_prompt(self):
         """Should handle prompts with special characters."""
@@ -239,11 +240,12 @@ class TestClaudeCodeLMCallEdgeCases:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result) as mock_run,
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             lm(prompt)
 
             args = mock_run.call_args[0][0]
-            assert prompt in args
+            # Prompt goes through _messages_to_prompt which adds "User: " prefix
+            assert f"User: {prompt}" in args
 
     def test_handles_empty_result(self):
         """Should handle empty result from CLI."""
@@ -257,7 +259,7 @@ class TestClaudeCodeLMCallEdgeCases:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result),
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             result = lm("prompt")
 
             assert result[0]["text"] == ""
@@ -274,7 +276,7 @@ class TestClaudeCodeLMCallEdgeCases:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result),
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             with pytest.raises(json.JSONDecodeError):
                 lm("prompt")
 
@@ -290,7 +292,7 @@ class TestClaudeCodeLMCallEdgeCases:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result) as mock_run,
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             lm("prompt")
 
             kwargs = mock_run.call_args[1]
@@ -310,7 +312,7 @@ class TestClaudeCodeLMCallEdgeCases:
             patch("shutil.which", return_value="/usr/local/bin/claude"),
             patch("subprocess.run", return_value=mock_result),
         ):
-            lm = ClaudeCodeLM()
+            lm = ClaudeCodeLM(cache=False)
             with pytest.raises(RuntimeError) as exc_info:
                 lm("prompt")
 
@@ -418,6 +420,135 @@ class TestClaudeCodeLMIntegrationWithCallLlm:
             )
 
             assert result.answer == "42"
+
+
+class TestClaudeCodeLMCaching:
+    """Test DSPy cache integration for ClaudeCodeLM."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh_cache(self, tmp_path):
+        """Use a fresh temporary DSPy cache so tests don't pollute each other."""
+        import dspy
+
+        original_cache = dspy.cache
+        dspy.cache = dspy.clients.cache.Cache(
+            enable_disk_cache=True,
+            enable_memory_cache=True,
+            disk_cache_dir=str(tmp_path / "dspy_cache"),
+        )
+        yield
+        dspy.cache = original_cache
+
+    def test_cache_hit_skips_cli_call(self):
+        """Identical prompts should return cached result without calling CLI twice."""
+        from voicetest.llm.claudecode import ClaudeCodeLM
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"result": "cached response"})
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", return_value=mock_result) as mock_run,
+        ):
+            lm = ClaudeCodeLM()
+            # First call — cache miss, hits CLI
+            result1 = lm(prompt="cache_test_unique_1")
+            assert mock_run.call_count == 1
+            # Second identical call — cache hit, no CLI call
+            result2 = lm(prompt="cache_test_unique_1")
+            assert mock_run.call_count == 1
+            assert result1 == result2
+
+    def test_different_prompts_are_cached_separately(self):
+        """Different prompts should each call CLI once."""
+        from voicetest.llm.claudecode import ClaudeCodeLM
+
+        call_count = 0
+
+        def mock_subprocess_run(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = json.dumps({"result": f"response {call_count}"})
+            return result
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", side_effect=mock_subprocess_run),
+        ):
+            lm = ClaudeCodeLM()
+            r1 = lm(prompt="cache_test_a")
+            r2 = lm(prompt="cache_test_b")
+            assert call_count == 2
+            assert r1[0]["text"] != r2[0]["text"]
+
+    def test_cache_disabled_calls_cli_every_time(self):
+        """When cache=False, CLI should be called every time."""
+        from voicetest.llm.claudecode import ClaudeCodeLM
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"result": "response"})
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", return_value=mock_result) as mock_run,
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            lm(prompt="cache_test_disabled")
+            lm(prompt="cache_test_disabled")
+            assert mock_run.call_count == 2
+
+    def test_cache_salt_differentiates_cache_keys(self):
+        """Different metadata should produce different cache keys."""
+        from voicetest.llm.claudecode import ClaudeCodeLM
+
+        call_count = 0
+
+        def mock_subprocess_run(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = json.dumps({"result": f"response {call_count}"})
+            return result
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", side_effect=mock_subprocess_run),
+        ):
+            lm1 = ClaudeCodeLM(metadata={"_cache_salt": "salt_a"})
+            lm2 = ClaudeCodeLM(metadata={"_cache_salt": "salt_b"})
+            lm1(prompt="cache_test_salt")
+            lm2(prompt="cache_test_salt")
+            # Different salts → different cache keys → both hit CLI
+            assert call_count == 2
+
+
+class TestCreateLmCachePassthrough:
+    """Test that _create_lm passes cache options to ClaudeCodeLM."""
+
+    def test_cache_salt_passed_to_claudecode(self):
+        """_create_lm should pass cache_salt as metadata to ClaudeCodeLM."""
+        from voicetest.llm.base import _create_lm
+        from voicetest.llm.claudecode import ClaudeCodeLM
+
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            lm = _create_lm("claudecode/sonnet", cache_salt="abc123")
+            assert isinstance(lm, ClaudeCodeLM)
+            assert lm.kwargs.get("metadata", {}).get("_cache_salt") == "abc123"
+
+    def test_no_cache_passed_to_claudecode(self):
+        """_create_lm should pass no_cache as cache=False to ClaudeCodeLM."""
+        from voicetest.llm.base import _create_lm
+        from voicetest.llm.claudecode import ClaudeCodeLM
+
+        with patch("shutil.which", return_value="/usr/local/bin/claude"):
+            lm = _create_lm("claudecode/sonnet", no_cache=True)
+            assert isinstance(lm, ClaudeCodeLM)
+            assert lm.cache is False
 
 
 class TestPackageExports:

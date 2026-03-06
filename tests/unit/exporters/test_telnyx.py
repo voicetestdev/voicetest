@@ -12,22 +12,22 @@ from voicetest.models.agent import TransitionCondition
 class TestTelnyxExporter:
     """Tests for Telnyx AI assistant exporter."""
 
-    def test_export_returns_dict(self, sample_graph):
+    def test_export_returns_dict(self, single_node_graph):
         from voicetest.exporters.telnyx import export_telnyx_config
 
-        result = export_telnyx_config(sample_graph)
+        result = export_telnyx_config(single_node_graph)
         assert isinstance(result, dict)
 
-    def test_export_has_instructions(self, sample_graph):
+    def test_export_has_instructions(self, single_node_graph):
         from voicetest.exporters.telnyx import export_telnyx_config
 
-        result = export_telnyx_config(sample_graph)
+        result = export_telnyx_config(single_node_graph)
         assert "instructions" in result
 
-    def test_export_instructions_from_entry_node(self, sample_graph):
+    def test_export_instructions_from_entry_node(self, single_node_graph):
         from voicetest.exporters.telnyx import export_telnyx_config
 
-        result = export_telnyx_config(sample_graph)
+        result = export_telnyx_config(single_node_graph)
         assert result["instructions"] == "You are a helpful assistant."
 
     def test_export_tools_converted(self, sample_graph_with_tools):
@@ -254,13 +254,13 @@ class TestTelnyxExporter:
         assert "Telnyx" in info.name
         assert info.ext == "json"
 
-    def test_exporter_class_export_returns_json_string(self, sample_graph):
+    def test_exporter_class_export_returns_json_string(self, single_node_graph):
         import json
 
         from voicetest.exporters.telnyx import TelnyxExporter
 
         exporter = TelnyxExporter()
-        result = exporter.export(sample_graph)
+        result = exporter.export(single_node_graph)
         assert isinstance(result, str)
         parsed = json.loads(result)
         assert "instructions" in parsed
@@ -298,25 +298,6 @@ class TestTelnyxExporter:
         ids = {a["id"] for a in assistants}
         assert "ast_billing_002" in ids
         assert "ast_support_003" in ids
-
-
-@pytest.fixture
-def sample_graph():
-    """Sample AgentGraph for testing."""
-    return AgentGraph(
-        nodes={
-            "main": AgentNode(
-                id="main",
-                state_prompt="You are a helpful assistant.",
-                tools=[],
-                transitions=[],
-                metadata={},
-            )
-        },
-        entry_node_id="main",
-        source_type="test",
-        source_metadata={},
-    )
 
 
 @pytest.fixture

@@ -11,6 +11,7 @@ import subprocess
 from typing import Any
 
 import dspy
+from dspy.clients.cache import request_cache
 
 
 class ClaudeCodeLM(dspy.LM):
@@ -66,7 +67,7 @@ class ClaudeCodeLM(dspy.LM):
         messages: list[dict[str, Any]] | None = None,
         **kwargs,
     ) -> list[dict[str, Any]]:
-        """Send prompt to Claude Code CLI.
+        """Send prompt to Claude Code CLI, with DSPy cache integration.
 
         Args:
             prompt: Direct prompt string (used if messages not provided)
@@ -76,15 +77,26 @@ class ClaudeCodeLM(dspy.LM):
         Returns:
             List with single dict containing response
         """
-        timeout = kwargs.get("timeout", 120)
+        # Build the request dict for cache key computation
+        messages = messages or [{"role": "user", "content": prompt}]
+        request = {
+            "model": self.model,
+            "messages": messages,
+            **self.kwargs,
+        }
 
-        # Convert messages to prompt if provided
-        if messages is not None:
-            prompt_text = self._messages_to_prompt(messages)
-        elif prompt is not None:
-            prompt_text = prompt
-        else:
-            raise ValueError("Either prompt or messages must be provided")
+        completion = self._run_cli
+        if self.cache:
+            completion = request_cache(cache_arg_name="request")(completion)
+
+        return completion(request=request, timeout=kwargs.get("timeout", 120))
+
+    def _run_cli(
+        self, request: dict[str, Any], timeout: int = 120, **kwargs
+    ) -> list[dict[str, Any]]:
+        """Execute the Claude CLI subprocess."""
+        messages = request.get("messages", [])
+        prompt_text = self._messages_to_prompt(messages)
 
         # Create environment without ANTHROPIC_API_KEY to use Max quota
         env = os.environ.copy()
