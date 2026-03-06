@@ -10,48 +10,6 @@ from voicetest.models.agent import TransitionCondition
 
 
 @pytest.fixture
-def simple_graph() -> AgentGraph:
-    """Create a simple agent graph for testing."""
-    return AgentGraph(
-        nodes={
-            "greeting": AgentNode(
-                id="greeting",
-                state_prompt="Greet the user warmly.",
-                transitions=[
-                    Transition(
-                        target_node_id="help",
-                        condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User needs help with something",
-                        ),
-                    ),
-                ],
-            ),
-            "help": AgentNode(
-                id="help",
-                state_prompt="Help the user with their request.",
-                transitions=[
-                    Transition(
-                        target_node_id="closing",
-                        condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User request is complete",
-                        ),
-                    ),
-                ],
-            ),
-            "closing": AgentNode(
-                id="closing",
-                state_prompt="Thank the user and end the conversation.",
-                transitions=[],
-            ),
-        },
-        entry_node_id="greeting",
-        source_type="test",
-    )
-
-
-@pytest.fixture
 def graph_with_tools() -> AgentGraph:
     """Create an agent graph with tools for testing."""
     lookup_tool = ToolDefinition(
@@ -122,23 +80,23 @@ def graph_with_metadata() -> AgentGraph:
 class TestRetellLLMExporter:
     """Tests for Retell LLM exporter."""
 
-    def test_export_returns_dict(self, simple_graph):
+    def test_export_returns_dict(self, three_node_graph):
         from voicetest.exporters.retell_llm import export_retell_llm
 
-        result = export_retell_llm(simple_graph)
+        result = export_retell_llm(three_node_graph)
         assert isinstance(result, dict)
 
-    def test_export_has_required_fields(self, simple_graph):
+    def test_export_has_required_fields(self, three_node_graph):
         from voicetest.exporters.retell_llm import export_retell_llm
 
-        result = export_retell_llm(simple_graph)
+        result = export_retell_llm(three_node_graph)
         assert "general_prompt" in result
         assert "states" in result
 
-    def test_export_creates_states_from_nodes(self, simple_graph):
+    def test_export_creates_states_from_nodes(self, three_node_graph):
         from voicetest.exporters.retell_llm import export_retell_llm
 
-        result = export_retell_llm(simple_graph)
+        result = export_retell_llm(three_node_graph)
         assert len(result["states"]) == 3
 
         state_names = [s["name"] for s in result["states"]]
@@ -146,23 +104,23 @@ class TestRetellLLMExporter:
         assert "help" in state_names
         assert "closing" in state_names
 
-    def test_export_entry_node_is_first_state(self, simple_graph):
+    def test_export_entry_node_is_first_state(self, three_node_graph):
         from voicetest.exporters.retell_llm import export_retell_llm
 
-        result = export_retell_llm(simple_graph)
+        result = export_retell_llm(three_node_graph)
         assert result["states"][0]["name"] == "greeting"
 
-    def test_export_state_prompt_contains_instructions(self, simple_graph):
+    def test_export_state_prompt_contains_instructions(self, three_node_graph):
         from voicetest.exporters.retell_llm import export_retell_llm
 
-        result = export_retell_llm(simple_graph)
+        result = export_retell_llm(three_node_graph)
         greeting_state = next(s for s in result["states"] if s["name"] == "greeting")
         assert "Greet the user warmly" in greeting_state["state_prompt"]
 
-    def test_export_transitions_become_edges(self, simple_graph):
+    def test_export_transitions_become_edges(self, three_node_graph):
         from voicetest.exporters.retell_llm import export_retell_llm
 
-        result = export_retell_llm(simple_graph)
+        result = export_retell_llm(three_node_graph)
         greeting_state = next(s for s in result["states"] if s["name"] == "greeting")
         assert len(greeting_state["edges"]) == 1
         assert greeting_state["edges"][0]["destination_state_name"] == "help"

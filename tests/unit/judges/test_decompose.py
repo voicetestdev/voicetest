@@ -7,8 +7,6 @@ import pytest
 from voicetest.judges.decompose import DecomposeJudge
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
-from voicetest.models.agent import Transition
-from voicetest.models.agent import TransitionCondition
 from voicetest.models.decompose import DecompositionPlan
 from voicetest.models.decompose import HandoffRule
 from voicetest.models.decompose import SubAgentSpec
@@ -17,60 +15,6 @@ from voicetest.models.decompose import SubAgentSpec
 @pytest.fixture
 def judge():
     return DecomposeJudge("openai/gpt-4o-mini")
-
-
-@pytest.fixture
-def sample_graph():
-    return AgentGraph(
-        nodes={
-            "greeting": AgentNode(
-                id="greeting",
-                state_prompt="Greet the user warmly and ask how you can help.",
-                transitions=[
-                    Transition(
-                        target_node_id="billing",
-                        condition=TransitionCondition(
-                            type="llm_prompt", value="User has billing question"
-                        ),
-                    ),
-                    Transition(
-                        target_node_id="support",
-                        condition=TransitionCondition(
-                            type="llm_prompt", value="User needs technical support"
-                        ),
-                    ),
-                ],
-            ),
-            "billing": AgentNode(
-                id="billing",
-                state_prompt="Help the customer with billing inquiries.",
-                transitions=[
-                    Transition(
-                        target_node_id="end",
-                        condition=TransitionCondition(type="llm_prompt", value="Billing resolved"),
-                    )
-                ],
-            ),
-            "support": AgentNode(
-                id="support",
-                state_prompt="Provide technical support.",
-                transitions=[
-                    Transition(
-                        target_node_id="end",
-                        condition=TransitionCondition(type="llm_prompt", value="Support complete"),
-                    )
-                ],
-            ),
-            "end": AgentNode(
-                id="end",
-                state_prompt="Thank the customer and end the call politely.",
-                transitions=[],
-            ),
-        },
-        entry_node_id="greeting",
-        source_type="custom",
-        source_metadata={"general_prompt": "You are a professional customer service agent."},
-    )
 
 
 @pytest.fixture
@@ -136,18 +80,18 @@ class TestDecomposeJudgeInit:
 
 
 class TestFormatGraphFull:
-    def test_includes_general_prompt(self, judge, sample_graph):
-        formatted = judge._format_graph_full(sample_graph)
+    def test_includes_general_prompt(self, judge, multi_node_graph):
+        formatted = judge._format_graph_full(multi_node_graph)
         assert "You are a professional customer service agent." in formatted
 
-    def test_includes_node_prompts(self, judge, sample_graph):
-        formatted = judge._format_graph_full(sample_graph)
-        assert "Greet the user warmly" in formatted
+    def test_includes_node_prompts(self, judge, multi_node_graph):
+        formatted = judge._format_graph_full(multi_node_graph)
+        assert "Greet the customer warmly" in formatted
         assert "Help the customer with billing" in formatted
         assert "Provide technical support" in formatted
 
-    def test_includes_transitions(self, judge, sample_graph):
-        formatted = judge._format_graph_full(sample_graph)
+    def test_includes_transitions(self, judge, multi_node_graph):
+        formatted = judge._format_graph_full(multi_node_graph)
         assert "User has billing question" in formatted
         assert "billing" in formatted
 
@@ -171,25 +115,25 @@ class TestFormatGraphFull:
 
 class TestMockMode:
     @pytest.mark.asyncio
-    async def test_analyze_graph_mock(self, judge, sample_graph, mock_plan):
+    async def test_analyze_graph_mock(self, judge, multi_node_graph, mock_plan):
         judge._mock_mode = True
         judge._mock_plan = mock_plan
 
-        result = await judge.analyze_graph(sample_graph, requested_num_agents=0)
+        result = await judge.analyze_graph(multi_node_graph, requested_num_agents=0)
         assert result.num_sub_agents == 2
         assert len(result.sub_agents) == 2
         assert result.sub_agents[0].sub_agent_id == "intake"
 
     @pytest.mark.asyncio
-    async def test_analyze_graph_with_requested_num(self, judge, sample_graph, mock_plan):
+    async def test_analyze_graph_with_requested_num(self, judge, multi_node_graph, mock_plan):
         judge._mock_mode = True
         judge._mock_plan = mock_plan
 
-        result = await judge.analyze_graph(sample_graph, requested_num_agents=3)
+        result = await judge.analyze_graph(multi_node_graph, requested_num_agents=3)
         assert result.num_sub_agents == 2  # Mock ignores override
 
     @pytest.mark.asyncio
-    async def test_refine_sub_agent_mock(self, judge, sample_graph):
+    async def test_refine_sub_agent_mock(self, judge, multi_node_graph):
         judge._mock_mode = True
         judge._mock_refined_prompt = "Refined general prompt for intake"
         judge._mock_node_prompts = {"greeting": "Warmly greet and route the caller."}
@@ -200,12 +144,12 @@ class TestMockMode:
             description="Handles greeting",
             node_ids=["greeting"],
         )
-        general_prompt, node_prompts = await judge.refine_sub_agent(sample_graph, spec)
+        general_prompt, node_prompts = await judge.refine_sub_agent(multi_node_graph, spec)
         assert general_prompt == "Refined general prompt for intake"
         assert node_prompts["greeting"] == "Warmly greet and route the caller."
 
     @pytest.mark.asyncio
-    async def test_refine_returns_empty_when_no_mock(self, judge, sample_graph):
+    async def test_refine_returns_empty_when_no_mock(self, judge, multi_node_graph):
         judge._mock_mode = True
         # No mock values set — should return defaults
         spec = SubAgentSpec(
@@ -214,7 +158,7 @@ class TestMockMode:
             description="Test",
             node_ids=["greeting"],
         )
-        general_prompt, node_prompts = await judge.refine_sub_agent(sample_graph, spec)
+        general_prompt, node_prompts = await judge.refine_sub_agent(multi_node_graph, spec)
         assert general_prompt == ""
         assert node_prompts == {}
 

@@ -10,22 +10,22 @@ from voicetest.models.agent import ToolDefinition
 class TestBlandExporter:
     """Tests for Bland AI inbound config exporter."""
 
-    def test_export_returns_dict(self, sample_graph):
+    def test_export_returns_dict(self, single_node_graph):
         from voicetest.exporters.bland import export_bland_config
 
-        result = export_bland_config(sample_graph)
+        result = export_bland_config(single_node_graph)
         assert isinstance(result, dict)
 
-    def test_export_has_prompt(self, sample_graph):
+    def test_export_has_prompt(self, single_node_graph):
         from voicetest.exporters.bland import export_bland_config
 
-        result = export_bland_config(sample_graph)
+        result = export_bland_config(single_node_graph)
         assert "prompt" in result
 
-    def test_export_prompt_from_entry_node(self, sample_graph):
+    def test_export_prompt_from_entry_node(self, single_node_graph):
         from voicetest.exporters.bland import export_bland_config
 
-        result = export_bland_config(sample_graph)
+        result = export_bland_config(single_node_graph)
         assert result["prompt"] == "You are a helpful assistant."
 
     def test_export_tools_converted(self, sample_graph_with_tools):
@@ -110,25 +110,6 @@ class TestBlandExporter:
         # Tools should also be preserved
         assert len(exported["tools"]) == len(sample_bland_config["tools"])
         assert exported["tools"][0]["name"] == sample_bland_config["tools"][0]["name"]
-
-
-@pytest.fixture
-def sample_graph():
-    """Sample AgentGraph for testing."""
-    return AgentGraph(
-        nodes={
-            "main": AgentNode(
-                id="main",
-                state_prompt="You are a helpful assistant.",
-                tools=[],
-                transitions=[],
-                metadata={},
-            )
-        },
-        entry_node_id="main",
-        source_type="test",
-        source_metadata={},
-    )
 
 
 @pytest.fixture

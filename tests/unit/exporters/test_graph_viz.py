@@ -13,30 +13,6 @@ from voicetest.models.agent import TransitionCondition
 
 
 @pytest.fixture
-def simple_graph() -> AgentGraph:
-    """Create a simple two-node graph for testing."""
-    return AgentGraph(
-        nodes={
-            "greeting": AgentNode(
-                id="greeting",
-                state_prompt="Greet the user warmly.",
-                transitions=[
-                    Transition(
-                        target_node_id="farewell",
-                        condition=TransitionCondition(type="llm_prompt", value="User wants to end"),
-                    )
-                ],
-            ),
-            "farewell": AgentNode(
-                id="farewell", state_prompt="Say goodbye politely.", transitions=[]
-            ),
-        },
-        entry_node_id="greeting",
-        source_type="custom",
-    )
-
-
-@pytest.fixture
 def graph_with_end_call() -> AgentGraph:
     """Create a graph with end_call tools for testing."""
     return AgentGraph(

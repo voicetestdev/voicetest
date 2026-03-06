@@ -365,6 +365,7 @@ def multi_node_graph():
         },
         entry_node_id="greeting",
         source_type="custom",
+        source_metadata={"general_prompt": "You are a professional customer service agent."},
     )
 
 

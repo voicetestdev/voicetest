@@ -22,48 +22,6 @@ def _find_node(nodes: list[dict], node_id: str) -> dict | None:
 
 
 @pytest.fixture
-def simple_graph() -> AgentGraph:
-    """Create a simple agent graph for testing."""
-    return AgentGraph(
-        nodes={
-            "greeting": AgentNode(
-                id="greeting",
-                state_prompt="Greet the user warmly.",
-                transitions=[
-                    Transition(
-                        target_node_id="help",
-                        condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User needs help with something",
-                        ),
-                    ),
-                ],
-            ),
-            "help": AgentNode(
-                id="help",
-                state_prompt="Help the user with their request.",
-                transitions=[
-                    Transition(
-                        target_node_id="closing",
-                        condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User request is complete",
-                        ),
-                    ),
-                ],
-            ),
-            "closing": AgentNode(
-                id="closing",
-                state_prompt="Thank the user and end the conversation.",
-                transitions=[],
-            ),
-        },
-        entry_node_id="greeting",
-        source_type="test",
-    )
-
-
-@pytest.fixture
 def graph_with_tools() -> AgentGraph:
     """Create an agent graph with tools for testing."""
     lookup_tool = ToolDefinition(
@@ -524,17 +482,17 @@ class TestTerminalToolSynthesis:
 class TestRetellCFExporter:
     """Tests for Retell Conversation Flow exporter."""
 
-    def test_export_returns_dict(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_returns_dict(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         assert isinstance(result, dict)
 
-    def test_export_has_required_fields(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_has_required_fields(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         assert "start_node_id" in result
         assert "nodes" in result
 
-    def test_export_creates_nodes(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_creates_nodes(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         assert len(result["nodes"]) == 3
 
         node_ids = [n["id"] for n in result["nodes"]]
@@ -542,25 +500,25 @@ class TestRetellCFExporter:
         assert "help" in node_ids
         assert "closing" in node_ids
 
-    def test_export_start_node_id_correct(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_start_node_id_correct(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         assert result["start_node_id"] == "greeting"
 
-    def test_export_node_instruction_format(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_node_instruction_format(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         greeting_node = next(n for n in result["nodes"] if n["id"] == "greeting")
 
         assert "instruction" in greeting_node
         assert greeting_node["instruction"]["type"] == "prompt"
         assert "Greet the user warmly" in greeting_node["instruction"]["text"]
 
-    def test_export_node_type(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_node_type(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         greeting_node = next(n for n in result["nodes"] if n["id"] == "greeting")
         assert greeting_node["type"] == "conversation"
 
-    def test_export_transitions_become_edges(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_transitions_become_edges(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         greeting_node = next(n for n in result["nodes"] if n["id"] == "greeting")
 
         assert len(greeting_node["edges"]) == 1
@@ -569,8 +527,8 @@ class TestRetellCFExporter:
         assert edge["transition_condition"]["type"] == "prompt"
         assert "needs help" in edge["transition_condition"]["prompt"]
 
-    def test_export_edge_has_id(self, simple_graph):
-        result = export_retell_cf(simple_graph)
+    def test_export_edge_has_id(self, three_node_graph):
+        result = export_retell_cf(three_node_graph)
         greeting_node = next(n for n in result["nodes"] if n["id"] == "greeting")
         assert "id" in greeting_node["edges"][0]
 
@@ -892,10 +850,10 @@ class TestRetellCFExporter:
             f"Duplicate edge IDs found: {all_edge_ids}"
         )
 
-    def test_exporter_produces_retell_ui_agent_wrapper(self, simple_graph):
+    def test_exporter_produces_retell_ui_agent_wrapper(self, three_node_graph):
         """RetellCFExporter.export() wraps CF in agent envelope for Retell UI import."""
         exporter = RetellCFExporter()
-        raw = json.loads(exporter.export(simple_graph))
+        raw = json.loads(exporter.export(three_node_graph))
 
         assert raw["response_engine"]["type"] == "conversation-flow"
         assert "conversationFlow" in raw
@@ -904,10 +862,10 @@ class TestRetellCFExporter:
         assert "start_node_id" in cf
         assert cf["start_node_id"] == "greeting"
 
-    def test_exporter_wrapper_cf_matches_bare_export(self, simple_graph):
+    def test_exporter_wrapper_cf_matches_bare_export(self, three_node_graph):
         """The conversationFlow inside the wrapper matches export_retell_cf output."""
-        bare = export_retell_cf(simple_graph)
-        wrapped = json.loads(RetellCFExporter().export(simple_graph))
+        bare = export_retell_cf(three_node_graph)
+        wrapped = json.loads(RetellCFExporter().export(three_node_graph))
         cf = wrapped["conversationFlow"]
 
         assert cf["nodes"] == bare["nodes"]

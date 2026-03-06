@@ -1,57 +1,22 @@
 """Tests for voicetest.exporters.livekit_codegen module."""
 
-import pytest
-
 from voicetest.exporters.livekit_codegen import export_livekit_code
-from voicetest.models.agent import AgentGraph
-from voicetest.models.agent import AgentNode
-from voicetest.models.agent import Transition
-from voicetest.models.agent import TransitionCondition
-
-
-@pytest.fixture
-def simple_livekit_graph() -> AgentGraph:
-    """Two-node graph for basic LiveKit tests."""
-    return AgentGraph(
-        nodes={
-            "greeting": AgentNode(
-                id="greeting",
-                state_prompt="Greet the caller.",
-                transitions=[
-                    Transition(
-                        target_node_id="farewell",
-                        condition=TransitionCondition(
-                            type="llm_prompt",
-                            value="User wants to leave",
-                        ),
-                    )
-                ],
-            ),
-            "farewell": AgentNode(
-                id="farewell",
-                state_prompt="Say goodbye.",
-                transitions=[],
-            ),
-        },
-        entry_node_id="greeting",
-        source_type="custom",
-    )
 
 
 class TestLiveKitBasic:
     """Baseline LiveKit export tests."""
 
-    def test_generates_agent_classes(self, simple_livekit_graph):
-        result = export_livekit_code(simple_livekit_graph)
+    def test_generates_agent_classes(self, simple_graph):
+        result = export_livekit_code(simple_graph)
         assert "class Agent_greeting" in result
         assert "class Agent_farewell" in result
 
-    def test_generates_entry_point(self, simple_livekit_graph):
-        result = export_livekit_code(simple_livekit_graph)
+    def test_generates_entry_point(self, simple_graph):
+        result = export_livekit_code(simple_graph)
         assert "return Agent_greeting()" in result
 
-    def test_transition_becomes_function_tool(self, simple_livekit_graph):
-        result = export_livekit_code(simple_livekit_graph)
+    def test_transition_becomes_function_tool(self, simple_graph):
+        result = export_livekit_code(simple_graph)
         assert "route_to_farewell" in result
         assert "User wants to leave" in result
 
