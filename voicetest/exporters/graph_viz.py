@@ -14,11 +14,7 @@ def _escape_mermaid_text(text: str) -> str:
 
 def _is_logic_node(node: AgentNode) -> bool:
     """Check if a node is a logic/branch node (deterministic equation routing)."""
-    if not node.transitions:
-        return False
-    return all(t.condition.type in ("equation", "always") for t in node.transitions) and any(
-        t.condition.type == "equation" for t in node.transitions
-    )
+    return node.is_logic_node()
 
 
 class MermaidExporter:

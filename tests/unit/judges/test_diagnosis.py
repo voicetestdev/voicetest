@@ -150,6 +150,24 @@ class TestFormatGraphFull:
         formatted = judge._format_graph_full(graph)
         assert "Hello" in formatted
 
+    def test_logic_node_annotated(self, judge, logic_split_graph):
+        """Logic split nodes should be annotated as deterministic routing."""
+        formatted = judge._format_graph_full(logic_split_graph)
+        assert "LOGIC SPLIT" in formatted or "Logic Split" in formatted
+
+    def test_logic_node_equation_details(self, judge, logic_split_graph):
+        """Equation clauses should be formatted with variable details."""
+        formatted = judge._format_graph_full(logic_split_graph)
+        assert "account_type" in formatted
+        assert "==" in formatted
+        assert "premium" in formatted
+
+    def test_logic_node_else_annotated(self, judge, logic_split_graph):
+        """Always/else transitions should be clearly labeled."""
+        formatted = judge._format_graph_full(logic_split_graph)
+        # The else/fallback transition should be clearly identified
+        assert "else" in formatted.lower() or "fallback" in formatted.lower()
+
 
 class TestFormatTranscriptWithNodes:
     def test_includes_node_ids(self, judge, sample_transcript):

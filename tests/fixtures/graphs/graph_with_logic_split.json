@@ -1,0 +1,113 @@
+{
+  "source_type": "retell",
+  "entry_node_id": "greeting",
+  "nodes": {
+    "greeting": {
+      "id": "greeting",
+      "state_prompt": "Greet the caller and ask for their account number.",
+      "transitions": [
+        {
+          "target_node_id": "router",
+          "condition": {
+            "type": "llm_prompt",
+            "value": "User has provided account information"
+          }
+        }
+      ],
+      "tools": [],
+      "metadata": {
+        "retell_type": "conversation",
+        "name": "Greeting"
+      }
+    },
+    "router": {
+      "id": "router",
+      "state_prompt": "",
+      "transitions": [
+        {
+          "target_node_id": "premium",
+          "condition": {
+            "type": "equation",
+            "value": "account_type == premium",
+            "equations": [
+              {
+                "left": "account_type",
+                "operator": "==",
+                "right": "premium"
+              }
+            ]
+          }
+        },
+        {
+          "target_node_id": "standard",
+          "condition": {
+            "type": "always",
+            "value": "Else"
+          }
+        }
+      ],
+      "tools": [],
+      "metadata": {
+        "retell_type": "logic_split",
+        "name": "Account Router"
+      }
+    },
+    "premium": {
+      "id": "premium",
+      "state_prompt": "Handle the premium customer with priority support.",
+      "transitions": [
+        {
+          "target_node_id": "farewell",
+          "condition": {
+            "type": "llm_prompt",
+            "value": "Issue resolved"
+          }
+        }
+      ],
+      "tools": [],
+      "metadata": {
+        "retell_type": "conversation",
+        "name": "Premium Support"
+      }
+    },
+    "standard": {
+      "id": "standard",
+      "state_prompt": "Help the standard customer with their request.",
+      "transitions": [
+        {
+          "target_node_id": "farewell",
+          "condition": {
+            "type": "llm_prompt",
+            "value": "Issue resolved"
+          }
+        }
+      ],
+      "tools": [],
+      "metadata": {
+        "retell_type": "conversation",
+        "name": "Standard Support"
+      }
+    },
+    "farewell": {
+      "id": "farewell",
+      "state_prompt": "Thank the caller and end the conversation.",
+      "transitions": [],
+      "tools": [
+        {
+          "name": "end_call",
+          "description": "End the call",
+          "parameters": {},
+          "type": "end_call"
+        }
+      ],
+      "metadata": {
+        "retell_type": "conversation",
+        "name": "Farewell"
+      }
+    }
+  },
+  "source_metadata": {
+    "general_prompt": "You are a helpful customer service agent.",
+    "conversation_flow_id": "test-logic-split-flow"
+  }
+}

@@ -217,7 +217,8 @@ class TestMermaidLogicNode:
                         Transition(
                             target_node_id="router",
                             condition=TransitionCondition(
-                                type="llm_prompt", value="User identified"
+                                type="llm_prompt",
+                                value="User identified",
                             ),
                         )
                     ],
@@ -233,7 +234,9 @@ class TestMermaidLogicNode:
                                 value="account_type == premium",
                                 equations=[
                                     EquationClause(
-                                        left="account_type", operator="==", right="premium"
+                                        left="account_type",
+                                        operator="==",
+                                        right="premium",
                                     )
                                 ],
                             ),
@@ -335,7 +338,8 @@ class TestIsLogicNode:
                     condition=TransitionCondition(type="equation", value="x == 1"),
                 ),
                 Transition(
-                    target_node_id="b", condition=TransitionCondition(type="always", value="Else")
+                    target_node_id="b",
+                    condition=TransitionCondition(type="always", value="Else"),
                 ),
             ],
         )
@@ -364,7 +368,8 @@ class TestIsLogicNode:
             state_prompt="",
             transitions=[
                 Transition(
-                    target_node_id="a", condition=TransitionCondition(type="always", value="Else")
+                    target_node_id="a",
+                    condition=TransitionCondition(type="always", value="Else"),
                 ),
             ],
         )

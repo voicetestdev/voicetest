@@ -1199,3 +1199,80 @@ class TestDisplayPosition:
         for node in result["nodes"]:
             assert "display_position" not in node
         assert "begin_tag_display_position" not in result
+
+
+class TestLogicSplitExport:
+    """Logic split nodes should export with else_edge and structured equations."""
+
+    def test_logic_node_exported_as_logic_split_type(self, logic_split_graph):
+        """Logic split nodes should have type=logic_split in the export."""
+        result = export_retell_cf(logic_split_graph)
+        router = next(n for n in result["nodes"] if n["id"] == "router")
+        assert router["type"] == "logic_split"
+
+    def test_else_edge_separate_from_edges(self, logic_split_graph):
+        """Always-type transition should be exported as else_edge, not in edges."""
+        result = export_retell_cf(logic_split_graph)
+        router = next(n for n in result["nodes"] if n["id"] == "router")
+        # The always/else transition should be in else_edge
+        assert "else_edge" in router
+        assert router["else_edge"]["destination_node_id"] == "standard"
+        # edges array should only have the equation transitions
+        edge_types = [e["transition_condition"]["type"] for e in router["edges"]]
+        assert all(t == "equation" for t in edge_types)
+
+    def test_structured_equations_in_edge(self, logic_split_graph):
+        """Equation edges should have structured equations array."""
+        result = export_retell_cf(logic_split_graph)
+        router = next(n for n in result["nodes"] if n["id"] == "router")
+        equation_edge = router["edges"][0]
+        tc = equation_edge["transition_condition"]
+        assert tc["type"] == "equation"
+        assert "equations" in tc
+        assert len(tc["equations"]) == 1
+        eq = tc["equations"][0]
+        assert eq["left"] == "account_type"
+        assert eq["operator"] == "=="
+        assert eq["right"] == "premium"
+
+    def test_equation_edge_no_plain_equation_string(self, logic_split_graph):
+        """Equation edges should not have the old 'equation' string key."""
+        result = export_retell_cf(logic_split_graph)
+        router = next(n for n in result["nodes"] if n["id"] == "router")
+        equation_edge = router["edges"][0]
+        tc = equation_edge["transition_condition"]
+        assert "equation" not in tc
+
+    def test_else_edge_has_retell_format(self, logic_split_graph):
+        """else_edge should have proper Retell edge structure."""
+        result = export_retell_cf(logic_split_graph)
+        router = next(n for n in result["nodes"] if n["id"] == "router")
+        else_edge = router["else_edge"]
+        assert "id" in else_edge
+        assert "destination_node_id" in else_edge
+
+    def test_non_logic_nodes_unchanged(self, logic_split_graph):
+        """Non-logic nodes should still export normally."""
+        result = export_retell_cf(logic_split_graph)
+        greeting = next(n for n in result["nodes"] if n["id"] == "greeting")
+        assert greeting["type"] == "conversation"
+        assert "else_edge" not in greeting
+        # Should have an edge to the router
+        assert any(e["destination_node_id"] == "router" for e in greeting["edges"])
+
+    def test_roundtrip_logic_split(self, logic_split_graph):
+        """Import → export → re-import preserves logic split structure."""
+        exported = export_retell_cf(logic_split_graph)
+        # Re-import the exported data
+        importer = RetellImporter()
+        reimported = importer.import_agent(exported)
+        router = reimported.nodes["router"]
+        assert router.is_logic_node()
+        # Equation transition preserved
+        eq_transitions = [t for t in router.transitions if t.condition.type == "equation"]
+        assert len(eq_transitions) == 1
+        assert eq_transitions[0].condition.equations[0].left == "account_type"
+        # Always transition preserved
+        always_transitions = [t for t in router.transitions if t.condition.type == "always"]
+        assert len(always_transitions) == 1
+        assert always_transitions[0].target_node_id == "standard"

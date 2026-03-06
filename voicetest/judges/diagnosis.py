@@ -251,13 +251,35 @@ class DiagnosisJudge:
             lines.append("")
 
         for node_id, node in graph.nodes.items():
-            lines.append(f"=== NODE: {node_id} ===")
-            lines.append(f"State Prompt: {node.state_prompt}")
-            if node.transitions:
-                lines.append("Transitions:")
+            if node.is_logic_node():
+                name = node.metadata.get("name", node_id)
+                lines.append(f"=== NODE: {node_id} (Logic Split: {name}) ===")
+                lines.append(
+                    "This node routes deterministically based on variable "
+                    "conditions — no LLM prompt is used."
+                )
+                lines.append("Routes:")
                 for t in node.transitions:
-                    condition = t.condition.value or "unconditional"
-                    lines.append(f"  -> {t.target_node_id}: {condition}")
+                    if t.condition.type == "always":
+                        lines.append(f"  -> {t.target_node_id}: [else/fallback]")
+                    elif t.condition.equations:
+                        clauses = []
+                        for eq in t.condition.equations:
+                            if eq.operator in ("exists", "not_exist"):
+                                clauses.append(f"{eq.left} {eq.operator}")
+                            else:
+                                clauses.append(f"{eq.left} {eq.operator} {eq.right}")
+                        lines.append(f"  -> {t.target_node_id}: {' AND '.join(clauses)}")
+                    else:
+                        lines.append(f"  -> {t.target_node_id}: {t.condition.value}")
+            else:
+                lines.append(f"=== NODE: {node_id} ===")
+                lines.append(f"State Prompt: {node.state_prompt}")
+                if node.transitions:
+                    lines.append("Transitions:")
+                    for t in node.transitions:
+                        condition = t.condition.value or "unconditional"
+                        lines.append(f"  -> {t.target_node_id}: {condition}")
             lines.append("")
 
         return "\n".join(lines)

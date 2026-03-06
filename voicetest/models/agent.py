@@ -77,6 +77,19 @@ class AgentNode(BaseModel):
     transitions: list[Transition] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    def is_logic_node(self) -> bool:
+        """Check if this is a logic/branch node (deterministic equation routing).
+
+        A logic node has only equation and always-type transitions, with at
+        least one equation transition. These nodes route deterministically
+        based on variable conditions rather than LLM decisions.
+        """
+        if not self.transitions:
+            return False
+        return all(t.condition.type in ("equation", "always") for t in self.transitions) and any(
+            t.condition.type == "equation" for t in self.transitions
+        )
+
 
 class GlobalMetric(BaseModel):
     """A metric that runs on all tests for an agent.
