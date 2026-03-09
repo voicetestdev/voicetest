@@ -664,6 +664,278 @@ class TestRetellImporterMustacheStripping:
         assert clause.right == "premium"
 
 
+class TestRetellImporterExtractDynamicVariables:
+    """Tests for importing extract_dynamic_variables nodes."""
+
+    def test_import_extract_node_preserves_variables(self, sample_retell_config_extract_variables):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_extract_variables)
+
+        extract_node = graph.nodes["extract_dob"]
+        assert len(extract_node.variables_to_extract) == 3
+        assert extract_node.variables_to_extract[0].name == "dob_month"
+        assert extract_node.variables_to_extract[0].description == "The month of birth"
+        assert extract_node.variables_to_extract[0].type == "string"
+        assert "January" in extract_node.variables_to_extract[0].choices
+
+    def test_extract_node_retell_type_metadata(self, sample_retell_config_extract_variables):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_extract_variables)
+
+        extract_node = graph.nodes["extract_dob"]
+        assert extract_node.metadata["retell_type"] == "extract_dynamic_variables"
+
+    def test_extract_node_has_equation_edges(self, sample_retell_config_extract_variables):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_extract_variables)
+
+        extract_node = graph.nodes["extract_dob"]
+        equation_transitions = [
+            t for t in extract_node.transitions if t.condition.type == "equation"
+        ]
+        assert len(equation_transitions) == 1
+        assert len(equation_transitions[0].condition.equations) == 3
+
+    def test_extract_node_has_else_edge(self, sample_retell_config_extract_variables):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_extract_variables)
+
+        extract_node = graph.nodes["extract_dob"]
+        always_transitions = [t for t in extract_node.transitions if t.condition.type == "always"]
+        assert len(always_transitions) == 1
+        assert always_transitions[0].target_node_id == "dob_retry"
+
+    def test_extract_node_is_extract_node(self, sample_retell_config_extract_variables):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_extract_variables)
+
+        assert graph.nodes["extract_dob"].is_extract_node() is True
+        assert graph.nodes["ask_dob"].is_extract_node() is False
+
+    def test_full_graph_structure(self, sample_retell_config_extract_variables):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_extract_variables)
+
+        assert len(graph.nodes) == 4
+        assert graph.entry_node_id == "ask_dob"
+        assert "extract_dob" in graph.nodes
+        assert "dob_match" in graph.nodes
+        assert "dob_retry" in graph.nodes
+
+
+class TestRetellImporterOperatorField:
+    """Tests for importing the operator field on equation transition conditions."""
+
+    def test_and_operator_imported(self):
+        config = {
+            "start_node_id": "router",
+            "nodes": [
+                {
+                    "id": "router",
+                    "type": "branch",
+                    "edges": [
+                        {
+                            "id": "edge-1",
+                            "destination_node_id": "target",
+                            "transition_condition": {
+                                "type": "equation",
+                                "operator": "&&",
+                                "equations": [
+                                    {"left": "x", "operator": "==", "right": "1"},
+                                    {"left": "y", "operator": "==", "right": "2"},
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    "id": "target",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Target."},
+                    "edges": [],
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        condition = graph.nodes["router"].transitions[0].condition
+        assert condition.logical_operator == "and"
+
+    def test_or_operator_imported(self):
+        config = {
+            "start_node_id": "router",
+            "nodes": [
+                {
+                    "id": "router",
+                    "type": "branch",
+                    "edges": [
+                        {
+                            "id": "edge-1",
+                            "destination_node_id": "target",
+                            "transition_condition": {
+                                "type": "equation",
+                                "operator": "||",
+                                "equations": [
+                                    {"left": "x", "operator": "==", "right": "1"},
+                                    {"left": "y", "operator": "==", "right": "2"},
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    "id": "target",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Target."},
+                    "edges": [],
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        condition = graph.nodes["router"].transitions[0].condition
+        assert condition.logical_operator == "or"
+
+    def test_no_operator_defaults_to_and(self):
+        config = {
+            "start_node_id": "router",
+            "nodes": [
+                {
+                    "id": "router",
+                    "type": "branch",
+                    "edges": [
+                        {
+                            "id": "edge-1",
+                            "destination_node_id": "target",
+                            "transition_condition": {
+                                "type": "equation",
+                                "equations": [
+                                    {"left": "x", "operator": "==", "right": "1"},
+                                ],
+                            },
+                        },
+                    ],
+                },
+                {
+                    "id": "target",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Target."},
+                    "edges": [],
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        condition = graph.nodes["router"].transitions[0].condition
+        assert condition.logical_operator == "and"
+
+
+class TestRetellImporterAlwaysEdge:
+    """Tests for importing always_edge on conversation nodes."""
+
+    def test_always_edge_imported_as_always_transition(self):
+        config = {
+            "start_node_id": "main",
+            "nodes": [
+                {
+                    "id": "main",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Say goodbye."},
+                    "edges": [],
+                    "always_edge": {
+                        "id": "always-edge-1",
+                        "destination_node_id": "end",
+                        "transition_condition": {
+                            "type": "prompt",
+                            "prompt": "Always",
+                        },
+                    },
+                },
+                {
+                    "id": "end",
+                    "type": "end",
+                    "instruction": {"type": "prompt", "text": "End."},
+                    "edges": [],
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        main = graph.nodes["main"]
+        assert len(main.transitions) == 1
+        assert main.transitions[0].target_node_id == "end"
+        assert main.transitions[0].condition.type == "always"
+
+    def test_always_edge_appended_after_regular_edges(self):
+        config = {
+            "start_node_id": "main",
+            "nodes": [
+                {
+                    "id": "main",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Help."},
+                    "edges": [
+                        {
+                            "id": "edge-1",
+                            "destination_node_id": "branch",
+                            "transition_condition": {
+                                "type": "prompt",
+                                "prompt": "User needs help",
+                            },
+                        },
+                    ],
+                    "always_edge": {
+                        "id": "always-edge-1",
+                        "destination_node_id": "end",
+                        "transition_condition": {
+                            "type": "prompt",
+                            "prompt": "Always",
+                        },
+                    },
+                },
+                {
+                    "id": "branch",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Branch."},
+                    "edges": [],
+                },
+                {
+                    "id": "end",
+                    "type": "end",
+                    "instruction": {"type": "prompt", "text": "End."},
+                    "edges": [],
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        main = graph.nodes["main"]
+        assert len(main.transitions) == 2
+        assert main.transitions[0].condition.type == "llm_prompt"
+        assert main.transitions[1].condition.type == "always"
+        assert main.transitions[1].target_node_id == "end"
+
+    def test_pharmacy_fixture_always_edge_imported(self):
+        """The pharmacy refill agent uses always_edge on conversation nodes."""
+        importer = RetellImporter()
+        graph = importer.import_agent("test-data/template_pharmacy_refill_agent_cf.json")
+
+        patient_unavailable = graph.nodes["patient_unavailable"]
+        assert len(patient_unavailable.transitions) == 1
+        assert patient_unavailable.transitions[0].target_node_id == "synth_end_call"
+        assert patient_unavailable.transitions[0].condition.type == "always"
+
+        guardian_unavailable = graph.nodes["guardian_unavailable"]
+        assert len(guardian_unavailable.transitions) == 1
+        assert guardian_unavailable.transitions[0].target_node_id == "synth_end_call"
+        assert guardian_unavailable.transitions[0].condition.type == "always"
+
+
 class TestRetellImporterWrappedFormat:
     """Tests for importing Retell UI agent wrapper format."""
 

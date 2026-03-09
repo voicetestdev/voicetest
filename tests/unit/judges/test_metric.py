@@ -96,6 +96,33 @@ class TestMetricJudge:
         assert "USER: Hello" in formatted
         assert "ASSISTANT: Hi there!" in formatted
 
+    def test_format_transcript_includes_tool_messages(self):
+        from voicetest.judges.metric import MetricJudge
+
+        judge = MetricJudge("openai/gpt-4o-mini")
+
+        transcript = [
+            Message(role="user", content="My DOB is Jan 1990"),
+            Message(
+                role="tool",
+                content="Extracted: dob_month=January, dob_year=1990",
+                metadata={"tool_name": "extract_variables"},
+            ),
+            Message(
+                role="tool",
+                content="Transitioned to verified",
+                metadata={"tool_name": "route_to_verified"},
+            ),
+            Message(role="assistant", content="Thank you, verified."),
+        ]
+
+        formatted = judge._format_transcript(transcript)
+
+        assert "TOOL: Extracted: dob_month=January, dob_year=1990" in formatted
+        assert "TOOL: Transitioned to verified" in formatted
+        assert "USER: My DOB is Jan 1990" in formatted
+        assert "ASSISTANT: Thank you, verified." in formatted
+
     @pytest.mark.asyncio
     async def test_evaluate_with_score_and_threshold(self):
         from voicetest.judges.metric import MetricJudge

@@ -99,8 +99,10 @@ class ClaudeCodeLM(dspy.LM):
         prompt_text = self._messages_to_prompt(messages)
 
         # Create environment without ANTHROPIC_API_KEY to use Max quota
+        # Also unset CLAUDECODE to allow nested sessions
         env = os.environ.copy()
         env.pop("ANTHROPIC_API_KEY", None)
+        env.pop("CLAUDECODE", None)
 
         result = subprocess.run(
             ["claude", "-p", "--output-format", "json", "--model", self.variant, prompt_text],

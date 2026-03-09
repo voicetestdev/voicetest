@@ -11,6 +11,7 @@ from voicetest.models.agent import AgentNode
 from voicetest.models.agent import EquationClause
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
+from voicetest.models.agent import VariableExtraction
 
 
 class TestConversationEngine:
@@ -508,6 +509,608 @@ class TestLogicNodeHandling:
 
         assert mock_llm.called
         assert result.response == "Hello!"
+
+
+class TestLogicalOperator:
+    """Tests for logical_operator (AND/OR) on equation transitions."""
+
+    @pytest.fixture
+    def or_logic_graph(self):
+        """Graph with a logic node using OR logical_operator."""
+        return AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="match",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="x == 1 OR y == 2",
+                                logical_operator="or",
+                                equations=[
+                                    EquationClause(left="x", operator="==", right="1"),
+                                    EquationClause(left="y", operator="==", right="2"),
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="fallback",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                ),
+                "match": AgentNode(id="match", state_prompt="Matched.", transitions=[]),
+                "fallback": AgentNode(id="fallback", state_prompt="Fallback.", transitions=[]),
+            },
+            entry_node_id="router",
+            source_type="retell",
+        )
+
+    @pytest.mark.asyncio
+    async def test_or_operator_any_clause_matches(self, or_logic_graph):
+        """OR operator: any single clause matching triggers transition."""
+        engine = ConversationEngine(
+            or_logic_graph,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"x": "1", "y": "99"},
+        )
+
+        with patch("voicetest.engine.conversation.call_llm") as mock_llm:
+            result = await engine.process_turn("test")
+
+        mock_llm.assert_not_called()
+        assert result.transitioned_to == "match"
+
+    @pytest.mark.asyncio
+    async def test_or_operator_no_clause_matches_falls_through(self, or_logic_graph):
+        """OR operator: no clauses matching falls through to else."""
+        engine = ConversationEngine(
+            or_logic_graph,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"x": "99", "y": "99"},
+        )
+
+        with patch("voicetest.engine.conversation.call_llm") as mock_llm:
+            result = await engine.process_turn("test")
+
+        mock_llm.assert_not_called()
+        assert result.transitioned_to == "fallback"
+
+    @pytest.mark.asyncio
+    async def test_and_operator_explicit_all_must_match(self):
+        """AND operator (explicit): all clauses must match."""
+        graph = AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="match",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="x == 1 AND y == 2",
+                                logical_operator="and",
+                                equations=[
+                                    EquationClause(left="x", operator="==", right="1"),
+                                    EquationClause(left="y", operator="==", right="2"),
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="fallback",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                ),
+                "match": AgentNode(id="match", state_prompt="Matched.", transitions=[]),
+                "fallback": AgentNode(id="fallback", state_prompt="Fallback.", transitions=[]),
+            },
+            entry_node_id="router",
+            source_type="retell",
+        )
+
+        # Only x matches, y does not
+        engine = ConversationEngine(
+            graph,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"x": "1", "y": "99"},
+        )
+
+        with patch("voicetest.engine.conversation.call_llm"):
+            result = await engine.process_turn("test")
+
+        assert result.transitioned_to == "fallback"
+
+
+class TestExtractNodeHandling:
+    """Tests for extract_dynamic_variables node processing."""
+
+    @pytest.fixture
+    def extract_graph(self):
+        """Graph with an extract node that extracts variables then routes."""
+        return AgentGraph(
+            nodes={
+                "extract": AgentNode(
+                    id="extract",
+                    state_prompt="",
+                    variables_to_extract=[
+                        VariableExtraction(
+                            name="dob_month",
+                            description="The month of birth",
+                            type="string",
+                            choices=["January", "February"],
+                        ),
+                        VariableExtraction(
+                            name="dob_year",
+                            description="The year of birth",
+                            type="string",
+                        ),
+                    ],
+                    transitions=[
+                        Transition(
+                            target_node_id="match",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="dob_month == January AND dob_year == 1990",
+                                equations=[
+                                    EquationClause(
+                                        left="dob_month",
+                                        operator="==",
+                                        right="January",
+                                    ),
+                                    EquationClause(
+                                        left="dob_year",
+                                        operator="==",
+                                        right="1990",
+                                    ),
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="no_match",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    metadata={"retell_type": "extract_dynamic_variables"},
+                ),
+                "match": AgentNode(id="match", state_prompt="Verified.", transitions=[]),
+                "no_match": AgentNode(id="no_match", state_prompt="Not verified.", transitions=[]),
+            },
+            entry_node_id="extract",
+            source_type="retell",
+        )
+
+    @pytest.mark.asyncio
+    async def test_extract_node_calls_llm_to_extract_variables(self, extract_graph):
+        """Extract node calls LLM to extract variables from conversation."""
+        mock_result = AsyncMock()
+        mock_result.dob_month = "January"
+        mock_result.dob_year = "1990"
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result) as mock_llm:
+            engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
+            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.process_turn("My birthday is January 15, 1990")
+
+        mock_llm.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_extract_node_stores_variables(self, extract_graph):
+        """Extracted values are stored in dynamic variables."""
+        mock_result = AsyncMock()
+        mock_result.dob_month = "January"
+        mock_result.dob_year = "1990"
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
+            engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
+            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.process_turn("My birthday is January 15, 1990")
+
+        assert engine._dynamic_variables["dob_month"] == "January"
+        assert engine._dynamic_variables["dob_year"] == "1990"
+
+    @pytest.mark.asyncio
+    async def test_extract_node_routes_on_match(self, extract_graph):
+        """Extract node routes to match when equations match extracted values."""
+        mock_result = AsyncMock()
+        mock_result.dob_month = "January"
+        mock_result.dob_year = "1990"
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
+            engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
+            engine.add_user_message("My birthday is January 15, 1990")
+            result = await engine.process_turn("My birthday is January 15, 1990")
+
+        assert result.transitioned_to == "match"
+
+    @pytest.mark.asyncio
+    async def test_extract_node_falls_through_on_no_match(self, extract_graph):
+        """Extract node falls through to else when equations don't match."""
+        mock_result = AsyncMock()
+        mock_result.dob_month = "February"
+        mock_result.dob_year = "2000"
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
+            engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
+            engine.add_user_message("My birthday is February 1, 2000")
+            result = await engine.process_turn("My birthday is February 1, 2000")
+
+        assert result.transitioned_to == "no_match"
+
+    @pytest.mark.asyncio
+    async def test_extract_node_produces_empty_response(self, extract_graph):
+        """Extract node produces empty response like logic nodes."""
+        mock_result = AsyncMock()
+        mock_result.dob_month = "January"
+        mock_result.dob_year = "1990"
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
+            engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
+            engine.add_user_message("My birthday is January 15, 1990")
+            result = await engine.process_turn("My birthday is January 15, 1990")
+
+        assert result.response == ""
+
+    @pytest.mark.asyncio
+    async def test_extract_node_records_transition(self, extract_graph):
+        """Extract node records transition in nodes_visited."""
+        mock_result = AsyncMock()
+        mock_result.dob_month = "January"
+        mock_result.dob_year = "1990"
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
+            engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
+            engine.add_user_message("My birthday is January 15, 1990")
+            result = await engine.process_turn("My birthday is January 15, 1990")
+
+        assert "match" in engine.nodes_visited
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0].name == "route_to_match"
+
+
+class TestAlwaysEdgeOnConversationNodes:
+    """Tests for always_edge auto-transition on conversation nodes."""
+
+    @pytest.fixture
+    def graph_with_always_edge(self):
+        """Conversation node with only an always_edge (speak then auto-transition)."""
+        return AgentGraph(
+            nodes={
+                "farewell": AgentNode(
+                    id="farewell",
+                    state_prompt="Thank the caller and provide contact info.",
+                    transitions=[
+                        Transition(
+                            target_node_id="end",
+                            condition=TransitionCondition(type="always", value="Always"),
+                        ),
+                    ],
+                    metadata={"retell_type": "conversation"},
+                ),
+                "end": AgentNode(
+                    id="end",
+                    state_prompt="End.",
+                    transitions=[],
+                    metadata={"retell_type": "end"},
+                ),
+            },
+            entry_node_id="farewell",
+            source_type="retell",
+        )
+
+    @pytest.mark.asyncio
+    async def test_always_edge_auto_fires_after_response(self, graph_with_always_edge):
+        """Conversation node with only always transition: LLM speaks, then auto-transitions."""
+        engine = ConversationEngine(graph_with_always_edge, model="openai/gpt-4o-mini")
+
+        async def mock_call_llm(model, signature, **kwargs):
+            # The LLM should NOT see available_transitions for always-only nodes
+            class MockResult:
+                response = "Thank you, please call us at 555-1234."
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            result = await engine.process_turn("ok bye")
+
+        assert result.response == "Thank you, please call us at 555-1234."
+        assert result.transitioned_to == "end"
+        assert engine.current_node == "end"
+
+    @pytest.fixture
+    def graph_with_mixed_edges_and_always(self):
+        """Conversation node with regular edges + an always_edge fallback."""
+        return AgentGraph(
+            nodes={
+                "main": AgentNode(
+                    id="main",
+                    state_prompt="Help the user.",
+                    transitions=[
+                        Transition(
+                            target_node_id="billing",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="User has billing question"
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="end",
+                            condition=TransitionCondition(type="always", value="Always"),
+                        ),
+                    ],
+                    metadata={"retell_type": "conversation"},
+                ),
+                "billing": AgentNode(id="billing", state_prompt="Billing.", transitions=[]),
+                "end": AgentNode(id="end", state_prompt="End.", transitions=[]),
+            },
+            entry_node_id="main",
+            source_type="retell",
+        )
+
+    @pytest.mark.asyncio
+    async def test_llm_transition_takes_priority_over_always(
+        self, graph_with_mixed_edges_and_always
+    ):
+        """If LLM picks a regular transition, always doesn't fire."""
+        engine = ConversationEngine(graph_with_mixed_edges_and_always, model="openai/gpt-4o-mini")
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Let me help with billing."
+                transition_to = "billing"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            result = await engine.process_turn("I have a billing question")
+
+        assert result.transitioned_to == "billing"
+
+    @pytest.mark.asyncio
+    async def test_always_fires_as_fallback_when_llm_picks_none(
+        self, graph_with_mixed_edges_and_always
+    ):
+        """If LLM picks 'none', always transition fires as fallback."""
+        engine = ConversationEngine(graph_with_mixed_edges_and_always, model="openai/gpt-4o-mini")
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Goodbye!"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            result = await engine.process_turn("thanks, bye")
+
+        assert result.transitioned_to == "end"
+        assert engine.current_node == "end"
+
+
+class TestToolMessagesInTranscript:
+    """Tests for tool messages appearing in transcript for non-speech actions."""
+
+    @pytest.fixture
+    def logic_graph_with_fallback(self):
+        """Graph with a logic node that has equation edges + an always fallback."""
+        return AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="premium_support",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="account_type == premium",
+                                equations=[
+                                    EquationClause(
+                                        left="account_type",
+                                        operator="==",
+                                        right="premium",
+                                    )
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="fallback",
+                            condition=TransitionCondition(
+                                type="always",
+                                value="Else",
+                            ),
+                        ),
+                    ],
+                    metadata={"retell_type": "branch"},
+                ),
+                "premium_support": AgentNode(
+                    id="premium_support",
+                    state_prompt="Premium support.",
+                    transitions=[],
+                ),
+                "fallback": AgentNode(
+                    id="fallback",
+                    state_prompt="Fallback support.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="router",
+            source_type="retell",
+        )
+
+    @pytest.fixture
+    def extract_graph(self):
+        """Graph with an extract node that extracts variables then routes."""
+        return AgentGraph(
+            nodes={
+                "extract": AgentNode(
+                    id="extract",
+                    state_prompt="",
+                    variables_to_extract=[
+                        VariableExtraction(
+                            name="dob_month",
+                            description="The month of birth",
+                            type="string",
+                            choices=["January", "February"],
+                        ),
+                        VariableExtraction(
+                            name="dob_year",
+                            description="The year of birth",
+                            type="string",
+                        ),
+                    ],
+                    transitions=[
+                        Transition(
+                            target_node_id="match",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="dob_month == January AND dob_year == 1990",
+                                equations=[
+                                    EquationClause(
+                                        left="dob_month",
+                                        operator="==",
+                                        right="January",
+                                    ),
+                                    EquationClause(
+                                        left="dob_year",
+                                        operator="==",
+                                        right="1990",
+                                    ),
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="no_match",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    metadata={"retell_type": "extract_dynamic_variables"},
+                ),
+                "match": AgentNode(id="match", state_prompt="Verified.", transitions=[]),
+                "no_match": AgentNode(id="no_match", state_prompt="Not verified.", transitions=[]),
+            },
+            entry_node_id="extract",
+            source_type="retell",
+        )
+
+    def test_apply_transition_adds_tool_message(self, logic_graph_with_fallback):
+        """_apply_transition should append a tool message to the transcript."""
+        from voicetest.engine.conversation import TurnResult
+
+        engine = ConversationEngine(
+            logic_graph_with_fallback,
+            model="openai/gpt-4o-mini",
+            dynamic_variables={"account_type": "premium"},
+        )
+        turn_result = TurnResult(response="")
+        engine._apply_transition(turn_result, "premium_support")
+
+        tool_msgs = [m for m in engine._transcript if m.role == "tool"]
+        assert len(tool_msgs) == 1
+        assert "Transitioned to premium_support" in tool_msgs[0].content
+        assert tool_msgs[0].metadata["tool_name"] == "route_to_premium_support"
+        assert tool_msgs[0].metadata["node_id"] == "premium_support"
+
+    @pytest.mark.asyncio
+    async def test_logic_node_produces_tool_message_not_empty_assistant(
+        self, logic_graph_with_fallback
+    ):
+        """Logic node should produce tool messages, not an empty assistant message."""
+        with patch("voicetest.engine.conversation.call_llm"):
+            engine = ConversationEngine(
+                logic_graph_with_fallback,
+                model="openai/gpt-4o-mini",
+                dynamic_variables={"account_type": "premium"},
+            )
+            await engine.process_turn("test")
+
+        # Should have a tool message for the transition
+        tool_msgs = [m for m in engine._transcript if m.role == "tool"]
+        assert len(tool_msgs) >= 1
+        assert "Transitioned to premium_support" in tool_msgs[0].content
+
+        # Should NOT have an empty assistant message
+        assistant_msgs = [m for m in engine._transcript if m.role == "assistant"]
+        empty_assistant = [m for m in assistant_msgs if m.content == ""]
+        assert len(empty_assistant) == 0
+
+    @pytest.mark.asyncio
+    async def test_logic_node_always_fallback_produces_tool_message(
+        self, logic_graph_with_fallback
+    ):
+        """Always-edge fallback should also produce a tool message."""
+        with patch("voicetest.engine.conversation.call_llm"):
+            engine = ConversationEngine(
+                logic_graph_with_fallback,
+                model="openai/gpt-4o-mini",
+                dynamic_variables={"account_type": "enterprise"},
+            )
+            await engine.process_turn("test")
+
+        tool_msgs = [m for m in engine._transcript if m.role == "tool"]
+        assert len(tool_msgs) >= 1
+        assert "Transitioned to fallback" in tool_msgs[0].content
+
+    @pytest.mark.asyncio
+    async def test_extract_node_produces_extraction_tool_message(self, extract_graph):
+        """Extract node should produce a tool message with extracted variable values."""
+        mock_result = AsyncMock()
+        mock_result.dob_month = "January"
+        mock_result.dob_year = "1990"
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
+            engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
+            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.process_turn("My birthday is January 15, 1990")
+
+        tool_msgs = [m for m in engine._transcript if m.role == "tool"]
+        # Should have extraction message + transition message
+        extract_msgs = [m for m in tool_msgs if "Extracted" in m.content]
+        assert len(extract_msgs) == 1
+        assert "dob_month=January" in extract_msgs[0].content
+        assert "dob_year=1990" in extract_msgs[0].content
+        assert extract_msgs[0].metadata["tool_name"] == "extract_variables"
+        assert extract_msgs[0].metadata["extracted"] == {
+            "dob_month": "January",
+            "dob_year": "1990",
+        }
+
+    @pytest.mark.asyncio
+    async def test_extract_node_extraction_plus_transition_tool_messages(self, extract_graph):
+        """Extract node should have both extraction and transition tool messages."""
+        mock_result = AsyncMock()
+        mock_result.dob_month = "January"
+        mock_result.dob_year = "1990"
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
+            engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
+            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.process_turn("My birthday is January 15, 1990")
+
+        tool_msgs = [m for m in engine._transcript if m.role == "tool"]
+        # One for extraction, one for transition
+        assert len(tool_msgs) == 2
+        assert "Extracted" in tool_msgs[0].content
+        assert "Transitioned to" in tool_msgs[1].content
+
+    @pytest.mark.asyncio
+    async def test_tool_messages_have_correct_metadata(self, logic_graph_with_fallback):
+        """Tool messages should have tool_name and node_id metadata."""
+        with patch("voicetest.engine.conversation.call_llm"):
+            engine = ConversationEngine(
+                logic_graph_with_fallback,
+                model="openai/gpt-4o-mini",
+                dynamic_variables={"account_type": "premium"},
+            )
+            await engine.process_turn("test")
+
+        tool_msgs = [m for m in engine._transcript if m.role == "tool"]
+        for msg in tool_msgs:
+            assert "tool_name" in msg.metadata
+            assert "node_id" in msg.metadata
 
 
 class TestEngineExpandsSnippets:

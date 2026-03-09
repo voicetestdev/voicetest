@@ -32,6 +32,7 @@ class TransitionCondition(BaseModel):
     type: Literal["llm_prompt", "equation", "tool_call", "always"]
     value: str
     equations: list[EquationClause] = Field(default_factory=list)
+    logical_operator: Literal["and", "or"] = "and"
 
 
 class Transition(BaseModel):
@@ -49,6 +50,15 @@ class TransitionOption(BaseModel):
     condition: str
     condition_type: Literal["llm_prompt", "equation", "tool_call", "always"]
     description: str | None = None
+
+
+class VariableExtraction(BaseModel):
+    """Variable to extract from conversation context via LLM."""
+
+    name: str
+    description: str
+    type: str = "string"
+    choices: list[str] = Field(default_factory=list)
 
 
 class ToolDefinition(BaseModel):
@@ -76,6 +86,7 @@ class AgentNode(BaseModel):
     tools: list[ToolDefinition] = Field(default_factory=list)
     transitions: list[Transition] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    variables_to_extract: list[VariableExtraction] = Field(default_factory=list)
 
     def is_logic_node(self) -> bool:
         """Check if this is a logic/branch node (deterministic equation routing).
@@ -89,6 +100,14 @@ class AgentNode(BaseModel):
         return all(t.condition.type in ("equation", "always") for t in self.transitions) and any(
             t.condition.type == "equation" for t in self.transitions
         )
+
+    def is_extract_node(self) -> bool:
+        """Check if this is an extract-then-branch node.
+
+        An extract node has variables to extract via LLM and routes
+        deterministically via equation transitions afterward.
+        """
+        return bool(self.variables_to_extract) and self.is_logic_node()
 
 
 class GlobalMetric(BaseModel):

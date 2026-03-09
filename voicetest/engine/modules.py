@@ -272,7 +272,11 @@ class ConversationModule(dspy.Module):
         return result
 
     def format_transitions(self, node_id: str) -> list[TransitionOption]:
-        """Format available transitions for a node as structured objects for LLM input."""
+        """Format available transitions for a node as structured objects for LLM input.
+
+        Excludes always-type transitions from conversation nodes since those
+        fire automatically after the LLM responds (not LLM-decided).
+        """
         node = self.graph.nodes.get(node_id)
         if not node or not node.transitions:
             return []
@@ -285,4 +289,5 @@ class ConversationModule(dspy.Module):
                 description=t.description,
             )
             for t in node.transitions
+            if t.condition.type != "always"
         ]

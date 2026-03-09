@@ -9,6 +9,8 @@ from dataclasses import field
 import hashlib
 import json
 
+import dspy
+
 from voicetest.engine.equations import evaluate_equation
 from voicetest.engine.modules import ConversationModule
 from voicetest.engine.modules import RunContext
@@ -16,6 +18,7 @@ from voicetest.engine.modules import StateModule
 from voicetest.llm import OnTokenCallback
 from voicetest.llm import call_llm
 from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
 from voicetest.models.results import Message
 from voicetest.models.results import ToolCall
 from voicetest.models.test_case import RunOptions
@@ -142,6 +145,13 @@ class ConversationEngine:
         if state_module is None:
             raise ValueError(f"Unknown node: {self._current_node}")
 
+        # Extract nodes: LLM extracts variables, then evaluate equations
+        node = self.graph.nodes[self._current_node]
+        if node.is_extract_node():
+            return await self._evaluate_extract_node(
+                node, state_module, user_message, on_error=on_error
+            )
+
         # Logic nodes: evaluate equations deterministically, skip LLM
         if self._is_logic_node(state_module):
             return self._evaluate_logic_node(state_module)
@@ -202,12 +212,16 @@ class ConversationEngine:
         # Determine transition target
         if state_module.use_split_transitions and state_module.transitions:
             # Split mode: second LLM call to evaluate transitions separately
+            # Build full conversation context including current turn
+            full_history = ctx.conversation_history
+            if user_message:
+                full_history += f"\nUSER: {user_message}"
             transition_result = await call_llm(
                 self.model,
                 self._module._transition_signature,
                 on_error=on_error,
                 no_cache=self._no_cache,
-                conversation_history=ctx.conversation_history,
+                conversation_history=full_history,
                 agent_response=result.response,
                 available_transitions=ctx.available_transitions,
             )
@@ -223,16 +237,12 @@ class ConversationEngine:
             and transition_target != "none"
             and transition_target in self.graph.nodes
         ):
-            self._current_node = transition_target
-            self._nodes_visited.append(transition_target)
-            turn_result.transitioned_to = transition_target
-            tool_call = ToolCall(
-                name=f"route_to_{transition_target}",
-                arguments={},
-                result=transition_target,
-            )
-            self._tools_called.append(tool_call)
-            turn_result.tool_calls.append(tool_call)
+            self._apply_transition(turn_result, transition_target)
+        elif turn_result.transitioned_to is None:
+            # No LLM-chosen transition: check for always-edge fallback
+            always_target = self._find_always_transition(node)
+            if always_target:
+                self._apply_transition(turn_result, always_target)
 
         # Record agent response
         self._transcript.append(
@@ -257,6 +267,13 @@ class ConversationEngine:
         )
         self._tools_called.append(tool_call)
         turn_result.tool_calls.append(tool_call)
+        self._transcript.append(
+            Message(
+                role="tool",
+                content=f"Transitioned to {target}",
+                metadata={"tool_name": f"route_to_{target}", "node_id": target},
+            )
+        )
 
     def _is_logic_node(self, state_module: StateModule) -> bool:
         """Check if a node is a logic node (equation transitions with optional always fallback)."""
@@ -281,8 +298,8 @@ class ConversationEngine:
                 continue
             if not transition.condition.equations:
                 continue
-            # All clauses in a transition must match (AND logic)
-            if all(
+            combiner = all if transition.condition.logical_operator == "and" else any
+            if combiner(
                 evaluate_equation(clause, self._dynamic_variables)
                 for clause in transition.condition.equations
             ):
@@ -293,16 +310,74 @@ class ConversationEngine:
             if fallback_target:
                 self._apply_transition(turn_result, fallback_target)
 
-        # Record empty response in transcript
-        self._transcript.append(
-            Message(
-                role="assistant",
-                content="",
-                metadata={"node_id": self._current_node},
-            )
+        return turn_result
+
+    async def _evaluate_extract_node(
+        self,
+        node: AgentNode,
+        state_module: StateModule,
+        user_message: str,
+        on_error: OnErrorCallback | None = None,
+    ) -> TurnResult:
+        """Extract variables via LLM, then evaluate equations deterministically."""
+        # Build a dynamic dspy.Signature for variable extraction
+        attrs: dict = {
+            "__doc__": "Extract structured variables from the conversation.",
+            "conversation_history": dspy.InputField(desc="Full conversation transcript"),
+            "user_message": dspy.InputField(desc="Most recent user message"),
+        }
+        for var in node.variables_to_extract:
+            desc = var.description
+            if var.choices:
+                desc += f" Must be one of: {var.choices}"
+            if var.type != "string":
+                desc += f" (type: {var.type})"
+            attrs[var.name] = dspy.OutputField(desc=desc)
+
+        sig = type("ExtractVariables", (dspy.Signature,), attrs)
+
+        # Call LLM to extract variables
+        result = await call_llm(
+            self.model,
+            sig,
+            on_error=on_error,
+            no_cache=self._no_cache,
+            conversation_history=self._format_transcript(self._transcript),
+            user_message=user_message,
         )
 
-        return turn_result
+        # Store extracted values in dynamic variables
+        extracted = {}
+        for var in node.variables_to_extract:
+            value = getattr(result, var.name, None)
+            if value is not None:
+                self._dynamic_variables[var.name] = str(value)
+                extracted[var.name] = str(value)
+
+        # Record extraction in transcript
+        if extracted:
+            parts = [f"{k}={v}" for k, v in extracted.items()]
+            self._transcript.append(
+                Message(
+                    role="tool",
+                    content=f"Extracted: {', '.join(parts)}",
+                    metadata={
+                        "tool_name": "extract_variables",
+                        "node_id": self._current_node,
+                        "extracted": extracted,
+                    },
+                )
+            )
+
+        # Delegate to equation routing
+        return self._evaluate_logic_node(state_module)
+
+    def _find_always_transition(self, node: AgentNode) -> str | None:
+        """Find the target of an always-type transition on a conversation node."""
+        for t in node.transitions:
+            if t.condition.type == "always":
+                return t.target_node_id
+        return None
 
     def _format_transcript(self, transcript: list[Message]) -> str:
         """Format transcript for LLM input."""

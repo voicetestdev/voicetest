@@ -150,3 +150,39 @@ class TestEvaluateEquationMissingVariable:
     def test_missing_variable_comparison_returns_false(self):
         clause = EquationClause(left="missing_var", operator=">", right="5")
         assert evaluate_equation(clause, {}) is False
+
+
+class TestEvaluateEquationVariableRight:
+    """Tests for variable references on the right side of equations."""
+
+    def test_right_variable_resolved(self):
+        """Right side variable name is resolved from dynamic variables."""
+        clause = EquationClause(left="dob_input_month", operator="==", right="patient_dob_month")
+        variables = {"dob_input_month": "3", "patient_dob_month": "3"}
+        assert evaluate_equation(clause, variables) is True
+
+    def test_right_variable_mismatch(self):
+        clause = EquationClause(left="dob_input_month", operator="==", right="patient_dob_month")
+        variables = {"dob_input_month": "3", "patient_dob_month": "5"}
+        assert evaluate_equation(clause, variables) is False
+
+    def test_right_literal_still_works(self):
+        """When right side is not a variable name, treat as literal."""
+        clause = EquationClause(left="status", operator="==", right="active")
+        variables = {"status": "active"}
+        assert evaluate_equation(clause, variables) is True
+
+    def test_right_variable_numeric_comparison(self):
+        clause = EquationClause(left="score", operator=">", right="threshold")
+        variables = {"score": "90", "threshold": "80"}
+        assert evaluate_equation(clause, variables) is True
+
+    def test_right_variable_contains(self):
+        clause = EquationClause(left="greeting", operator="contains", right="keyword")
+        variables = {"greeting": "hello world", "keyword": "hello"}
+        assert evaluate_equation(clause, variables) is True
+
+    def test_right_variable_not_equals(self):
+        clause = EquationClause(left="a", operator="!=", right="b")
+        variables = {"a": "x", "b": "y"}
+        assert evaluate_equation(clause, variables) is True

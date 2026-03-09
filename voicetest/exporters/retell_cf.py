@@ -300,8 +300,10 @@ def _convert_node(
     display_position: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Convert an AgentNode to a Retell Conversation Flow node."""
-    # Logic nodes export as logic_split type regardless of stored metadata
-    if node.is_logic_node():
+    # Extract nodes export as extract_dynamic_variables, logic nodes as logic_split
+    if node.is_extract_node():
+        node_type = "extract_dynamic_variables"
+    elif node.is_logic_node():
         node_type = "logic_split"
     else:
         node_type = node.metadata.get("retell_type", "conversation")
@@ -310,12 +312,17 @@ def _convert_node(
     if is_entry and begin_message:
         prompt_text = f"[Begin message: {begin_message}]\n\n{prompt_text}"
 
-    # Separate always-type transitions as else_edge for logic nodes
+    # Separate always-type transitions for logic/extract nodes (else_edge)
+    # and conversation nodes (always_edge)
     regular_transitions = []
     else_transition = None
+    always_transition = None
     for t in node.transitions:
-        if node.is_logic_node() and t.condition.type == "always":
-            else_transition = t
+        if t.condition.type == "always":
+            if node.is_logic_node():
+                else_transition = t
+            else:
+                always_transition = t
         else:
             regular_transitions.append(t)
 
@@ -338,6 +345,25 @@ def _convert_node(
             node.id,
             len(regular_transitions),
         )
+
+    if always_transition:
+        result["always_edge"] = _convert_transition_to_edge(
+            always_transition,
+            node.id,
+            len(regular_transitions),
+        )
+
+    # Export variables for extract_dynamic_variables nodes
+    if node.variables_to_extract:
+        result["variables"] = [
+            {
+                "name": v.name,
+                "description": v.description,
+                "type": v.type,
+                "choices": v.choices,
+            }
+            for v in node.variables_to_extract
+        ]
 
     # Preserved position from import wins over computed position
     preserved = node.metadata.get("display_position")
@@ -370,6 +396,8 @@ def _convert_transition_to_edge(transition, source_node_id: str, index: int) -> 
         else:
             # Fallback for equations without structured data
             tc["equation"] = transition.condition.value
+        op = "||" if transition.condition.logical_operator == "or" else "&&"
+        tc["operator"] = op
         edge["transition_condition"] = tc
     else:
         edge["transition_condition"] = {

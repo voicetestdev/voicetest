@@ -41,6 +41,10 @@ class UserSimSignature(dspy.Signature):
     )
     turn_number: int = dspy.InputField(desc="Current turn number (1 = first turn)")
 
+    reasoning: str = dspy.OutputField(
+        desc="Brief reasoning: what has the user achieved so far vs. their stated goal? "
+        "List remaining goals before deciding whether to continue."
+    )
     should_continue: bool = dspy.OutputField(
         desc="True if user should keep talking. False ONLY if the user's stated goal "
         "has been fully achieved AND the agent has confirmed completion. "
@@ -51,7 +55,6 @@ class UserSimSignature(dspy.Signature):
         desc="User's next spoken response — short and natural like a real phone call. "
         "Empty string only if should_continue is False."
     )
-    reasoning: str = dspy.OutputField(desc="Why the user said this or ended")
 
 
 @dataclass

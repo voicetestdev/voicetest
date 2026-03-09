@@ -52,7 +52,14 @@ def export_mermaid(graph: AgentGraph) -> str:
     for node_id, node in graph.nodes.items():
         escaped_node_id = _escape_mermaid_text(node_id)
 
-        if _is_logic_node(node):
+        if node.is_extract_node():
+            # Extract nodes get a hexagon shape with their name and variable list
+            name = node.metadata.get("name", node_id)
+            name = _escape_mermaid_text(str(name))
+            var_names = ", ".join(v.name for v in node.variables_to_extract)
+            var_names = _escape_mermaid_text(var_names)
+            lines.append(f'    {node_id}{{{{"Extract<br/>{name}<br/>[{var_names}]"}}}}')
+        elif _is_logic_node(node):
             # Logic split nodes get a diamond shape with their name
             name = node.metadata.get("name", node_id)
             name = _escape_mermaid_text(str(name))

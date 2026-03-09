@@ -249,6 +249,124 @@ class TestAgentGraph:
         assert len(restored.nodes) == 2
 
 
+class TestVariableExtraction:
+    """Tests for VariableExtraction model."""
+
+    def test_create_variable_extraction(self):
+        from voicetest.models.agent import VariableExtraction
+
+        var = VariableExtraction(
+            name="dob_month",
+            description="The month of birth",
+            type="string",
+            choices=["January", "February", "March"],
+        )
+        assert var.name == "dob_month"
+        assert var.description == "The month of birth"
+        assert var.type == "string"
+        assert var.choices == ["January", "February", "March"]
+
+    def test_variable_extraction_defaults(self):
+        from voicetest.models.agent import VariableExtraction
+
+        var = VariableExtraction(name="age", description="Patient age")
+        assert var.type == "string"
+        assert var.choices == []
+
+
+class TestTransitionConditionLogicalOperator:
+    """Tests for logical_operator field on TransitionCondition."""
+
+    def test_logical_operator_defaults_to_and(self):
+        from voicetest.models.agent import TransitionCondition
+
+        condition = TransitionCondition(type="equation", value="x == 1")
+        assert condition.logical_operator == "and"
+
+    def test_logical_operator_set_to_or(self):
+        from voicetest.models.agent import TransitionCondition
+
+        condition = TransitionCondition(type="equation", value="x == 1", logical_operator="or")
+        assert condition.logical_operator == "or"
+
+
+class TestAgentNodeIsExtractNode:
+    """Tests for AgentNode.is_extract_node()."""
+
+    def test_is_extract_node_with_variables_and_equations(self):
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import EquationClause
+        from voicetest.models.agent import Transition
+        from voicetest.models.agent import TransitionCondition
+        from voicetest.models.agent import VariableExtraction
+
+        node = AgentNode(
+            id="extract",
+            state_prompt="",
+            variables_to_extract=[
+                VariableExtraction(name="month", description="Month"),
+            ],
+            transitions=[
+                Transition(
+                    target_node_id="match",
+                    condition=TransitionCondition(
+                        type="equation",
+                        value="month == January",
+                        equations=[EquationClause(left="month", operator="==", right="January")],
+                    ),
+                ),
+                Transition(
+                    target_node_id="fallback",
+                    condition=TransitionCondition(type="always", value="Else"),
+                ),
+            ],
+        )
+        assert node.is_extract_node() is True
+
+    def test_is_extract_node_false_without_variables(self):
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import EquationClause
+        from voicetest.models.agent import Transition
+        from voicetest.models.agent import TransitionCondition
+
+        node = AgentNode(
+            id="router",
+            state_prompt="",
+            transitions=[
+                Transition(
+                    target_node_id="a",
+                    condition=TransitionCondition(
+                        type="equation",
+                        value="x == 1",
+                        equations=[EquationClause(left="x", operator="==", right="1")],
+                    ),
+                ),
+            ],
+        )
+        assert node.is_extract_node() is False
+
+    def test_is_extract_node_false_without_equation_transitions(self):
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import Transition
+        from voicetest.models.agent import TransitionCondition
+        from voicetest.models.agent import VariableExtraction
+
+        node = AgentNode(
+            id="extract",
+            state_prompt="",
+            variables_to_extract=[
+                VariableExtraction(name="month", description="Month"),
+            ],
+            transitions=[
+                Transition(
+                    target_node_id="next",
+                    condition=TransitionCondition(type="llm_prompt", value="always go next"),
+                ),
+            ],
+        )
+        assert node.is_extract_node() is False
+
+
 class TestGlobalMetric:
     """Tests for GlobalMetric model."""
 

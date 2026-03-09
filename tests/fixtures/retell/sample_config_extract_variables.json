@@ -1,0 +1,114 @@
+{
+  "conversation_flow_id": "cf_extract_test",
+  "start_node_id": "ask_dob",
+  "nodes": [
+    {
+      "id": "ask_dob",
+      "type": "conversation",
+      "name": "Ask DOB",
+      "instruction": {
+        "type": "prompt",
+        "text": "Ask the patient to provide their date of birth for verification."
+      },
+      "edges": [
+        {
+          "id": "edge-ask-to-extract",
+          "destination_node_id": "extract_dob",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient provided their date of birth"
+          }
+        }
+      ]
+    },
+    {
+      "id": "extract_dob",
+      "type": "extract_dynamic_variables",
+      "name": "Extract DOB",
+      "variables": [
+        {
+          "name": "dob_month",
+          "description": "The month of birth as a number 1-12. Convert month names to numbers (January=1, February=2, ... December=12). If no date was provided, use 0.",
+          "type": "string",
+          "choices": []
+        },
+        {
+          "name": "dob_day",
+          "description": "The day of birth as a number 1-31. Strip ordinals (1st=1, 15th=15). If no date was provided, use 0.",
+          "type": "string",
+          "choices": []
+        },
+        {
+          "name": "dob_year",
+          "description": "The 4-digit year of birth. Convert spoken words to digits (nineteen eighty five=1985). If no date was provided, use 0.",
+          "type": "string",
+          "choices": []
+        }
+      ],
+      "edges": [
+        {
+          "id": "edge-match",
+          "destination_node_id": "dob_match",
+          "transition_condition": {
+            "type": "equation",
+            "operator": "&&",
+            "equations": [
+              {
+                "left": "{{dob_month}}",
+                "operator": "==",
+                "right": "{{expected_month}}"
+              },
+              {
+                "left": "{{dob_day}}",
+                "operator": "==",
+                "right": "{{expected_day}}"
+              },
+              {
+                "left": "{{dob_year}}",
+                "operator": "==",
+                "right": "{{expected_year}}"
+              }
+            ]
+          }
+        }
+      ],
+      "else_edge": {
+        "id": "edge-no-match",
+        "destination_node_id": "dob_retry",
+        "transition_condition": {
+          "type": "prompt",
+          "prompt": "Else"
+        }
+      }
+    },
+    {
+      "id": "dob_match",
+      "type": "conversation",
+      "name": "DOB Verified",
+      "instruction": {
+        "type": "prompt",
+        "text": "The date of birth has been verified. Proceed with the refill."
+      },
+      "edges": []
+    },
+    {
+      "id": "dob_retry",
+      "type": "conversation",
+      "name": "DOB Retry",
+      "instruction": {
+        "type": "prompt",
+        "text": "The date of birth did not match. Ask the patient to try again."
+      },
+      "edges": [
+        {
+          "id": "edge-retry-to-extract",
+          "destination_node_id": "extract_dob",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Patient provided their date of birth again"
+          }
+        }
+      ]
+    }
+  ]
+}

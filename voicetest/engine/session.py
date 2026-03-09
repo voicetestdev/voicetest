@@ -93,6 +93,45 @@ class ConversationRunner:
                 dynamic_variables=dynamic_variables,
             )
 
+    def _is_automatic_node(self, node_id: str) -> bool:
+        """Check if a node should auto-fire without user input (logic or extract)."""
+        node = self.graph.nodes.get(node_id)
+        if not node:
+            return False
+        return node.is_logic_node()
+
+    async def _drain_automatic_nodes(
+        self,
+        current_node_id: str,
+        user_message: str,
+        state: ConversationState,
+        node_tracker: NodeTracker,
+        on_error: "OnErrorCallback | None" = None,
+    ) -> str:
+        """Process logic/extract nodes until a conversation node is reached.
+
+        Auto-fires deterministic nodes (logic splits, extract-then-branch) without
+        requiring user sim input. Returns the final conversation node ID.
+        """
+        max_hops = 20  # Safety limit to prevent infinite loops
+        for _ in range(max_hops):
+            if not self._is_automatic_node(current_node_id):
+                break
+
+            _, new_node_id = await self._process_turn(
+                current_node_id,
+                user_message,
+                state,
+                node_tracker,
+                on_error=on_error,
+            )
+
+            if new_node_id is None:
+                break
+            current_node_id = new_node_id
+
+        return current_node_id
+
     async def run(
         self,
         test_case: "TestCase",  # noqa: F821 - Forward reference
@@ -125,6 +164,15 @@ class ConversationRunner:
         node_tracker.record(self.graph.entry_node_id)
         current_node_id = self.graph.entry_node_id
 
+        # Auto-fire any logic/extract nodes at the start before asking for user input
+        current_node_id = await self._drain_automatic_nodes(
+            current_node_id,
+            "",
+            state,
+            node_tracker,
+            on_error=on_error,
+        )
+
         for _turn in range(self.options.max_turns):
             # Get simulated user input
             sim_response = await user_simulator.generate(
@@ -154,6 +202,7 @@ class ConversationRunner:
             await notify()
 
             # Process with current state module
+            responding_node = node_tracker.current_node
             response, new_node_id = await self._process_turn(
                 current_node_id,
                 sim_response.message,
@@ -168,7 +217,7 @@ class ConversationRunner:
                     Message(
                         role="assistant",
                         content=response,
-                        metadata={"node_id": node_tracker.current_node},
+                        metadata={"node_id": responding_node},
                     )
                 )
                 await notify()
@@ -176,6 +225,14 @@ class ConversationRunner:
             # Handle node transition
             if new_node_id is not None:
                 current_node_id = new_node_id
+                # Auto-fire any logic/extract nodes after a transition
+                current_node_id = await self._drain_automatic_nodes(
+                    current_node_id,
+                    sim_response.message,
+                    state,
+                    node_tracker,
+                    on_error=on_error,
+                )
 
             state.turn_count += 1
 
@@ -237,12 +294,19 @@ class ConversationRunner:
             msg for msg in state.transcript if msg.role != "user" or msg.content != user_message
         ]
 
+        engine_len_before = len(self._engine._transcript)
+
         # Process turn through engine
         result = await self._engine.process_turn(
             user_message,
             on_token=agent_token_callback if on_token else None,
             on_error=on_error,
         )
+
+        # Copy tool messages from engine to state transcript
+        for msg in self._engine._transcript[engine_len_before:]:
+            if msg.role == "tool":
+                state.transcript.append(msg)
 
         # Sync state from engine result
         new_node_id = None

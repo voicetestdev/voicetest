@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import Field
 from pydantic import field_validator
 
 from voicetest.importers.base import ImporterInfo
@@ -16,6 +17,7 @@ from voicetest.models.agent import EquationClause
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
+from voicetest.models.agent import VariableExtraction
 
 
 _MUSTACHE_RE = re.compile(r"^\{\{(.+?)\}\}$")
@@ -45,6 +47,7 @@ class RetellTransitionCondition(BaseModel):
     type: str
     prompt: str | None = None
     equations: list[RetellEquation] | None = None
+    operator: str | None = None
 
 
 class RetellEdge(BaseModel):
@@ -92,6 +95,17 @@ class RetellModelChoice(BaseModel):
     high_priority: bool | None = None
 
 
+class RetellVariable(BaseModel):
+    """Retell extract_dynamic_variables variable specification."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    description: str
+    type: str = "string"
+    choices: list[str] = Field(default_factory=list)
+
+
 class RetellNode(BaseModel):
     """Retell conversation node."""
 
@@ -103,7 +117,9 @@ class RetellNode(BaseModel):
     instruction: RetellInstruction | None = None
     edges: list[RetellEdge] = []
     else_edge: RetellEdge | None = None
+    always_edge: RetellEdge | None = None
     display_position: dict[str, float] | None = None
+    variables: list[RetellVariable] = []
 
 
 class RetellConfig(BaseModel):
@@ -195,6 +211,8 @@ class RetellImporter:
             transitions = [self._convert_edge(edge) for edge in retell_node.edges]
             if retell_node.else_edge:
                 transitions.append(self._convert_else_edge(retell_node.else_edge))
+            if retell_node.always_edge:
+                transitions.append(self._convert_else_edge(retell_node.always_edge))
 
             metadata: dict[str, Any] = {"retell_type": retell_node.type}
             if retell_node.name:
@@ -202,12 +220,23 @@ class RetellImporter:
             if retell_node.display_position:
                 metadata["display_position"] = retell_node.display_position
 
+            variables_to_extract = [
+                VariableExtraction(
+                    name=v.name,
+                    description=v.description,
+                    type=v.type,
+                    choices=v.choices,
+                )
+                for v in retell_node.variables
+            ]
+
             nodes[retell_node.id] = AgentNode(
                 id=retell_node.id,
                 state_prompt=retell_node.instruction.text if retell_node.instruction else "",
                 tools=global_tools if global_tools else [],
                 transitions=transitions,
                 metadata=metadata,
+                variables_to_extract=variables_to_extract,
             )
 
         source_metadata: dict[str, Any] = {
@@ -268,9 +297,12 @@ class RetellImporter:
         condition_type = "llm_prompt"
         condition_value = edge.transition_condition.prompt or ""
         equation_clauses: list[EquationClause] = []
+        logical_operator: str = "and"
 
         if edge.transition_condition.type == "equation":
             condition_type = "equation"
+            if edge.transition_condition.operator == "||":
+                logical_operator = "or"
             if edge.transition_condition.equations:
                 equation_clauses = [
                     EquationClause(
@@ -281,13 +313,14 @@ class RetellImporter:
                     for eq in edge.transition_condition.equations
                 ]
                 # Build a readable value string from structured equations
+                joiner = " OR " if logical_operator == "or" else " AND "
                 parts = []
                 for eq in equation_clauses:
                     if eq.operator in ("exists", "not_exist"):
                         parts.append(f"{eq.left} {eq.operator}")
                     else:
                         parts.append(f"{eq.left} {eq.operator} {eq.right}")
-                condition_value = " AND ".join(parts)
+                condition_value = joiner.join(parts)
 
         return Transition(
             target_node_id=edge.destination_node_id,
@@ -295,6 +328,7 @@ class RetellImporter:
                 type=condition_type,
                 value=condition_value,
                 equations=equation_clauses,
+                logical_operator=logical_operator,
             ),
         )
 
