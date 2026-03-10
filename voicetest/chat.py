@@ -132,8 +132,8 @@ class ChatManager:
                 )
 
             # Process the turn
-            turn_result = await active_chat.engine.process_turn(
-                content,
+            active_chat.engine.add_user_message(content)
+            turn_result = await active_chat.engine.advance(
                 on_token=on_token,
             )
 

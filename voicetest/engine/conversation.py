@@ -117,40 +117,61 @@ class ConversationEngine:
             )
         )
 
-    async def process_turn(
+    def _last_user_message(self) -> str:
+        """Extract the most recent user message from the transcript."""
+        for msg in reversed(self._transcript):
+            if msg.role == "user":
+                return msg.content
+        return ""
+
+    async def advance(
         self,
-        user_message: str,
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
     ) -> TurnResult:
-        """Process one turn. Same logic for tests and live calls.
+        """Process graph from current position until the agent speaks or settles.
 
-        This method:
-        1. Gets the state module for the current node
-        2. Builds context with conversation history
-        3. Calls the LLM
-        4. Handles transitions
-        5. Records the agent response
+        Traverses silent nodes (logic, extract) automatically, stopping when
+        a conversation node produces speech or no transitions remain.
+        """
+        max_hops = 20
+        accumulated_tool_calls: list[ToolCall] = []
 
-        Args:
-            user_message: The user's message to respond to.
-            on_token: Optional callback for streaming tokens.
-            on_error: Optional callback for retryable errors.
+        for _ in range(max_hops):
+            result = await self._process_node(on_token=on_token, on_error=on_error)
+            accumulated_tool_calls.extend(result.tool_calls)
 
-        Returns:
-            TurnResult with response and transition info.
+            if result.response:
+                result.tool_calls = accumulated_tool_calls
+                return result
+
+            if result.transitioned_to is None:
+                break
+
+        return TurnResult(response="", tool_calls=accumulated_tool_calls)
+
+    async def _process_node(
+        self,
+        on_token: OnTokenCallback | None = None,
+        on_error: OnErrorCallback | None = None,
+    ) -> TurnResult:
+        """Process the current node once. Returns result with response and transition info.
+
+        For conversation nodes: calls LLM, gets response, evaluates transitions.
+        For logic nodes: evaluates equations deterministically.
+        For extract nodes: extracts variables via LLM, then evaluates equations.
         """
         # Get the state module for current node
         state_module = self._module.get_state_module(self._current_node)
         if state_module is None:
             raise ValueError(f"Unknown node: {self._current_node}")
 
+        user_message = self._last_user_message()
+
         # Extract nodes: LLM extracts variables, then evaluate equations
         node = self.graph.nodes[self._current_node]
         if node.is_extract_node():
-            return await self._evaluate_extract_node(
-                node, state_module, user_message, on_error=on_error
-            )
+            return await self._evaluate_extract_node(node, state_module, on_error=on_error)
 
         # Logic nodes: evaluate equations deterministically, skip LLM
         if self._is_logic_node(state_module):
@@ -208,6 +229,7 @@ class ConversationEngine:
 
         # Build turn result
         turn_result = TurnResult(response=result.response)
+        generating_node = self._current_node
 
         # Determine transition target
         if state_module.use_split_transitions and state_module.transitions:
@@ -244,12 +266,12 @@ class ConversationEngine:
             if always_target:
                 self._apply_transition(turn_result, always_target)
 
-        # Record agent response
+        # Record agent response with the node that generated it
         self._transcript.append(
             Message(
                 role="assistant",
                 content=result.response,
-                metadata={"node_id": self._current_node},
+                metadata={"node_id": generating_node},
             )
         )
 
@@ -316,10 +338,11 @@ class ConversationEngine:
         self,
         node: AgentNode,
         state_module: StateModule,
-        user_message: str,
         on_error: OnErrorCallback | None = None,
     ) -> TurnResult:
         """Extract variables via LLM, then evaluate equations deterministically."""
+        user_message = self._last_user_message()
+
         # Build a dynamic dspy.Signature for variable extraction
         attrs: dict = {
             "__doc__": "Extract structured variables from the conversation.",

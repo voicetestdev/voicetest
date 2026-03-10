@@ -198,23 +198,21 @@ class TestDynamicVariableSubstitution:
 
     @pytest.mark.asyncio
     async def test_dynamic_variables_substituted_in_prompts(self, graph_with_dynamic_variables):
-        """Test that dynamic variables are substituted in both general and state prompts.
-
-        This test verifies that {{variable}} placeholders in general_prompt and state_prompt
-        are replaced with actual values from dynamic_variables before being passed to the LLM.
-        """
+        """Dynamic variables are substituted in both general and state prompts."""
         from unittest.mock import patch
 
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.engine.session import ConversationState
-        from voicetest.engine.session import NodeTracker
+        from voicetest.engine.conversation import ConversationEngine
 
         dynamic_vars = {
             "customer_name": "Alice",
             "account_status": "active",
             "company_name": "Acme Corp",
         }
-        runner = ConversationRunner(graph_with_dynamic_variables, dynamic_variables=dynamic_vars)
+        engine = ConversationEngine(
+            graph=graph_with_dynamic_variables,
+            model="openai/gpt-4o-mini",
+            dynamic_variables=dynamic_vars,
+        )
 
         # Mock call_llm to capture what gets passed
         captured_kwargs = {}
@@ -222,7 +220,6 @@ class TestDynamicVariableSubstitution:
         async def mock_call_llm(model, signature, **kwargs):
             captured_kwargs.update(kwargs)
 
-            # Return a mock result with expected attributes
             class MockResult:
                 response = "Hello Alice!"
                 transition_to = "none"
@@ -230,16 +227,8 @@ class TestDynamicVariableSubstitution:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            state = ConversationState()
-            node_tracker = NodeTracker()
-            node_tracker.record("main")
-
-            await runner._process_turn(
-                "main",
-                "Hello",
-                state,
-                node_tracker,
-            )
+            engine.add_user_message("Hello")
+            await engine._process_node()
 
         # Verify general_instructions has substituted variables
         assert "general_instructions" in captured_kwargs
@@ -255,19 +244,21 @@ class TestDynamicVariableSubstitution:
 
     @pytest.mark.asyncio
     async def test_unknown_variables_remain_unchanged(self, graph_with_dynamic_variables):
-        """Test that unknown variables are left as-is (graceful degradation)."""
+        """Unknown variables are left as-is (graceful degradation)."""
         from unittest.mock import patch
 
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.engine.session import ConversationState
-        from voicetest.engine.session import NodeTracker
+        from voicetest.engine.conversation import ConversationEngine
 
         # Only provide some variables, not all
         dynamic_vars = {
             "customer_name": "Bob",
             # company_name and account_status are NOT provided
         }
-        runner = ConversationRunner(graph_with_dynamic_variables, dynamic_variables=dynamic_vars)
+        engine = ConversationEngine(
+            graph=graph_with_dynamic_variables,
+            model="openai/gpt-4o-mini",
+            dynamic_variables=dynamic_vars,
+        )
 
         captured_kwargs = {}
 
@@ -281,16 +272,8 @@ class TestDynamicVariableSubstitution:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            state = ConversationState()
-            node_tracker = NodeTracker()
-            node_tracker.record("main")
-
-            await runner._process_turn(
-                "main",
-                "Hello",
-                state,
-                node_tracker,
-            )
+            engine.add_user_message("Hello")
+            await engine._process_node()
 
         # customer_name should be substituted
         assert "Bob" in captured_kwargs["state_instructions"]
@@ -302,7 +285,7 @@ class TestDynamicVariableSubstitution:
 
 
 class TestToolMessagePropagation:
-    """Tool messages from engine should appear in session state.transcript."""
+    """Tool messages from engine should appear in state transcript via run()."""
 
     @pytest.fixture
     def logic_graph(self):
@@ -314,18 +297,6 @@ class TestToolMessagePropagation:
 
         return AgentGraph(
             nodes={
-                "greeting": AgentNode(
-                    id="greeting",
-                    state_prompt="Greet the user.",
-                    transitions=[
-                        Transition(
-                            target_node_id="router",
-                            condition=TransitionCondition(
-                                type="llm_prompt", value="User provided account"
-                            ),
-                        ),
-                    ],
-                ),
                 "router": AgentNode(
                     id="router",
                     state_prompt="",
@@ -344,54 +315,54 @@ class TestToolMessagePropagation:
                         ),
                     ],
                 ),
-                "support": AgentNode(id="support", state_prompt="VIP support.", transitions=[]),
-                "standard": AgentNode(id="standard", state_prompt="Standard.", transitions=[]),
+                "support": AgentNode(
+                    id="support",
+                    state_prompt="VIP support.",
+                    transitions=[],
+                ),
+                "standard": AgentNode(
+                    id="standard",
+                    state_prompt="Standard.",
+                    transitions=[],
+                ),
             },
-            entry_node_id="greeting",
+            entry_node_id="router",
             source_type="retell",
         )
 
     @pytest.mark.asyncio
-    async def test_tool_messages_propagate_to_state_transcript(self, logic_graph):
-        """Tool messages produced by engine should appear in state.transcript."""
+    async def test_tool_messages_appear_in_run_transcript(self, logic_graph):
+        """Tool messages from logic node auto-fire appear in run() state transcript."""
         from unittest.mock import patch
 
         from voicetest.engine.session import ConversationRunner
-        from voicetest.engine.session import ConversationState
-        from voicetest.engine.session import NodeTracker
+        from voicetest.models.test_case import TestCase
+        from voicetest.simulator.user_sim import SimulatorResponse
+        from voicetest.simulator.user_sim import UserSimulator
 
         runner = ConversationRunner(logic_graph, dynamic_variables={"tier": "vip"})
-        state = ConversationState()
-        node_tracker = NodeTracker()
-        node_tracker.record("router")
+        test_case = TestCase(name="test", user_prompt="Say hello")
 
-        # Directly process the logic node turn
-        with patch("voicetest.engine.conversation.call_llm"):
-            await runner._process_turn("router", "test", state, node_tracker)
+        simulator = UserSimulator("test", "mock-model")
+        simulator._mock_mode = True
+        simulator._mock_responses = [
+            SimulatorResponse(message="Hello", should_end=False, reasoning="greeting"),
+            SimulatorResponse(message="", should_end=True, reasoning="done"),
+        ]
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "VIP greeting!"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            state = await runner.run(test_case, simulator)
 
         tool_msgs = [m for m in state.transcript if m.role == "tool"]
         assert len(tool_msgs) >= 1
         assert any("Transitioned to" in m.content for m in tool_msgs)
-
-    @pytest.mark.asyncio
-    async def test_tool_messages_from_drain_automatic_nodes(self, logic_graph):
-        """Tool messages from _drain_automatic_nodes appear in state.transcript."""
-        from unittest.mock import patch
-
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.engine.session import ConversationState
-        from voicetest.engine.session import NodeTracker
-
-        runner = ConversationRunner(logic_graph, dynamic_variables={"tier": "vip"})
-        state = ConversationState()
-        node_tracker = NodeTracker()
-        node_tracker.record("router")
-
-        with patch("voicetest.engine.conversation.call_llm"):
-            await runner._drain_automatic_nodes("router", "test", state, node_tracker)
-
-        tool_msgs = [m for m in state.transcript if m.role == "tool"]
-        assert len(tool_msgs) >= 1
 
 
 class TestAutoProcessLogicNodes:
@@ -729,3 +700,74 @@ class TestAutoProcessLogicNodes:
         # The next user message should be directed at vip, not router
         vip_messages = [m for m in state.transcript if m.metadata.get("node_id") == "vip"]
         assert len(vip_messages) > 0
+
+
+class TestNoEmptyUserMessages:
+    """Transcript should never contain empty user messages."""
+
+    @pytest.mark.asyncio
+    async def test_no_empty_user_messages_with_logic_entry(self):
+        """Logic entry node should not produce empty user messages in transcript."""
+        from unittest.mock import patch
+
+        from voicetest.engine.session import ConversationRunner
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import EquationClause
+        from voicetest.models.agent import Transition
+        from voicetest.models.agent import TransitionCondition
+        from voicetest.models.test_case import TestCase
+        from voicetest.simulator.user_sim import SimulatorResponse
+        from voicetest.simulator.user_sim import UserSimulator
+
+        graph = AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="main",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="",
+                                equations=[
+                                    EquationClause(left="ready", operator="==", right="yes")
+                                ],
+                            ),
+                        ),
+                    ],
+                ),
+                "main": AgentNode(
+                    id="main",
+                    state_prompt="Help the user.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="router",
+            source_type="custom",
+        )
+
+        runner = ConversationRunner(graph, dynamic_variables={"ready": "yes"})
+        test_case = TestCase(name="test", user_prompt="Say hello")
+
+        simulator = UserSimulator("test", "mock-model")
+        simulator._mock_mode = True
+        simulator._mock_responses = [
+            SimulatorResponse(message="Hello", should_end=False, reasoning="greeting"),
+            SimulatorResponse(message="", should_end=True, reasoning="done"),
+        ]
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Welcome!"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            state = await runner.run(test_case, simulator)
+
+        user_msgs = [m for m in state.transcript if m.role == "user"]
+        for msg in user_msgs:
+            assert msg.content != "", f"Found empty user message: {msg}"

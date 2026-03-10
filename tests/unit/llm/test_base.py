@@ -296,7 +296,8 @@ class TestConversationEngineCacheSalt:
             return dspy.Prediction(response="Hello!", transition_to="none")
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            await engine.process_turn("hi")
+            engine.add_user_message("hi")
+            await engine._process_node()
 
         # First call is the response call — should have a cache_salt
         response_call = call_args[0]
@@ -344,7 +345,8 @@ class TestConversationEngineCacheSalt:
             return dspy.Prediction(response="Hello!", transition_to="none")
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            await engine.process_turn("hi")
+            engine.add_user_message("hi")
+            await engine._process_node()
 
         # Combined mode: no salt needed, available_transitions is in the signature
         assert call_args[0]["cache_salt"] is None
@@ -398,7 +400,8 @@ class TestConversationEngineCacheSalt:
             salts.clear()
             engine = make_engine(targets)
             with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-                await engine.process_turn("hi")
+                engine.add_user_message("hi")
+                await engine._process_node()
 
         # Can't compare across clears, so run both and collect
         all_salts = []
@@ -406,7 +409,8 @@ class TestConversationEngineCacheSalt:
             engine = make_engine(targets)
             with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
                 salts.clear()
-                await engine.process_turn("hi")
+                engine.add_user_message("hi")
+                await engine._process_node()
                 all_salts.append(salts[0])  # first call is response
 
         assert all_salts[0] != all_salts[1]
@@ -447,7 +451,8 @@ class TestConversationEngineNoCache:
             return dspy.Prediction(response="Hello!", transition_to="none")
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            await engine.process_turn("hi")
+            engine.add_user_message("hi")
+            await engine._process_node()
 
         assert call_args[0]["no_cache"] is True
 
@@ -476,6 +481,7 @@ class TestConversationEngineNoCache:
             return dspy.Prediction(response="Hello!", transition_to="none")
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            await engine.process_turn("hi")
+            engine.add_user_message("hi")
+            await engine._process_node()
 
         assert call_args[0]["no_cache"] is False
