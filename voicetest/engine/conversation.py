@@ -244,13 +244,27 @@ class ConversationEngine:
         if not available_transitions:
             return None
 
-        conversation_history = self._format_transcript(self._transcript)
+        # Scope history to messages within the current node only.
+        current_node_messages = [
+            m
+            for m in self._transcript
+            if m.metadata.get("node_id") == self._current_node and m.role != "tool"
+        ]
+        conversation_history = self._format_transcript(current_node_messages)
+
+        # Expand the current node's state prompt for context.
+        state_module = self._module.get_state_module(self._current_node)
+        state_prompt = node.state_prompt
+        if state_module:
+            state_prompt = expand_snippets(state_module.instructions, self.graph.snippets)
+            state_prompt = substitute_variables(state_prompt, self._dynamic_variables)
 
         transition_result = await call_llm(
             self.model,
             self._module._transition_signature,
             on_error=on_error,
             no_cache=self._no_cache,
+            current_state_prompt=state_prompt,
             conversation_history=conversation_history,
             available_transitions=available_transitions,
         )
@@ -390,8 +404,10 @@ class ConversationEngine:
         user_message = self._last_user_message()
 
         # Build a dynamic dspy.Signature for variable extraction
+        docstring = expand_snippets(state_module.instructions, self.graph.snippets)
+        docstring = substitute_variables(docstring, self._dynamic_variables)
         attrs: dict = {
-            "__doc__": "Extract structured variables from the conversation.",
+            "__doc__": docstring,
             "conversation_history": dspy.InputField(desc="Full conversation transcript"),
             "user_message": dspy.InputField(desc="Most recent user message"),
         }

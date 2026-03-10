@@ -137,15 +137,22 @@ class ConversationModule(dspy.Module):
         will respond FROM.
         """
         docstring = (
-            "Evaluate if the conversation should transition to a different state "
-            "based on the conversation so far and the user's latest message."
+            "Evaluate if the conversation should transition to a different state. "
+            "Only transition when the current node's objectives have been fully "
+            "completed. If the current state prompt has tasks remaining (e.g. "
+            "follow-up questions, confirmations), stay in the current state by "
+            "returning 'none'."
         )
 
         attrs: dict[str, Any] = {
             "__doc__": docstring,
             "__annotations__": {"available_transitions": list[TransitionOption]},
+            "current_state_prompt": dspy.InputField(
+                desc="The instructions for the current conversation state — "
+                "only transition when these objectives are met"
+            ),
             "conversation_history": dspy.InputField(
-                desc="Full conversation so far, including the user's latest message"
+                desc="Conversation within the current state only"
             ),
             "available_transitions": dspy.InputField(
                 desc="Valid transitions with their conditions"
@@ -153,7 +160,7 @@ class ConversationModule(dspy.Module):
             "transition_to": dspy.OutputField(
                 desc=(
                     "Target from available_transitions to transition to, or 'none' to stay in "
-                    "current state"
+                    "current state until its objectives are met"
                 )
             ),
         }
