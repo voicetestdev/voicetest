@@ -1,5 +1,9 @@
 """Tests for voicetest.importers.retell module."""
 
+from pathlib import Path
+
+import pytest
+
 from voicetest.importers.retell import RetellImporter
 
 
@@ -674,9 +678,12 @@ class TestRetellImporterExtractDynamicVariables:
         extract_node = graph.nodes["extract_dob"]
         assert len(extract_node.variables_to_extract) == 3
         assert extract_node.variables_to_extract[0].name == "dob_month"
-        assert extract_node.variables_to_extract[0].description == "The month of birth"
+        assert extract_node.variables_to_extract[0].description == (
+            "The month of birth as a number 1-12. Convert month names to numbers "
+            "(January=1, February=2, ... December=12). If no date was provided, use 0."
+        )
         assert extract_node.variables_to_extract[0].type == "string"
-        assert "January" in extract_node.variables_to_extract[0].choices
+        assert extract_node.variables_to_extract[0].choices == []
 
     def test_extract_node_retell_type_metadata(self, sample_retell_config_extract_variables):
         importer = RetellImporter()
@@ -922,8 +929,11 @@ class TestRetellImporterAlwaysEdge:
 
     def test_pharmacy_fixture_always_edge_imported(self):
         """The pharmacy refill agent uses always_edge on conversation nodes."""
+        fixture_path = Path("test-data/template_pharmacy_refill_agent_cf.json")
+        if not fixture_path.exists():
+            pytest.skip("test-data/ fixtures not available (gitignored)")
         importer = RetellImporter()
-        graph = importer.import_agent("test-data/template_pharmacy_refill_agent_cf.json")
+        graph = importer.import_agent(fixture_path)
 
         patient_unavailable = graph.nodes["patient_unavailable"]
         assert len(patient_unavailable.transitions) == 1

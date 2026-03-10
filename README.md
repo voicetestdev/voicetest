@@ -28,7 +28,7 @@ pip install voicetest
 
 ![Web UI Demo (light)](docs/demos/web-demo-light.gif)
 
-## Quick Demo
+## Quick Start
 
 Try voicetest with a sample healthcare receptionist agent and tests:
 
@@ -48,8 +48,6 @@ voicetest demo --serve
 The demo includes a healthcare receptionist agent with 8 test cases covering appointment scheduling, identity verification, and more.
 
 ![CLI Demo](docs/demos/cli-demo.gif)
-
-## Quick Start
 
 ### Interactive Shell
 
@@ -97,59 +95,124 @@ voicetest up
 voicetest down
 ```
 
-### Agent Management
+## Core Concepts
+
+### Agent Graphs
+
+An agent is represented as an **AgentGraph**: a directed graph of nodes connected by transitions. Each node has a prompt, a type, and outgoing edges that control conversation flow. The graph has a single `entry_node_id` where every conversation starts.
+
+### Node Types
+
+| Type             | LLM Call         | Speech | Routing                                                                    |
+| ---------------- | ---------------- | ------ | -------------------------------------------------------------------------- |
+| **Conversation** | Yes              | Yes    | LLM picks a transition via prompt match, or falls back to an `always` edge |
+| **Logic**        | No               | No     | Evaluates equations top-to-bottom; first match wins                        |
+| **Extract**      | Yes (extraction) | No     | LLM extracts variables from the conversation, then equations route         |
+
+**Conversation nodes** are the standard building block — they generate a spoken response and use LLM judgment (or an `always` edge) to choose the next node.
+
+**Logic nodes** (also called branch nodes) have no prompt and produce no speech. All their transitions use `equation` or `always` conditions, evaluated deterministically without an LLM call.
+
+**Extract nodes** combine LLM extraction with deterministic routing. They define `variables_to_extract` (each with a name, description, type, and optional choices). The engine calls the LLM once to extract all variables from the conversation history, stores them as dynamic variables, then evaluates equation transitions using the extracted values.
+
+### Dynamic Variables
+
+Prompts can reference dynamic variables using `{{variable_name}}` syntax. Variables come from two sources:
+
+- **Test case `dynamic_variables`**: Set before the conversation starts (e.g., `{{caller_name}}`, `{{account_id}}`)
+- **Extract node output**: Populated during the conversation when an extract node fires
+
+Expansion order: snippet references `{%name%}` are resolved first, then `{{variable}}` placeholders are substituted into the result. Unknown variables are left as-is.
+
+### Equations
+
+Equation conditions on transitions support these operators:
+
+| Operator          | Example                    | Notes                                             |
+| ----------------- | -------------------------- | ------------------------------------------------- |
+| `==`              | `status == "active"`       | String equality                                   |
+| `!=`              | `tier != "free"`           | String inequality                                 |
+| `>` `>=` `<` `<=` | `age >= 18`                | Numeric coercion; non-numeric values return false |
+| `contains`        | `notes contains "urgent"`  | Substring match                                   |
+| `not_contains`    | `reply not_contains "err"` | Substring absence                                 |
+| `exists`          | `email exists`             | Variable is set                                   |
+| `not_exist`       | `phone not_exist`          | Variable is absent                                |
+
+Multiple clauses combine with `logical_operator`: `"and"` (default, all must match) or `"or"` (any must match).
+
+### Test Cases
+
+Test cases define simulated conversations to run against an agent:
+
+```json
+[
+  {
+    "name": "Customer billing inquiry",
+    "user_prompt": "## Identity\nYour name is Jane.\n\n## Goal\nGet help with a charge on your bill.",
+    "metrics": ["Agent greeted the customer and addressed the billing concern"],
+    "dynamic_variables": {"caller_name": "Jane", "account_id": "12345"},
+    "tool_mocks": [],
+    "type": "simulation"
+  }
+]
+```
+
+- **`type: "simulation"`** — The engine simulates both agent and user, running a full multi-turn conversation
+- **`metrics`** — LLM judges evaluate each metric against the transcript and produce a 0–1 score
+- **`dynamic_variables`** — Key-value pairs injected into `{{var}}` placeholders before the conversation starts
+
+## CLI Reference
+
+### Testing
 
 ```bash
-# List agents in the database
-voicetest agent list
+# Run tests against an agent definition
+voicetest run --agent agent.json --tests tests.json --all
 
-# Create an agent from a definition file
-voicetest agent create -a agent.json --name "My Agent"
+# Chat with an agent interactively
+voicetest chat -a agent.json --model openai/gpt-4o --var name=Jane --var account=12345
 
-# Get agent details
-voicetest agent get <agent-id>
+# Evaluate a transcript against metrics (no simulation)
+voicetest evaluate -t transcript.json -m "Agent was polite" -m "Agent resolved the issue"
 
-# Update agent properties
-voicetest agent update <agent-id> --name "Renamed" --model openai/gpt-4o
+# Diagnose test failures and suggest fixes
+voicetest diagnose -a agent.json -t tests.json
+voicetest diagnose -a agent.json -t tests.json --auto-fix --save fixed_agent.json
 
-# Delete an agent
-voicetest agent delete <agent-id>
-
-# Display agent graph structure
-voicetest agent graph <agent-id>
+# Decompose an agent into sub-agents
+voicetest decompose -a agent.json -o output/ [--num-agents N] [--model ID]
 ```
+
+### Agent Management
+
+| Command                                                                    | Description                            |
+| -------------------------------------------------------------------------- | -------------------------------------- |
+| `voicetest agent list`                                                     | List agents in the database            |
+| `voicetest agent create -a agent.json --name "My Agent"`                   | Create an agent from a definition file |
+| `voicetest agent get <agent-id>`                                           | Get agent details                      |
+| `voicetest agent update <agent-id> --name "Renamed" --model openai/gpt-4o` | Update agent properties                |
+| `voicetest agent delete <agent-id>`                                        | Delete an agent                        |
+| `voicetest agent graph <agent-id>`                                         | Display agent graph structure          |
 
 ### Test Case Management
 
-```bash
-# List test cases for an agent
-voicetest test list <agent-id>
-
-# Create a test case from a JSON file
-voicetest test create <agent-id> -f test.json
-
-# Link/unlink external test files
-voicetest test link <agent-id> tests.json
-voicetest test unlink <agent-id> tests.json
-
-# Export test cases
-voicetest test export <agent-id>
-```
+| Command                                         | Description                  |
+| ----------------------------------------------- | ---------------------------- |
+| `voicetest test list <agent-id>`                | List test cases for an agent |
+| `voicetest test create <agent-id> -f test.json` | Create a test case from JSON |
+| `voicetest test link <agent-id> tests.json`     | Link external test file      |
+| `voicetest test unlink <agent-id> tests.json`   | Unlink external test file    |
+| `voicetest test export <agent-id>`              | Export test cases            |
 
 ### Run History
 
-```bash
-# List past test runs
-voicetest runs list <agent-id>
+| Command                          | Description                   |
+| -------------------------------- | ----------------------------- |
+| `voicetest runs list <agent-id>` | List past test runs           |
+| `voicetest runs get <run-id>`    | View run details with results |
+| `voicetest runs delete <run-id>` | Delete a run                  |
 
-# View run details with results
-voicetest runs get <run-id>
-
-# Delete a run
-voicetest runs delete <run-id>
-```
-
-### Snippet Management
+### Snippets
 
 ```bash
 # Analyze agent prompts for repeated text
@@ -165,27 +228,18 @@ voicetest snippet set --agent agent.json greeting "Hello, how can I help?"
 voicetest snippet apply --agent agent.json --snippets '[{"name": "greeting", "text": "Hello!"}]'
 ```
 
-### Evaluation and Diagnosis
+### Export
 
 ```bash
-# Evaluate a transcript against metrics (no simulation)
-voicetest evaluate -t transcript.json -m "Agent was polite" -m "Agent resolved the issue"
-
-# Diagnose test failures and suggest fixes
-voicetest diagnose -a agent.json -t tests.json
-
-# Auto-fix with iterative diagnosis
-voicetest diagnose -a agent.json -t tests.json --auto-fix --save fixed_agent.json
-```
-
-### Interactive Chat
-
-```bash
-# Chat with an agent interactively
-voicetest chat -a agent.json
-
-# With custom model and variables
-voicetest chat -a agent.json --model openai/gpt-4o --var name=Jane --var account=12345
+voicetest export --agent agent.json --format mermaid         # Diagram
+voicetest export --agent agent.json --format livekit         # Python code
+voicetest export --agent agent.json --format retell-llm      # Retell LLM JSON
+voicetest export --agent agent.json --format retell-cf       # Retell Conversation Flow JSON
+voicetest export --agent agent.json --format vapi-assistant  # VAPI Assistant JSON
+voicetest export --agent agent.json --format vapi-squad      # VAPI Squad JSON
+voicetest export --agent agent.json --format bland           # Bland AI JSON
+voicetest export --agent agent.json --format telnyx          # Telnyx AI JSON
+voicetest export --agent agent.json --format voicetest       # Voicetest JSON (.vt.json)
 ```
 
 ### Settings and Platforms
@@ -223,7 +277,32 @@ voicetest --json run -a agent.json -t tests.json --all
 voicetest --json snippet analyze --agent agent.json
 ```
 
-### Live Voice Calls
+## Web UI
+
+Start the server and open http://localhost:8000 in your browser:
+
+```bash
+voicetest serve
+```
+
+The web UI provides:
+
+- Agent import and graph visualization
+- Export agents to multiple formats (Mermaid, LiveKit, Retell, VAPI, Bland, Telnyx)
+- Platform integration: import, push, and sync agents with Retell, VAPI, LiveKit, Telnyx
+- Test case management with persistence
+- Global metrics configuration (compliance checks that run on all tests)
+- Test execution with real-time streaming transcripts
+- Cancel in-progress tests
+- Run history with detailed results and transcript inspection
+- Audio evaluation with word-level diff of original vs. heard text
+- Settings configuration (models, max turns, streaming, audio eval)
+
+Data is persisted to `.voicetest/data.duckdb` (configurable via `VOICETEST_DB_PATH`).
+
+The REST API is available at http://localhost:8000/api. Full API documentation is at [voicetest.dev/api](https://voicetest.dev/api/).
+
+## Live Voice Calls
 
 For live voice calls, you need infrastructure services (LiveKit, Whisper STT, Kokoro TTS). The `up` command starts them via Docker and then launches the backend:
 
@@ -248,52 +327,9 @@ This requires Docker with the compose plugin. The infrastructure services are:
 
 If you only need simulated tests (no live voice), `voicetest serve` is sufficient and does not require Docker.
 
-### Web UI
+## Features
 
-Start the server and open http://localhost:8000 in your browser:
-
-```bash
-voicetest serve
-```
-
-The web UI provides:
-
-- Agent import and graph visualization
-- Export agents to multiple formats (Mermaid, LiveKit, Retell, VAPI, Bland, Telnyx)
-- Platform integration: import agents from, push agents to, and sync changes back to Retell, VAPI, LiveKit, Telnyx
-- Test case management with persistence
-- Export tests to platform formats (Retell)
-- Global metrics configuration (compliance checks that run on all tests)
-- Test execution with real-time streaming transcripts
-- Cancel in-progress tests
-- Run history with detailed results
-- Transcript and metric inspection with scores
-- Audio evaluation with word-level diff of original vs. heard text
-- Settings configuration (models, max turns, streaming, audio eval)
-
-Data is persisted to `.voicetest/data.duckdb` (configurable via `VOICETEST_DB_PATH`).
-
-### REST API
-
-The REST API is available at http://localhost:8000/api when running `voicetest serve`. Full API documentation is at [voicetest.dev/api](https://voicetest.dev/api/).
-
-```bash
-# Health check
-curl http://localhost:8000/api/health
-
-# List agents
-curl http://localhost:8000/api/agents
-
-# Start a test run
-curl -X POST http://localhost:8000/api/agents/{id}/runs \
-  -H "Content-Type: application/json" \
-  -d '{"test_ids": ["test-1", "test-2"]}'
-
-# WebSocket for real-time updates
-wscat -c ws://localhost:8000/api/runs/{id}/ws
-```
-
-## Format Conversion
+### Format Conversion
 
 voicetest can convert between agent formats via its unified AgentGraph representation:
 
@@ -328,42 +364,53 @@ voicetest export --agent vapi-assistant.json --format retell-llm > retell-agent.
 voicetest export --agent retell-llm-agent.json --format vapi-assistant > vapi-agent.json
 ```
 
-## Test Case Format
+### Platform Integration
 
-Test cases follow the Retell export format:
+voicetest can connect directly to voice platforms to import and push agent configurations.
 
-```json
-[
-  {
-    "name": "Customer billing inquiry",
-    "user_prompt": "## Identity\nYour name is Jane.\n\n## Goal\nGet help with a charge on your bill.",
-    "metrics": ["Agent greeted the customer and addressed the billing concern"],
-    "dynamic_variables": {},
-    "tool_mocks": [],
-    "type": "simulation"
-  }
-]
+| Platform | Import | Push | Sync | API Key Env Var                          |
+| -------- | ------ | ---- | ---- | ---------------------------------------- |
+| Retell   | ✓      | ✓    | ✓    | `RETELL_API_KEY`                         |
+| VAPI     | ✓      | ✓    | ✓    | `VAPI_API_KEY`                           |
+| Bland    | ✓      | ✓    |      | `BLAND_API_KEY`                          |
+| Telnyx   | ✓      | ✓    | ✓    | `TELNYX_API_KEY`                         |
+| LiveKit  | ✓      | ✓    | ✓    | `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` |
+
+In the Web UI, go to the "Platforms" tab to configure credentials, browse remote agents, import, push, and sync.
+
+### Prompt Snippets
+
+Agent prompts often repeat text across nodes — sign-off phrases, compliance disclaimers, tone instructions, etc. **Snippets** are named, reusable text blocks defined at the agent level and referenced in prompts via `{%snippet_name%}`.
+
+| Snippet Name | Text                                                             |
+| ------------ | ---------------------------------------------------------------- |
+| `sign_off`   | "Thank you for calling. Is there anything else I can help with?" |
+| `hipaa_warn` | "I need to verify your identity before sharing medical info."    |
+
+Use `{%name%}` (with percent signs) in any node prompt or general prompt:
+
+```
+Welcome the caller and introduce yourself.
+
+{%hipaa_warn%}
+
+When the conversation ends:
+{%sign_off%}
 ```
 
-## Features
+Snippets are expanded **before** dynamic variables (`{{var}}`), so you can combine both:
 
-- **Multi-source import**: Retell CF, Retell LLM, VAPI, Bland, Telnyx, LiveKit, XLSForm, custom Python functions
-- **Format conversion**: Convert between Retell, VAPI, Bland, Telnyx, LiveKit, and other formats
-- **Unified IR**: AgentGraph representation for any voice agent
-- **Multi-format export**: Mermaid diagrams, LiveKit Python, Retell LLM, Retell CF, VAPI, Bland, Telnyx, Voicetest JSON (.vt.json)
-- **Platform integration**: Import, push, and sync agents with Retell, VAPI, Bland, Telnyx, LiveKit via API
-- **Configurable LLMs**: Separate models for agent, simulator, and judge
-- **DSPy-based evaluation**: LLM judges with reasoning and 0-1 scores
-- **Global metrics**: Define compliance checks that run on all tests for an agent
-- **Multiple interfaces**: CLI, TUI, interactive shell, Web UI, REST API
-- **Persistence**: DuckDB storage for agents, tests, and run history
-- **Real-time streaming**: WebSocket-based transcript streaming during test execution
-- **Token streaming**: Optional token-level streaming as LLM generates responses (experimental)
-- **Cancellation**: Cancel in-progress tests to stop token usage
-- **Prompt snippets**: Named reusable text blocks (`{%name%}`) with auto-DRY analysis
-- **Audio evaluation**: TTS→STT round-trip to catch pronunciation issues (e.g., phone numbers spoken as words)
+```
+Hello {{caller_name}}, {%greeting%}
+```
 
-## Global Metrics
+Click **Analyze DRY** to scan all prompts for repeated or near-identical text. Exact matches can be auto-extracted into snippets; fuzzy matches (above 80%) are flagged for review.
+
+![DRY Analysis Demo (light)](docs/demos/dry-demo-light.gif)
+
+When exporting, choose **Raw (.vt.json)** to preserve `{%snippet%}` references, or **Expanded** to resolve them to plain text for platform deployment.
+
+### Global Metrics
 
 Global metrics are compliance-style checks that run on every test for an agent. Configure them in the "Metrics" tab in the Web UI.
 
@@ -386,132 +433,19 @@ Example use cases:
 - Brand voice consistency across all conversations
 - Safety guardrails and content policy adherence
 
-## Prompt Snippets (DRY)
-
-Agent prompts often repeat text across nodes — sign-off phrases, compliance disclaimers, tone instructions, etc. **Snippets** are named, reusable text blocks defined at the agent level and referenced in prompts via `{%snippet_name%}`.
-
-### Defining Snippets
-
-In the Web UI, open an agent and scroll to the **Snippets** section. Each snippet has a name and a text body:
-
-| Snippet Name | Text                                                             |
-| ------------ | ---------------------------------------------------------------- |
-| `sign_off`   | "Thank you for calling. Is there anything else I can help with?" |
-| `hipaa_warn` | "I need to verify your identity before sharing medical info."    |
-
-### Referencing Snippets in Prompts
-
-Use `{%name%}` (with percent signs) in any node prompt or general prompt:
-
-```
-Welcome the caller and introduce yourself.
-
-{%hipaa_warn%}
-
-When the conversation ends:
-{%sign_off%}
-```
-
-Snippets are expanded (replaced with their text) **before** dynamic variables (`{{var}}`), so you can combine both:
-
-```
-Hello {{caller_name}}, {%greeting%}
-```
-
-### Auto-DRY Analysis
-
-Click **Analyze DRY** to scan all prompts for repeated or near-identical text:
-
-- **Exact matches**: Sentences that appear verbatim in 2+ nodes. Click "Apply" to extract into a snippet and replace all occurrences with `{%ref%}`.
-- **Fuzzy matches**: Sentences that are similar (above 80% match). Review and decide whether to unify them.
-- **Apply All**: Applies all exact-match suggestions at once.
-
-![DRY Analysis Demo (light)](docs/demos/dry-demo-light.gif)
-
-### Export Modes
-
-When an agent has snippets, the export modal offers two modes:
-
-- **Raw (.vt.json)**: Preserves `{%snippet%}` references and the snippets dictionary. Use this for sharing with teammates or version control.
-- **Expanded**: Resolves all snippet references to plain text. Use this for platform deployment (Retell, VAPI, LiveKit, etc.).
-
-Platform-specific formats (Retell, VAPI, Bland, Telnyx, LiveKit) are always exported expanded.
-
-### REST API
-
-```bash
-# Get snippets for an agent
-curl http://localhost:8000/api/agents/{id}/snippets
-
-# Update a single snippet
-curl -X PUT http://localhost:8000/api/agents/{id}/snippets/sign_off \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Thanks for calling!"}'
-
-# Run DRY analysis
-curl -X POST http://localhost:8000/api/agents/{id}/analyze-dry
-
-# Apply suggested snippets
-curl -X POST http://localhost:8000/api/agents/{id}/apply-snippets \
-  -H "Content-Type: application/json" \
-  -d '{"snippets": [{"name": "sign_off", "text": "Thanks for calling!"}]}'
-
-# Export with snippets expanded
-curl -X POST http://localhost:8000/api/agents/export \
-  -H "Content-Type: application/json" \
-  -d '{"graph": {...}, "format": "retell-llm", "expanded": true}'
-```
-
-## Post-Run Diagnosis & Auto-Fix
+### Diagnosis & Auto-Fix
 
 When a test fails, voicetest can diagnose the root cause and suggest concrete prompt changes to fix it.
 
-### Manual Flow
+1. **Diagnose** — Click "Diagnose" on a failed result. The LLM analyzes the graph, transcript, and failed metrics to identify fault locations and root cause.
+1. **Review & Edit** — Proposed changes are shown as editable textareas. Modify the suggested text before applying.
+1. **Apply & Test** — Click "Apply & Test" to apply changes to a copy of the graph and rerun the test. A score comparison table shows original vs. new scores with deltas.
+1. **Iterate** — If not all metrics pass, click "Try Again" to revise the fix based on the latest results.
+1. **Save** — Click "Save Changes" to persist the fix to the agent graph.
 
-1. **Diagnose** - Click "Diagnose" on a failed result. The LLM analyzes the graph, transcript, and failed metrics to identify fault locations and root cause.
-1. **Review & Edit** - Proposed changes are shown as editable textareas. Modify the suggested text before applying.
-1. **Apply & Test** - Click "Apply & Test" to apply changes to a copy of the graph and rerun the test. A score comparison table shows original vs. new scores with deltas.
-1. **Iterate** - If not all metrics pass, click "Try Again" to revise the fix based on the latest results. The table shows delta from both original and previous iteration.
-1. **Save** - Click "Save Changes" to persist the fix to the agent graph.
+**Auto-Fix Mode** runs an automated diagnose-apply-revise loop. Configure stop condition ("On improvement" or "When all pass") and max iterations (1–10, default 3).
 
-### Model Selection
-
-Enter a model string (e.g., `openai/gpt-4o`, `anthropic/claude-3-sonnet`) in the model input to override the default judge model for diagnosis and fix revision. Leave blank to use the model from settings.
-
-### Auto-Fix Mode
-
-Click "Auto Fix" to run an automated diagnose-apply-revise loop:
-
-- **Stop condition**: "On improvement" stops when scores improve; "When all pass" stops only when every metric passes.
-- **Max iterations**: Limits the number of apply-revise cycles (1-10, default 3).
-- **Progress**: A live table shows scores with deltas from both original and previous iteration.
-- **Cancel**: Stop the loop at any time.
-
-### REST API
-
-```bash
-# Diagnose a failed result (optional model override)
-curl -X POST http://localhost:8000/api/results/{result_id}/diagnose \
-  -H "Content-Type: application/json" \
-  -d '{"model": "openai/gpt-4o"}'
-
-# Apply fix and rerun test
-curl -X POST http://localhost:8000/api/results/{result_id}/apply-fix \
-  -H "Content-Type: application/json" \
-  -d '{"changes": [...], "iteration": 1}'
-
-# Revise a fix based on new metric results
-curl -X POST http://localhost:8000/api/results/{result_id}/revise-fix \
-  -H "Content-Type: application/json" \
-  -d '{"diagnosis": {...}, "previous_changes": [...], "new_metric_results": [...], "model": "openai/gpt-4o"}'
-
-# Save changes to agent graph
-curl -X POST http://localhost:8000/api/agents/{agent_id}/save-fix \
-  -H "Content-Type: application/json" \
-  -d '{"changes": [...]}'
-```
-
-## Audio Evaluation
+### Audio Evaluation
 
 Text-only evaluation has a blind spot: when an agent produces "415-555-1234", an LLM judge sees correct digits and passes. But TTS might speak it as "four hundred fifteen, five hundred fifty-five..." — which a caller can't use. Audio evaluation catches these issues by round-tripping agent messages through TTS→STT and judging what would actually be *heard*.
 
@@ -527,28 +461,7 @@ Judges evaluate heard text → audio_metric_results
 
 Both sets of results are stored. The original message text is preserved alongside what was heard, with a word-level diff shown in the UI.
 
-### Triggering Audio Evaluation
-
-**Automatic (per-run setting):** Enable `audio_eval` in settings to run TTS→STT round-trip on every test automatically.
-
-```toml
-# .voicetest/settings.toml
-[run]
-audio_eval = true
-```
-
-Or toggle the "Audio evaluation" checkbox in the Settings page of the Web UI.
-
-**On-demand (button):** After a test completes, click "Run audio eval" in the results view to run audio evaluation on that specific result.
-
-**REST API:**
-
-```bash
-# Run audio eval on an existing result
-curl -X POST http://localhost:8000/api/results/{result_id}/audio-eval
-```
-
-### Requirements
+Enable `audio_eval` in settings or toggle "Audio evaluation" in the Web UI. On-demand: click "Run audio eval" on any completed result.
 
 Audio evaluation requires the TTS and STT services from `voicetest up`:
 
@@ -557,70 +470,41 @@ Audio evaluation requires the TTS and STT services from `voicetest up`:
 | `whisper` | http://localhost:8001 | Faster Whisper STT |
 | `kokoro`  | http://localhost:8002 | Kokoro TTS         |
 
-Service URLs are configurable in settings:
+### Agent Decomposition
+
+Split a large agent into smaller, focused sub-agents:
+
+```bash
+voicetest decompose -a agent.json -o output/ [--num-agents N] [--model ID]
+```
+
+Three-phase LLM pipeline: **analyze** the graph → **refine** the decomposition plan → **build** sub-agent JSON files. Produces one `.json` file per sub-agent plus a `manifest.json` with handoff rules and sub-agent registry.
+
+Options:
+
+- `--num-agents N` — Target number of sub-agents (default: let the LLM decide)
+- `--model ID` — LLM model override (defaults to judge model from settings)
+
+### LLM Response Cache
+
+DSPy LLM responses are cached to avoid redundant API calls. Default backend is local disk.
+
+For shared caching across CI runners or team members, use the S3 backend:
 
 ```toml
 # .voicetest/settings.toml
-[audio]
-tts_url = "http://localhost:8002/v1"
-stt_url = "http://localhost:8001/v1"
+[cache]
+cache_backend = "s3"
+s3_bucket = "my-bucket"
+s3_prefix = "dspy-cache/"
+s3_region = "us-east-1"
 ```
 
-## Platform Integration
+Disable caching for a run with `no_cache = true` in run options or `--no-cache` on the CLI.
 
-voicetest can connect directly to voice platforms to import and push agent configurations.
+## Configuration
 
-### Supported Platforms
-
-| Platform | Import | Push | Sync | API Key Env Var                          |
-| -------- | ------ | ---- | ---- | ---------------------------------------- |
-| Retell   | ✓      | ✓    | ✓    | `RETELL_API_KEY`                         |
-| VAPI     | ✓      | ✓    | ✓    | `VAPI_API_KEY`                           |
-| Bland    | ✓      | ✓    |      | `BLAND_API_KEY`                          |
-| Telnyx   | ✓      | ✓    | ✓    | `TELNYX_API_KEY`                         |
-| LiveKit  | ✓      | ✓    | ✓    | `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` |
-
-### Usage
-
-In the Web UI, go to the "Platforms" tab to:
-
-1. **Configure** - Enter API keys (stored in settings, not in env)
-1. **Browse** - List agents on the remote platform
-1. **Import** - Pull an agent config into voicetest for testing
-1. **Push** - Deploy a local agent to the platform
-1. **Sync** - Push local changes back to the source platform (for imported agents)
-
-API keys can also be set via environment variables or in the Settings page.
-
-## CI/CD Integration
-
-Run voice agent tests in CI to catch regressions before they reach production. Key benefits:
-
-- **Bring your own LLM keys** - Use OpenRouter, OpenAI, etc. directly instead of paying per-minute through Retell/VAPI's built-in LLM interfaces
-- **Test on prompt changes** - Automatically validate agent behavior when prompts or configs change
-- **Track quality over time** - Ensure consistent agent performance across releases
-
-Example GitHub Actions workflow (see [docs/examples/ci-workflow.yml](docs/examples/ci-workflow.yml)):
-
-```yaml
-name: Voice Agent Tests
-on:
-  push:
-    paths: ["agents/**"]  # Trigger on agent config or test changes
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv tool install voicetest
-      - run: voicetest run --agent agents/receptionist.json --tests agents/tests.json --all
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-```
-
-## LLM Configuration
+### LLM Models
 
 Configure different models for each role using [LiteLLM format](https://docs.litellm.ai/docs/providers):
 
@@ -652,6 +536,43 @@ In the shell:
 > set simulator_model ollama_chat/qwen2.5:0.5b
 ```
 
+### Run Options
+
+| Option                  | Default   | Description                                 |
+| ----------------------- | --------- | ------------------------------------------- |
+| `max_turns`             | `20`      | Maximum conversation turns                  |
+| `timeout_seconds`       | `60.0`    | Per-test timeout                            |
+| `no_cache`              | `false`   | Bypass LLM response cache                   |
+| `split_transitions`     | `false`   | Separate LLM call for transition selection  |
+| `audio_eval`            | `false`   | TTS→STT round-trip evaluation               |
+| `flow_judge`            | `false`   | Validate conversation flow                  |
+| `streaming`             | `false`   | Stream tokens as LLM generates              |
+| `test_model_precedence` | `false`   | Test-level model overrides global model     |
+| `pattern_engine`        | `fnmatch` | Pattern matching engine: `fnmatch` or `re2` |
+
+### Settings File
+
+Settings are stored in `.voicetest/settings.toml`:
+
+```toml
+[models]
+agent = "groq/llama-3.1-8b-instant"
+simulator = "groq/llama-3.1-8b-instant"
+judge = "groq/llama-3.1-8b-instant"
+
+[run]
+max_turns = 20
+audio_eval = false
+streaming = false
+
+[audio]
+tts_url = "http://localhost:8002/v1"
+stt_url = "http://localhost:8001/v1"
+
+[cache]
+cache_backend = "disk"
+```
+
 ### Claude Code Passthrough
 
 If you have [Claude Code](https://claude.ai/claude-code) installed, you can use it as your LLM backend without configuring API keys:
@@ -666,9 +587,9 @@ judge = "claudecode/sonnet"
 
 Available model strings:
 
-- `claudecode/sonnet` - Claude Sonnet
-- `claudecode/opus` - Claude Opus
-- `claudecode/haiku` - Claude Haiku
+- `claudecode/sonnet` — Claude Sonnet
+- `claudecode/opus` — Claude Opus
+- `claudecode/haiku` — Claude Haiku
 
 This invokes the `claude` CLI via subprocess, using your existing Claude Code authentication.
 
@@ -709,14 +630,53 @@ voicetest init-claude
 claude --plugin-dir $(voicetest claude-plugin-path)
 ```
 
+## CI/CD Integration
+
+Run voice agent tests in CI to catch regressions before they reach production. Key benefits:
+
+- **Bring your own LLM keys** — Use OpenRouter, OpenAI, etc. directly instead of paying per-minute through Retell/VAPI's built-in LLM interfaces
+- **Test on prompt changes** — Automatically validate agent behavior when prompts or configs change
+- **Track quality over time** — Ensure consistent agent performance across releases
+
+Example GitHub Actions workflow (see [docs/examples/ci-workflow.yml](docs/examples/ci-workflow.yml)):
+
+```yaml
+name: Voice Agent Tests
+on:
+  push:
+    paths: ["agents/**"]  # Trigger on agent config or test changes
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv tool install voicetest
+      - run: voicetest run --agent agents/receptionist.json --tests agents/tests.json --all
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+```
+
 ## Architecture
+
+### Conversation Engine
+
+The `ConversationEngine.advance()` method traverses the agent graph from the current node until it produces speech or settles:
+
+1. Call `_process_node()` on the current node
+1. If the node produced a response (conversation node), return it
+1. If the node is silent (logic or extract node) and transitioned, follow the edge and repeat
+1. Maximum 20 hops per `advance()` call to prevent infinite loops
+
+Silent nodes auto-fire: logic nodes evaluate equations deterministically, extract nodes call the LLM once for variable extraction then evaluate equations. Tool messages record transitions and extractions in the transcript.
 
 ### DI Container (Punq)
 
 The project uses Punq for dependency injection. Key singletons:
 
-- `Engine`, `sessionmaker`, `Session` - SQLAlchemy database layer (DuckDB-backed)
-- `ImporterRegistry`, `ExporterRegistry`, `PlatformRegistry` - Registries
+- `Engine`, `sessionmaker`, `Session` — SQLAlchemy database layer (DuckDB-backed)
+- `ImporterRegistry`, `ExporterRegistry`, `PlatformRegistry` — Registries
 
 Repositories are transient but share the singleton session:
 
@@ -769,18 +729,6 @@ When importing Retell LLM format agents, terminal tools (`end_call`, `transfer_c
 - Tool metadata carries `transfer_destination` and `transfer_option` through the import/export pipeline
 - The agent envelope (voice_id, language, etc.) is preserved from LLM format through CF export for Retell UI re-import
 
-### Diagnosis & Auto-Fix
-
-Post-run failure diagnosis and auto-fix flow:
-
-- `voicetest/models/diagnosis.py` - Pydantic models (Diagnosis, FixSuggestion, PromptChange, etc.)
-- `voicetest/judges/diagnosis.py` - DSPy signatures and DiagnosisJudge class
-- `voicetest/services/diagnosis.py` - `DiagnosisService`: `diagnose_failure()`, `apply_and_rerun()`, `revise_fix()`, `apply_fix_to_graph()`
-- `voicetest/rest.py` - REST endpoints: `/results/{id}/diagnose`, `/results/{id}/apply-fix`, `/results/{id}/revise-fix`, `/agents/{id}/save-fix`
-- `web/src/components/RunsView.svelte` - UI: diagnose button, model input, edit-before-apply textareas, auto-fix loop with progress
-
-Flow: diagnose (identify fault locations + root cause) -> suggest fix (prompt changes) -> user edits changes -> apply & rerun test -> compare scores -> iterate or save.
-
 ## Development
 
 ### Code Quality
@@ -816,10 +764,10 @@ uv run pre-commit run --all-files
 
 Shared fixtures live in `tests/fixtures/`:
 
-- `graphs/simple_graph.json` - Basic agent graph for testing
-- `retell/` - Retell format samples
-- `vapi/` - VAPI format samples
-- `livekit/` - LiveKit format samples
+- `graphs/simple_graph.json` — Basic agent graph for testing
+- `retell/` — Retell format samples (including extract variable configs)
+- `vapi/` — VAPI format samples
+- `livekit/` — LiveKit format samples
 
 Use fixtures via pytest:
 
@@ -931,35 +879,7 @@ cd web && npx vitest run
 cd web && mise exec -- bun run build
 ```
 
-**Svelte 5 Reactivity Guidelines:**
-
-- Use `$derived($store)` to consume Svelte stores in components - the `$store` syntax alone may not trigger re-renders in browsers
-- Do not use `Set` or `Map` with `$state` or `writable` stores - use arrays and `Record<K,V>` instead
-- Always reassign objects/arrays instead of mutating them: `obj = { ...obj, [key]: value }` not `obj[key] = value`
-- Use `onMount()` for one-time data fetching, not `$effect()` - effects are for reactive dependencies
-- Violating these rules can cause the entire app's reactivity to silently break
-
-```svelte
-<script lang="ts">
-  import { myStore } from "./stores";
-
-  // WRONG - may not trigger re-renders in browser
-  // {#if $myStore === "value"}
-
-  // CORRECT - use $derived for reliable reactivity
-  let value = $derived($myStore);
-  // {#if value === "value"}
-</script>
-```
-
-**When to Add Libraries:**
-
-The frontend uses minimal dependencies by design. Consider adding a library when:
-
-- Table features: Need filtering, pagination, virtual scrolling, or column resizing (→ `@tanstack/svelte-table`)
-- Forms: Complex validation, multi-step wizards, or field arrays (→ `superforms` + `zod`)
-- Charts: Need data visualization beyond simple metrics (→ `layerchart` or `pancake`)
-- State: Cross-component state becomes unwieldy with stores (→ evaluate if architecture needs rethinking first)
+Svelte 5 reactivity guidelines are documented in `web/README.md`.
 
 ## Project Structure
 
@@ -969,15 +889,22 @@ voicetest/
 │   ├── cli.py           # CLI (40+ commands)
 │   ├── rest.py          # REST API server + WebSocket + SPA serving
 │   ├── container.py     # Dependency injection (Punq)
+│   ├── cache.py         # LLM response cache (disk + S3 backends)
+│   ├── templating.py    # Snippet and variable expansion
 │   ├── services/        # Service layer (agents, diagnosis, evaluation, runs, snippets, etc.)
 │   ├── compose/         # Bundled Docker Compose for infrastructure services
-│   ├── models/          # Pydantic models
+│   ├── models/          # Pydantic models (agent, test_case, results, decompose, etc.)
 │   ├── importers/       # Source importers (retell, vapi, bland, telnyx, livekit, xlsform, custom)
 │   ├── exporters/       # Format exporters (mermaid, livekit, retell, vapi, bland, telnyx, voicetest_ir)
 │   ├── platforms/       # Platform SDK clients (retell, vapi, bland, telnyx, livekit)
 │   ├── engine/          # Execution engine
+│   │   ├── conversation.py    # ConversationEngine: advance(), graph traversal
+│   │   ├── equations.py       # Deterministic equation evaluation
+│   │   ├── modules.py         # DSPy modules for state execution
+│   │   ├── session.py         # ConversationRunner for simulated tests
+│   │   └── livekit_llm.py     # LiveKit real-time integration
 │   ├── simulator/       # User simulation
-│   ├── judges/          # Evaluation judges (metric, rule)
+│   ├── judges/          # Evaluation judges (metric, rule, diagnosis)
 │   ├── storage/         # DuckDB persistence layer
 │   └── tui/             # TUI and shell
 ├── claude-plugin/       # Claude Code plugin (commands + skills)
