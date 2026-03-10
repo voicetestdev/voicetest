@@ -4,7 +4,11 @@ These tests require a running backend server.
 Run with: uv run voicetest serve & uv run pytest tests/integration/test_websocket.py -v
 """
 
+import asyncio
+import json
+
 import pytest
+import websockets
 
 
 @pytest.fixture
@@ -45,72 +49,41 @@ class TestWebSocketRealConnection:
     """
 
     @pytest.mark.asyncio
-    async def test_websocket_real_connection_receives_state(self, sample_retell_config):
+    async def test_websocket_real_connection_receives_state(self, api_client, sample_retell_config):
         """Test that a real WebSocket connection receives state message.
 
         This simulates what the browser does when connecting from a different origin.
         Requires backend running on port 8000.
         """
-        import asyncio
-        import json
-        import socket
-
-        import httpx
-        import websockets
-
-        # Check if server is running
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(1)
-                s.connect(("127.0.0.1", 8000))
-        except (TimeoutError, ConnectionRefusedError):
-            pytest.skip(
-                "Backend server not running on port 8000. Start with: uv run voicetest serve"
-            )
-
-        base_url = "http://127.0.0.1:8000"
         ws_url = "ws://127.0.0.1:8000"
 
-        async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as client:
-            # Create an agent
-            agent_resp = await client.post(
-                "/api/agents",
-                json={"name": "WS Real Test", "config": sample_retell_config},
-            )
-            assert agent_resp.status_code == 200, f"Failed to create agent: {agent_resp.text}"
-            agent_id = agent_resp.json()["id"]
+        # Create an agent (auto-cleaned by api_client fixture)
+        agent_data = await api_client.create_agent("WS Real Test", sample_retell_config)
+        agent_id = agent_data["id"]
 
-            # Create a test case
-            test_resp = await client.post(
-                f"/api/agents/{agent_id}/tests",
-                json={"name": "Test 1", "user_prompt": "Hello", "metrics": []},
-            )
-            assert test_resp.status_code == 200
-            test_id = test_resp.json()["id"]
+        # Create a test case
+        test_resp = await api_client.post(
+            f"/api/agents/{agent_id}/tests",
+            json={"name": "Test 1", "user_prompt": "Hello", "metrics": []},
+        )
+        assert test_resp.status_code == 200
+        test_id = test_resp.json()["id"]
 
-            # Start a run
-            run_resp = await client.post(
-                f"/api/agents/{agent_id}/runs",
-                json={"test_ids": [test_id]},
-            )
-            assert run_resp.status_code == 200
-            run_id = run_resp.json()["id"]
+        # Start a run
+        run_resp = await api_client.post(
+            f"/api/agents/{agent_id}/runs",
+            json={"test_ids": [test_id]},
+        )
+        assert run_resp.status_code == 200
+        run_id = run_resp.json()["id"]
 
-            # Connect via real WebSocket (simulating browser)
-            ws_endpoint = f"{ws_url}/api/runs/{run_id}/ws"
-            try:
-                async with websockets.connect(ws_endpoint, open_timeout=5) as ws:
-                    # Should receive state message
-                    msg = await asyncio.wait_for(ws.recv(), timeout=5)
-                    data = json.loads(msg)
+        # Connect via real WebSocket (simulating browser)
+        ws_endpoint = f"{ws_url}/api/runs/{run_id}/ws"
+        async with websockets.connect(ws_endpoint, open_timeout=5) as ws:
+            # Should receive state message
+            msg = await asyncio.wait_for(ws.recv(), timeout=5)
+            data = json.loads(msg)
 
-                    assert data["type"] == "state", f"Expected state message, got: {data}"
-                    assert data["run"]["id"] == run_id
-                    assert "results" in data["run"]
-                    result_count = len(data["run"]["results"])
-                    print(f"WebSocket test passed! Received state with {result_count} results")
-            except Exception as e:
-                pytest.fail(f"WebSocket connection failed: {type(e).__name__}: {e}")
-
-            # Clean up - delete the agent
-            await client.delete(f"/api/agents/{agent_id}")
+            assert data["type"] == "state", f"Expected state message, got: {data}"
+            assert data["run"]["id"] == run_id
+            assert "results" in data["run"]

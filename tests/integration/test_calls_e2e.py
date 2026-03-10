@@ -195,12 +195,8 @@ class TestOllamaLLM:
 class TestFullCallPipeline:
     """Test the full call pipeline with simulated audio."""
 
-    @pytest.fixture
-    def api_base_url(self) -> str:
-        return "http://localhost:8000"
-
     @pytest.mark.asyncio
-    async def test_agent_responds_to_user_audio(self, api_base_url):
+    async def test_agent_responds_to_user_audio(self, api_client):
         """Agent processes user audio and generates a response.
 
         This test:
@@ -210,22 +206,18 @@ class TestFullCallPipeline:
         4. Waits for transcript updates
         5. Verifies agent responded
         """
-        import httpx
         from livekit import rtc
 
-        # Create demo agent
-        async with httpx.AsyncClient() as client:
-            demo_response = await client.post(f"{api_base_url}/api/demo", timeout=30)
-            assert demo_response.status_code == 200
-            agent_id = demo_response.json()["agent_id"]
+        # Create demo agent (auto-cleaned by api_client fixture)
+        demo_data = await api_client.create_demo_agent()
+        agent_id = demo_data["agent_id"]
 
-            # Start call
-            start_response = await client.post(
-                f"{api_base_url}/api/agents/{agent_id}/calls/start",
-                timeout=30,
-            )
-            assert start_response.status_code == 200
-            call_data = start_response.json()
+        # Start call
+        start_response = await api_client.post(
+            f"/api/agents/{agent_id}/calls/start",
+        )
+        assert start_response.status_code == 200
+        call_data = start_response.json()
 
         call_id = call_data["call_id"]
         room_name = call_data["room_name"]
@@ -313,9 +305,8 @@ class TestFullCallPipeline:
             await room.disconnect()
 
         finally:
-            # Clean up - end the call
-            async with httpx.AsyncClient() as client:
-                await client.post(f"{api_base_url}/api/calls/{call_id}/end", timeout=10)
+            # End the call
+            await api_client.post(f"/api/calls/{call_id}/end")
 
         # Report results
         print(f"Transcripts collected: {transcripts}")
@@ -325,7 +316,7 @@ class TestFullCallPipeline:
         assert not errors, f"Errors during call: {errors}"
 
     @pytest.mark.asyncio
-    async def test_agent_transcribes_real_speech(self, api_base_url):
+    async def test_agent_transcribes_real_speech(self, api_client):
         """Agent transcribes real speech audio and responds.
 
         This test uses Kokoro TTS to generate speech, then sends it to the agent.
@@ -335,8 +326,8 @@ class TestFullCallPipeline:
         from livekit import rtc
 
         # First, generate speech audio using Kokoro
-        async with httpx.AsyncClient() as client:
-            tts_response = await client.post(
+        async with httpx.AsyncClient() as http:
+            tts_response = await http.post(
                 "http://localhost:8002/v1/audio/speech",
                 json={
                     "model": "kokoro",
@@ -351,16 +342,14 @@ class TestFullCallPipeline:
 
         print(f"Generated {len(speech_audio)} bytes of speech audio")
 
-        # Create demo agent
-        async with httpx.AsyncClient() as client:
-            demo_response = await client.post(f"{api_base_url}/api/demo", timeout=30)
-            agent_id = demo_response.json()["agent_id"]
+        # Create demo agent (auto-cleaned by api_client fixture)
+        demo_data = await api_client.create_demo_agent()
+        agent_id = demo_data["agent_id"]
 
-            start_response = await client.post(
-                f"{api_base_url}/api/agents/{agent_id}/calls/start",
-                timeout=30,
-            )
-            call_data = start_response.json()
+        start_response = await api_client.post(
+            f"/api/agents/{agent_id}/calls/start",
+        )
+        call_data = start_response.json()
 
         call_id = call_data["call_id"]
         livekit_url = call_data["livekit_url"]
@@ -454,8 +443,7 @@ class TestFullCallPipeline:
             await room.disconnect()
 
         finally:
-            async with httpx.AsyncClient() as client:
-                await client.post(f"{api_base_url}/api/calls/{call_id}/end", timeout=10)
+            await api_client.post(f"/api/calls/{call_id}/end")
 
         print(f"Final transcripts: {transcripts}")
         print(f"Errors: {errors}")
@@ -473,22 +461,19 @@ class TestFullCallPipeline:
         # Full transcript verification depends on the agent processing the audio
 
     @pytest.mark.asyncio
-    async def test_call_websocket_receives_status(self, api_base_url):
+    async def test_call_websocket_receives_status(self, api_client):
         """WebSocket receives call status updates."""
-        import httpx
         import websockets
 
-        # Create demo agent
-        async with httpx.AsyncClient() as client:
-            demo_response = await client.post(f"{api_base_url}/api/demo", timeout=30)
-            agent_id = demo_response.json()["agent_id"]
+        # Create demo agent (auto-cleaned by api_client fixture)
+        demo_data = await api_client.create_demo_agent()
+        agent_id = demo_data["agent_id"]
 
-            # Start call
-            start_response = await client.post(
-                f"{api_base_url}/api/agents/{agent_id}/calls/start",
-                timeout=30,
-            )
-            call_data = start_response.json()
+        # Start call
+        start_response = await api_client.post(
+            f"/api/agents/{agent_id}/calls/start",
+        )
+        call_data = start_response.json()
 
         call_id = call_data["call_id"]
 
@@ -507,5 +492,4 @@ class TestFullCallPipeline:
                 print(f"Received call state: status={data['call']['status']}")
 
         finally:
-            async with httpx.AsyncClient() as client:
-                await client.post(f"{api_base_url}/api/calls/{call_id}/end", timeout=10)
+            await api_client.post(f"/api/calls/{call_id}/end")

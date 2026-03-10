@@ -157,11 +157,38 @@ class AgentRepository:
         return MetricsConfig()
 
     def delete(self, agent_id: str) -> None:
-        """Delete an agent and all associated runs, test cases, and calls."""
+        """Delete an agent and all associated runs, test cases, and calls.
+
+        DuckDB enforces foreign keys but does not support CASCADE at the DB
+        level, so children must be deleted manually in dependency order.
+        """
         agent = self.session.get(Agent, agent_id)
         if agent:
             try:
-                self.session.delete(agent)
+                # Delete in FK-dependency order: results → runs → tests/calls → agent.
+                # DuckDB enforces foreign keys eagerly within a transaction, so
+                # each layer must be committed before deleting the parent layer.
+                run_ids = [r.id for r in agent.runs]
+                self.session.expire(agent)
+                if run_ids:
+                    self.session.query(Result).filter(Result.run_id.in_(run_ids)).delete(
+                        synchronize_session=False
+                    )
+                    self.session.commit()
+                    self.session.query(Run).filter(Run.agent_id == agent_id).delete(
+                        synchronize_session=False
+                    )
+                    self.session.commit()
+                self.session.query(TestCaseModel).filter(TestCaseModel.agent_id == agent_id).delete(
+                    synchronize_session=False
+                )
+                self.session.query(Call).filter(Call.agent_id == agent_id).delete(
+                    synchronize_session=False
+                )
+                self.session.commit()
+                self.session.query(Agent).filter(Agent.id == agent_id).delete(
+                    synchronize_session=False
+                )
                 self.session.commit()
             except Exception:
                 self.session.rollback()

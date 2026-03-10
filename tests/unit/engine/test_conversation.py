@@ -196,6 +196,32 @@ class TestProcessTurn:
         assert engine.nodes_visited == ["greeting", "farewell"]
 
     @pytest.mark.asyncio
+    async def test_advance_terminal_node_sets_end_call(self, simple_graph):
+        """Terminal node (no transitions) sets end_call_invoked on the engine."""
+        from unittest.mock import patch
+
+        from voicetest.engine.conversation import ConversationEngine
+
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
+        # Move to farewell node which has no transitions
+        engine._current_node = "farewell"
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Goodbye!"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            engine.add_user_message("Bye!")
+            result = await engine.advance()
+
+        assert result.response == "Goodbye!"
+        assert result.end_call_invoked is True
+        assert engine.end_call_invoked is True
+
+    @pytest.mark.asyncio
     async def test_advance_with_dynamic_variables(self, graph_with_dynamic_variables):
         """Test that dynamic variables are substituted in prompts."""
         from unittest.mock import patch

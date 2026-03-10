@@ -266,6 +266,11 @@ class ConversationEngine:
             if always_target:
                 self._apply_transition(turn_result, always_target)
 
+        # Terminal node: no transitions defined and no always-edge fired
+        if turn_result.transitioned_to is None and not node.transitions:
+            turn_result.end_call_invoked = True
+            self._end_call_invoked = True
+
         # Record agent response with the node that generated it
         self._transcript.append(
             Message(
