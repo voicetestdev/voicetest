@@ -67,9 +67,8 @@ class ConversationEngine:
         self.options = options or RunOptions()
         self._dynamic_variables = dynamic_variables or {}
 
-        self._split_transitions = self.options.split_transitions if self.options else False
         self._no_cache = self.options.no_cache if self.options else False
-        self._module = ConversationModule(graph, use_split_transitions=self._split_transitions)
+        self._module = ConversationModule(graph)
 
         # State
         self._current_node = graph.entry_node_id
@@ -193,7 +192,7 @@ class ConversationEngine:
             state_instructions=state_instructions,
         )
 
-        # Build kwargs for the response LLM call
+        # Build kwargs for the response LLM call (no transition fields)
         response_kwargs = {
             "general_instructions": ctx.general_instructions,
             "state_instructions": ctx.state_instructions,
@@ -201,21 +200,18 @@ class ConversationEngine:
             "user_message": ctx.user_message,
         }
 
-        # Only pass available_transitions when the signature expects it (combined mode)
+        # The response signature omits available_transitions, so the cache key
+        # won't change when outbound edges are modified. Inject a fingerprint
+        # via LM metadata to bust the cache when edges change.
         cache_salt = None
-        if state_module.transitions and not state_module.use_split_transitions:
-            response_kwargs["available_transitions"] = ctx.available_transitions
-        elif state_module.use_split_transitions and state_module.transitions:
-            # Split mode: the response signature omits available_transitions,
-            # so the cache key won't change when outbound edges are modified.
-            # Inject a fingerprint via LM metadata to bust the cache.
+        if state_module.transitions:
             cache_salt = hashlib.sha256(
                 json.dumps(
                     [t.model_dump() for t in ctx.available_transitions], sort_keys=True
                 ).encode()
             ).hexdigest()[:16]
 
-        # Call LLM with the state module's signature
+        # Call LLM for response only
         result = await call_llm(
             self.model,
             state_module._response_signature,
@@ -231,10 +227,9 @@ class ConversationEngine:
         turn_result = TurnResult(response=result.response)
         generating_node = self._current_node
 
-        # Determine transition target
-        if state_module.use_split_transitions and state_module.transitions:
-            # Split mode: second LLM call to evaluate transitions separately
-            # Build full conversation context including current turn
+        # Evaluate transitions in a separate LLM call
+        transition_target = "none"
+        if state_module.transitions:
             full_history = ctx.conversation_history
             if user_message:
                 full_history += f"\nUSER: {user_message}"
@@ -248,11 +243,6 @@ class ConversationEngine:
                 available_transitions=ctx.available_transitions,
             )
             transition_target = transition_result.transition_to.strip().lower()
-        else:
-            # Combined mode: transition comes from the response call
-            transition_target = getattr(result, "transition_to", "none")
-            if transition_target:
-                transition_target = transition_target.strip().lower()
 
         if (
             transition_target

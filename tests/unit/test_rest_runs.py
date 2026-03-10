@@ -115,7 +115,7 @@ class TestRunWebSocket:
 
 
 class TestTimeoutEnforcement:
-    """Tests for timeout_seconds enforcement on test execution."""
+    """Tests for turn_timeout_seconds enforcement on test execution."""
 
     @pytest.fixture
     def agent_with_test(self, db_client, sample_retell_config):
@@ -138,8 +138,10 @@ class TestTimeoutEnforcement:
 
         return {"agent_id": agent_id, "test_id": test_id}
 
-    def test_timeout_reports_error_when_test_exceeds_limit(self, db_client, agent_with_test):
-        """When a test exceeds timeout_seconds, it should be reported as status=error."""
+    def test_turn_timeout_reports_completed_with_turn_timeout_reason(
+        self, db_client, agent_with_test
+    ):
+        """When a turn exceeds turn_timeout_seconds, run completes with end_reason=turn_timeout."""
         import asyncio
         import time
         from unittest.mock import patch
@@ -152,30 +154,39 @@ class TestTimeoutEnforcement:
         async def mock_broadcast(run_id, data):
             broadcast_calls.append(data)
 
-        async def slow_run_test(*args, **kwargs):
-            await asyncio.sleep(300)
+        call_count = 0
+
+        async def slow_llm(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                await asyncio.sleep(300)
+
+            class MockResult:
+                response = "Hello!"
+                transition_to = "none"
+
+            return MockResult()
 
         with (
             patch("voicetest.rest._broadcast_run_update", mock_broadcast),
-            patch(
-                "voicetest.services.testing.execution.TestExecutionService.run_test",
-                side_effect=slow_run_test,
-            ),
+            patch("voicetest.engine.conversation.call_llm", side_effect=slow_llm),
         ):
             response = db_client.post(
                 f"/api/agents/{agent_id}/runs",
                 json={
                     "test_ids": [test_id],
-                    "options": {"timeout_seconds": 0.1},
+                    "options": {"turn_timeout_seconds": 0.2},
                 },
             )
             assert response.status_code == 200
 
-            time.sleep(1.0)
+            time.sleep(2.0)
 
-        error_msgs = [c for c in broadcast_calls if c.get("type") == "test_error"]
-        assert len(error_msgs) >= 1, "Should have a test_error message for timeout"
-        assert "timed out" in error_msgs[0]["error"].lower()
+        completed_msgs = [c for c in broadcast_calls if c.get("type") == "test_completed"]
+        assert len(completed_msgs) >= 1, (
+            f"Should have a test_completed message. Got: {broadcast_calls}"
+        )
 
 
 class TestTranscriptUpdate:

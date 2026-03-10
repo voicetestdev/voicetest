@@ -47,17 +47,17 @@ class AudioSettings(BaseModel):
 class RunSettings(BaseModel):
     """Test run configuration."""
 
-    max_turns: int = Field(default=20, description="Maximum conversation turns")
+    max_turns: int = Field(default=50, description="Maximum conversation turns")
+    turn_timeout_seconds: float = Field(
+        default=60.0,
+        description="Per-turn timeout in seconds (covers user simulator + agent response)",
+    )
     verbose: bool = Field(default=False, description="Verbose output")
     flow_judge: bool = Field(default=False, description="Run flow judge to validate transitions")
     streaming: bool = Field(default=False, description="Stream tokens as they are generated")
     test_model_precedence: bool = Field(
         default=False,
         description="When enabled, test-specific llm_model overrides global settings",
-    )
-    split_transitions: bool = Field(
-        default=False,
-        description="Evaluate transitions separately from response generation (debugging)",
     )
     audio_eval: bool = Field(
         default=False,
@@ -141,7 +141,6 @@ def _to_toml(settings: Settings) -> str:
     lines.append(f"flow_judge = {str(settings.run.flow_judge).lower()}")
     lines.append(f"streaming = {str(settings.run.streaming).lower()}")
     lines.append(f"test_model_precedence = {str(settings.run.test_model_precedence).lower()}")
-    lines.append(f"split_transitions = {str(settings.run.split_transitions).lower()}")
     lines.append(f"audio_eval = {str(settings.run.audio_eval).lower()}")
     lines.append(f'pattern_engine = "{settings.run.pattern_engine}"')
     lines.append("")

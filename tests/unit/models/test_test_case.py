@@ -8,8 +8,8 @@ class TestRunOptions:
         from voicetest.models.test_case import RunOptions
 
         options = RunOptions()
-        assert options.max_turns == 20
-        assert options.timeout_seconds == 60.0
+        assert options.max_turns == 50
+        assert options.turn_timeout_seconds == 60.0
         assert options.verbose is False
         assert options.test_model_precedence is False
         # Models default to None (not configured)
@@ -22,14 +22,14 @@ class TestRunOptions:
 
         options = RunOptions(
             max_turns=10,
-            timeout_seconds=120.0,
+            turn_timeout_seconds=120.0,
             verbose=True,
             agent_model="openai/gpt-4o",
             simulator_model="openai/gpt-4o-mini",
             judge_model="anthropic/claude-3-haiku-20240307",
         )
         assert options.max_turns == 10
-        assert options.timeout_seconds == 120.0
+        assert options.turn_timeout_seconds == 120.0
         assert options.verbose is True
         assert options.agent_model == "openai/gpt-4o"
         assert options.simulator_model == "openai/gpt-4o-mini"

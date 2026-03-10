@@ -535,17 +535,17 @@ def _build_run_options(settings: Settings, request_options: RunOptions | None) -
         simulator_model=settings.models.simulator,
         judge_model=settings.models.judge,
         max_turns=request_options.max_turns if request_options else settings.run.max_turns,
-        timeout_seconds=request_options.timeout_seconds if request_options else 60.0,
+        turn_timeout_seconds=(
+            request_options.turn_timeout_seconds
+            if request_options
+            else settings.run.turn_timeout_seconds
+        ),
         verbose=(request_options.verbose if request_options else False) or settings.run.verbose,
         flow_judge=(
             (request_options.flow_judge if request_options else False) or settings.run.flow_judge
         ),
         streaming=settings.run.streaming,
         test_model_precedence=settings.run.test_model_precedence,
-        split_transitions=(
-            (request_options.split_transitions if request_options else False)
-            or settings.run.split_transitions
-        ),
         audio_eval=(
             (request_options.audio_eval if request_options else False) or settings.run.audio_eval
         ),
@@ -1480,17 +1480,14 @@ async def _execute_run(
             last_transcript: list[Message] = []
 
             try:
-                result = await asyncio.wait_for(
-                    get_test_execution_service().run_test(
-                        graph,
-                        test_case,
-                        options=options,
-                        metrics_config=metrics_config,
-                        on_turn=await make_on_turn(result_id, last_transcript),
-                        on_token=make_on_token(result_id) if options.streaming else None,
-                        on_error=make_on_error(result_id),
-                    ),
-                    timeout=options.timeout_seconds,
+                result = await get_test_execution_service().run_test(
+                    graph,
+                    test_case,
+                    options=options,
+                    metrics_config=metrics_config,
+                    on_turn=await make_on_turn(result_id, last_transcript),
+                    on_token=make_on_token(result_id) if options.streaming else None,
+                    on_error=make_on_error(result_id),
                 )
                 run_svc.complete_result(result_id, result)
                 await _broadcast_run_update(
@@ -1514,22 +1511,6 @@ async def _execute_run(
                     {
                         "type": "test_cancelled",
                         "result_id": result_id,
-                    },
-                )
-            except TimeoutError:
-                timeout_result = TestResult(
-                    test_name=test_case.name,
-                    status="error",
-                    transcript=last_transcript,
-                    error_message=f"Test timed out after {options.timeout_seconds}s",
-                )
-                run_svc.complete_result(result_id, timeout_result)
-                await _broadcast_run_update(
-                    run_id,
-                    {
-                        "type": "test_error",
-                        "result_id": result_id,
-                        "error": f"Test timed out after {options.timeout_seconds}s",
                     },
                 )
             except Exception as e:

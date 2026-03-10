@@ -3,6 +3,7 @@
 Wraps the execution of conversations using the ConversationEngine.
 """
 
+import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -63,33 +64,21 @@ class ConversationRunner:
         options: RunOptions | None = None,
         mock_mode: bool = False,
         dynamic_variables: dict | None = None,
-        use_split_transitions: bool = False,
     ):
         self.graph = graph
         self.options = options or RunOptions()
         self._mock_mode = mock_mode
         self._dynamic_variables = dynamic_variables or {}
 
-        # Keep _conversation_module for backward compatibility with tests
-        # that access it directly
-        self._conversation_module = ConversationModule(
-            graph, use_split_transitions=use_split_transitions
-        )
+        self._conversation_module = ConversationModule(graph)
 
         # Engine for actual turn processing (not used in mock mode)
         self._engine: ConversationEngine | None = None
         if not mock_mode:
-            # Apply split_transitions setting to options
-            effective_options = RunOptions(
-                **{
-                    **self.options.model_dump(),
-                    "split_transitions": use_split_transitions,
-                }
-            )
             self._engine = ConversationEngine(
                 graph=graph,
                 model=self.options.agent_model,
-                options=effective_options,
+                options=self.options,
                 dynamic_variables=dynamic_variables,
             )
 
@@ -138,13 +127,22 @@ class ConversationRunner:
         if on_turn:
             await _invoke_callback(on_turn, self._engine.transcript)
 
+        turn_timeout = self.options.turn_timeout_seconds
+
         for _turn in range(self.options.max_turns):
-            # Get simulated user input
-            sim_response = await user_simulator.generate(
-                self._engine.transcript,
-                on_token=on_token if self.options.streaming else None,
-                on_error=on_error,
-            )
+            try:
+                # Get simulated user input
+                sim_response = await asyncio.wait_for(
+                    user_simulator.generate(
+                        self._engine.transcript,
+                        on_token=on_token if self.options.streaming else None,
+                        on_error=on_error,
+                    ),
+                    timeout=turn_timeout,
+                )
+            except TimeoutError:
+                state.end_reason = "turn_timeout"
+                break
 
             if sim_response.should_end:
                 state.end_reason = "user_ended"
@@ -154,10 +152,18 @@ class ConversationRunner:
             if on_turn:
                 await _invoke_callback(on_turn, self._engine.transcript)
 
-            await self._engine.advance(
-                on_token=agent_token_cb,
-                on_error=on_error,
-            )
+            try:
+                await asyncio.wait_for(
+                    self._engine.advance(
+                        on_token=agent_token_cb,
+                        on_error=on_error,
+                    ),
+                    timeout=turn_timeout,
+                )
+            except TimeoutError:
+                state.end_reason = "turn_timeout"
+                break
+
             if on_turn:
                 await _invoke_callback(on_turn, self._engine.transcript)
 

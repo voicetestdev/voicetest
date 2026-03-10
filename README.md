@@ -538,17 +538,16 @@ In the shell:
 
 ### Run Options
 
-| Option                  | Default   | Description                                 |
-| ----------------------- | --------- | ------------------------------------------- |
-| `max_turns`             | `20`      | Maximum conversation turns                  |
-| `timeout_seconds`       | `60.0`    | Per-test timeout                            |
-| `no_cache`              | `false`   | Bypass LLM response cache                   |
-| `split_transitions`     | `false`   | Separate LLM call for transition selection  |
-| `audio_eval`            | `false`   | TTS→STT round-trip evaluation               |
-| `flow_judge`            | `false`   | Validate conversation flow                  |
-| `streaming`             | `false`   | Stream tokens as LLM generates              |
-| `test_model_precedence` | `false`   | Test-level model overrides global model     |
-| `pattern_engine`        | `fnmatch` | Pattern matching engine: `fnmatch` or `re2` |
+| Option                  | Default   | Description                                  |
+| ----------------------- | --------- | -------------------------------------------- |
+| `max_turns`             | `50`      | Maximum conversation turns                   |
+| `turn_timeout_seconds`  | `60.0`    | Per-turn timeout (user sim + agent response) |
+| `no_cache`              | `false`   | Bypass LLM response cache                    |
+| `audio_eval`            | `false`   | TTS→STT round-trip evaluation                |
+| `flow_judge`            | `false`   | Validate conversation flow                   |
+| `streaming`             | `false`   | Stream tokens as LLM generates               |
+| `test_model_precedence` | `false`   | Test-level model overrides global model      |
+| `pattern_engine`        | `fnmatch` | Pattern matching engine: `fnmatch` or `re2`  |
 
 ### Settings File
 

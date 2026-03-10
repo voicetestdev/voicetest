@@ -1,5 +1,7 @@
 """Tests for voicetest.engine.session module."""
 
+import asyncio
+
 import pytest
 
 
@@ -771,3 +773,87 @@ class TestNoEmptyUserMessages:
         user_msgs = [m for m in state.transcript if m.role == "user"]
         for msg in user_msgs:
             assert msg.content != "", f"Found empty user message: {msg}"
+
+
+class TestPerTurnTimeout:
+    """Per-turn timeout catches slow individual turns without killing the whole run."""
+
+    @pytest.mark.asyncio
+    async def test_slow_turn_raises_timeout(self, simple_graph):
+        """A single slow turn should raise TimeoutError per-turn, not wait for full run."""
+        from unittest.mock import patch
+
+        from voicetest.engine.session import ConversationRunner
+        from voicetest.models.test_case import RunOptions
+        from voicetest.models.test_case import TestCase
+        from voicetest.simulator.user_sim import SimulatorResponse
+        from voicetest.simulator.user_sim import UserSimulator
+
+        options = RunOptions(turn_timeout_seconds=0.1, max_turns=50)
+        runner = ConversationRunner(simple_graph, options=options)
+        test_case = TestCase(name="test", user_prompt="Hello")
+
+        simulator = UserSimulator("test", "mock-model")
+        simulator._mock_mode = True
+        simulator._mock_responses = [
+            SimulatorResponse(message="Hi", should_end=False, reasoning="greeting"),
+            SimulatorResponse(message="", should_end=True, reasoning="done"),
+        ]
+
+        call_count = 0
+
+        async def mock_call_llm(model, signature, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 3:
+                # Entry advance uses calls 1-2; slow down the loop's advance
+                await asyncio.sleep(5)
+
+            class MockResult:
+                response = "Hello!"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            state = await runner.run(test_case, simulator)
+
+        assert state.end_reason == "turn_timeout"
+
+    @pytest.mark.asyncio
+    async def test_max_turns_catches_loop(self, simple_graph):
+        """Conversation that never ends should be stopped by max_turns."""
+        from unittest.mock import patch
+
+        from voicetest.engine.session import ConversationRunner
+        from voicetest.models.test_case import RunOptions
+        from voicetest.models.test_case import TestCase
+        from voicetest.simulator.user_sim import SimulatorResponse
+        from voicetest.simulator.user_sim import UserSimulator
+
+        options = RunOptions(max_turns=3)
+        runner = ConversationRunner(simple_graph, options=options)
+        test_case = TestCase(name="test", user_prompt="Hello")
+
+        simulator = UserSimulator("test", "mock-model")
+        simulator._mock_mode = True
+        # Never ends — always sends another message
+        simulator._mock_responses = [
+            SimulatorResponse(message="Tell me more", should_end=False, reasoning="continue"),
+            SimulatorResponse(message="And more", should_end=False, reasoning="continue"),
+            SimulatorResponse(message="Keep going", should_end=False, reasoning="continue"),
+            SimulatorResponse(message="Still going", should_end=False, reasoning="continue"),
+        ]
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Here is more info."
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            state = await runner.run(test_case, simulator)
+
+        assert state.end_reason == "max_turns"
+        assert state.turn_count == 3
