@@ -294,16 +294,16 @@ class TestConversationEngineCacheSalt:
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
             engine.add_user_message("hi")
-            await engine._process_node()
+            await engine.advance()
 
-        # First call is the response call — should have a cache_salt
-        response_call = call_args[0]
+        # First call is the transition call — no salt needed
+        transition_call = call_args[0]
+        assert transition_call["cache_salt"] is None
+
+        # Second call is the response call — should have a cache_salt
+        response_call = call_args[1]
         assert response_call["cache_salt"] is not None
         assert len(response_call["cache_salt"]) > 0
-
-        # Second call is the transition call — no salt needed
-        transition_call = call_args[1]
-        assert transition_call["cache_salt"] is None
 
     @pytest.mark.asyncio
     async def test_salt_changes_when_edges_change(self):

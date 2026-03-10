@@ -13,7 +13,6 @@ import dspy
 
 from voicetest.engine.equations import evaluate_equation
 from voicetest.engine.modules import ConversationModule
-from voicetest.engine.modules import RunContext
 from voicetest.engine.modules import StateModule
 from voicetest.llm import OnTokenCallback
 from voicetest.llm import call_llm
@@ -128,53 +127,151 @@ class ConversationEngine:
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
     ) -> TurnResult:
-        """Process graph from current position until the agent speaks or settles.
+        """Advance to a conversational node, then respond from it.
 
-        Traverses silent nodes (logic, extract) automatically, stopping when
-        a conversation node produces speech or no transitions remain.
+        Phase 1 — Advance: evaluate transitions from the current node,
+        traverse silent nodes (logic, extract), until we land on a
+        conversation node to respond from.
+
+        Phase 2 — Respond: generate the agent's response from the
+        landing node.
         """
         max_hops = 20
         accumulated_tool_calls: list[ToolCall] = []
+        end_call_invoked = False
+        has_advanced = False
+        last_transition_target: str | None = None
 
+        # Phase 1: advance to the conversation node we'll respond from.
         for _ in range(max_hops):
-            result = await self._process_node(on_token=on_token, on_error=on_error)
-            accumulated_tool_calls.extend(result.tool_calls)
+            node = self.graph.nodes[self._current_node]
+            state_module = self._module.get_state_module(self._current_node)
+            if state_module is None:
+                raise ValueError(f"Unknown node: {self._current_node}")
 
-            if result.response:
-                result.tool_calls = accumulated_tool_calls
-                return result
+            # Silent nodes: always process and continue advancing.
+            if node.is_extract_node():
+                result = await self._evaluate_extract_node(node, state_module, on_error=on_error)
+                accumulated_tool_calls.extend(result.tool_calls)
+                if result.end_call_invoked:
+                    end_call_invoked = True
+                if result.transitioned_to is None:
+                    break
+                last_transition_target = result.transitioned_to
+                has_advanced = True
+                continue
 
-            if result.transitioned_to is None:
-                break
+            if node.is_logic_node():
+                result = self._evaluate_logic_node(state_module)
+                accumulated_tool_calls.extend(result.tool_calls)
+                if result.transitioned_to is None:
+                    break
+                last_transition_target = result.transitioned_to
+                has_advanced = True
+                continue
 
-        return TurnResult(response="", tool_calls=accumulated_tool_calls)
+            # End/transfer nodes without a prompt: end immediately.
+            if (node.is_end_node() or node.is_transfer_node()) and not node.state_prompt:
+                self._end_call_invoked = True
+                return TurnResult(
+                    response="",
+                    tool_calls=accumulated_tool_calls,
+                    end_call_invoked=True,
+                )
+
+            # Conversation node (or end/transfer with prompt).
+            # If we haven't advanced yet this turn and the user has spoken,
+            # evaluate whether to advance past this node before responding.
+            if not has_advanced and self._last_user_message():
+                target = await self._evaluate_transition(node, on_error=on_error)
+                if target:
+                    turn_result = TurnResult(response="")
+                    self._apply_transition(turn_result, target)
+                    accumulated_tool_calls.extend(turn_result.tool_calls)
+                    last_transition_target = target
+                    has_advanced = True
+                    continue
+
+            # This is the node we respond from.
+            break
+
+        # Phase 2: generate response from the current conversation node.
+        result = await self._generate_response(on_token=on_token, on_error=on_error)
+        result.tool_calls = accumulated_tool_calls + result.tool_calls
+        if end_call_invoked:
+            result.end_call_invoked = True
+        # Reflect the final node the engine settled on.
+        if result.transitioned_to is None and last_transition_target is not None:
+            result.transitioned_to = last_transition_target
+        return result
 
     async def _process_node(
         self,
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
     ) -> TurnResult:
-        """Process the current node once. Returns result with response and transition info.
+        """Process the current node once (single-node dispatch).
 
-        For conversation nodes: calls LLM, gets response, evaluates transitions.
-        For logic nodes: evaluates equations deterministically.
-        For extract nodes: extracts variables via LLM, then evaluates equations.
+        Routes to the appropriate handler based on node type.
+        Unlike advance(), this does not loop through multiple nodes.
         """
-        # Get the state module for current node
+        node = self.graph.nodes[self._current_node]
         state_module = self._module.get_state_module(self._current_node)
         if state_module is None:
             raise ValueError(f"Unknown node: {self._current_node}")
 
-        user_message = self._last_user_message()
-
-        # Extract nodes: LLM extracts variables, then evaluate equations
-        node = self.graph.nodes[self._current_node]
         if node.is_extract_node():
             return await self._evaluate_extract_node(node, state_module, on_error=on_error)
-
-        # Logic nodes: evaluate equations deterministically, skip LLM
-        if self._is_logic_node(state_module):
+        if node.is_logic_node():
             return self._evaluate_logic_node(state_module)
+        if (node.is_end_node() or node.is_transfer_node()) and not node.state_prompt:
+            self._end_call_invoked = True
+            return TurnResult(response="", end_call_invoked=True)
+        return await self._generate_response(on_token=on_token, on_error=on_error)
+
+    async def _evaluate_transition(
+        self,
+        node: AgentNode,
+        on_error: OnErrorCallback | None = None,
+    ) -> str | None:
+        """Evaluate LLM-prompted transitions from a conversation node.
+
+        Returns the target node ID if a transition should fire, or None
+        to stay in the current node. Always-edges are not evaluated here;
+        they fire after the response in _generate_response.
+        """
+        available_transitions = self._module.format_transitions(self._current_node)
+        if not available_transitions:
+            return None
+
+        conversation_history = self._format_transcript(self._transcript)
+
+        transition_result = await call_llm(
+            self.model,
+            self._module._transition_signature,
+            on_error=on_error,
+            no_cache=self._no_cache,
+            conversation_history=conversation_history,
+            available_transitions=available_transitions,
+        )
+        target = transition_result.transition_to.strip().lower()
+
+        if target and target != "none" and target in self.graph.nodes:
+            return target
+        return None
+
+    async def _generate_response(
+        self,
+        on_token: OnTokenCallback | None = None,
+        on_error: OnErrorCallback | None = None,
+    ) -> TurnResult:
+        """Generate the agent's spoken response from the current node."""
+        state_module = self._module.get_state_module(self._current_node)
+        if state_module is None:
+            raise ValueError(f"Unknown node: {self._current_node}")
+
+        node = self.graph.nodes[self._current_node]
+        user_message = self._last_user_message()
 
         # Expand static snippets first, then dynamic variables
         general_instructions = expand_snippets(self._module.instructions, self.graph.snippets)
@@ -182,39 +279,28 @@ class ConversationEngine:
         general_instructions = substitute_variables(general_instructions, self._dynamic_variables)
         state_instructions = substitute_variables(state_instructions, self._dynamic_variables)
 
-        # Build context for state execution
-        ctx = RunContext(
-            conversation_history=self._format_transcript(self._transcript),
-            user_message=user_message,
-            dynamic_variables=self._dynamic_variables,
-            available_transitions=self._module.format_transitions(self._current_node),
-            general_instructions=general_instructions,
-            state_instructions=state_instructions,
-        )
+        conversation_history = self._format_transcript(self._transcript)
 
-        # Build kwargs for the response LLM call (no transition fields)
+        # Build response signature with expanded state prompt as docstring
+        response_sig = state_module.create_response_signature(state_instructions)
+
         response_kwargs = {
-            "general_instructions": ctx.general_instructions,
-            "state_instructions": ctx.state_instructions,
-            "conversation_history": ctx.conversation_history,
-            "user_message": ctx.user_message,
+            "general_instructions": general_instructions,
+            "conversation_history": conversation_history,
+            "user_message": user_message,
         }
 
-        # The response signature omits available_transitions, so the cache key
-        # won't change when outbound edges are modified. Inject a fingerprint
-        # via LM metadata to bust the cache when edges change.
+        # Inject a fingerprint via cache_salt to bust cache when edges change.
         cache_salt = None
-        if state_module.transitions:
+        available_transitions = self._module.format_transitions(self._current_node)
+        if available_transitions:
             cache_salt = hashlib.sha256(
-                json.dumps(
-                    [t.model_dump() for t in ctx.available_transitions], sort_keys=True
-                ).encode()
+                json.dumps([t.model_dump() for t in available_transitions], sort_keys=True).encode()
             ).hexdigest()[:16]
 
-        # Call LLM for response only
         result = await call_llm(
             self.model,
-            state_module._response_signature,
+            response_sig,
             on_token=on_token,
             stream_field="response" if on_token else None,
             on_error=on_error,
@@ -223,52 +309,25 @@ class ConversationEngine:
             **response_kwargs,
         )
 
-        # Build turn result
         turn_result = TurnResult(response=result.response)
-        generating_node = self._current_node
 
-        # Evaluate transitions in a separate LLM call
-        transition_target = "none"
-        if state_module.transitions:
-            full_history = ctx.conversation_history
-            if user_message:
-                full_history += f"\nUSER: {user_message}"
-            transition_result = await call_llm(
-                self.model,
-                self._module._transition_signature,
-                on_error=on_error,
-                no_cache=self._no_cache,
-                conversation_history=full_history,
-                agent_response=result.response,
-                available_transitions=ctx.available_transitions,
-            )
-            transition_target = transition_result.transition_to.strip().lower()
-
-        if (
-            transition_target
-            and transition_target != "none"
-            and transition_target in self.graph.nodes
-        ):
-            self._apply_transition(turn_result, transition_target)
-        elif turn_result.transitioned_to is None:
-            # No LLM-chosen transition: check for always-edge fallback
-            always_target = self._find_always_transition(node)
-            if always_target:
-                self._apply_transition(turn_result, always_target)
-
-        # Terminal node: no transitions defined and no always-edge fired
-        if turn_result.transitioned_to is None and not node.transitions:
-            turn_result.end_call_invoked = True
-            self._end_call_invoked = True
-
-        # Record agent response with the node that generated it
         self._transcript.append(
             Message(
                 role="assistant",
                 content=result.response,
-                metadata={"node_id": generating_node},
+                metadata={"node_id": self._current_node},
             )
         )
+
+        # Post-response: always-edge fires after the agent speaks (linear flow).
+        always_target = self._find_always_transition(node)
+        if always_target:
+            self._apply_transition(turn_result, always_target)
+
+        # End/transfer node with a prompt: agent spoke, now end the call.
+        if (node.is_end_node() or node.is_transfer_node()) and not turn_result.transitioned_to:
+            turn_result.end_call_invoked = True
+            self._end_call_invoked = True
 
         return turn_result
 
@@ -291,14 +350,6 @@ class ConversationEngine:
                 metadata={"tool_name": f"route_to_{target}", "node_id": target},
             )
         )
-
-    def _is_logic_node(self, state_module: StateModule) -> bool:
-        """Check if a node is a logic node (equation transitions with optional always fallback)."""
-        if not state_module.transitions:
-            return False
-        return all(
-            t.condition.type in ("equation", "always") for t in state_module.transitions
-        ) and any(t.condition.type == "equation" for t in state_module.transitions)
 
     def _evaluate_logic_node(self, state_module: StateModule) -> TurnResult:
         """Evaluate a logic node's equation transitions deterministically.

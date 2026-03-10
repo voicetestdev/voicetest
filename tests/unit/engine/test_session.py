@@ -218,9 +218,12 @@ class TestDynamicVariableSubstitution:
 
         # Mock call_llm to capture what gets passed
         captured_kwargs = {}
+        captured_signature = None
 
         async def mock_call_llm(model, signature, **kwargs):
+            nonlocal captured_signature
             captured_kwargs.update(kwargs)
+            captured_signature = signature
 
             class MockResult:
                 response = "Hello Alice!"
@@ -237,12 +240,12 @@ class TestDynamicVariableSubstitution:
         assert "Acme Corp" in captured_kwargs["general_instructions"]
         assert "{{company_name}}" not in captured_kwargs["general_instructions"]
 
-        # Verify state_instructions has substituted variables
-        assert "state_instructions" in captured_kwargs
-        assert "Alice" in captured_kwargs["state_instructions"]
-        assert "active" in captured_kwargs["state_instructions"]
-        assert "{{customer_name}}" not in captured_kwargs["state_instructions"]
-        assert "{{account_status}}" not in captured_kwargs["state_instructions"]
+        # Verify state prompt (now signature docstring) has substituted variables
+        state = captured_signature.__doc__
+        assert "Alice" in state
+        assert "active" in state
+        assert "{{customer_name}}" not in state
+        assert "{{account_status}}" not in state
 
     @pytest.mark.asyncio
     async def test_unknown_variables_remain_unchanged(self, graph_with_dynamic_variables):
@@ -263,9 +266,12 @@ class TestDynamicVariableSubstitution:
         )
 
         captured_kwargs = {}
+        captured_signature = None
 
         async def mock_call_llm(model, signature, **kwargs):
+            nonlocal captured_signature
             captured_kwargs.update(kwargs)
+            captured_signature = signature
 
             class MockResult:
                 response = "Hello Bob!"
@@ -277,12 +283,13 @@ class TestDynamicVariableSubstitution:
             engine.add_user_message("Hello")
             await engine._process_node()
 
-        # customer_name should be substituted
-        assert "Bob" in captured_kwargs["state_instructions"]
-        assert "{{customer_name}}" not in captured_kwargs["state_instructions"]
+        # customer_name should be substituted in state prompt (signature docstring)
+        state = captured_signature.__doc__
+        assert "Bob" in state
+        assert "{{customer_name}}" not in state
 
         # Unknown variables should remain as placeholders
-        assert "{{account_status}}" in captured_kwargs["state_instructions"]
+        assert "{{account_status}}" in state
         assert "{{company_name}}" in captured_kwargs["general_instructions"]
 
 

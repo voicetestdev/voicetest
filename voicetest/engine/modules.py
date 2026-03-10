@@ -28,7 +28,6 @@ class RunContext:
     dynamic_variables: dict[str, Any]
     available_transitions: list[TransitionOption]
     general_instructions: str
-    state_instructions: str
 
 
 @dataclass
@@ -63,19 +62,19 @@ class StateModule(dspy.Module):
         self.transitions = transitions
         self._template_filler = create_template_filler(instructions)
 
-        self._response_signature = self._create_response_signature()
+        self._response_signature = self.create_response_signature(self.instructions)
         self.response_predictor = dspy.Predict(self._response_signature)
 
-    def _create_response_signature(self) -> type[dspy.Signature]:
-        """Create Signature for response generation (no transition fields)."""
-        docstring = "Generate a natural spoken response as a voice agent."
+    def create_response_signature(self, docstring: str) -> type[dspy.Signature]:
+        """Create Signature for response generation.
 
+        The node's state prompt is the signature docstring, giving it
+        system-level weight in the LLM prompt rather than being just
+        another input field.
+        """
         attrs: dict[str, Any] = {
             "__doc__": docstring,
             "general_instructions": dspy.InputField(desc="Overall agent instructions and context"),
-            "state_instructions": dspy.InputField(
-                desc="Current state-specific instructions for this conversation node"
-            ),
             "conversation_history": dspy.InputField(desc="Conversation so far"),
             "user_message": dspy.InputField(desc="Latest user message to respond to"),
             "response": dspy.OutputField(desc="Agent's spoken response to the user"),
@@ -90,7 +89,6 @@ class StateModule(dspy.Module):
         """
         result = self.response_predictor(
             general_instructions=ctx.general_instructions,
-            state_instructions=ctx.state_instructions,
             conversation_history=ctx.conversation_history,
             user_message=ctx.user_message,
         )
@@ -131,17 +129,24 @@ class ConversationModule(dspy.Module):
         self._transition_signature = self._create_transition_signature()
 
     def _create_transition_signature(self) -> type[dspy.Signature]:
-        """Create Signature for split transition evaluation."""
+        """Create Signature for transition evaluation.
+
+        Transitions are evaluated based on conversation history alone
+        (including the user's latest message). The agent has not yet
+        responded — the transition determines which node the agent
+        will respond FROM.
+        """
         docstring = (
-            "Evaluate if conversation should transition to a different state "
-            "based on the conversation and agent's response."
+            "Evaluate if the conversation should transition to a different state "
+            "based on the conversation so far and the user's latest message."
         )
 
         attrs: dict[str, Any] = {
             "__doc__": docstring,
             "__annotations__": {"available_transitions": list[TransitionOption]},
-            "conversation_history": dspy.InputField(desc="Full conversation so far"),
-            "agent_response": dspy.InputField(desc="The response just generated"),
+            "conversation_history": dspy.InputField(
+                desc="Full conversation so far, including the user's latest message"
+            ),
             "available_transitions": dspy.InputField(
                 desc="Valid transitions with their conditions"
             ),

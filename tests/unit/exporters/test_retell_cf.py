@@ -10,6 +10,7 @@ from voicetest.exporters.retell_cf import export_retell_cf
 from voicetest.importers.retell import RetellImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -299,6 +300,7 @@ class TestTerminalToolSynthesis:
                 "end_node": AgentNode(
                     id="end_node",
                     state_prompt="End the call.",
+                    node_type=NodeType.END,
                     transitions=[],
                     metadata={"retell_type": "end"},
                 ),
@@ -470,11 +472,11 @@ class TestTerminalToolSynthesis:
         transfer_nodes = {n["id"]: n for n in result["nodes"] if n["type"] == "transfer_call"}
         assert len(transfer_nodes) == 2
 
-        er_node = transfer_nodes["synth_transfer_call_to_er"]
+        er_node = transfer_nodes["transfer_call_to_er"]
         assert er_node["transfer_destination"]["number"] == "+18005559111"
         assert er_node["transfer_option"]["type"] == "cold_transfer"
 
-        pharm_node = transfer_nodes["synth_transfer_call_to_pharmacy"]
+        pharm_node = transfer_nodes["transfer_call_to_pharmacy"]
         assert pharm_node["transfer_destination"]["number"] == "+18005559222"
         assert pharm_node["transfer_option"]["type"] == "warm_transfer"
 

@@ -9,6 +9,8 @@ from voicetest.engine.conversation import ConversationEngine
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import EquationClause
+from voicetest.models.agent import NodeType
+from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.agent import VariableExtraction
@@ -196,8 +198,13 @@ class TestProcessTurn:
         assert engine.nodes_visited == ["greeting", "farewell"]
 
     @pytest.mark.asyncio
-    async def test_advance_terminal_node_sets_end_call(self, simple_graph):
-        """Terminal node (no transitions) sets end_call_invoked on the engine."""
+    async def test_terminal_node_does_not_auto_end(self, simple_graph):
+        """Terminal node (no transitions) should NOT auto-set end_call_invoked.
+
+        Nodes with no transitions are just nodes where the agent stays and
+        talks. The conversation ends via user simulator (should_end), max_turns,
+        or an explicit end_call tool — not by having zero edges.
+        """
         from unittest.mock import patch
 
         from voicetest.engine.conversation import ConversationEngine
@@ -218,8 +225,8 @@ class TestProcessTurn:
             result = await engine.advance()
 
         assert result.response == "Goodbye!"
-        assert result.end_call_invoked is True
-        assert engine.end_call_invoked is True
+        assert result.end_call_invoked is False
+        assert engine.end_call_invoked is False
 
     @pytest.mark.asyncio
     async def test_advance_with_dynamic_variables(self, graph_with_dynamic_variables):
@@ -238,9 +245,12 @@ class TestProcessTurn:
         )
 
         captured_kwargs = {}
+        captured_signature = None
 
         async def mock_call_llm(model, signature, **kwargs):
+            nonlocal captured_signature
             captured_kwargs.update(kwargs)
+            captured_signature = signature
 
             class MockResult:
                 response = "Hello Alice!"
@@ -254,8 +264,9 @@ class TestProcessTurn:
 
         # Verify variables were substituted
         assert "Acme Corp" in captured_kwargs["general_instructions"]
-        assert "Alice" in captured_kwargs["state_instructions"]
-        assert "active" in captured_kwargs["state_instructions"]
+        # State prompt is now the signature docstring
+        assert "Alice" in captured_signature.__doc__
+        assert "active" in captured_signature.__doc__
 
 
 class TestLogicNodeHandling:
@@ -898,7 +909,7 @@ class TestAlwaysEdgeOnConversationNodes:
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
             engine.add_user_message("I have a billing question")
-            result = await engine._process_node()
+            result = await engine.advance()
 
         assert result.transitioned_to == "billing"
 
@@ -918,7 +929,7 @@ class TestAlwaysEdgeOnConversationNodes:
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
             engine.add_user_message("thanks, bye")
-            result = await engine._process_node()
+            result = await engine.advance()
 
         assert result.transitioned_to == "end"
         assert engine.current_node == "end"
@@ -1147,6 +1158,227 @@ class TestToolMessagesInTranscript:
             assert "node_id" in msg.metadata
 
 
+class TestTranscriptOrdering:
+    """Assistant response must appear before transition tool message in transcript."""
+
+    @pytest.fixture
+    def two_node_graph(self):
+        return AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet the user.",
+                    transitions=[
+                        Transition(
+                            target_node_id="billing",
+                            condition=TransitionCondition(
+                                type="llm_prompt",
+                                value="User asks about billing",
+                            ),
+                        ),
+                    ],
+                ),
+                "billing": AgentNode(
+                    id="billing",
+                    state_prompt="Help with billing.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="greeting",
+            source_type="custom",
+        )
+
+    @pytest.mark.asyncio
+    async def test_transition_before_response_in_transcript(self, two_node_graph):
+        """When advance() transitions and responds, the transition tool message
+        should precede the assistant response (agent responds from destination)."""
+        engine = ConversationEngine(
+            graph=two_node_graph,
+            model="test/model",
+        )
+        engine.add_user_message("I need help with my bill")
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class Result:
+                response = "Let me help you with billing."
+                transition_to = "billing"
+
+            return Result()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.advance()
+
+        transcript = engine.transcript
+        tool_msgs = [m for m in transcript if m.role == "tool"]
+        assistant_msgs = [m for m in transcript if m.role == "assistant"]
+
+        assert len(tool_msgs) == 1
+        assert "billing" in tool_msgs[0].content
+        assert len(assistant_msgs) == 1
+
+        # Transition appears before response (agent responds from destination)
+        tool_idx = next(i for i, m in enumerate(transcript) if m.role == "tool")
+        assistant_idx = next(i for i, m in enumerate(transcript) if m.role == "assistant")
+        assert tool_idx < assistant_idx, (
+            f"Transition (index {tool_idx}) should come before "
+            f"assistant response (index {assistant_idx}). "
+            f"Transcript: {[(m.role, m.content[:40]) for m in transcript]}"
+        )
+
+
+class TestEndCallNode:
+    """End call nodes: agent speaks from the node's prompt (if any), then ends."""
+
+    @pytest.fixture
+    def graph_with_prompted_end_node(self):
+        """Graph where end_call node has its own prompt (CF-style)."""
+        return AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet the user.",
+                    transitions=[
+                        Transition(
+                            target_node_id="end_call",
+                            condition=TransitionCondition(
+                                type="llm_prompt",
+                                value="User wants to end",
+                            ),
+                        ),
+                    ],
+                ),
+                "end_call": AgentNode(
+                    id="end_call",
+                    state_prompt="Thank the customer for calling. Say goodbye.",
+                    node_type=NodeType.END,
+                    tools=[
+                        ToolDefinition(
+                            name="end_call",
+                            description="End the call",
+                            type="end_call",
+                        ),
+                    ],
+                    transitions=[],
+                ),
+            },
+            entry_node_id="greeting",
+            source_type="retell",
+        )
+
+    @pytest.fixture
+    def graph_with_promptless_end_node(self):
+        """Graph where end_call node has no prompt (LLM-style synthetic)."""
+        return AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet the user.",
+                    transitions=[
+                        Transition(
+                            target_node_id="end_call",
+                            condition=TransitionCondition(
+                                type="llm_prompt",
+                                value="User wants to end",
+                            ),
+                        ),
+                    ],
+                ),
+                "end_call": AgentNode(
+                    id="end_call",
+                    state_prompt="",
+                    node_type=NodeType.END,
+                    tools=[
+                        ToolDefinition(
+                            name="end_call",
+                            description="End the call",
+                            type="end_call",
+                        ),
+                    ],
+                    transitions=[],
+                ),
+            },
+            entry_node_id="greeting",
+            source_type="retell-llm",
+        )
+
+    @pytest.mark.asyncio
+    async def test_end_node_with_prompt_speaks_then_ends(self, graph_with_prompted_end_node):
+        """End call node with a prompt should speak from it, then set end_call_invoked."""
+        engine = ConversationEngine(
+            graph=graph_with_prompted_end_node,
+            model="test/model",
+        )
+        engine._current_node = "end_call"
+        engine.add_user_message("Goodbye")
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Thank you for calling! Goodbye."
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            result = await engine.advance()
+
+        assert result.response == "Thank you for calling! Goodbye."
+        assert result.end_call_invoked is True
+        assert engine.end_call_invoked is True
+
+    @pytest.mark.asyncio
+    async def test_end_node_without_prompt_ends_immediately(self, graph_with_promptless_end_node):
+        """End call node without a prompt should end immediately (no LLM call)."""
+        engine = ConversationEngine(
+            graph=graph_with_promptless_end_node,
+            model="test/model",
+        )
+        engine._current_node = "end_call"
+
+        # Should not need an LLM call
+        result = await engine.advance()
+
+        assert result.response == ""
+        assert result.end_call_invoked is True
+        assert engine.end_call_invoked is True
+
+    @pytest.mark.asyncio
+    async def test_transition_to_end_node_then_speaks(self, graph_with_prompted_end_node):
+        """When advance() transitions to an end node with a prompt, the end node should
+        speak in the NEXT advance() call (not auto-fire like logic nodes)."""
+        engine = ConversationEngine(
+            graph=graph_with_prompted_end_node,
+            model="test/model",
+        )
+        engine.add_user_message("I want to leave")
+
+        call_count = 0
+
+        async def mock_call_llm(model, signature, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # Call 1: transition evaluation → advance to end_call
+            if call_count == 1:
+
+                class TransitionResult:
+                    transition_to = "end_call"
+
+                return TransitionResult()
+            # Call 2: response from end_call node (prompted end node)
+
+            class EndResult:
+                response = "Thank you for calling!"
+
+            return EndResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            result1 = await engine.advance()
+
+        # advance: transitions to end_call, responds from there
+        assert result1.response == "Thank you for calling!"
+        assert result1.transitioned_to == "end_call"
+        assert result1.end_call_invoked is True
+
+
 class TestEngineExpandsSnippets:
     """Verify snippet refs in prompts are resolved before LLM call."""
 
@@ -1184,16 +1416,18 @@ class TestEngineExpandsSnippets:
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result) as mock_llm:
             await engine._process_node()
 
-            # Inspect the kwargs passed to call_llm
+            # Inspect the kwargs and signature passed to call_llm
             call_kwargs = mock_llm.call_args
             general = call_kwargs.kwargs.get("general_instructions", "")
-            state = call_kwargs.kwargs.get("state_instructions", "")
+            # State prompt is now the signature docstring
+            signature = call_kwargs.args[1]
+            state = signature.__doc__
 
-            # Snippets should be expanded
+            # Snippets should be expanded in general_instructions
             assert "Hello friend" in general
             assert "{%greeting%}" not in general
 
-            # Snippets expanded AND variables substituted in state
+            # Snippets expanded AND variables substituted in state docstring
             assert "Hello friend" in state
             assert "{%greeting%}" not in state
             assert "Alice" in state

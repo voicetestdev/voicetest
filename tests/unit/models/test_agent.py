@@ -290,12 +290,47 @@ class TestTransitionConditionLogicalOperator:
         assert condition.logical_operator == "or"
 
 
-class TestAgentNodeIsExtractNode:
-    """Tests for AgentNode.is_extract_node()."""
+class TestNodeType:
+    """Tests for NodeType enum and model_post_init inference."""
 
-    def test_is_extract_node_with_variables_and_equations(self):
+    def test_default_is_conversation(self):
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import NodeType
+
+        node = AgentNode(id="greeting", state_prompt="Hello")
+        assert node.node_type == NodeType.CONVERSATION
+
+    def test_infers_logic_from_equation_transitions(self):
         from voicetest.models.agent import AgentNode
         from voicetest.models.agent import EquationClause
+        from voicetest.models.agent import NodeType
+        from voicetest.models.agent import Transition
+        from voicetest.models.agent import TransitionCondition
+
+        node = AgentNode(
+            id="router",
+            state_prompt="",
+            transitions=[
+                Transition(
+                    target_node_id="a",
+                    condition=TransitionCondition(
+                        type="equation",
+                        value="x == 1",
+                        equations=[EquationClause(left="x", operator="==", right="1")],
+                    ),
+                ),
+                Transition(
+                    target_node_id="b",
+                    condition=TransitionCondition(type="always", value="Else"),
+                ),
+            ],
+        )
+        assert node.node_type == NodeType.LOGIC
+
+    def test_infers_extract_from_variables_and_equations(self):
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import EquationClause
+        from voicetest.models.agent import NodeType
         from voicetest.models.agent import Transition
         from voicetest.models.agent import TransitionCondition
         from voicetest.models.agent import VariableExtraction
@@ -321,32 +356,11 @@ class TestAgentNodeIsExtractNode:
                 ),
             ],
         )
-        assert node.is_extract_node() is True
+        assert node.node_type == NodeType.EXTRACT
 
-    def test_is_extract_node_false_without_variables(self):
+    def test_variables_without_equations_stays_conversation(self):
         from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import EquationClause
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-
-        node = AgentNode(
-            id="router",
-            state_prompt="",
-            transitions=[
-                Transition(
-                    target_node_id="a",
-                    condition=TransitionCondition(
-                        type="equation",
-                        value="x == 1",
-                        equations=[EquationClause(left="x", operator="==", right="1")],
-                    ),
-                ),
-            ],
-        )
-        assert node.is_extract_node() is False
-
-    def test_is_extract_node_false_without_equation_transitions(self):
-        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import NodeType
         from voicetest.models.agent import Transition
         from voicetest.models.agent import TransitionCondition
         from voicetest.models.agent import VariableExtraction
@@ -360,11 +374,99 @@ class TestAgentNodeIsExtractNode:
             transitions=[
                 Transition(
                     target_node_id="next",
-                    condition=TransitionCondition(type="llm_prompt", value="always go next"),
+                    condition=TransitionCondition(type="llm_prompt", value="go next"),
                 ),
             ],
         )
-        assert node.is_extract_node() is False
+        assert node.node_type == NodeType.CONVERSATION
+
+    def test_end_call_tool_does_not_infer_end_type(self):
+        """Nodes with end_call tools are NOT end nodes — they're conversation nodes
+        that have an end_call tool available. Only explicitly typed nodes are END."""
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import NodeType
+        from voicetest.models.agent import ToolDefinition
+
+        node = AgentNode(
+            id="main",
+            state_prompt="Help the user.",
+            tools=[ToolDefinition(name="end_call", description="End", type="end_call")],
+        )
+        assert node.node_type == NodeType.CONVERSATION
+
+    def test_transfer_tool_does_not_infer_transfer_type(self):
+        """Same as end_call: transfer tools don't make a node a TRANSFER node."""
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import NodeType
+        from voicetest.models.agent import ToolDefinition
+
+        node = AgentNode(
+            id="main",
+            state_prompt="Help the user.",
+            tools=[ToolDefinition(name="transfer", description="Transfer", type="transfer_call")],
+        )
+        assert node.node_type == NodeType.CONVERSATION
+
+    def test_explicit_type_overrides_inference(self):
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import NodeType
+
+        node = AgentNode(
+            id="special",
+            state_prompt="Has a prompt but is an end node",
+            node_type=NodeType.END,
+        )
+        assert node.node_type == NodeType.END
+
+    def test_json_round_trip(self):
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import NodeType
+
+        node = AgentNode(id="end", state_prompt="", node_type=NodeType.END)
+        json_str = node.model_dump_json()
+        assert '"end"' in json_str
+
+        restored = AgentNode.model_validate_json(json_str)
+        assert restored.node_type == NodeType.END
+
+    def test_backward_compat_json_without_node_type(self):
+        """Old JSON without node_type field should infer logic/extract from structure."""
+        import json
+
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import NodeType
+
+        old_json = json.dumps(
+            {
+                "id": "router",
+                "state_prompt": "",
+                "transitions": [
+                    {
+                        "target_node_id": "a",
+                        "condition": {"type": "equation", "value": "x == 1"},
+                    },
+                ],
+            }
+        )
+        node = AgentNode.model_validate_json(old_json)
+        assert node.node_type == NodeType.LOGIC
+
+    def test_model_copy_preserves_node_type(self):
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import NodeType
+
+        node = AgentNode(id="end", state_prompt="", node_type=NodeType.END)
+        copied = node.model_copy(update={"state_prompt": "Goodbye"})
+        assert copied.node_type == NodeType.END
+
+    def test_enum_serializes_as_string(self):
+        from voicetest.models.agent import NodeType
+
+        assert str(NodeType.CONVERSATION) == "conversation"
+        assert str(NodeType.LOGIC) == "logic"
+        assert str(NodeType.EXTRACT) == "extract"
+        assert str(NodeType.END) == "end"
+        assert str(NodeType.TRANSFER) == "transfer"
 
 
 class TestGlobalMetric:

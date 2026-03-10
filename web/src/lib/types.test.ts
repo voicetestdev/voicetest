@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { GlobalMetric, MetricsConfig, MetricResult, Settings, AgentGraph } from "./types";
+import type { GlobalMetric, MetricsConfig, MetricResult, Settings, AgentGraph, Message } from "./types";
+import { nextExpectedRole } from "./types";
 
 describe("types", () => {
   describe("GlobalMetric", () => {
@@ -252,6 +253,62 @@ describe("types", () => {
       expect(settings.models.agent).toBe("openai/gpt-4o");
       expect(settings.models.simulator).toBeNull();
       expect(settings.models.judge).toBe("groq/llama-3.1-8b-instant");
+    });
+  });
+
+  describe("nextExpectedRole", () => {
+    function msg(role: Message["role"], content = ""): Message {
+      return { role, content, metadata: {} };
+    }
+
+    it("returns 'user' for empty transcript (agent speaks first)", () => {
+      expect(nextExpectedRole([])).toBe("user");
+    });
+
+    it("returns 'assistant' after a user message", () => {
+      expect(nextExpectedRole([msg("user", "hi")])).toBe("assistant");
+    });
+
+    it("returns 'user' after an assistant message", () => {
+      expect(nextExpectedRole([msg("user", "hi"), msg("assistant", "hello")])).toBe("user");
+    });
+
+    it("returns 'assistant' when last non-tool message is user", () => {
+      const transcript: Message[] = [
+        msg("user", "hi"),
+        msg("assistant", "hello"),
+        msg("tool", "Transitioned to billing"),
+        msg("user", "I need help with my bill"),
+      ];
+      expect(nextExpectedRole(transcript)).toBe("assistant");
+    });
+
+    it("returns 'user' when last non-tool message is assistant", () => {
+      const transcript: Message[] = [
+        msg("user", "hi"),
+        msg("assistant", "hello"),
+        msg("tool", "Transitioned to billing"),
+        msg("assistant", "How can I help with billing?"),
+      ];
+      expect(nextExpectedRole(transcript)).toBe("user");
+    });
+
+    it("returns 'user' when transcript ends with tool messages after assistant", () => {
+      const transcript: Message[] = [
+        msg("user", "hi"),
+        msg("assistant", "Let me transfer you"),
+        msg("tool", "Transitioned to support"),
+        msg("tool", "Transitioned to billing"),
+      ];
+      expect(nextExpectedRole(transcript)).toBe("user");
+    });
+
+    it("returns 'assistant' when transcript ends with tool messages after user", () => {
+      const transcript: Message[] = [
+        msg("user", "hi"),
+        msg("tool", "Transitioned to greeting"),
+      ];
+      expect(nextExpectedRole(transcript)).toBe("assistant");
     });
   });
 

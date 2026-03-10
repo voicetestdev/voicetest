@@ -14,6 +14,7 @@ from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import EquationClause
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -21,6 +22,14 @@ from voicetest.models.agent import VariableExtraction
 
 
 _MUSTACHE_RE = re.compile(r"^\{\{(.+?)\}\}$")
+
+_RETELL_TYPE_MAP: dict[str, NodeType] = {
+    "conversation": NodeType.CONVERSATION,
+    "logic_split": NodeType.LOGIC,
+    "extract_dynamic_variables": NodeType.EXTRACT,
+    "end": NodeType.END,
+    "transfer_call": NodeType.TRANSFER,
+}
 
 
 def _strip_mustache(value: str) -> str:
@@ -233,6 +242,7 @@ class RetellImporter:
             nodes[retell_node.id] = AgentNode(
                 id=retell_node.id,
                 state_prompt=retell_node.instruction.text if retell_node.instruction else "",
+                node_type=_RETELL_TYPE_MAP.get(retell_node.type, NodeType.CONVERSATION),
                 tools=global_tools if global_tools else [],
                 transitions=transitions,
                 metadata=metadata,

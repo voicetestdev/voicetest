@@ -21,6 +21,7 @@
     PromptChange,
     AutoFixStopCondition,
   } from "../lib/types";
+  import { nextExpectedRole } from "../lib/types";
 
   let audioEvalLoading = $state<string | null>(null);
 
@@ -739,7 +740,7 @@
                       </span>
                     </div>
                   {:else}
-                    {@const nextRole = transcript.length % 2 === 0 ? "user" : "assistant"}
+                    {@const nextRole = nextExpectedRole(transcript)}
                     <div class="message {nextRole} typing">
                       <span class="role">{nextRole}</span>
                       <span class="content typing-dots">
