@@ -98,10 +98,10 @@ class TestFormatTransitions:
         module = ConversationModule(graph)
         result = module.format_transitions("a")
 
-        assert len(result) == 3
-        assert result[0].condition_type == "always"
-        assert result[1].condition_type == "equation"
-        assert result[2].condition_type == "tool_call"
+        # always-type transitions are excluded (auto-fire, not LLM-decided)
+        assert len(result) == 2
+        assert result[0].condition_type == "equation"
+        assert result[1].condition_type == "tool_call"
 
     def test_empty_condition_value_uses_fallback(self):
         """Empty condition.value becomes 'No condition specified'."""
@@ -125,7 +125,8 @@ class TestFormatTransitions:
         module = ConversationModule(graph)
         result = module.format_transitions("a")
 
-        assert result[0].condition == "No condition specified"
+        # always-type transitions are excluded from LLM options
+        assert result == []
 
     def test_returns_empty_list_for_no_transitions(self):
         graph = AgentGraph(

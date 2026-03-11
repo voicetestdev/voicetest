@@ -24,7 +24,8 @@ def evaluate_equation(clause: EquationClause, variables: dict[str, Any]) -> bool
         return False
 
     actual = str(variables[clause.left])
-    expected = clause.right
+    # Resolve right side as a variable reference if it exists in variables
+    expected = str(variables[clause.right]) if clause.right in variables else clause.right
 
     if op == "==":
         return actual == expected

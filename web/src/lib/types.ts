@@ -40,6 +40,19 @@ export interface Message {
   metadata: Record<string, unknown>;
 }
 
+/**
+ * Determine which role should speak next based on the transcript.
+ * Skips tool messages to find the last actual speaker.
+ */
+export function nextExpectedRole(transcript: Message[]): "user" | "assistant" {
+  for (let i = transcript.length - 1; i >= 0; i--) {
+    const role = transcript[i].role;
+    if (role === "user") return "assistant";
+    if (role === "assistant") return "user";
+  }
+  return "user";
+}
+
 export interface MetricResult {
   metric: string;
   passed: boolean;

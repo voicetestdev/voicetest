@@ -1,5 +1,8 @@
 """Tests for voicetest.simulator.user_sim module."""
 
+from unittest.mock import patch
+
+import dspy
 import pytest
 
 from voicetest.models.results import Message
@@ -8,28 +11,40 @@ from voicetest.models.results import Message
 class TestSimulatorResponse:
     """Tests for SimulatorResponse."""
 
-    def test_create_continue_response(self):
+    def test_create_response(self):
         from voicetest.simulator.user_sim import SimulatorResponse
 
-        response = SimulatorResponse(
-            message="I need help with my bill",
-            should_end=False,
-            reasoning="User is asking for help",
-        )
+        response = SimulatorResponse(message="I need help with my bill")
 
         assert response.message == "I need help with my bill"
-        assert response.should_end is False
-        assert response.reasoning == "User is asking for help"
 
-    def test_create_end_response(self):
+    def test_no_should_end_field(self):
         from voicetest.simulator.user_sim import SimulatorResponse
 
-        response = SimulatorResponse(
-            message="", should_end=True, reasoning="User's goal has been achieved"
-        )
+        response = SimulatorResponse(message="test")
+        assert not hasattr(response, "should_end")
 
-        assert response.message == ""
-        assert response.should_end is True
+
+class TestUserSimSignature:
+    """Tests for UserSimSignature structure."""
+
+    def test_only_message_output_field(self):
+        """UserSimSignature should only produce a message — no end detection."""
+        from voicetest.simulator.user_sim import UserSimSignature
+
+        output_fields = {k for k, v in UserSimSignature.output_fields.items()}
+        assert output_fields == {"message"}
+
+    def test_no_should_continue_field(self):
+        from voicetest.simulator.user_sim import UserSimSignature
+
+        assert "should_continue" not in UserSimSignature.output_fields
+        assert "should_continue" not in UserSimSignature.input_fields
+
+    def test_no_reasoning_field(self):
+        from voicetest.simulator.user_sim import UserSimSignature
+
+        assert "reasoning" not in UserSimSignature.output_fields
 
 
 class TestUserSimulator:
@@ -133,11 +148,7 @@ Very patient and understanding. Speaks slowly and clearly.
 
 
 class TestUserSimulatorGenerate:
-    """Tests for UserSimulator.generate method.
-
-    These tests verify the structure of responses without making
-    actual LLM calls.
-    """
+    """Tests for UserSimulator.generate method."""
 
     @pytest.mark.asyncio
     async def test_generate_returns_response(self):
@@ -149,22 +160,13 @@ class TestUserSimulatorGenerate:
             "openai/gpt-4o-mini",
         )
 
-        # Use mock mode for testing
         simulator._mock_mode = True
-        simulator._mock_responses = [
-            SimulatorResponse(
-                message="Hello, I need some help",
-                should_end=False,
-                reasoning="Initiating conversation",
-            )
-        ]
+        simulator._mock_responses = [SimulatorResponse(message="Hello, I need some help")]
 
         response = await simulator.generate([])
 
         assert isinstance(response, SimulatorResponse)
         assert isinstance(response.message, str)
-        assert isinstance(response.should_end, bool)
-        assert isinstance(response.reasoning, str)
 
     @pytest.mark.asyncio
     async def test_generate_with_transcript_context(self):
@@ -182,20 +184,15 @@ class TestUserSimulatorGenerate:
         ]
 
         simulator._mock_mode = True
-        simulator._mock_responses = [
-            SimulatorResponse(
-                message="I'd like a refund for my order",
-                should_end=False,
-                reasoning="Working towards goal",
-            )
-        ]
+        simulator._mock_responses = [SimulatorResponse(message="I'd like a refund for my order")]
 
         response = await simulator.generate(transcript)
 
         assert isinstance(response, SimulatorResponse)
 
     @pytest.mark.asyncio
-    async def test_generate_can_signal_end(self):
+    async def test_mock_returns_none_when_exhausted(self):
+        """Mock mode returns None when all responses have been consumed."""
         from voicetest.simulator.user_sim import SimulatorResponse
         from voicetest.simulator.user_sim import UserSimulator
 
@@ -205,12 +202,33 @@ class TestUserSimulatorGenerate:
         )
 
         simulator._mock_mode = True
-        simulator._mock_responses = [
-            SimulatorResponse(
-                message="", should_end=True, reasoning="Goal achieved, ending conversation"
+        simulator._mock_responses = [SimulatorResponse(message="Hello")]
+
+        response1 = await simulator.generate([])
+        assert response1 is not None
+        assert response1.message == "Hello"
+
+        response2 = await simulator.generate([])
+        assert response2 is None
+
+    @pytest.mark.asyncio
+    async def test_llm_path_returns_message(self):
+        """The LLM path returns a SimulatorResponse with just the message."""
+        from voicetest.simulator.user_sim import UserSimulator
+
+        simulator = UserSimulator(
+            "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",
+            "openai/gpt-4o-mini",
+        )
+
+        async def mock_call_llm(model, sig, **kwargs):
+            return dspy.Prediction(message="Thanks, bye!")
+
+        with patch("voicetest.simulator.user_sim.call_llm", side_effect=mock_call_llm):
+            response = await simulator.generate(
+                [
+                    Message(role="assistant", content="Goodbye!"),
+                ]
             )
-        ]
 
-        response = await simulator.generate([])
-
-        assert response.should_end is True
+        assert response.message == "Thanks, bye!"

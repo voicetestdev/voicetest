@@ -2,7 +2,6 @@
 
 import pytest
 
-from voicetest.exporters.graph_viz import _is_logic_node
 from voicetest.exporters.graph_viz import export_mermaid
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
@@ -286,67 +285,3 @@ class TestMermaidLogicNode:
         )
         result = export_mermaid(graph)
         assert 'branch1{"Logic Split<br/>branch1"}' in result
-
-
-class TestIsLogicNode:
-    """Tests for _is_logic_node helper."""
-
-    def test_equation_only_is_logic(self):
-        node = AgentNode(
-            id="n",
-            state_prompt="",
-            transitions=[
-                Transition(
-                    target_node_id="a",
-                    condition=TransitionCondition(type="equation", value="x == 1"),
-                ),
-            ],
-        )
-        assert _is_logic_node(node) is True
-
-    def test_equation_plus_always_is_logic(self):
-        node = AgentNode(
-            id="n",
-            state_prompt="",
-            transitions=[
-                Transition(
-                    target_node_id="a",
-                    condition=TransitionCondition(type="equation", value="x == 1"),
-                ),
-                Transition(
-                    target_node_id="b",
-                    condition=TransitionCondition(type="always", value="Else"),
-                ),
-            ],
-        )
-        assert _is_logic_node(node) is True
-
-    def test_llm_prompt_not_logic(self):
-        node = AgentNode(
-            id="n",
-            state_prompt="Talk",
-            transitions=[
-                Transition(
-                    target_node_id="a",
-                    condition=TransitionCondition(type="llm_prompt", value="done"),
-                ),
-            ],
-        )
-        assert _is_logic_node(node) is False
-
-    def test_no_transitions_not_logic(self):
-        node = AgentNode(id="n", state_prompt="", transitions=[])
-        assert _is_logic_node(node) is False
-
-    def test_only_always_not_logic(self):
-        node = AgentNode(
-            id="n",
-            state_prompt="",
-            transitions=[
-                Transition(
-                    target_node_id="a",
-                    condition=TransitionCondition(type="always", value="Else"),
-                ),
-            ],
-        )
-        assert _is_logic_node(node) is False

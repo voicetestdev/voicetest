@@ -125,6 +125,7 @@ class MetricJudge:
             self.model,
             MetricJudgeSignature,
             on_error=on_error,
+            predictor_class=dspy.ChainOfThought,
             transcript=formatted_transcript,
             criterion=criterion,
         )

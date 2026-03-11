@@ -10,6 +10,7 @@ from voicetest.exporters.retell_cf import export_retell_cf
 from voicetest.importers.retell import RetellImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -299,6 +300,7 @@ class TestTerminalToolSynthesis:
                 "end_node": AgentNode(
                     id="end_node",
                     state_prompt="End the call.",
+                    node_type=NodeType.END,
                     transitions=[],
                     metadata={"retell_type": "end"},
                 ),
@@ -470,11 +472,11 @@ class TestTerminalToolSynthesis:
         transfer_nodes = {n["id"]: n for n in result["nodes"] if n["type"] == "transfer_call"}
         assert len(transfer_nodes) == 2
 
-        er_node = transfer_nodes["synth_transfer_call_to_er"]
+        er_node = transfer_nodes["transfer_call_to_er"]
         assert er_node["transfer_destination"]["number"] == "+18005559111"
         assert er_node["transfer_option"]["type"] == "cold_transfer"
 
-        pharm_node = transfer_nodes["synth_transfer_call_to_pharmacy"]
+        pharm_node = transfer_nodes["transfer_call_to_pharmacy"]
         assert pharm_node["transfer_destination"]["number"] == "+18005559222"
         assert pharm_node["transfer_option"]["type"] == "warm_transfer"
 
@@ -1234,3 +1236,258 @@ class TestLogicSplitExport:
         always_transitions = [t for t in router.transitions if t.condition.type == "always"]
         assert len(always_transitions) == 1
         assert always_transitions[0].target_node_id == "standard"
+
+
+class TestExportAlwaysEdge:
+    """Tests for exporting always_edge on conversation nodes."""
+
+    def test_always_transition_exported_as_always_edge(self):
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(
+                    id="main",
+                    state_prompt="Say goodbye.",
+                    transitions=[
+                        Transition(
+                            target_node_id="end",
+                            condition=TransitionCondition(type="always", value="Always"),
+                        ),
+                    ],
+                    metadata={"retell_type": "conversation"},
+                ),
+                "end": AgentNode(
+                    id="end",
+                    state_prompt="End.",
+                    transitions=[],
+                    metadata={"retell_type": "end"},
+                ),
+            },
+            entry_node_id="main",
+            source_type="retell",
+        )
+        result = export_retell_cf(graph)
+        main = _find_node(result["nodes"], "main")
+        assert "always_edge" in main
+        assert main["always_edge"]["destination_node_id"] == "end"
+        assert main["edges"] == []
+
+    def test_always_edge_not_on_logic_nodes(self):
+        """Logic nodes use else_edge, not always_edge."""
+        from voicetest.models.agent import EquationClause
+
+        graph = AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="a",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="x == 1",
+                                equations=[EquationClause(left="x", operator="==", right="1")],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="b",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    metadata={"retell_type": "logic_split"},
+                ),
+                "a": AgentNode(id="a", state_prompt="A.", transitions=[]),
+                "b": AgentNode(id="b", state_prompt="B.", transitions=[]),
+            },
+            entry_node_id="router",
+            source_type="retell",
+        )
+        result = export_retell_cf(graph)
+        router = _find_node(result["nodes"], "router")
+        assert "else_edge" in router
+        assert "always_edge" not in router
+
+
+class TestExportExtractNodes:
+    """Tests for exporting extract_dynamic_variables nodes."""
+
+    @pytest.fixture
+    def extract_graph(self):
+        from voicetest.models.agent import EquationClause
+        from voicetest.models.agent import VariableExtraction
+
+        return AgentGraph(
+            nodes={
+                "ask_dob": AgentNode(
+                    id="ask_dob",
+                    state_prompt="Ask for date of birth.",
+                    transitions=[
+                        Transition(
+                            target_node_id="extract_dob",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="Patient gave DOB"
+                            ),
+                        ),
+                    ],
+                ),
+                "extract_dob": AgentNode(
+                    id="extract_dob",
+                    state_prompt="",
+                    variables_to_extract=[
+                        VariableExtraction(
+                            name="dob_month",
+                            description="The month of birth",
+                            type="string",
+                            choices=["January", "February"],
+                        ),
+                        VariableExtraction(
+                            name="dob_year",
+                            description="The year of birth",
+                        ),
+                    ],
+                    transitions=[
+                        Transition(
+                            target_node_id="match",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="dob_month == January AND dob_year == 1990",
+                                logical_operator="and",
+                                equations=[
+                                    EquationClause(
+                                        left="dob_month", operator="==", right="January"
+                                    ),
+                                    EquationClause(left="dob_year", operator="==", right="1990"),
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="no_match",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    metadata={
+                        "retell_type": "extract_dynamic_variables",
+                        "name": "Extract DOB",
+                    },
+                ),
+                "match": AgentNode(id="match", state_prompt="Verified.", transitions=[]),
+                "no_match": AgentNode(id="no_match", state_prompt="Not verified.", transitions=[]),
+            },
+            entry_node_id="ask_dob",
+            source_type="retell",
+        )
+
+    def test_extract_node_exports_as_extract_type(self, extract_graph):
+        result = export_retell_cf(extract_graph)
+        extract_node = _find_node(result["nodes"], "extract_dob")
+        assert extract_node["type"] == "extract_dynamic_variables"
+
+    def test_extract_node_exports_variables(self, extract_graph):
+        result = export_retell_cf(extract_graph)
+        extract_node = _find_node(result["nodes"], "extract_dob")
+        assert "variables" in extract_node
+        assert len(extract_node["variables"]) == 2
+        assert extract_node["variables"][0]["name"] == "dob_month"
+        assert extract_node["variables"][0]["description"] == "The month of birth"
+        assert extract_node["variables"][0]["type"] == "string"
+        assert extract_node["variables"][0]["choices"] == ["January", "February"]
+        assert extract_node["variables"][1]["name"] == "dob_year"
+
+    def test_extract_node_preserves_equations(self, extract_graph):
+        result = export_retell_cf(extract_graph)
+        extract_node = _find_node(result["nodes"], "extract_dob")
+        assert len(extract_node["edges"]) == 1
+        tc = extract_node["edges"][0]["transition_condition"]
+        assert tc["type"] == "equation"
+        assert len(tc["equations"]) == 2
+
+    def test_extract_node_preserves_else_edge(self, extract_graph):
+        result = export_retell_cf(extract_graph)
+        extract_node = _find_node(result["nodes"], "extract_dob")
+        assert "else_edge" in extract_node
+        assert extract_node["else_edge"]["destination_node_id"] == "no_match"
+
+
+class TestExportLogicalOperator:
+    """Tests for exporting logical_operator as Retell operator field."""
+
+    @pytest.fixture
+    def graph_with_or(self):
+        from voicetest.models.agent import EquationClause
+
+        return AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="match",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="x == 1 OR y == 2",
+                                logical_operator="or",
+                                equations=[
+                                    EquationClause(left="x", operator="==", right="1"),
+                                    EquationClause(left="y", operator="==", right="2"),
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="fallback",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    metadata={"retell_type": "logic_split"},
+                ),
+                "match": AgentNode(id="match", state_prompt="M.", transitions=[]),
+                "fallback": AgentNode(id="fallback", state_prompt="F.", transitions=[]),
+            },
+            entry_node_id="router",
+            source_type="retell",
+        )
+
+    def test_or_operator_exported(self, graph_with_or):
+        result = export_retell_cf(graph_with_or)
+        router = _find_node(result["nodes"], "router")
+        tc = router["edges"][0]["transition_condition"]
+        assert tc["operator"] == "||"
+
+    def test_and_operator_exported(self):
+        from voicetest.models.agent import EquationClause
+
+        graph = AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    transitions=[
+                        Transition(
+                            target_node_id="match",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="x == 1 AND y == 2",
+                                logical_operator="and",
+                                equations=[
+                                    EquationClause(left="x", operator="==", right="1"),
+                                    EquationClause(left="y", operator="==", right="2"),
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="fallback",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    metadata={"retell_type": "logic_split"},
+                ),
+                "match": AgentNode(id="match", state_prompt="M.", transitions=[]),
+                "fallback": AgentNode(id="fallback", state_prompt="F.", transitions=[]),
+            },
+            entry_node_id="router",
+            source_type="retell",
+        )
+        result = export_retell_cf(graph)
+        router = _find_node(result["nodes"], "router")
+        tc = router["edges"][0]["transition_condition"]
+        assert tc["operator"] == "&&"

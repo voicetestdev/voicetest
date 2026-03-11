@@ -3,13 +3,13 @@
 Wraps the execution of conversations using the ConversationEngine.
 """
 
+import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
 
 from voicetest.engine.conversation import ConversationEngine
-from voicetest.engine.modules import ConversationModule
 from voicetest.llm import _invoke_callback
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message
@@ -63,33 +63,19 @@ class ConversationRunner:
         options: RunOptions | None = None,
         mock_mode: bool = False,
         dynamic_variables: dict | None = None,
-        use_split_transitions: bool = False,
     ):
         self.graph = graph
         self.options = options or RunOptions()
         self._mock_mode = mock_mode
         self._dynamic_variables = dynamic_variables or {}
 
-        # Keep _conversation_module for backward compatibility with tests
-        # that access it directly
-        self._conversation_module = ConversationModule(
-            graph, use_split_transitions=use_split_transitions
-        )
-
         # Engine for actual turn processing (not used in mock mode)
         self._engine: ConversationEngine | None = None
         if not mock_mode:
-            # Apply split_transitions setting to options
-            effective_options = RunOptions(
-                **{
-                    **self.options.model_dump(),
-                    "split_transitions": use_split_transitions,
-                }
-            )
             self._engine = ConversationEngine(
                 graph=graph,
                 model=self.options.agent_model,
-                options=effective_options,
+                options=self.options,
                 dynamic_variables=dynamic_variables,
             )
 
@@ -104,8 +90,8 @@ class ConversationRunner:
         """Run a complete conversation.
 
         This method orchestrates the full conversation flow:
-        1. Initialize state with entry node
-        2. Loop: get user input -> process with agent -> record events
+        1. Agent processes graph until it speaks (entry preamble)
+        2. Loop: get user input -> agent processes graph until speech
         3. Continue until end condition or max turns
 
         Args:
@@ -118,32 +104,101 @@ class ConversationRunner:
         Returns:
             ConversationState with transcript and tracking data.
         """
+        if self._mock_mode:
+            return await self._run_mock(test_case, user_simulator, on_turn, on_token, on_error)
+
+        state = ConversationState()
+
+        # Wrap on_token to add source="agent"
+        agent_token_cb = None
+        if on_token and self.options.streaming:
+
+            async def agent_token_cb(token: str) -> None:
+                await _invoke_callback(on_token, token, "agent")
+
+        # Wire on_turn callback so the engine pushes updates as messages are appended
+        self._engine._on_turn = on_turn
+
+        # Entry: agent processes graph until it speaks
+        await self._engine.advance(
+            on_token=agent_token_cb,
+            on_error=on_error,
+        )
+
+        turn_timeout = self.options.turn_timeout_seconds
+
+        for _turn in range(self.options.max_turns):
+            try:
+                # Get simulated user input
+                sim_response = await asyncio.wait_for(
+                    user_simulator.generate(
+                        self._engine.transcript,
+                        on_token=on_token if self.options.streaming else None,
+                        on_error=on_error,
+                    ),
+                    timeout=turn_timeout,
+                )
+            except TimeoutError:
+                state.end_reason = "turn_timeout"
+                break
+
+            if sim_response is None:
+                state.end_reason = "simulator_exhausted"
+                break
+
+            await self._engine.add_user_message(sim_response.message)
+
+            try:
+                await asyncio.wait_for(
+                    self._engine.advance(
+                        on_token=agent_token_cb,
+                        on_error=on_error,
+                    ),
+                    timeout=turn_timeout,
+                )
+            except TimeoutError:
+                state.end_reason = "turn_timeout"
+                break
+
+            state.turn_count += 1
+
+            if self._engine.end_call_invoked:
+                state.end_reason = "agent_ended"
+                break
+        else:
+            state.end_reason = "max_turns"
+
+        state.transcript = self._engine.transcript
+        state.nodes_visited = self._engine.nodes_visited
+        state.tools_called = self._engine.tools_called
+        state.end_call_invoked = self._engine.end_call_invoked
+        return state
+
+    async def _run_mock(
+        self,
+        test_case,
+        user_simulator,
+        on_turn=None,
+        on_token=None,
+        on_error=None,
+    ) -> ConversationState:
+        """Run a conversation in mock mode (no LLM calls)."""
         state = ConversationState()
         node_tracker = NodeTracker()
-
-        # Start at entry node
         node_tracker.record(self.graph.entry_node_id)
         current_node_id = self.graph.entry_node_id
 
         for _turn in range(self.options.max_turns):
-            # Get simulated user input
             sim_response = await user_simulator.generate(
                 state.transcript,
                 on_token=on_token if self.options.streaming else None,
                 on_error=on_error,
             )
 
-            if sim_response.should_end:
-                state.end_reason = "user_ended"
+            if sim_response is None:
+                state.end_reason = "simulator_exhausted"
                 break
 
-            async def notify():
-                if on_turn:
-                    result = on_turn(state.transcript)
-                    if result is not None:
-                        await result
-
-            # Record user message with current node
             state.transcript.append(
                 Message(
                     role="user",
@@ -151,109 +206,22 @@ class ConversationRunner:
                     metadata={"node_id": node_tracker.current_node},
                 )
             )
-            await notify()
 
-            # Process with current state module
-            response, new_node_id = await self._process_turn(
-                current_node_id,
-                sim_response.message,
-                state,
-                node_tracker,
-                on_token=on_token if self.options.streaming else None,
-                on_error=on_error,
+            response = f"[Mock response from {current_node_id}]"
+            state.transcript.append(
+                Message(
+                    role="assistant",
+                    content=response,
+                    metadata={"node_id": node_tracker.current_node},
+                )
             )
 
-            if response:
-                state.transcript.append(
-                    Message(
-                        role="assistant",
-                        content=response,
-                        metadata={"node_id": node_tracker.current_node},
-                    )
-                )
-                await notify()
-
-            # Handle node transition
-            if new_node_id is not None:
-                current_node_id = new_node_id
+            if on_turn:
+                await _invoke_callback(on_turn, state.transcript)
 
             state.turn_count += 1
-
-            # Check for agent-initiated end
-            if state.end_call_invoked:
-                state.end_reason = "agent_ended"
-                break
         else:
             state.end_reason = "max_turns"
 
         state.nodes_visited = node_tracker.visited
         return state
-
-    async def _process_turn(
-        self,
-        node_id: str,
-        user_message: str,
-        state: ConversationState,
-        node_tracker: NodeTracker,
-        on_token: OnTokenCallback | None = None,
-        on_error: OnErrorCallback | None = None,
-    ) -> tuple[str, str | None]:
-        """Process a single conversation turn.
-
-        Delegates to ConversationEngine for consistent behavior with live calls.
-
-        Args:
-            node_id: The current node ID.
-            user_message: The user's message to respond to.
-            state: Current conversation state.
-            node_tracker: Tracks visited nodes.
-            on_token: Optional callback for streaming tokens.
-            on_error: Optional callback for error handling.
-
-        Returns:
-            Tuple of (response text, new node ID if transition occurred).
-        """
-        # Mock mode for testing without LLM calls
-        if self._mock_mode:
-            return f"[Mock response from {node_id}]", None
-
-        # Wrap on_token to add source="agent"
-        async def agent_token_callback(token: str) -> None:
-            if on_token:
-                await _invoke_callback(on_token, token, "agent")
-
-        # Use the engine for turn processing (same logic as live calls)
-        # But we need to sync the engine's state with our state tracking
-        # The engine manages its own transcript, so we need to sync carefully
-
-        # Sync engine to current node if needed
-        if self._engine._current_node != node_id:
-            self._engine._current_node = node_id
-
-        # Sync transcript to engine (excluding the user message we just added to state)
-        # The engine maintains its own transcript, but we need to keep them in sync
-        # for the context to be correct
-        self._engine._transcript = [
-            msg for msg in state.transcript if msg.role != "user" or msg.content != user_message
-        ]
-
-        # Process turn through engine
-        result = await self._engine.process_turn(
-            user_message,
-            on_token=agent_token_callback if on_token else None,
-            on_error=on_error,
-        )
-
-        # Sync state from engine result
-        new_node_id = None
-        if result.transitioned_to:
-            node_tracker.record(result.transitioned_to)
-            new_node_id = result.transitioned_to
-
-        if result.end_call_invoked:
-            state.end_call_invoked = True
-
-        # Add tool calls from engine to state
-        state.tools_called.extend(result.tool_calls)
-
-        return result.response, new_node_id

@@ -11,6 +11,7 @@ import re
 
 import dspy
 
+from voicetest.llm import _invoke_callback
 from voicetest.llm import call_llm
 from voicetest.models.results import Message
 from voicetest.retry import OnErrorCallback
@@ -18,13 +19,6 @@ from voicetest.retry import OnErrorCallback
 
 # Callback type for token updates: receives token string and source ("agent" or "user")
 OnTokenCallback = Callable[[str, str], Awaitable[None] | None]
-
-
-async def _invoke_callback(callback: Callable, *args) -> None:
-    """Invoke callback, handling both sync and async."""
-    result = callback(*args)
-    if result is not None and hasattr(result, "__await__"):
-        await result
 
 
 class UserSimSignature(dspy.Signature):
@@ -41,17 +35,9 @@ class UserSimSignature(dspy.Signature):
     )
     turn_number: int = dspy.InputField(desc="Current turn number (1 = first turn)")
 
-    should_continue: bool = dspy.OutputField(
-        desc="True if user should keep talking. False ONLY if the user's stated goal "
-        "has been fully achieved AND the agent has confirmed completion. "
-        "An agent asking 'anything else?' is NOT sufficient — the user must have "
-        "gotten what they called for. Always True on turn 1."
-    )
     message: str = dspy.OutputField(
-        desc="User's next spoken response — short and natural like a real phone call. "
-        "Empty string only if should_continue is False."
+        desc="User's next spoken response — short and natural like a real phone call."
     )
-    reasoning: str = dspy.OutputField(desc="Why the user said this or ended")
 
 
 @dataclass
@@ -59,8 +45,6 @@ class SimulatorResponse:
     """Response from user simulator."""
 
     message: str
-    should_end: bool
-    reasoning: str
 
 
 class UserSimulator:
@@ -90,7 +74,7 @@ class UserSimulator:
         transcript: list[Message],
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
-    ) -> SimulatorResponse:
+    ) -> SimulatorResponse | None:
         """Generate next user message based on conversation so far.
 
         Args:
@@ -99,11 +83,13 @@ class UserSimulator:
             on_error: Optional callback for retryable errors.
 
         Returns:
-            SimulatorResponse with message, should_end flag, and reasoning.
+            SimulatorResponse with the generated message, or None if mock responses exhausted.
         """
         # Mock mode for testing
-        if self._mock_mode and self._mock_responses:
-            response = self._mock_responses[self._mock_index % len(self._mock_responses)]
+        if self._mock_mode:
+            if self._mock_index >= len(self._mock_responses):
+                return None
+            response = self._mock_responses[self._mock_index]
             self._mock_index += 1
             return response
 
@@ -114,7 +100,7 @@ class UserSimulator:
         transcript: list[Message],
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
-    ) -> SimulatorResponse:
+    ) -> SimulatorResponse | None:
         """Generate response using LLM.
 
         Args:
@@ -123,7 +109,7 @@ class UserSimulator:
             on_error: Optional callback for retryable errors.
 
         Returns:
-            SimulatorResponse with message, should_end flag, and reasoning.
+            SimulatorResponse with the generated message.
         """
         user_prompt = self.user_prompt
         turn_number = len([m for m in transcript if m.role == "user"]) + 1
@@ -147,20 +133,14 @@ class UserSimulator:
             on_token=user_token_callback if on_token else None,
             stream_field="message" if on_token else None,
             on_error=on_error,
+            predictor_class=dspy.Predict,
             persona=user_prompt,
             conversation_history=conversation_history,
             current_agent_message=current_agent_message or "(agent has not spoken yet)",
             turn_number=turn_number,
         )
 
-        # Enforce: user always continues on turn 1 regardless of model output
-        should_continue = result.should_continue if turn_number > 1 else True
-
-        return SimulatorResponse(
-            message=result.message if should_continue else "",
-            should_end=not should_continue,
-            reasoning=result.reasoning,
-        )
+        return SimulatorResponse(message=result.message)
 
     def _format_transcript(self, transcript: list[Message]) -> str:
         """Format transcript for LLM input."""

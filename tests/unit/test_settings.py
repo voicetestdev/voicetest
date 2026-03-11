@@ -19,7 +19,7 @@ class TestSettings:
         assert settings.models.agent is None
         assert settings.models.simulator is None
         assert settings.models.judge is None
-        assert settings.run.max_turns == 20
+        assert settings.run.max_turns == 50
         assert settings.run.verbose is False
         assert settings.run.test_model_precedence is False
         assert settings.env == {}
@@ -83,7 +83,7 @@ class TestSettingsPersistence:
         settings = load_settings(settings_file)
 
         assert settings.models.agent is None  # default is None
-        assert settings.run.max_turns == 20
+        assert settings.run.max_turns == 50
 
     def test_toml_format(self, tmp_path):
         settings_file = tmp_path / ".voicetest.toml"
@@ -109,7 +109,7 @@ class TestSettingsPersistence:
 
         assert settings.models.agent == "custom/model"
         assert settings.models.simulator is None  # default is None
-        assert settings.run.max_turns == 20  # default
+        assert settings.run.max_turns == 50  # default
 
     def test_save_and_load_with_env(self, tmp_path):
         settings_file = tmp_path / ".voicetest.toml"

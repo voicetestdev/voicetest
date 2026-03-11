@@ -37,6 +37,7 @@ class TestCallLlmValidation:
                 "openai/gpt-4o-mini",
                 DummySignature,
                 on_token=lambda t: None,
+                predictor_class=dspy.Predict,
                 input="test",
             )
 
@@ -82,6 +83,7 @@ class TestCallLlmRetryCallback:
                 "openai/gpt-4o-mini",
                 DummySignature,
                 on_error=on_error,
+                predictor_class=dspy.Predict,
                 input="test",
             )
 
@@ -127,6 +129,7 @@ class TestCallLlmRetryIntegration:
                 "openai/gpt-4o-mini",
                 DummySignature,
                 on_error=on_error,
+                predictor_class=dspy.Predict,
                 input="test",
             )
 
@@ -254,62 +257,11 @@ class TestCreateLmNoCache:
 
 
 class TestConversationEngineCacheSalt:
-    """ConversationEngine passes cache_salt for split-mode response calls."""
+    """ConversationEngine passes cache_salt for response calls with transitions."""
 
     @pytest.mark.asyncio
-    async def test_split_mode_passes_cache_salt(self):
-        """Split-mode response call should include transitions fingerprint."""
-        from voicetest.engine.conversation import ConversationEngine
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-
-        graph = AgentGraph(
-            nodes={
-                "a": AgentNode(
-                    id="a",
-                    state_prompt="Greet.",
-                    transitions=[
-                        Transition(
-                            target_node_id="b",
-                            condition=TransitionCondition(type="llm_prompt", value="go to b"),
-                        )
-                    ],
-                ),
-                "b": AgentNode(id="b", state_prompt="Help."),
-            },
-            entry_node_id="a",
-            source_type="custom",
-            source_metadata={"general_prompt": "Be helpful."},
-        )
-
-        from voicetest.models.test_case import RunOptions
-
-        options = RunOptions(split_transitions=True)
-        engine = ConversationEngine(graph=graph, model="openai/gpt-4o-mini", options=options)
-
-        call_args = []
-
-        async def mock_call_llm(model, sig, *, cache_salt=None, **kwargs):
-            call_args.append({"cache_salt": cache_salt, "sig_name": sig.__name__})
-            return dspy.Prediction(response="Hello!", transition_to="none")
-
-        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            await engine.process_turn("hi")
-
-        # First call is the response call — should have a cache_salt
-        response_call = call_args[0]
-        assert response_call["cache_salt"] is not None
-        assert len(response_call["cache_salt"]) > 0
-
-        # Second call is the transition call — no salt needed (it already has available_transitions)
-        transition_call = call_args[1]
-        assert transition_call["cache_salt"] is None
-
-    @pytest.mark.asyncio
-    async def test_combined_mode_no_cache_salt(self):
-        """Combined-mode response call should NOT pass cache_salt."""
+    async def test_response_call_includes_cache_salt(self):
+        """Response call should include transitions fingerprint as cache_salt."""
         from voicetest.engine.conversation import ConversationEngine
         from voicetest.models.agent import AgentGraph
         from voicetest.models.agent import AgentNode
@@ -340,14 +292,21 @@ class TestConversationEngineCacheSalt:
         call_args = []
 
         async def mock_call_llm(model, sig, *, cache_salt=None, **kwargs):
-            call_args.append({"cache_salt": cache_salt})
+            call_args.append({"cache_salt": cache_salt, "sig_name": sig.__name__})
             return dspy.Prediction(response="Hello!", transition_to="none")
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            await engine.process_turn("hi")
+            await engine.add_user_message("hi")
+            await engine.advance()
 
-        # Combined mode: no salt needed, available_transitions is in the signature
-        assert call_args[0]["cache_salt"] is None
+        # First call is the transition call — no salt needed
+        transition_call = call_args[0]
+        assert transition_call["cache_salt"] is None
+
+        # Second call is the response call — should have a cache_salt
+        response_call = call_args[1]
+        assert response_call["cache_salt"] is not None
+        assert len(response_call["cache_salt"]) > 0
 
     @pytest.mark.asyncio
     async def test_salt_changes_when_edges_change(self):
@@ -357,7 +316,6 @@ class TestConversationEngineCacheSalt:
         from voicetest.models.agent import AgentNode
         from voicetest.models.agent import Transition
         from voicetest.models.agent import TransitionCondition
-        from voicetest.models.test_case import RunOptions
 
         def make_engine(targets: list[str]) -> ConversationEngine:
             graph = AgentGraph(
@@ -385,7 +343,6 @@ class TestConversationEngineCacheSalt:
             return ConversationEngine(
                 graph=graph,
                 model="openai/gpt-4o-mini",
-                options=RunOptions(split_transitions=True),
             )
 
         salts = []
@@ -394,19 +351,13 @@ class TestConversationEngineCacheSalt:
             salts.append(cache_salt)
             return dspy.Prediction(response="Hello!", transition_to="none")
 
-        for targets in [["b", "c"], ["b"]]:
-            salts.clear()
-            engine = make_engine(targets)
-            with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-                await engine.process_turn("hi")
-
-        # Can't compare across clears, so run both and collect
         all_salts = []
         for targets in [["b", "c"], ["b"]]:
             engine = make_engine(targets)
             with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
                 salts.clear()
-                await engine.process_turn("hi")
+                await engine.add_user_message("hi")
+                await engine._process_node()
                 all_salts.append(salts[0])  # first call is response
 
         assert all_salts[0] != all_salts[1]
@@ -447,7 +398,8 @@ class TestConversationEngineNoCache:
             return dspy.Prediction(response="Hello!", transition_to="none")
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            await engine.process_turn("hi")
+            await engine.add_user_message("hi")
+            await engine._process_node()
 
         assert call_args[0]["no_cache"] is True
 
@@ -476,6 +428,7 @@ class TestConversationEngineNoCache:
             return dspy.Prediction(response="Hello!", transition_to="none")
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            await engine.process_turn("hi")
+            await engine.add_user_message("hi")
+            await engine._process_node()
 
         assert call_args[0]["no_cache"] is False

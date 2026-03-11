@@ -10,6 +10,7 @@ from pydantic import ConfigDict
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -170,6 +171,9 @@ class RetellLLMImporter:
             )
             entry_node_id = "main"
 
+        # Convert end_call/transfer_call tools into synthetic nodes + edges
+        nodes = self._synthesize_terminal_nodes(nodes)
+
         source_metadata: dict[str, Any] = {
             "llm_id": llm_config.llm_id,
             "model": llm_config.model,
@@ -186,6 +190,68 @@ class RetellLLMImporter:
             source_metadata=source_metadata,
             default_model=llm_config.model,
         )
+
+    def _synthesize_terminal_nodes(self, nodes: dict[str, AgentNode]) -> dict[str, AgentNode]:
+        """Convert end_call/transfer_call tools into synthetic nodes and edges.
+
+        For each end_call or transfer_call tool found on any node:
+        1. Create a synthetic node (no prompt) with the tool attached
+        2. Add an llm_prompt edge from the node to the synthetic node
+        3. Strip the tool from the original node
+        """
+        # Collect unique terminal tools across all nodes: tool_name -> ToolDefinition
+        terminal_tools: dict[str, ToolDefinition] = {}
+        for node in nodes.values():
+            for tool in node.tools:
+                if tool.type in ("end_call", "transfer_call"):
+                    terminal_tools[tool.name] = tool
+
+        if not terminal_tools:
+            return nodes
+
+        # Create synthetic nodes
+        synthetic: dict[str, AgentNode] = {}
+        for tool_name, tool_def in terminal_tools.items():
+            node_type = NodeType.END if tool_def.type == "end_call" else NodeType.TRANSFER
+            synthetic[tool_name] = AgentNode(
+                id=tool_name,
+                state_prompt="",
+                node_type=node_type,
+                tools=[tool_def],
+                transitions=[],
+            )
+
+        # Add edges and strip terminal tools from conversation nodes
+        updated: dict[str, AgentNode] = {}
+        for node_id, node in nodes.items():
+            node_terminal = [t for t in node.tools if t.type in ("end_call", "transfer_call")]
+            if not node_terminal:
+                updated[node_id] = node
+                continue
+
+            new_transitions = list(node.transitions)
+            for tool in node_terminal:
+                new_transitions.append(
+                    Transition(
+                        target_node_id=tool.name,
+                        condition=TransitionCondition(
+                            type="llm_prompt",
+                            value=tool.description or f"Invoke {tool.name}",
+                        ),
+                        description=tool.description,
+                    )
+                )
+
+            remaining_tools = [t for t in node.tools if t.type not in ("end_call", "transfer_call")]
+            updated[node_id] = node.model_copy(
+                update={
+                    "tools": remaining_tools,
+                    "transitions": new_transitions,
+                }
+            )
+
+        updated.update(synthetic)
+        return updated
 
     def _load_config(self, path_or_config: str | Path | dict) -> dict[str, Any]:
         """Load config from path or return dict directly."""

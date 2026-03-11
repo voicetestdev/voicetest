@@ -23,13 +23,12 @@ class RunOptions(BaseModel):
     Model fields are Optional - None means not configured (will use defaults).
     """
 
-    max_turns: int = 20
-    timeout_seconds: float = 60.0
+    max_turns: int = 50
+    turn_timeout_seconds: float = 60.0
     verbose: bool = False
     flow_judge: bool = False
     streaming: bool = False
     test_model_precedence: bool = False
-    split_transitions: bool = False
     audio_eval: bool = False
     no_cache: bool = False
     pattern_engine: str = "fnmatch"

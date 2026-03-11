@@ -251,35 +251,22 @@ print(token.to_jwt())
 class TestCallAPIInDocker:
     """Tests for the call REST API through Docker."""
 
-    @pytest.fixture
-    def api_base_url(self) -> str:
-        """Get the API base URL."""
-        return "http://localhost:8000"
-
-    def test_livekit_status_endpoint(self, api_base_url):
+    def test_livekit_status_endpoint(self, sync_api_client):
         """LiveKit status endpoint returns available=true."""
-        import httpx
-
-        response = httpx.get(f"{api_base_url}/api/livekit/status", timeout=10)
+        response = sync_api_client.get("/api/livekit/status")
 
         assert response.status_code == 200
         data = response.json()
         assert data["available"] is True, f"LiveKit not available: {data}"
 
-    def test_start_call_endpoint(self, api_base_url):
+    def test_start_call_endpoint(self, sync_api_client):
         """Start call endpoint returns connection info."""
-        import httpx
-
-        # First, we need an agent. Let's use the demo endpoint to create one.
-        demo_response = httpx.post(f"{api_base_url}/api/demo", timeout=30)
-        assert demo_response.status_code == 200
-        agent_id = demo_response.json()["agent_id"]
+        # Create demo agent (auto-cleaned by sync_api_client fixture)
+        demo_data = sync_api_client.create_demo_agent()
+        agent_id = demo_data["agent_id"]
 
         # Now start a call
-        response = httpx.post(
-            f"{api_base_url}/api/agents/{agent_id}/calls/start",
-            timeout=30,
-        )
+        response = sync_api_client.post(f"/api/agents/{agent_id}/calls/start")
 
         assert response.status_code == 200, f"Failed to start call: {response.text}"
         data = response.json()
@@ -289,27 +276,19 @@ class TestCallAPIInDocker:
         assert "livekit_url" in data
         assert "token" in data
 
-        # Clean up - end the call
+        # End the call
         call_id = data["call_id"]
-        end_response = httpx.post(
-            f"{api_base_url}/api/calls/{call_id}/end",
-            timeout=10,
-        )
+        end_response = sync_api_client.post(f"/api/calls/{call_id}/end")
         assert end_response.status_code == 200
 
-    def test_call_produces_agent_worker_output(self, api_base_url):
+    def test_call_produces_agent_worker_output(self, sync_api_client):
         """Starting a call spawns agent worker that produces output."""
-        import httpx
-
-        # Create demo agent
-        demo_response = httpx.post(f"{api_base_url}/api/demo", timeout=30)
-        agent_id = demo_response.json()["agent_id"]
+        # Create demo agent (auto-cleaned by sync_api_client fixture)
+        demo_data = sync_api_client.create_demo_agent()
+        agent_id = demo_data["agent_id"]
 
         # Start call
-        start_response = httpx.post(
-            f"{api_base_url}/api/agents/{agent_id}/calls/start",
-            timeout=30,
-        )
+        start_response = sync_api_client.post(f"/api/agents/{agent_id}/calls/start")
         assert start_response.status_code == 200
         call_id = start_response.json()["call_id"]
 
@@ -317,10 +296,7 @@ class TestCallAPIInDocker:
         time.sleep(2)
 
         # Check call status
-        status_response = httpx.get(
-            f"{api_base_url}/api/calls/{call_id}",
-            timeout=10,
-        )
+        status_response = sync_api_client.get(f"/api/calls/{call_id}")
         assert status_response.status_code == 200
         call_data = status_response.json()
 
@@ -331,22 +307,17 @@ class TestCallAPIInDocker:
             f"Unexpected call status: {call_data['status']}"
         )
 
-        # Clean up
-        httpx.post(f"{api_base_url}/api/calls/{call_id}/end", timeout=10)
+        # End the call
+        sync_api_client.post(f"/api/calls/{call_id}/end")
 
-    def test_backend_logs_show_agent_worker_spawn(self, api_base_url):
+    def test_backend_logs_show_agent_worker_spawn(self, sync_api_client):
         """Backend logs should show agent-worker spawn command."""
-        import httpx
-
-        # Create demo agent
-        demo_response = httpx.post(f"{api_base_url}/api/demo", timeout=30)
-        agent_id = demo_response.json()["agent_id"]
+        # Create demo agent (auto-cleaned by sync_api_client fixture)
+        demo_data = sync_api_client.create_demo_agent()
+        agent_id = demo_data["agent_id"]
 
         # Start call
-        start_response = httpx.post(
-            f"{api_base_url}/api/agents/{agent_id}/calls/start",
-            timeout=30,
-        )
+        start_response = sync_api_client.post(f"/api/agents/{agent_id}/calls/start")
         assert start_response.status_code == 200
         call_id = start_response.json()["call_id"]
 
@@ -377,5 +348,5 @@ class TestCallAPIInDocker:
             f"Expected agent-worker log. Logs:\n{logs_result.stdout}"
         )
 
-        # Clean up
-        httpx.post(f"{api_base_url}/api/calls/{call_id}/end", timeout=10)
+        # End the call
+        sync_api_client.post(f"/api/calls/{call_id}/end")

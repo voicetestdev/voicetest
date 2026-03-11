@@ -111,7 +111,7 @@ class VoicetestLLMStream(livekit_llm.LLMStream):
             return
 
         # Add user message to engine transcript
-        self._engine.add_user_message(user_message)
+        await self._engine.add_user_message(user_message)
 
         # Process turn through engine without streaming. This uses the non-streaming
         # call_llm path which properly offloads blocking LLM calls (e.g. ClaudeCodeLM
@@ -119,17 +119,17 @@ class VoicetestLLMStream(livekit_llm.LLMStream):
         # Shield from cancellation so LiveKit's speech interruption doesn't abort the
         # LLM call mid-flight. The LLM subprocess can't be cheaply cancelled anyway.
         try:
-            result = await asyncio.shield(self._engine.process_turn(user_message))
+            result = await asyncio.shield(self._engine.advance())
         except asyncio.CancelledError:
             print(
-                "[voicetest-llm] _run cancelled during process_turn",
+                "[voicetest-llm] _run cancelled during advance",
                 file=sys.stderr,
                 flush=True,
             )
             return
         except Exception as e:
             print(
-                f"[voicetest-llm] process_turn error: {type(e).__name__}: {e}",
+                f"[voicetest-llm] advance error: {type(e).__name__}: {e}",
                 file=sys.stderr,
                 flush=True,
             )

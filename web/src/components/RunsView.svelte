@@ -21,6 +21,7 @@
     PromptChange,
     AutoFixStopCondition,
   } from "../lib/types";
+  import { nextExpectedRole } from "../lib/types";
 
   let audioEvalLoading = $state<string | null>(null);
 
@@ -705,25 +706,24 @@
 
               <h4>Transcript</h4>
               <div class="transcript">
-                {#each transcript as msg, i}
-                  {@const prevNode = i > 0 ? transcript[i - 1].metadata?.node_id : null}
-                  {@const currNode = msg.metadata?.node_id}
-                  {#if currNode && currNode !== prevNode}
+                {#each transcript as msg}
+                  {#if msg.role === "tool"}
                     <div class="state-transition">
                       <span class="transition-arrow">→</span>
-                      <span class="state-name">{currNode}</span>
+                      <span class="state-name">{msg.content}</span>
+                    </div>
+                  {:else}
+                    <div class="message {msg.role}">
+                      <span class="role">{msg.role}</span>
+                      {#if msg.metadata?.heard && msg.role === "assistant"}
+                        <div class="audio-diff">
+                          {@html diffWords(msg.content, msg.metadata.heard as string)}
+                        </div>
+                      {:else}
+                        <span class="content">{msg.content}</span>
+                      {/if}
                     </div>
                   {/if}
-                  <div class="message {msg.role}">
-                    <span class="role">{msg.role}</span>
-                    {#if msg.metadata?.heard && msg.role === "assistant"}
-                      <div class="audio-diff">
-                        {@html diffWords(msg.content, msg.metadata.heard as string)}
-                      </div>
-                    {:else}
-                      <span class="content">{msg.content}</span>
-                    {/if}
-                  </div>
                 {:else}
                   {#if selectedResult.status !== "running"}
                     <p class="empty">No transcript</p>
@@ -740,7 +740,7 @@
                       </span>
                     </div>
                   {:else}
-                    {@const nextRole = transcript.length % 2 === 0 ? "user" : "assistant"}
+                    {@const nextRole = nextExpectedRole(transcript)}
                     <div class="message {nextRole} typing">
                       <span class="role">{nextRole}</span>
                       <span class="content typing-dots">

@@ -164,7 +164,6 @@ class TestExecutionService:
                 options,
                 mock_mode=_mock_mode,
                 dynamic_variables=dynamic_vars,
-                use_split_transitions=options.split_transitions,
             )
             simulator = UserSimulator(user_prompt, options.simulator_model)
             metric_judge = MetricJudge(options.judge_model)
@@ -178,17 +177,8 @@ class TestExecutionService:
             if _mock_mode:
                 simulator._mock_mode = True
                 simulator._mock_responses = [
-                    SimulatorResponse(
-                        message="Hello, I need help.",
-                        should_end=False,
-                        reasoning="Starting conversation",
-                    ),
-                    SimulatorResponse(
-                        message="Thanks, that's helpful.",
-                        should_end=False,
-                        reasoning="Responding to agent",
-                    ),
-                    SimulatorResponse(message="", should_end=True, reasoning="Goal achieved"),
+                    SimulatorResponse(message="Hello, I need help."),
+                    SimulatorResponse(message="Thanks, that's helpful."),
                 ]
                 metric_judge._mock_mode = True
 

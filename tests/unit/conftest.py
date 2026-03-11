@@ -133,6 +133,13 @@ def sample_retell_config_logic_split_path(retell_fixtures_dir: Path) -> Path:
 
 
 @pytest.fixture
+def sample_retell_config_extract_variables(retell_fixtures_dir: Path) -> dict:
+    """Load Retell CF configuration with extract_dynamic_variables node."""
+    config_path = retell_fixtures_dir / "sample_config_extract_variables.json"
+    return json.loads(config_path.read_text())
+
+
+@pytest.fixture
 def vapi_fixtures_dir(fixtures_dir: Path) -> Path:
     """Return path to VAPI test fixtures."""
     return fixtures_dir / "vapi"

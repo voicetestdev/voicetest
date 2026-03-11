@@ -10,11 +10,22 @@ from voicetest.exporters.layout import Y_SPACING
 from voicetest.exporters.layout import compute_layout
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.settings import load_settings
 
 
 _TERMINAL_TOOL_TYPES = {"end_call", "transfer_call"}
+
+_NODE_TYPE_TO_RETELL: dict[NodeType, str] = {
+    NodeType.EXTRACT: "extract_dynamic_variables",
+    NodeType.LOGIC: "logic_split",
+    NodeType.END: "end",
+    NodeType.TRANSFER: "transfer_call",
+    NodeType.CONVERSATION: "conversation",
+}
+
+_NODE_TYPE_TO_RETELL_REV: dict[str, NodeType] = {v: k for k, v in _NODE_TYPE_TO_RETELL.items()}
 
 
 class RetellCFExporter:
@@ -133,8 +144,13 @@ def _find_nodes_mentioning(graph: AgentGraph, tool_name: str) -> list[str]:
 
 
 def _has_node_of_type(graph: AgentGraph, retell_type: str) -> bool:
-    """Check if graph already has a node with the given retell_type in metadata."""
-    return any(node.metadata.get("retell_type") == retell_type for node in graph.nodes.values())
+    """Check if graph already has a node with the given retell_type."""
+    target_node_type = _NODE_TYPE_TO_RETELL_REV.get(retell_type)
+    return any(
+        node.metadata.get("retell_type") == retell_type
+        or (target_node_type and node.node_type == target_node_type)
+        for node in graph.nodes.values()
+    )
 
 
 def _synthesize_end_node(
@@ -246,7 +262,7 @@ def _build_nodes(
     # Find an existing end node ID if we didn't just create one
     if end_node_id is None:
         for node in graph.nodes.values():
-            if node.metadata.get("retell_type") == "end":
+            if node.node_type == NodeType.END or node.metadata.get("retell_type") == "end":
                 end_node_id = node.id
                 break
 
@@ -300,22 +316,25 @@ def _convert_node(
     display_position: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Convert an AgentNode to a Retell Conversation Flow node."""
-    # Logic nodes export as logic_split type regardless of stored metadata
-    if node.is_logic_node():
-        node_type = "logic_split"
-    else:
-        node_type = node.metadata.get("retell_type", "conversation")
+    node_type = _NODE_TYPE_TO_RETELL.get(
+        node.node_type, node.metadata.get("retell_type", "conversation")
+    )
 
     prompt_text = node.state_prompt
     if is_entry and begin_message:
         prompt_text = f"[Begin message: {begin_message}]\n\n{prompt_text}"
 
-    # Separate always-type transitions as else_edge for logic nodes
+    # Separate always-type transitions for logic/extract nodes (else_edge)
+    # and conversation nodes (always_edge)
     regular_transitions = []
     else_transition = None
+    always_transition = None
     for t in node.transitions:
-        if node.is_logic_node() and t.condition.type == "always":
-            else_transition = t
+        if t.condition.type == "always":
+            if node.is_logic_node() or node.is_extract_node():
+                else_transition = t
+            else:
+                always_transition = t
         else:
             regular_transitions.append(t)
 
@@ -338,6 +357,36 @@ def _convert_node(
             node.id,
             len(regular_transitions),
         )
+
+    if always_transition:
+        result["always_edge"] = _convert_transition_to_edge(
+            always_transition,
+            node.id,
+            len(regular_transitions),
+        )
+
+    # Export transfer_destination/transfer_option for transfer nodes
+    if node.node_type == NodeType.TRANSFER:
+        transfer_tool = next((t for t in node.tools if t.type == "transfer_call"), None)
+        if transfer_tool:
+            result["transfer_destination"] = transfer_tool.metadata.get(
+                "transfer_destination", _DEFAULT_TRANSFER_DESTINATION
+            )
+            result["transfer_option"] = transfer_tool.metadata.get(
+                "transfer_option", _DEFAULT_TRANSFER_OPTION
+            )
+
+    # Export variables for extract_dynamic_variables nodes
+    if node.variables_to_extract:
+        result["variables"] = [
+            {
+                "name": v.name,
+                "description": v.description,
+                "type": v.type,
+                "choices": v.choices,
+            }
+            for v in node.variables_to_extract
+        ]
 
     # Preserved position from import wins over computed position
     preserved = node.metadata.get("display_position")
@@ -370,6 +419,8 @@ def _convert_transition_to_edge(transition, source_node_id: str, index: int) -> 
         else:
             # Fallback for equations without structured data
             tc["equation"] = transition.condition.value
+        op = "||" if transition.condition.logical_operator == "or" else "&&"
+        tc["operator"] = op
         edge["transition_condition"] = tc
     else:
         edge["transition_condition"] = {

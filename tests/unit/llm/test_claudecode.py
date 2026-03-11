@@ -416,6 +416,7 @@ class TestClaudeCodeLMIntegrationWithCallLlm:
             result = await call_llm(
                 "claudecode/sonnet",
                 TestSignature,
+                predictor_class=dspy.Predict,
                 question="What is the answer?",
             )
 
