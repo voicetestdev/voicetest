@@ -111,7 +111,7 @@ class VoicetestLLMStream(livekit_llm.LLMStream):
             return
 
         # Add user message to engine transcript
-        self._engine.add_user_message(user_message)
+        await self._engine.add_user_message(user_message)
 
         # Process turn through engine without streaming. This uses the non-streaming
         # call_llm path which properly offloads blocking LLM calls (e.g. ClaudeCodeLM

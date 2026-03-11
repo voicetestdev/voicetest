@@ -109,7 +109,7 @@ class ChatManager:
 
         try:
             # Add user message to engine
-            active_chat.engine.add_user_message(content)
+            await active_chat.engine.add_user_message(content)
 
             # Update transcript with user message
             active_chat.transcript = [m.model_dump() for m in active_chat.engine.transcript]

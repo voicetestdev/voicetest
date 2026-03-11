@@ -296,7 +296,7 @@ class TestConversationEngineCacheSalt:
             return dspy.Prediction(response="Hello!", transition_to="none")
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("hi")
+            await engine.add_user_message("hi")
             await engine.advance()
 
         # First call is the transition call — no salt needed
@@ -356,7 +356,7 @@ class TestConversationEngineCacheSalt:
             engine = make_engine(targets)
             with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
                 salts.clear()
-                engine.add_user_message("hi")
+                await engine.add_user_message("hi")
                 await engine._process_node()
                 all_salts.append(salts[0])  # first call is response
 
@@ -398,7 +398,7 @@ class TestConversationEngineNoCache:
             return dspy.Prediction(response="Hello!", transition_to="none")
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("hi")
+            await engine.add_user_message("hi")
             await engine._process_node()
 
         assert call_args[0]["no_cache"] is True
@@ -428,7 +428,7 @@ class TestConversationEngineNoCache:
             return dspy.Prediction(response="Hello!", transition_to="none")
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("hi")
+            await engine.add_user_message("hi")
             await engine._process_node()
 
         assert call_args[0]["no_cache"] is False

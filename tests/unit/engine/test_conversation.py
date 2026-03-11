@@ -39,22 +39,24 @@ class TestConversationEngine:
         assert engine.tools_called == []
         assert engine.end_call_invoked is False
 
-    def test_add_user_message(self, simple_graph):
+    @pytest.mark.asyncio
+    async def test_add_user_message(self, simple_graph):
         from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
-        engine.add_user_message("Hello!")
+        await engine.add_user_message("Hello!")
 
         assert len(engine.transcript) == 1
         assert engine.transcript[0].role == "user"
         assert engine.transcript[0].content == "Hello!"
         assert engine.transcript[0].metadata["node_id"] == "greeting"
 
-    def test_reset_engine(self, simple_graph):
+    @pytest.mark.asyncio
+    async def test_reset_engine(self, simple_graph):
         from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
-        engine.add_user_message("Hello!")
+        await engine.add_user_message("Hello!")
         engine._current_node = "farewell"
         engine._nodes_visited.append("farewell")
 
@@ -64,11 +66,12 @@ class TestConversationEngine:
         assert engine.transcript == []
         assert engine.nodes_visited == ["greeting"]
 
-    def test_transcript_returns_copy(self, simple_graph):
+    @pytest.mark.asyncio
+    async def test_transcript_returns_copy(self, simple_graph):
         from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
-        engine.add_user_message("Hello!")
+        await engine.add_user_message("Hello!")
 
         transcript = engine.transcript
         transcript.append(None)  # Modify the copy
@@ -140,7 +143,7 @@ class TestProcessTurn:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("Hi!")
+            await engine.add_user_message("Hi!")
             result = await engine.advance()
 
         assert result.response == "Hello there!"
@@ -165,7 +168,7 @@ class TestProcessTurn:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("Hi!")
+            await engine.add_user_message("Hi!")
             await engine.advance()
 
         # Should have the user message and assistant response
@@ -190,7 +193,7 @@ class TestProcessTurn:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("I want to leave")
+            await engine.add_user_message("I want to leave")
             result = await engine.advance()
 
         assert result.transitioned_to == "farewell"
@@ -221,7 +224,7 @@ class TestProcessTurn:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("Bye!")
+            await engine.add_user_message("Bye!")
             result = await engine.advance()
 
         assert result.response == "Goodbye!"
@@ -259,7 +262,7 @@ class TestProcessTurn:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("Hello")
+            await engine.add_user_message("Hello")
             await engine.advance()
 
         # Verify variables were substituted
@@ -546,7 +549,7 @@ class TestLogicNodeHandling:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm) as mock_llm:
-            engine.add_user_message("Hi")
+            await engine.add_user_message("Hi")
             result = await engine._process_node()
 
         assert mock_llm.called
@@ -734,7 +737,7 @@ class TestExtractNodeHandling:
 
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result) as mock_llm:
             engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
-            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.add_user_message("My birthday is January 15, 1990")
             await engine._process_node()
 
         mock_llm.assert_called_once()
@@ -748,7 +751,7 @@ class TestExtractNodeHandling:
 
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
             engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
-            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.add_user_message("My birthday is January 15, 1990")
             await engine._process_node()
 
         assert engine._dynamic_variables["dob_month"] == "January"
@@ -763,7 +766,7 @@ class TestExtractNodeHandling:
 
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
             engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
-            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.add_user_message("My birthday is January 15, 1990")
             result = await engine._process_node()
 
         assert result.transitioned_to == "match"
@@ -777,7 +780,7 @@ class TestExtractNodeHandling:
 
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
             engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
-            engine.add_user_message("My birthday is February 1, 2000")
+            await engine.add_user_message("My birthday is February 1, 2000")
             result = await engine._process_node()
 
         assert result.transitioned_to == "no_match"
@@ -791,7 +794,7 @@ class TestExtractNodeHandling:
 
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
             engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
-            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.add_user_message("My birthday is January 15, 1990")
             result = await engine._process_node()
 
         assert result.response == ""
@@ -805,7 +808,7 @@ class TestExtractNodeHandling:
 
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
             engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
-            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.add_user_message("My birthday is January 15, 1990")
             result = await engine._process_node()
 
         assert "match" in engine.nodes_visited
@@ -857,7 +860,7 @@ class TestAlwaysEdgeOnConversationNodes:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("ok bye")
+            await engine.add_user_message("ok bye")
             result = await engine._process_node()
 
         assert result.response == "Thank you, please call us at 555-1234."
@@ -908,7 +911,7 @@ class TestAlwaysEdgeOnConversationNodes:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("I have a billing question")
+            await engine.add_user_message("I have a billing question")
             result = await engine.advance()
 
         assert result.transitioned_to == "billing"
@@ -928,7 +931,7 @@ class TestAlwaysEdgeOnConversationNodes:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("thanks, bye")
+            await engine.add_user_message("thanks, bye")
             result = await engine.advance()
 
         assert result.transitioned_to == "end"
@@ -1041,7 +1044,8 @@ class TestToolMessagesInTranscript:
             source_type="retell",
         )
 
-    def test_apply_transition_adds_tool_message(self, logic_graph_with_fallback):
+    @pytest.mark.asyncio
+    async def test_apply_transition_adds_tool_message(self, logic_graph_with_fallback):
         """_apply_transition should append a tool message to the transcript."""
         from voicetest.engine.conversation import TurnResult
 
@@ -1051,7 +1055,7 @@ class TestToolMessagesInTranscript:
             dynamic_variables={"account_type": "premium"},
         )
         turn_result = TurnResult(response="")
-        engine._apply_transition(turn_result, "premium_support")
+        await engine._apply_transition(turn_result, "premium_support")
 
         tool_msgs = [m for m in engine._transcript if m.role == "tool"]
         assert len(tool_msgs) == 1
@@ -1108,7 +1112,7 @@ class TestToolMessagesInTranscript:
 
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
             engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
-            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.add_user_message("My birthday is January 15, 1990")
             await engine._process_node()
 
         tool_msgs = [m for m in engine._transcript if m.role == "tool"]
@@ -1132,7 +1136,7 @@ class TestToolMessagesInTranscript:
 
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
             engine = ConversationEngine(extract_graph, model="openai/gpt-4o-mini")
-            engine.add_user_message("My birthday is January 15, 1990")
+            await engine.add_user_message("My birthday is January 15, 1990")
             await engine._process_node()
 
         tool_msgs = [m for m in engine._transcript if m.role == "tool"]
@@ -1196,7 +1200,7 @@ class TestTranscriptOrdering:
             graph=two_node_graph,
             model="test/model",
         )
-        engine.add_user_message("I need help with my bill")
+        await engine.add_user_message("I need help with my bill")
 
         async def mock_call_llm(model, signature, **kwargs):
             class Result:
@@ -1309,7 +1313,7 @@ class TestEndCallNode:
             model="test/model",
         )
         engine._current_node = "end_call"
-        engine.add_user_message("Goodbye")
+        await engine.add_user_message("Goodbye")
 
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
@@ -1349,7 +1353,7 @@ class TestEndCallNode:
             graph=graph_with_prompted_end_node,
             model="test/model",
         )
-        engine.add_user_message("I want to leave")
+        await engine.add_user_message("I want to leave")
 
         call_count = 0
 
@@ -1406,7 +1410,7 @@ class TestEngineExpandsSnippets:
             model="test/model",
             dynamic_variables={"name": "Alice"},
         )
-        engine.add_user_message("hi")
+        await engine.add_user_message("hi")
 
         # Mock call_llm to capture what instructions are passed
         mock_result = AsyncMock()
@@ -1432,3 +1436,91 @@ class TestEngineExpandsSnippets:
             assert "{%greeting%}" not in state
             assert "Alice" in state
             assert "{{name}}" not in state
+
+
+class TestOnTurnCallback:
+    """Tests for real-time transcript updates via _on_turn callback."""
+
+    @pytest.mark.asyncio
+    async def test_on_turn_fires_on_transition(self, simple_graph):
+        """on_turn should fire when a transition appends a tool message mid-advance."""
+        from unittest.mock import patch
+
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
+
+        snapshots = []
+
+        async def on_turn(transcript):
+            snapshots.append([m.role for m in transcript])
+
+        engine._on_turn = on_turn
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Goodbye!"
+                transition_to = "farewell"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("I want to leave")
+            await engine.advance()
+
+        # Should have fired for: user message, transition tool message, assistant response
+        assert len(snapshots) == 3
+        # First snapshot: user message added
+        assert snapshots[0] == ["user"]
+        # Second snapshot: transition tool message added
+        assert snapshots[1] == ["user", "tool"]
+        # Third snapshot: assistant response added
+        assert snapshots[2] == ["user", "tool", "assistant"]
+
+    @pytest.mark.asyncio
+    async def test_on_turn_fires_on_response_without_transition(self, simple_graph):
+        """on_turn should fire when response is appended even without transition."""
+        from unittest.mock import patch
+
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
+
+        snapshots = []
+
+        async def on_turn(transcript):
+            snapshots.append([m.role for m in transcript])
+
+        engine._on_turn = on_turn
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Hello there!"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("Hi!")
+            await engine.advance()
+
+        # Should have fired for: user message, assistant response
+        assert len(snapshots) == 2
+        assert snapshots[0] == ["user"]
+        assert snapshots[1] == ["user", "assistant"]
+
+    @pytest.mark.asyncio
+    async def test_no_callback_when_on_turn_not_set(self, simple_graph):
+        """Engine works fine without on_turn set (default None)."""
+        from unittest.mock import patch
+
+        engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Hello!"
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("Hi!")
+            result = await engine.advance()
+
+        assert result.response == "Hello!"

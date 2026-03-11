@@ -116,13 +116,14 @@ class ConversationRunner:
             async def agent_token_cb(token: str) -> None:
                 await _invoke_callback(on_token, token, "agent")
 
+        # Wire on_turn callback so the engine pushes updates as messages are appended
+        self._engine._on_turn = on_turn
+
         # Entry: agent processes graph until it speaks
         await self._engine.advance(
             on_token=agent_token_cb,
             on_error=on_error,
         )
-        if on_turn:
-            await _invoke_callback(on_turn, self._engine.transcript)
 
         turn_timeout = self.options.turn_timeout_seconds
 
@@ -145,9 +146,7 @@ class ConversationRunner:
                 state.end_reason = "simulator_exhausted"
                 break
 
-            self._engine.add_user_message(sim_response.message)
-            if on_turn:
-                await _invoke_callback(on_turn, self._engine.transcript)
+            await self._engine.add_user_message(sim_response.message)
 
             try:
                 await asyncio.wait_for(
@@ -160,9 +159,6 @@ class ConversationRunner:
             except TimeoutError:
                 state.end_reason = "turn_timeout"
                 break
-
-            if on_turn:
-                await _invoke_callback(on_turn, self._engine.transcript)
 
             state.turn_count += 1
 

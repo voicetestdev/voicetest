@@ -15,6 +15,7 @@ from voicetest.engine.equations import evaluate_equation
 from voicetest.engine.modules import ConversationModule
 from voicetest.engine.modules import StateModule
 from voicetest.llm import OnTokenCallback
+from voicetest.llm import _invoke_callback
 from voicetest.llm import call_llm
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
@@ -69,6 +70,9 @@ class ConversationEngine:
         self._no_cache = self.options.no_cache if self.options else False
         self._module = ConversationModule(graph)
 
+        # Callback fired each time a message is appended to the transcript
+        self._on_turn = None
+
         # State
         self._current_node = graph.entry_node_id
         self._transcript: list[Message] = []
@@ -101,13 +105,19 @@ class ConversationEngine:
         """Whether end_call was invoked."""
         return self._end_call_invoked
 
-    def add_user_message(self, content: str) -> None:
+    async def _append_message(self, message: Message) -> None:
+        """Append a message to the transcript and notify via callback."""
+        self._transcript.append(message)
+        if self._on_turn:
+            await _invoke_callback(self._on_turn, self._transcript)
+
+    async def add_user_message(self, content: str) -> None:
         """Add a user message to the transcript.
 
         Args:
             content: The user's message content.
         """
-        self._transcript.append(
+        await self._append_message(
             Message(
                 role="user",
                 content=content,
@@ -162,7 +172,7 @@ class ConversationEngine:
                 continue
 
             if node.is_logic_node():
-                result = self._evaluate_logic_node(state_module)
+                result = await self._evaluate_logic_node(state_module)
                 accumulated_tool_calls.extend(result.tool_calls)
                 if result.transitioned_to is None:
                     break
@@ -186,7 +196,7 @@ class ConversationEngine:
                 target = await self._evaluate_transition(node, on_error=on_error)
                 if target:
                     turn_result = TurnResult(response="")
-                    self._apply_transition(turn_result, target)
+                    await self._apply_transition(turn_result, target)
                     accumulated_tool_calls.extend(turn_result.tool_calls)
                     last_transition_target = target
                     has_advanced = True
@@ -223,7 +233,7 @@ class ConversationEngine:
         if node.is_extract_node():
             return await self._evaluate_extract_node(node, state_module, on_error=on_error)
         if node.is_logic_node():
-            return self._evaluate_logic_node(state_module)
+            return await self._evaluate_logic_node(state_module)
         if (node.is_end_node() or node.is_transfer_node()) and not node.state_prompt:
             self._end_call_invoked = True
             return TurnResult(response="", end_call_invoked=True)
@@ -327,7 +337,7 @@ class ConversationEngine:
 
         turn_result = TurnResult(response=result.response)
 
-        self._transcript.append(
+        await self._append_message(
             Message(
                 role="assistant",
                 content=result.response,
@@ -338,7 +348,7 @@ class ConversationEngine:
         # Post-response: always-edge fires after the agent speaks (linear flow).
         always_target = self._find_always_transition(node)
         if always_target:
-            self._apply_transition(turn_result, always_target)
+            await self._apply_transition(turn_result, always_target)
 
         # End/transfer node with a prompt: agent spoke, now end the call.
         if (node.is_end_node() or node.is_transfer_node()) and not turn_result.transitioned_to:
@@ -347,7 +357,7 @@ class ConversationEngine:
 
         return turn_result
 
-    def _apply_transition(self, turn_result: TurnResult, target: str) -> None:
+    async def _apply_transition(self, turn_result: TurnResult, target: str) -> None:
         """Record a transition to the given target node."""
         self._current_node = target
         self._nodes_visited.append(target)
@@ -359,7 +369,7 @@ class ConversationEngine:
         )
         self._tools_called.append(tool_call)
         turn_result.tool_calls.append(tool_call)
-        self._transcript.append(
+        await self._append_message(
             Message(
                 role="tool",
                 content=f"Transitioned to {target}",
@@ -367,7 +377,7 @@ class ConversationEngine:
             )
         )
 
-    def _evaluate_logic_node(self, state_module: StateModule) -> TurnResult:
+    async def _evaluate_logic_node(self, state_module: StateModule) -> TurnResult:
         """Evaluate a logic node's equation transitions deterministically.
 
         Iterates transitions top-to-bottom (matching Retell's eval order),
@@ -387,12 +397,12 @@ class ConversationEngine:
                 evaluate_equation(clause, self._dynamic_variables)
                 for clause in transition.condition.equations
             ):
-                self._apply_transition(turn_result, transition.target_node_id)
+                await self._apply_transition(turn_result, transition.target_node_id)
                 break
         else:
             # No equation matched — use always fallback if present
             if fallback_target:
-                self._apply_transition(turn_result, fallback_target)
+                await self._apply_transition(turn_result, fallback_target)
 
         return turn_result
 
@@ -445,7 +455,7 @@ class ConversationEngine:
         # Record extraction in transcript
         if extracted:
             parts = [f"{k}={v}" for k, v in extracted.items()]
-            self._transcript.append(
+            await self._append_message(
                 Message(
                     role="tool",
                     content=f"Extracted: {', '.join(parts)}",
@@ -458,7 +468,7 @@ class ConversationEngine:
             )
 
         # Delegate to equation routing
-        return self._evaluate_logic_node(state_module)
+        return await self._evaluate_logic_node(state_module)
 
     def _find_always_transition(self, node: AgentNode) -> str | None:
         """Find the target of an always-type transition on a conversation node."""

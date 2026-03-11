@@ -1989,7 +1989,7 @@ async def _chat(
             if user_input.strip().lower() in ("quit", "exit"):
                 break
 
-            engine.add_user_message(user_input)
+            await engine.add_user_message(user_input)
             result = await engine.advance()
 
             if json_mode:

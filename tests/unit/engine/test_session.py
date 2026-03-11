@@ -227,7 +227,7 @@ class TestDynamicVariableSubstitution:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("Hello")
+            await engine.add_user_message("Hello")
             await engine._process_node()
 
         # Verify general_instructions has substituted variables
@@ -275,7 +275,7 @@ class TestDynamicVariableSubstitution:
             return MockResult()
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
-            engine.add_user_message("Hello")
+            await engine.add_user_message("Hello")
             await engine._process_node()
 
         # customer_name should be substituted in state prompt (signature docstring)
