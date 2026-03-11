@@ -242,6 +242,7 @@ export interface RunResultRecord {
   nodes_visited: string | null;
   tools_called: string | null;
   models_used: string | null;
+  dynamic_variables?: Record<string, unknown> | null;
   created_at: string;
 }
 

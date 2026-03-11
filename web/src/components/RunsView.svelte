@@ -313,10 +313,12 @@
   }
 
   async function selectRun(runId: string) {
+    statusFilter = null;
     await loadRun(runId);
   }
 
   let selectedResultId = $state<string | null>(null);
+  let statusFilter = $state<"pass" | "fail" | null>(null);
   let deleting = $state(false);
   let rerunOpen = $state(false);
   let rerunDropdownEl = $state<HTMLElement>();
@@ -418,6 +420,17 @@
     rerunnableResults.filter((r) => r.status === "fail" || r.status === "error")
   );
 
+  const filteredResults = $derived(() => {
+    const results = $currentRunWithResults?.results ?? [];
+    if (!statusFilter) return results;
+    if (statusFilter === "fail") return results.filter((r) => r.status === "fail" || r.status === "error");
+    return results.filter((r) => r.status === statusFilter);
+  });
+
+  function toggleStatusFilter(filter: "pass" | "fail") {
+    statusFilter = statusFilter === filter ? null : filter;
+  }
+
   const selectedRerunResult = $derived(
     rerunnableResults.find((r) => r.id === selectedResultId) ?? null
   );
@@ -508,9 +521,19 @@
         {:else}
           {@const summary = getRunSummary($currentRunWithResults.results)}
           <span class="summary">
-            <span class="pass">{summary.passed} passed</span>
+            <button
+              type="button"
+              class="filter-btn pass"
+              class:active={statusFilter === "pass"}
+              onclick={() => toggleStatusFilter("pass")}
+            >{summary.passed} passed</button>
             {#if summary.failed > 0}
-              <span class="fail">{summary.failed} failed</span>
+              <button
+                type="button"
+                class="filter-btn fail"
+                class:active={statusFilter === "fail"}
+                onclick={() => toggleStatusFilter("fail")}
+              >{summary.failed} failed</button>
             {/if}
             {#if summary.errors > 0}
               <span class="error">{summary.errors} errors</span>
@@ -591,7 +614,7 @@
     <div class="layout">
       <section class="results">
         <ul class="results-list">
-          {#each $currentRunWithResults.results as result}
+          {#each filteredResults() as result}
             <li class:selected={selectedResultId === result.id}>
               <div class="result-row">
                 <button
@@ -669,22 +692,38 @@
                 <span>{selectedResult.end_reason || "N/A"}</span>
               </div>
 
+              {#if selectedResult.dynamic_variables && Object.keys(selectedResult.dynamic_variables).length > 0}
+                <details class="collapsible-section">
+                  <summary>Dynamic Variables</summary>
+                  <div class="dynamic-vars">
+                    {#each Object.entries(selectedResult.dynamic_variables) as [key, value]}
+                      <div class="var-row">
+                        <span class="var-key">{key}</span>
+                        <span class="var-value">{String(value)}</span>
+                      </div>
+                    {/each}
+                  </div>
+                </details>
+              {/if}
+
               {#if modelsUsed}
-                <h4>Models Used</h4>
-                <div class="models-used">
-                  <div class="model-row">
-                    <span class="label">Agent:</span>
-                    <code>{modelsUsed.agent}</code>
+                <details class="collapsible-section">
+                  <summary>Models Used</summary>
+                  <div class="models-used">
+                    <div class="model-row">
+                      <span class="label">Agent:</span>
+                      <code>{modelsUsed.agent}</code>
+                    </div>
+                    <div class="model-row">
+                      <span class="label">Simulator:</span>
+                      <code>{modelsUsed.simulator}</code>
+                    </div>
+                    <div class="model-row">
+                      <span class="label">Judge:</span>
+                      <code>{modelsUsed.judge}</code>
+                    </div>
                   </div>
-                  <div class="model-row">
-                    <span class="label">Simulator:</span>
-                    <code>{modelsUsed.simulator}</code>
-                  </div>
-                  <div class="model-row">
-                    <span class="label">Judge:</span>
-                    <code>{modelsUsed.judge}</code>
-                  </div>
-                </div>
+                </details>
               {/if}
 
               {#if selectedResult.status !== "running" && selectedResult.test_case_id && !hasAudioEval(selectedResult)}
@@ -1238,6 +1277,27 @@
     font-size: 0.9rem;
   }
 
+  .filter-btn {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm, 4px);
+    padding: 0.1rem 0.4rem;
+    cursor: pointer;
+    font-size: inherit;
+    font-weight: inherit;
+    font-family: inherit;
+    transition: border-color 0.15s, opacity 0.15s;
+  }
+
+  .filter-btn:hover {
+    border-color: currentColor;
+    opacity: 0.85;
+  }
+
+  .filter-btn.active {
+    border-color: currentColor;
+  }
+
   .rerun-dropdown {
     position: relative;
     margin-left: auto;
@@ -1673,6 +1733,69 @@
     width: 100%;
     font-size: 0.85rem;
     color: var(--text-secondary);
+  }
+
+  .collapsible-section {
+    margin-bottom: 0.5rem;
+  }
+
+  .collapsible-section summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    padding: 0.25rem 0;
+    user-select: none;
+    list-style: none;
+  }
+
+  .collapsible-section summary::before {
+    content: "\25B6";
+    display: inline-block;
+    margin-right: 0.4rem;
+    font-size: 0.7rem;
+    transition: transform 0.15s ease;
+  }
+
+  .collapsible-section[open] > summary::before {
+    transform: rotate(90deg);
+  }
+
+  .collapsible-section summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .dynamic-vars {
+    background: var(--bg-primary);
+    padding: 0.5rem;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+  }
+
+  .var-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.25rem;
+  }
+
+  .var-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .var-key {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    min-width: 80px;
+  }
+
+  .var-key::after {
+    content: ":";
+  }
+
+  .var-value {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.85rem;
   }
 
   .models-used {

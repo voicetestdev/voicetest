@@ -534,7 +534,8 @@ class RunRepository:
             return None
 
         result = self._run_to_dict(run)
-        result["results"] = [self._result_to_dict(r) for r in run.results]
+        results = [self._result_to_dict(r) for r in run.results]
+        result["results"] = results
         return result
 
     def create(self, agent_id: str, user_id: str | None = None) -> dict:

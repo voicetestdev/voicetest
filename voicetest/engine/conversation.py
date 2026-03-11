@@ -249,6 +249,10 @@ class ConversationEngine:
         Returns the target node ID if a transition should fire, or None
         to stay in the current node. Always-edges are not evaluated here;
         they fire after the response in _generate_response.
+
+        Uses a structured two-phase output: the LLM first determines whether
+        the node's objectives are complete, then selects a transition only
+        if they are.
         """
         available_transitions = self._module.format_transitions(self._current_node)
         if not available_transitions:
@@ -261,6 +265,13 @@ class ConversationEngine:
             if m.metadata.get("node_id") == self._current_node and m.role != "tool"
         ]
         conversation_history = self._format_transcript(current_node_messages)
+
+        # Extract the last agent message within this node for context.
+        last_agent_message = "(agent has not spoken in this state yet)"
+        for msg in reversed(current_node_messages):
+            if msg.role == "assistant":
+                last_agent_message = msg.content
+                break
 
         # Expand the current node's state prompt for context.
         state_module = self._module.get_state_module(self._current_node)
@@ -277,8 +288,14 @@ class ConversationEngine:
             predictor_class=dspy.ChainOfThought,
             current_state_prompt=state_prompt,
             conversation_history=conversation_history,
+            last_agent_message=last_agent_message,
             available_transitions=available_transitions,
         )
+
+        # Short-circuit: if objectives aren't complete, stay in current node.
+        if not transition_result.objectives_complete:
+            return None
+
         target = transition_result.transition_to.strip().lower()
 
         if target and target != "none" and target in self.graph.nodes:
