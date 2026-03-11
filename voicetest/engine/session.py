@@ -141,8 +141,8 @@ class ConversationRunner:
                 state.end_reason = "turn_timeout"
                 break
 
-            if sim_response.should_end:
-                state.end_reason = "user_ended"
+            if sim_response is None:
+                state.end_reason = "simulator_exhausted"
                 break
 
             self._engine.add_user_message(sim_response.message)
@@ -199,8 +199,8 @@ class ConversationRunner:
                 on_error=on_error,
             )
 
-            if sim_response.should_end:
-                state.end_reason = "user_ended"
+            if sim_response is None:
+                state.end_reason = "simulator_exhausted"
                 break
 
             state.transcript.append(

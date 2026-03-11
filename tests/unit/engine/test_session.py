@@ -138,8 +138,7 @@ class TestMessageNodeMetadata:
         simulator = UserSimulator("test", "mock-model")
         simulator._mock_mode = True
         simulator._mock_responses = [
-            SimulatorResponse(message="Hello", should_end=False),
-            SimulatorResponse(message="", should_end=True),
+            SimulatorResponse(message="Hello"),
         ]
 
         state = await runner.run(test_case, simulator)
@@ -170,8 +169,8 @@ class TestResponseNodeMetadata:
         simulator = UserSimulator("test", "mock-model")
         simulator._mock_mode = True
         simulator._mock_responses = [
-            SimulatorResponse(message="Hello", should_end=False),
-            SimulatorResponse(message="", should_end=True),
+            SimulatorResponse(message="Hello"),
+            SimulatorResponse(message="done"),
         ]
 
         async def mock_call_llm(model, signature, **kwargs):
@@ -351,8 +350,8 @@ class TestToolMessagePropagation:
         simulator = UserSimulator("test", "mock-model")
         simulator._mock_mode = True
         simulator._mock_responses = [
-            SimulatorResponse(message="Hello", should_end=False),
-            SimulatorResponse(message="", should_end=True),
+            SimulatorResponse(message="Hello"),
+            SimulatorResponse(message="done"),
         ]
 
         async def mock_call_llm(model, signature, **kwargs):
@@ -438,8 +437,8 @@ class TestAutoProcessLogicNodes:
         simulator = UserSimulator("test", "mock-model")
         simulator._mock_mode = True
         simulator._mock_responses = [
-            SimulatorResponse(message="Hello", should_end=False),
-            SimulatorResponse(message="", should_end=True),
+            SimulatorResponse(message="Hello"),
+            SimulatorResponse(message="done"),
         ]
 
         async def mock_call_llm(model, signature, **kwargs):
@@ -478,8 +477,8 @@ class TestAutoProcessLogicNodes:
         simulator = UserSimulator("test", "mock-model")
         simulator._mock_mode = True
         simulator._mock_responses = [
-            SimulatorResponse(message="Hello", should_end=False),
-            SimulatorResponse(message="", should_end=True),
+            SimulatorResponse(message="Hello"),
+            SimulatorResponse(message="done"),
         ]
 
         async def mock_call_llm(model, signature, **kwargs):
@@ -585,8 +584,8 @@ class TestAutoProcessLogicNodes:
         simulator = UserSimulator("test", "mock-model")
         simulator._mock_mode = True
         simulator._mock_responses = [
-            SimulatorResponse(message="Hello", should_end=False),
-            SimulatorResponse(message="", should_end=True),
+            SimulatorResponse(message="Hello"),
+            SimulatorResponse(message="done"),
         ]
 
         async def mock_call_llm(model, signature, **kwargs):
@@ -682,9 +681,9 @@ class TestAutoProcessLogicNodes:
         simulator = UserSimulator("test", "mock-model")
         simulator._mock_mode = True
         simulator._mock_responses = [
-            SimulatorResponse(message="Hi there", should_end=False),
-            SimulatorResponse(message="Thanks", should_end=False),
-            SimulatorResponse(message="", should_end=True),
+            SimulatorResponse(message="Hi there"),
+            SimulatorResponse(message="Thanks"),
+            SimulatorResponse(message="done"),
         ]
 
         async def mock_call_llm(model, signature, **kwargs):
@@ -759,8 +758,8 @@ class TestNoEmptyUserMessages:
         simulator = UserSimulator("test", "mock-model")
         simulator._mock_mode = True
         simulator._mock_responses = [
-            SimulatorResponse(message="Hello", should_end=False),
-            SimulatorResponse(message="", should_end=True),
+            SimulatorResponse(message="Hello"),
+            SimulatorResponse(message="done"),
         ]
 
         async def mock_call_llm(model, signature, **kwargs):
@@ -799,8 +798,8 @@ class TestPerTurnTimeout:
         simulator = UserSimulator("test", "mock-model")
         simulator._mock_mode = True
         simulator._mock_responses = [
-            SimulatorResponse(message="Hi", should_end=False),
-            SimulatorResponse(message="", should_end=True),
+            SimulatorResponse(message="Hi"),
+            SimulatorResponse(message="done"),
         ]
 
         call_count = 0
@@ -842,10 +841,10 @@ class TestPerTurnTimeout:
         simulator._mock_mode = True
         # Never ends — always sends another message
         simulator._mock_responses = [
-            SimulatorResponse(message="Tell me more", should_end=False),
-            SimulatorResponse(message="And more", should_end=False),
-            SimulatorResponse(message="Keep going", should_end=False),
-            SimulatorResponse(message="Still going", should_end=False),
+            SimulatorResponse(message="Tell me more"),
+            SimulatorResponse(message="And more"),
+            SimulatorResponse(message="Keep going"),
+            SimulatorResponse(message="Still going"),
         ]
 
         async def mock_call_llm(model, signature, **kwargs):

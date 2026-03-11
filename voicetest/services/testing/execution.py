@@ -177,15 +177,8 @@ class TestExecutionService:
             if _mock_mode:
                 simulator._mock_mode = True
                 simulator._mock_responses = [
-                    SimulatorResponse(
-                        message="Hello, I need help.",
-                        should_end=False,
-                    ),
-                    SimulatorResponse(
-                        message="Thanks, that's helpful.",
-                        should_end=False,
-                    ),
-                    SimulatorResponse(message="", should_end=True),
+                    SimulatorResponse(message="Hello, I need help."),
+                    SimulatorResponse(message="Thanks, that's helpful."),
                 ]
                 metric_judge._mock_mode = True
 

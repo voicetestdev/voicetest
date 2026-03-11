@@ -41,8 +41,7 @@ class TestStreamingPredictor:
         simulator = UserSimulator("Say hi", options.simulator_model)
         simulator._mock_mode = True
         simulator._mock_responses = [
-            SimulatorResponse(message="Hello", should_end=False, reasoning="test"),
-            SimulatorResponse(message="", should_end=True, reasoning="done"),
+            SimulatorResponse(message="Hello"),
         ]
 
         tokens_received: list[tuple[str, str]] = []

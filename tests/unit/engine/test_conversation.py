@@ -202,8 +202,8 @@ class TestProcessTurn:
         """Terminal node (no transitions) should NOT auto-set end_call_invoked.
 
         Nodes with no transitions are just nodes where the agent stays and
-        talks. The conversation ends via user simulator (should_end), max_turns,
-        or an explicit end_call tool — not by having zero edges.
+        talks. The conversation ends via max_turns or an explicit end_call
+        tool — not by having zero edges.
         """
         from unittest.mock import patch
 

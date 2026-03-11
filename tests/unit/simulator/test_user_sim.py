@@ -14,21 +14,15 @@ class TestSimulatorResponse:
     def test_create_response(self):
         from voicetest.simulator.user_sim import SimulatorResponse
 
-        response = SimulatorResponse(
-            message="I need help with my bill",
-            should_end=False,
-        )
+        response = SimulatorResponse(message="I need help with my bill")
 
         assert response.message == "I need help with my bill"
-        assert response.should_end is False
 
-    def test_create_end_response(self):
+    def test_no_should_end_field(self):
         from voicetest.simulator.user_sim import SimulatorResponse
 
-        response = SimulatorResponse(message="", should_end=True)
-
-        assert response.message == ""
-        assert response.should_end is True
+        response = SimulatorResponse(message="test")
+        assert not hasattr(response, "should_end")
 
 
 class TestUserSimSignature:
@@ -167,15 +161,12 @@ class TestUserSimulatorGenerate:
         )
 
         simulator._mock_mode = True
-        simulator._mock_responses = [
-            SimulatorResponse(message="Hello, I need some help", should_end=False)
-        ]
+        simulator._mock_responses = [SimulatorResponse(message="Hello, I need some help")]
 
         response = await simulator.generate([])
 
         assert isinstance(response, SimulatorResponse)
         assert isinstance(response.message, str)
-        assert isinstance(response.should_end, bool)
 
     @pytest.mark.asyncio
     async def test_generate_with_transcript_context(self):
@@ -193,17 +184,15 @@ class TestUserSimulatorGenerate:
         ]
 
         simulator._mock_mode = True
-        simulator._mock_responses = [
-            SimulatorResponse(message="I'd like a refund for my order", should_end=False)
-        ]
+        simulator._mock_responses = [SimulatorResponse(message="I'd like a refund for my order")]
 
         response = await simulator.generate(transcript)
 
         assert isinstance(response, SimulatorResponse)
 
     @pytest.mark.asyncio
-    async def test_mock_end_still_works(self):
-        """Mock mode can still signal should_end for test scaffolding."""
+    async def test_mock_returns_none_when_exhausted(self):
+        """Mock mode returns None when all responses have been consumed."""
         from voicetest.simulator.user_sim import SimulatorResponse
         from voicetest.simulator.user_sim import UserSimulator
 
@@ -213,15 +202,18 @@ class TestUserSimulatorGenerate:
         )
 
         simulator._mock_mode = True
-        simulator._mock_responses = [SimulatorResponse(message="", should_end=True)]
+        simulator._mock_responses = [SimulatorResponse(message="Hello")]
 
-        response = await simulator.generate([])
+        response1 = await simulator.generate([])
+        assert response1 is not None
+        assert response1.message == "Hello"
 
-        assert response.should_end is True
+        response2 = await simulator.generate([])
+        assert response2 is None
 
     @pytest.mark.asyncio
-    async def test_llm_path_never_ends(self):
-        """The LLM path always returns should_end=False — end detection is not the sim's job."""
+    async def test_llm_path_returns_message(self):
+        """The LLM path returns a SimulatorResponse with just the message."""
         from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator(
@@ -239,5 +231,4 @@ class TestUserSimulatorGenerate:
                 ]
             )
 
-        assert response.should_end is False
         assert response.message == "Thanks, bye!"

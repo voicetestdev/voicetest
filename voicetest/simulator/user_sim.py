@@ -45,7 +45,6 @@ class SimulatorResponse:
     """Response from user simulator."""
 
     message: str
-    should_end: bool
 
 
 class UserSimulator:
@@ -75,7 +74,7 @@ class UserSimulator:
         transcript: list[Message],
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
-    ) -> SimulatorResponse:
+    ) -> SimulatorResponse | None:
         """Generate next user message based on conversation so far.
 
         Args:
@@ -84,11 +83,13 @@ class UserSimulator:
             on_error: Optional callback for retryable errors.
 
         Returns:
-            SimulatorResponse with the generated message.
+            SimulatorResponse with the generated message, or None if mock responses exhausted.
         """
         # Mock mode for testing
-        if self._mock_mode and self._mock_responses:
-            response = self._mock_responses[self._mock_index % len(self._mock_responses)]
+        if self._mock_mode:
+            if self._mock_index >= len(self._mock_responses):
+                return None
+            response = self._mock_responses[self._mock_index]
             self._mock_index += 1
             return response
 
@@ -99,7 +100,7 @@ class UserSimulator:
         transcript: list[Message],
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
-    ) -> SimulatorResponse:
+    ) -> SimulatorResponse | None:
         """Generate response using LLM.
 
         Args:
@@ -139,10 +140,7 @@ class UserSimulator:
             turn_number=turn_number,
         )
 
-        return SimulatorResponse(
-            message=result.message,
-            should_end=False,
-        )
+        return SimulatorResponse(message=result.message)
 
     def _format_transcript(self, transcript: list[Message]) -> str:
         """Format transcript for LLM input."""
