@@ -1,10 +1,9 @@
 """DSPy modules for conversation state management.
 
-Provides proper dspy.Module subclasses for state execution and conversation flow,
-enabling DSPy optimization (e.g., BootstrapFewShot) on agent behavior.
+Provides StateModule (per-node signature creation) and ConversationModule
+(graph-wide state module registry and transition formatting).
 """
 
-from dataclasses import dataclass
 from typing import Any
 
 import dspy
@@ -12,34 +11,6 @@ import dspy
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionOption
-from voicetest.templating import create_template_filler
-
-
-@dataclass
-class RunContext:
-    """Context for state execution (LiveKit-aligned naming).
-
-    Contains all the information a state needs to generate a response
-    and decide on transitions.
-    """
-
-    conversation_history: str
-    user_message: str
-    dynamic_variables: dict[str, Any]
-    available_transitions: list[TransitionOption]
-    general_instructions: str
-
-
-@dataclass
-class StateResult:
-    """Result from state execution.
-
-    Contains the agent's response and optional transition information.
-    """
-
-    response: str
-    handoff_to: str | None  # Node ID or None to stay
-    transition_reasoning: str | None = None  # Reasoning from split transition evaluation
 
 
 class StateModule(dspy.Module):
@@ -60,10 +31,6 @@ class StateModule(dspy.Module):
         self.node_id = node_id
         self.instructions = instructions  # state_prompt, LiveKit naming
         self.transitions = transitions
-        self._template_filler = create_template_filler(instructions)
-
-        self._response_signature = self.create_response_signature(self.instructions)
-        self.response_predictor = dspy.Predict(self._response_signature)
 
     def create_response_signature(self, docstring: str) -> type[dspy.Signature]:
         """Create Signature for response generation.
@@ -81,22 +48,6 @@ class StateModule(dspy.Module):
         }
 
         return type(f"State_{self.node_id}", (dspy.Signature,), attrs)
-
-    def forward(self, ctx: RunContext) -> StateResult:
-        """Execute state - generates response only.
-
-        This is the main DSPy-optimizable method.
-        """
-        result = self.response_predictor(
-            general_instructions=ctx.general_instructions,
-            conversation_history=ctx.conversation_history,
-            user_message=ctx.user_message,
-        )
-
-        return StateResult(
-            response=result.response,
-            handoff_to=None,
-        )
 
 
 class ConversationModule(dspy.Module):
@@ -170,23 +121,6 @@ class ConversationModule(dspy.Module):
     def get_state_module(self, node_id: str) -> StateModule | None:
         """Get the state module for a given node ID."""
         return self._state_modules.get(node_id)
-
-    def forward(
-        self,
-        node_id: str,
-        ctx: RunContext,
-    ) -> StateResult:
-        """Execute a single state - returns response only.
-
-        This method is called by ConversationRunner for each turn.
-        The runner manages the conversation loop and state.
-        Transition detection is handled separately by ConversationEngine.
-        """
-        state_module = self._state_modules.get(node_id)
-        if state_module is None:
-            raise ValueError(f"Unknown node: {node_id}")
-
-        return state_module(ctx)
 
     def format_transitions(self, node_id: str) -> list[TransitionOption]:
         """Format available transitions for a node as structured objects for LLM input.

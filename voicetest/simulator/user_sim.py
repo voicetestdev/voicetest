@@ -11,6 +11,7 @@ import re
 
 import dspy
 
+from voicetest.llm import _invoke_callback
 from voicetest.llm import call_llm
 from voicetest.models.results import Message
 from voicetest.retry import OnErrorCallback
@@ -18,13 +19,6 @@ from voicetest.retry import OnErrorCallback
 
 # Callback type for token updates: receives token string and source ("agent" or "user")
 OnTokenCallback = Callable[[str, str], Awaitable[None] | None]
-
-
-async def _invoke_callback(callback: Callable, *args) -> None:
-    """Invoke callback, handling both sync and async."""
-    result = callback(*args)
-    if result is not None and hasattr(result, "__await__"):
-        await result
 
 
 class UserSimSignature(dspy.Signature):

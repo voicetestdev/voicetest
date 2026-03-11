@@ -51,17 +51,13 @@ class TestConversationRunner:
         assert runner.graph is simple_graph
         assert runner.options is not None
 
-    def test_runner_has_conversation_module(self, simple_graph):
+    def test_runner_has_engine(self, simple_graph):
         from voicetest.engine.session import ConversationRunner
 
         runner = ConversationRunner(simple_graph)
 
-        # Check conversation module has state modules for each node
-        assert runner._conversation_module is not None
-        # State modules stored as _state_modules internally
-        assert hasattr(runner._conversation_module, "_state_modules")
-        assert "greeting" in runner._conversation_module._state_modules
-        assert "farewell" in runner._conversation_module._state_modules
+        assert runner._engine is not None
+        assert runner._engine.current_node == simple_graph.entry_node_id
 
     def test_runner_with_custom_options(self, simple_graph):
         from voicetest.engine.session import ConversationRunner

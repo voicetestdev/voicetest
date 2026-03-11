@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from dataclasses import field
 
 from voicetest.engine.conversation import ConversationEngine
-from voicetest.engine.modules import ConversationModule
 from voicetest.llm import _invoke_callback
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message
@@ -69,8 +68,6 @@ class ConversationRunner:
         self.options = options or RunOptions()
         self._mock_mode = mock_mode
         self._dynamic_variables = dynamic_variables or {}
-
-        self._conversation_module = ConversationModule(graph)
 
         # Engine for actual turn processing (not used in mock mode)
         self._engine: ConversationEngine | None = None
