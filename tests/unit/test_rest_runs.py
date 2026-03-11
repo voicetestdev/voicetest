@@ -164,6 +164,7 @@ class TestTimeoutEnforcement:
 
             class MockResult:
                 response = "Hello!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()

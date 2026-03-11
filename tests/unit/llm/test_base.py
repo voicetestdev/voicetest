@@ -293,7 +293,9 @@ class TestConversationEngineCacheSalt:
 
         async def mock_call_llm(model, sig, *, cache_salt=None, **kwargs):
             call_args.append({"cache_salt": cache_salt, "sig_name": sig.__name__})
-            return dspy.Prediction(response="Hello!", transition_to="none")
+            return dspy.Prediction(
+                response="Hello!", objectives_complete=False, transition_to="none"
+            )
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
             await engine.add_user_message("hi")
@@ -349,7 +351,9 @@ class TestConversationEngineCacheSalt:
 
         async def mock_call_llm(model, sig, *, cache_salt=None, **kwargs):
             salts.append(cache_salt)
-            return dspy.Prediction(response="Hello!", transition_to="none")
+            return dspy.Prediction(
+                response="Hello!", objectives_complete=False, transition_to="none"
+            )
 
         all_salts = []
         for targets in [["b", "c"], ["b"]]:
@@ -395,7 +399,9 @@ class TestConversationEngineNoCache:
 
         async def mock_call_llm(model, sig, *, cache_salt=None, no_cache=False, **kwargs):
             call_args.append({"no_cache": no_cache})
-            return dspy.Prediction(response="Hello!", transition_to="none")
+            return dspy.Prediction(
+                response="Hello!", objectives_complete=False, transition_to="none"
+            )
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
             await engine.add_user_message("hi")
@@ -425,7 +431,9 @@ class TestConversationEngineNoCache:
 
         async def mock_call_llm(model, sig, *, cache_salt=None, no_cache=False, **kwargs):
             call_args.append({"no_cache": no_cache})
-            return dspy.Prediction(response="Hello!", transition_to="none")
+            return dspy.Prediction(
+                response="Hello!", objectives_complete=False, transition_to="none"
+            )
 
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
             await engine.add_user_message("hi")

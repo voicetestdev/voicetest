@@ -176,6 +176,7 @@ class TestResponseNodeMetadata:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Goodbye!"
+                objectives_complete = True
                 transition_to = "farewell"
 
             return MockResult()
@@ -222,6 +223,7 @@ class TestDynamicVariableSubstitution:
 
             class MockResult:
                 response = "Hello Alice!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -270,6 +272,7 @@ class TestDynamicVariableSubstitution:
 
             class MockResult:
                 response = "Hello Bob!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -357,6 +360,7 @@ class TestToolMessagePropagation:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "VIP greeting!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -444,6 +448,7 @@ class TestAutoProcessLogicNodes:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Hello there!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -484,6 +489,7 @@ class TestAutoProcessLogicNodes:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Hello there!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -591,6 +597,7 @@ class TestAutoProcessLogicNodes:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Welcome!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -689,6 +696,7 @@ class TestAutoProcessLogicNodes:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Welcome!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -765,6 +773,7 @@ class TestNoEmptyUserMessages:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Welcome!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -813,6 +822,7 @@ class TestPerTurnTimeout:
 
             class MockResult:
                 response = "Hello!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -850,6 +860,7 @@ class TestPerTurnTimeout:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Here is more info."
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()

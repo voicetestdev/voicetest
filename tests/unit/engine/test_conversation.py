@@ -138,6 +138,7 @@ class TestProcessTurn:
 
             class MockResult:
                 response = "Hello there!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -163,6 +164,7 @@ class TestProcessTurn:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Hello there!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -188,6 +190,7 @@ class TestProcessTurn:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Goodbye!"
+                objectives_complete = True
                 transition_to = "farewell"
 
             return MockResult()
@@ -219,6 +222,7 @@ class TestProcessTurn:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Goodbye!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -257,6 +261,7 @@ class TestProcessTurn:
 
             class MockResult:
                 response = "Hello Alice!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -365,6 +370,7 @@ class TestLogicNodeHandling:
 
             class MockResult:
                 response = "test"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -544,6 +550,7 @@ class TestLogicNodeHandling:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Hello!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -855,6 +862,7 @@ class TestAlwaysEdgeOnConversationNodes:
             # The LLM should NOT see available_transitions for always-only nodes
             class MockResult:
                 response = "Thank you, please call us at 555-1234."
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -906,6 +914,7 @@ class TestAlwaysEdgeOnConversationNodes:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Let me help with billing."
+                objectives_complete = True
                 transition_to = "billing"
 
             return MockResult()
@@ -926,6 +935,7 @@ class TestAlwaysEdgeOnConversationNodes:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Goodbye!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -1205,6 +1215,7 @@ class TestTranscriptOrdering:
         async def mock_call_llm(model, signature, **kwargs):
             class Result:
                 response = "Let me help you with billing."
+                objectives_complete = True
                 transition_to = "billing"
 
             return Result()
@@ -1318,6 +1329,7 @@ class TestEndCallNode:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Thank you for calling! Goodbye."
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -1364,6 +1376,7 @@ class TestEndCallNode:
             if call_count == 1:
 
                 class TransitionResult:
+                    objectives_complete = True
                     transition_to = "end_call"
 
                 return TransitionResult()
@@ -1415,6 +1428,7 @@ class TestEngineExpandsSnippets:
         # Mock call_llm to capture what instructions are passed
         mock_result = AsyncMock()
         mock_result.response = "mock response"
+        mock_result.objectives_complete = False
         mock_result.transition_to = "none"
 
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result) as mock_llm:
@@ -1458,6 +1472,7 @@ class TestOnTurnCallback:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Goodbye!"
+                objectives_complete = True
                 transition_to = "farewell"
 
             return MockResult()
@@ -1492,6 +1507,7 @@ class TestOnTurnCallback:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Hello there!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()
@@ -1515,6 +1531,7 @@ class TestOnTurnCallback:
         async def mock_call_llm(model, signature, **kwargs):
             class MockResult:
                 response = "Hello!"
+                objectives_complete = False
                 transition_to = "none"
 
             return MockResult()

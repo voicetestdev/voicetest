@@ -140,9 +140,15 @@ class MetricJudge:
         )
 
     def _format_transcript(self, transcript: list[Message], use_heard: bool = False) -> str:
-        """Format transcript for LLM input."""
+        """Format transcript for LLM input.
+
+        Filters out internal tool messages (transitions, extractions) to keep
+        the judge focused on the actual user/assistant conversation.
+        """
         lines = []
         for msg in transcript:
+            if msg.role == "tool":
+                continue
             content = msg.content
             if use_heard and msg.role == "assistant":
                 content = msg.metadata.get("heard", content)

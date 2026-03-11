@@ -96,7 +96,9 @@ class TestMetricJudge:
         assert "USER: Hello" in formatted
         assert "ASSISTANT: Hi there!" in formatted
 
-    def test_format_transcript_includes_tool_messages(self):
+    def test_format_transcript_filters_tool_messages(self):
+        """Tool messages (transitions, extractions) are filtered out to keep
+        the judge focused on the actual user/assistant conversation."""
         from voicetest.judges.metric import MetricJudge
 
         judge = MetricJudge("openai/gpt-4o-mini")
@@ -118,8 +120,7 @@ class TestMetricJudge:
 
         formatted = judge._format_transcript(transcript)
 
-        assert "TOOL: Extracted: dob_month=January, dob_year=1990" in formatted
-        assert "TOOL: Transitioned to verified" in formatted
+        assert "TOOL:" not in formatted
         assert "USER: My DOB is Jan 1990" in formatted
         assert "ASSISTANT: Thank you, verified." in formatted
 

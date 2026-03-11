@@ -42,7 +42,10 @@ class StateModule(dspy.Module):
         attrs: dict[str, Any] = {
             "__doc__": docstring,
             "general_instructions": dspy.InputField(desc="Overall agent instructions and context"),
-            "conversation_history": dspy.InputField(desc="Conversation so far"),
+            "conversation_history": dspy.InputField(
+                desc="Conversation so far — continue from where the conversation left off, "
+                "do not repeat questions already asked or information already collected"
+            ),
             "user_message": dspy.InputField(desc="Latest user message to respond to"),
             "response": dspy.OutputField(desc="Agent's spoken response to the user"),
         }
@@ -86,32 +89,44 @@ class ConversationModule(dspy.Module):
         (including the user's latest message). The agent has not yet
         responded — the transition determines which node the agent
         will respond FROM.
+
+        Output fields are ordered to force completion reasoning before
+        transition selection: the LLM must assess remaining objectives
+        and whether the user addressed the agent's last message before
+        it can pick a transition target.
         """
         docstring = (
             "Evaluate if the conversation should transition to a different state. "
-            "Only transition when the current node's objectives have been fully "
-            "completed. If the current state prompt has tasks remaining (e.g. "
-            "follow-up questions, confirmations), stay in the current state by "
-            "returning 'none'."
+            "First determine whether the current node's objectives are complete, "
+            "then decide on a transition. If objectives remain, return 'none'."
         )
 
         attrs: dict[str, Any] = {
             "__doc__": docstring,
             "__annotations__": {"available_transitions": list[TransitionOption]},
             "current_state_prompt": dspy.InputField(
-                desc="The instructions for the current conversation state — "
-                "only transition when these objectives are met"
+                desc="The instructions for the current conversation state"
             ),
             "conversation_history": dspy.InputField(
                 desc="Conversation within the current state only"
             ),
+            "last_agent_message": dspy.InputField(
+                desc="The agent's most recent message in this state"
+            ),
             "available_transitions": dspy.InputField(
                 desc="Valid transitions with their conditions"
             ),
+            "objectives_complete": dspy.OutputField(
+                desc="Are ALL objectives in the state prompt met? "
+                "If the agent asked a question or requested information and the user "
+                "has not addressed it, objectives are NOT complete.",
+                type=bool,
+            ),
             "transition_to": dspy.OutputField(
                 desc=(
-                    "Target from available_transitions to transition to, or 'none' to stay in "
-                    "current state until its objectives are met"
+                    "If objectives_complete is false, MUST be 'none'. "
+                    "If true, select target from available_transitions whose "
+                    "condition is satisfied, or 'none' if no condition matches."
                 )
             ),
         }

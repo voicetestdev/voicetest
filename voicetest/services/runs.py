@@ -27,8 +27,28 @@ class RunService:
         return self._runs.list_for_agent(agent_id, limit)
 
     def get_run(self, run_id: str) -> dict | None:
-        """Get a run with all results."""
-        return self._runs.get_with_results(run_id)
+        """Get a run with all results, enriched with dynamic variables."""
+        run = self._runs.get_with_results(run_id)
+        if not run:
+            return None
+
+        # Enrich results with dynamic_variables from test cases (DB + file-based)
+        tc_ids = {r.get("test_case_id") for r in run["results"] if r.get("test_case_id")}
+        if tc_ids:
+            agent_id = run["agent_id"]
+            agent = self._agents.get(agent_id)
+            tests_paths = agent.get("tests_paths") if agent else None
+            all_tests = self._tests.list_for_agent_with_linked(agent_id, tests_paths)
+            dv_map = {}
+            for tc in all_tests:
+                if tc["id"] in tc_ids and tc.get("dynamic_variables"):
+                    dv_map[tc["id"]] = tc["dynamic_variables"]
+            for r in run["results"]:
+                dv = dv_map.get(r.get("test_case_id"))
+                if dv:
+                    r["dynamic_variables"] = dv
+
+        return run
 
     def add_result(self, run_id: str, test_case_id: str, result) -> None:
         """Add a completed result to a run."""
