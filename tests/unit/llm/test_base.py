@@ -37,6 +37,7 @@ class TestCallLlmValidation:
                 "openai/gpt-4o-mini",
                 DummySignature,
                 on_token=lambda t: None,
+                predictor_class=dspy.Predict,
                 input="test",
             )
 
@@ -82,6 +83,7 @@ class TestCallLlmRetryCallback:
                 "openai/gpt-4o-mini",
                 DummySignature,
                 on_error=on_error,
+                predictor_class=dspy.Predict,
                 input="test",
             )
 
@@ -127,6 +129,7 @@ class TestCallLlmRetryIntegration:
                 "openai/gpt-4o-mini",
                 DummySignature,
                 on_error=on_error,
+                predictor_class=dspy.Predict,
                 input="test",
             )
 

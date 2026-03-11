@@ -106,6 +106,7 @@ class FlowJudge:
             self.model,
             FlowValidationSignature,
             on_error=on_error,
+            predictor_class=dspy.ChainOfThought,
             graph_structure=formatted_graph,
             transcript=formatted_transcript,
             nodes_visited=nodes_visited,

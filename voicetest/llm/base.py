@@ -65,6 +65,7 @@ async def call_llm(
     *,
     cache_salt: str | None = None,
     no_cache: bool = False,
+    predictor_class: type,
     **kwargs,
 ) -> dspy.Prediction:
     if on_token:
@@ -78,6 +79,7 @@ async def call_llm(
             on_error,
             cache_salt=cache_salt,
             no_cache=no_cache,
+            predictor_class=predictor_class,
             **kwargs,
         )
     else:
@@ -87,6 +89,7 @@ async def call_llm(
             on_error,
             cache_salt=cache_salt,
             no_cache=no_cache,
+            predictor_class=predictor_class,
             **kwargs,
         )
 
@@ -98,6 +101,7 @@ async def _call_llm_sync(
     *,
     cache_salt: str | None = None,
     no_cache: bool = False,
+    predictor_class: type,
     **kwargs,
 ) -> dspy.Prediction:
     """Non-streaming LLM call with BAMLAdapter for better structured output."""
@@ -106,7 +110,7 @@ async def _call_llm_sync(
 
     def run_predictor():
         with dspy.context(lm=lm, adapter=adapter):
-            predictor = dspy.Predict(signature_class)
+            predictor = predictor_class(signature_class)
             return predictor(**kwargs)
 
     async def call_in_thread():
@@ -125,13 +129,14 @@ async def _call_llm_streaming(
     *,
     cache_salt: str | None = None,
     no_cache: bool = False,
+    predictor_class: type,
     **kwargs,
 ) -> dspy.Prediction:
     """Streaming LLM call with token callbacks."""
 
     async def stream():
         lm = _create_lm(model, cache_salt=cache_salt, no_cache=no_cache)
-        predictor = dspy.Predict(signature_class)
+        predictor = predictor_class(signature_class)
         stream_listeners = [StreamListener(signature_field_name=stream_field)]
 
         streaming_predictor = streamify(

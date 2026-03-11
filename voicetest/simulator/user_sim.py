@@ -35,19 +35,8 @@ class UserSimSignature(dspy.Signature):
     )
     turn_number: int = dspy.InputField(desc="Current turn number (1 = first turn)")
 
-    reasoning: str = dspy.OutputField(
-        desc="Brief reasoning: what has the user achieved so far vs. their stated goal? "
-        "List remaining goals before deciding whether to continue."
-    )
-    should_continue: bool = dspy.OutputField(
-        desc="True if user should keep talking. False ONLY if the user's stated goal "
-        "has been fully achieved AND the agent has confirmed completion. "
-        "An agent asking 'anything else?' is NOT sufficient — the user must have "
-        "gotten what they called for. Always True on turn 1."
-    )
     message: str = dspy.OutputField(
-        desc="User's next spoken response — short and natural like a real phone call. "
-        "Empty string only if should_continue is False."
+        desc="User's next spoken response — short and natural like a real phone call."
     )
 
 
@@ -57,7 +46,6 @@ class SimulatorResponse:
 
     message: str
     should_end: bool
-    reasoning: str
 
 
 class UserSimulator:
@@ -96,7 +84,7 @@ class UserSimulator:
             on_error: Optional callback for retryable errors.
 
         Returns:
-            SimulatorResponse with message, should_end flag, and reasoning.
+            SimulatorResponse with the generated message.
         """
         # Mock mode for testing
         if self._mock_mode and self._mock_responses:
@@ -120,7 +108,7 @@ class UserSimulator:
             on_error: Optional callback for retryable errors.
 
         Returns:
-            SimulatorResponse with message, should_end flag, and reasoning.
+            SimulatorResponse with the generated message.
         """
         user_prompt = self.user_prompt
         turn_number = len([m for m in transcript if m.role == "user"]) + 1
@@ -144,19 +132,16 @@ class UserSimulator:
             on_token=user_token_callback if on_token else None,
             stream_field="message" if on_token else None,
             on_error=on_error,
+            predictor_class=dspy.Predict,
             persona=user_prompt,
             conversation_history=conversation_history,
             current_agent_message=current_agent_message or "(agent has not spoken yet)",
             turn_number=turn_number,
         )
 
-        # Enforce: user always continues on turn 1 regardless of model output
-        should_continue = result.should_continue if turn_number > 1 else True
-
         return SimulatorResponse(
-            message=result.message if should_continue else "",
-            should_end=not should_continue,
-            reasoning=result.reasoning,
+            message=result.message,
+            should_end=False,
         )
 
     def _format_transcript(self, transcript: list[Message]) -> str:

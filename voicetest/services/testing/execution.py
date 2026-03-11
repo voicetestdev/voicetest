@@ -180,14 +180,12 @@ class TestExecutionService:
                     SimulatorResponse(
                         message="Hello, I need help.",
                         should_end=False,
-                        reasoning="Starting conversation",
                     ),
                     SimulatorResponse(
                         message="Thanks, that's helpful.",
                         should_end=False,
-                        reasoning="Responding to agent",
                     ),
-                    SimulatorResponse(message="", should_end=True, reasoning="Goal achieved"),
+                    SimulatorResponse(message="", should_end=True),
                 ]
                 metric_judge._mock_mode = True
 

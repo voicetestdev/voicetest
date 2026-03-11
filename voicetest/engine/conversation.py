@@ -264,6 +264,7 @@ class ConversationEngine:
             self._module._transition_signature,
             on_error=on_error,
             no_cache=self._no_cache,
+            predictor_class=dspy.ChainOfThought,
             current_state_prompt=state_prompt,
             conversation_history=conversation_history,
             available_transitions=available_transitions,
@@ -320,6 +321,7 @@ class ConversationEngine:
             on_error=on_error,
             cache_salt=cache_salt,
             no_cache=self._no_cache,
+            predictor_class=dspy.Predict,
             **response_kwargs,
         )
 
@@ -427,6 +429,7 @@ class ConversationEngine:
             sig,
             on_error=on_error,
             no_cache=self._no_cache,
+            predictor_class=dspy.Predict,
             conversation_history=self._format_transcript(self._transcript),
             user_message=user_message,
         )
