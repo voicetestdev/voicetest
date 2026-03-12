@@ -54,11 +54,11 @@ class AnalyzeGraphSignature(dspy.Signature):
     rationale: str = dspy.OutputField(desc="Explanation of why this decomposition was chosen")
 
 
-class RefineSubAgentSignature(dspy.Signature):
-    """Refine prompts for a sub-agent so it works independently.
+class RefineGeneralPromptSignature(dspy.Signature):
+    """Refine the general prompt for a sub-agent so it works independently.
 
-    Distribute relevant context from the general prompt into this sub-agent's
-    prompts. Adjust state prompts so they make sense without the other nodes.
+    Distribute relevant context from the original general prompt into a
+    focused general prompt for this sub-agent.
     """
 
     original_graph_structure: str = dspy.InputField(desc="Full original agent graph for context")
@@ -69,10 +69,31 @@ class RefineSubAgentSignature(dspy.Signature):
         desc="The original general prompt from the full agent"
     )
 
-    refined_general_prompt: str = dspy.OutputField(desc="Refined general prompt for this sub-agent")
-    node_prompts: str = dspy.OutputField(
-        desc="JSON object mapping node_id to refined state_prompt text"
+    refined_general_prompt: str = dspy.OutputField(
+        desc="The refined general prompt text for this sub-agent"
     )
+
+
+class RefineNodePromptSignature(dspy.Signature):
+    """Refine the state prompt for a single node in a sub-agent.
+
+    Given the original graph context and the node's purpose, produce a
+    state prompt that lets this node operate as part of a sub-agent.
+    """
+
+    original_graph_structure: str = dspy.InputField(desc="Full original agent graph for context")
+    sub_agent_description: str = dspy.InputField(
+        desc="Description of the sub-agent this node belongs to"
+    )
+    node_id: str = dspy.InputField(desc="The ID of the node to refine")
+    node_purpose: str = dspy.InputField(
+        desc="The purpose or role of this node within the sub-agent"
+    )
+    original_general_prompt: str = dspy.InputField(
+        desc="The original general prompt from the full agent"
+    )
+
+    refined_state_prompt: str = dspy.OutputField(desc="The refined state prompt text for this node")
 
 
 class DecomposeJudge:
@@ -130,6 +151,9 @@ class DecomposeJudge:
     ) -> tuple[str, dict[str, str]]:
         """Refine prompts for a sub-agent to work independently.
 
+        Makes separate LLM calls for the general prompt and each node prompt
+        to avoid output schema confusion.
+
         Returns:
             Tuple of (refined_general_prompt, {node_id: refined_state_prompt}).
         """
@@ -142,18 +166,47 @@ class DecomposeJudge:
         formatted_graph = self._format_graph_full(graph)
         original_general = graph.source_metadata.get("general_prompt", "")
 
-        result = await call_llm(
+        # Sanitize node IDs: strip "NEW:" prefix so the LLM sees clean IDs
+        spec_dump = sub_agent_spec.model_dump()
+        clean_node_ids = [nid.removeprefix("NEW:") for nid in spec_dump.get("node_ids", [])]
+        spec_dump["node_ids"] = clean_node_ids
+
+        # Refine general prompt
+        general_result = await call_llm(
             self.model,
-            RefineSubAgentSignature,
+            RefineGeneralPromptSignature,
             on_error=on_error,
             predictor_class=dspy.ChainOfThought,
+            no_cache=True,
             original_graph_structure=formatted_graph,
-            sub_agent_spec=json.dumps(sub_agent_spec.model_dump()),
+            sub_agent_spec=json.dumps(spec_dump),
             original_general_prompt=original_general,
         )
 
-        node_prompts = self._parse_node_prompts(result.node_prompts)
-        return result.refined_general_prompt, node_prompts
+        # Refine each node's state prompt individually
+        node_prompts: dict[str, str] = {}
+        for i, node_id in enumerate(clean_node_ids):
+            # Derive purpose from prompt_segments if available
+            purpose = sub_agent_spec.description
+            if sub_agent_spec.prompt_segments and i < len(sub_agent_spec.prompt_segments):
+                seg = sub_agent_spec.prompt_segments[i]
+                purpose = seg.purpose or seg.segment_text[:200]
+
+            node_result = await call_llm(
+                self.model,
+                RefineNodePromptSignature,
+                on_error=on_error,
+                predictor_class=dspy.ChainOfThought,
+                no_cache=True,
+                original_graph_structure=formatted_graph,
+                sub_agent_description=sub_agent_spec.description,
+                node_id=node_id,
+                node_purpose=purpose,
+                original_general_prompt=original_general,
+            )
+            node_prompts[node_id] = node_result.refined_state_prompt
+
+        return general_result.refined_general_prompt, node_prompts
 
     def _format_graph_full(self, graph: AgentGraph) -> str:
         """Format the agent graph with full prompt texts for analysis."""

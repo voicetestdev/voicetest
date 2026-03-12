@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import random
 import time
 
+from dspy.utils.exceptions import AdapterParseError
 import litellm
 import openai
 
@@ -31,6 +32,7 @@ RETRYABLE_EXCEPTIONS = (
     litellm.Timeout,
     litellm.APIConnectionError,
     openai.APITimeoutError,
+    AdapterParseError,
 )
 
 
