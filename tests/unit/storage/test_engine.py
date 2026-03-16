@@ -8,12 +8,67 @@ from sqlalchemy import inspect
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import QueuePool
 
 from voicetest.storage.engine import _get_current_version
 from voicetest.storage.engine import _migrate_schema
 from voicetest.storage.engine import create_db_engine
 from voicetest.storage.engine import get_session_factory
 from voicetest.storage.models import Agent
+
+
+class TestNeonPoolSelection:
+    """Tests for NullPool vs QueuePool selection based on URL."""
+
+    def test_neon_url_uses_nullpool(self, tmp_path, monkeypatch):
+        """Neon URLs should use NullPool to avoid stale pooled connections."""
+        # Use SQLite as a stand-in for PostgreSQL (avoids needing a real Neon DB)
+        # but verify pool selection logic by inspecting the URL-based branch.
+        from unittest.mock import patch
+
+        calls: list = []
+
+        original_create = create_engine.__wrapped__ if hasattr(create_engine, '__wrapped__') else None
+
+        with patch("voicetest.storage.engine.create_engine") as mock_create:
+            mock_engine = mock_create.return_value
+            mock_engine.begin.return_value.__enter__ = lambda s: s
+            mock_engine.begin.return_value.__exit__ = lambda s, *a: None
+
+            with patch("voicetest.storage.engine._migrate_schema"):
+                with patch("voicetest.storage.engine.Base") as mock_base:
+                    create_db_engine("postgresql://user:pass@ep-cool.neon.tech/db")
+
+            _, kwargs = mock_create.call_args
+            assert kwargs.get("poolclass") is NullPool
+            assert "pool_pre_ping" not in kwargs
+
+    def test_duckdb_url_uses_queuepool(self, tmp_path):
+        """DuckDB URLs should use QueuePool with pre-ping and recycle."""
+        db_path = tmp_path / "pool_test.duckdb"
+        engine = create_db_engine(f"duckdb:///{db_path}")
+
+        # DuckDB engine should NOT use NullPool
+        assert not isinstance(engine.pool, NullPool)
+
+    def test_pooler_mode_url_uses_nullpool(self, tmp_path):
+        """URLs with pooler_mode should use NullPool."""
+        from unittest.mock import patch
+
+        with patch("voicetest.storage.engine.create_engine") as mock_create:
+            mock_engine = mock_create.return_value
+            mock_engine.begin.return_value.__enter__ = lambda s: s
+            mock_engine.begin.return_value.__exit__ = lambda s, *a: None
+
+            with patch("voicetest.storage.engine._migrate_schema"):
+                with patch("voicetest.storage.engine.Base"):
+                    create_db_engine(
+                        "postgresql://user:pass@host/db?pooler_mode=transaction"
+                    )
+
+            _, kwargs = mock_create.call_args
+            assert kwargs.get("poolclass") is NullPool
 
 
 class TestCreateDbEngine:

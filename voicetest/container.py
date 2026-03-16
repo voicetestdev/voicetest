@@ -82,14 +82,23 @@ def _create_platform_registry() -> PlatformRegistry:
     return registry
 
 
+def _is_postgres_url(url: str | None) -> bool:
+    """Check if the given URL is a PostgreSQL connection string."""
+    if not url:
+        return False
+    return url.startswith("postgresql://") or url.startswith("postgres://")
+
+
 def create_container() -> punq.Container:
     """Create and configure the DI container."""
     container = punq.Container()
 
+    db_url = os.environ.get("DATABASE_URL")
+
     # Engine (singleton)
     container.register(
         Engine,
-        factory=lambda: create_db_engine(os.environ.get("DATABASE_URL")),
+        factory=lambda: create_db_engine(db_url),
         scope=punq.Scope.singleton,
     )
 
@@ -100,11 +109,17 @@ def create_container() -> punq.Container:
         scope=punq.Scope.singleton,
     )
 
-    # Session (singleton for CLI, per-request for REST API)
+    # Session scope depends on the database backend:
+    # - PostgreSQL (Neon): transient — fresh session per resolve call.
+    #   Neon drops idle SSL connections; with NullPool + transient sessions,
+    #   a single failed request can't poison subsequent ones.
+    # - DuckDB (CLI): singleton — DuckDB is in-process and single-writer,
+    #   so sharing one session avoids connection contention.
+    session_scope = None if _is_postgres_url(db_url) else punq.Scope.singleton
     container.register(
         Session,
         factory=lambda: container.resolve(sessionmaker)(),
-        scope=punq.Scope.singleton,
+        scope=session_scope,
     )
 
     # Registries (singletons)
@@ -174,8 +189,16 @@ def reset_container() -> None:
 
 
 def get_session() -> Session:
-    """Get the database session from the DI container."""
-    return get_container().resolve(Session)
+    """Get a database session from the DI container.
+
+    For PostgreSQL, each call returns a fresh session (transient scope).
+    For DuckDB, returns the singleton session. If the singleton session
+    is in a failed transaction state, issues a rollback to recover it.
+    """
+    session = get_container().resolve(Session)
+    if not session.is_active:
+        session.rollback()
+    return session
 
 
 def get_importer_registry() -> ImporterRegistry:
