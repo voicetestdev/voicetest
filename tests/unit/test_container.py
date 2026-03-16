@@ -88,12 +88,80 @@ class TestContainerRepositories:
         assert isinstance(repo, RunRepository)
 
     def test_repositories_use_same_session(self, container):
+        """DuckDB uses singleton sessions, so all repos share one session."""
         agent_repo = container.resolve(AgentRepository)
         test_case_repo = container.resolve(TestCaseRepository)
         run_repo = container.resolve(RunRepository)
 
         assert agent_repo.session is test_case_repo.session
         assert test_case_repo.session is run_repo.session
+
+
+class TestSessionScopeByBackend:
+    """Tests for conditional session scope (singleton vs transient)."""
+
+    def test_is_postgres_url_detection(self):
+        """_is_postgres_url correctly identifies PostgreSQL connection strings."""
+        from voicetest.container import _is_postgres_url
+
+        assert _is_postgres_url("postgresql://user:pass@host/db")
+        assert _is_postgres_url("postgres://user:pass@host/db")
+        assert _is_postgres_url("postgresql://user:pass@ep-cool.neon.tech/db")
+        assert not _is_postgres_url("duckdb:///path/to/file.duckdb")
+        assert not _is_postgres_url("sqlite:///:memory:")
+        assert not _is_postgres_url(None)
+        assert not _is_postgres_url("")
+
+    def test_duckdb_sessions_are_singleton(self, container):
+        """DuckDB (no DATABASE_URL) uses singleton sessions."""
+        session1 = container.resolve(Session)
+        session2 = container.resolve(Session)
+        assert session1 is session2
+
+    def test_postgres_sessions_are_transient(self, tmp_path, monkeypatch):
+        """PostgreSQL DATABASE_URL produces transient (non-shared) sessions."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost/testdb")
+
+        from unittest.mock import patch
+
+        from voicetest.container import create_container as _create_container
+
+        # Keep mock active through resolution — engine factory is lazy.
+        with patch("voicetest.container.create_db_engine") as mock_engine_fn:
+            from sqlalchemy import create_engine as sa_create_engine
+
+            sqlite_engine = sa_create_engine("sqlite:///:memory:")
+            mock_engine_fn.return_value = sqlite_engine
+
+            pg_container = _create_container()
+
+            session1 = pg_container.resolve(Session)
+            session2 = pg_container.resolve(Session)
+
+        assert session1 is not session2
+
+    def test_postgres_repos_get_independent_sessions(self, tmp_path, monkeypatch):
+        """With PostgreSQL, each repository gets its own session."""
+        monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost/testdb")
+
+        from unittest.mock import patch
+
+        from voicetest.container import create_container as _create_container
+
+        with patch("voicetest.container.create_db_engine") as mock_engine_fn:
+            from sqlalchemy import create_engine as sa_create_engine
+
+            sqlite_engine = sa_create_engine("sqlite:///:memory:")
+            mock_engine_fn.return_value = sqlite_engine
+
+            pg_container = _create_container()
+
+            agent_repo = pg_container.resolve(AgentRepository)
+            test_case_repo = pg_container.resolve(TestCaseRepository)
+            run_repo = pg_container.resolve(RunRepository)
+
+        assert agent_repo.session is not test_case_repo.session
+        assert test_case_repo.session is not run_repo.session
 
 
 class TestGetSession:

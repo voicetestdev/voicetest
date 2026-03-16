@@ -12,11 +12,14 @@ def _isolate_db(tmp_path, monkeypatch):
 
     Prevents test runs from polluting the local .voicetest/data.duckdb
     or ~/.voicetest/data.duckdb. Each test gets a fresh, empty DB.
-    Tests that need to verify path-resolution behavior can still
-    override via their own monkeypatch calls.
+
+    Also clears DATABASE_URL because litellm calls dotenv.load_dotenv()
+    at import time, which can set it from a local .env file and cause
+    the engine to connect to Neon instead of the temp DuckDB.
     """
     db_path = tmp_path / "test.duckdb"
     monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
 
 @pytest.fixture
