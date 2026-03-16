@@ -9,7 +9,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
-from sqlalchemy.pool import QueuePool
 
 from voicetest.storage.engine import _get_current_version
 from voicetest.storage.engine import _migrate_schema
@@ -27,18 +26,16 @@ class TestNeonPoolSelection:
         # but verify pool selection logic by inspecting the URL-based branch.
         from unittest.mock import patch
 
-        calls: list = []
-
-        original_create = create_engine.__wrapped__ if hasattr(create_engine, '__wrapped__') else None
-
         with patch("voicetest.storage.engine.create_engine") as mock_create:
             mock_engine = mock_create.return_value
             mock_engine.begin.return_value.__enter__ = lambda s: s
             mock_engine.begin.return_value.__exit__ = lambda s, *a: None
 
-            with patch("voicetest.storage.engine._migrate_schema"):
-                with patch("voicetest.storage.engine.Base") as mock_base:
-                    create_db_engine("postgresql://user:pass@ep-cool.neon.tech/db")
+            with (
+                patch("voicetest.storage.engine._migrate_schema"),
+                patch("voicetest.storage.engine.Base"),
+            ):
+                create_db_engine("postgresql://user:pass@ep-cool.neon.tech/db")
 
             _, kwargs = mock_create.call_args
             assert kwargs.get("poolclass") is NullPool
@@ -61,11 +58,11 @@ class TestNeonPoolSelection:
             mock_engine.begin.return_value.__enter__ = lambda s: s
             mock_engine.begin.return_value.__exit__ = lambda s, *a: None
 
-            with patch("voicetest.storage.engine._migrate_schema"):
-                with patch("voicetest.storage.engine.Base"):
-                    create_db_engine(
-                        "postgresql://user:pass@host/db?pooler_mode=transaction"
-                    )
+            with (
+                patch("voicetest.storage.engine._migrate_schema"),
+                patch("voicetest.storage.engine.Base"),
+            ):
+                create_db_engine("postgresql://user:pass@host/db?pooler_mode=transaction")
 
             _, kwargs = mock_create.call_args
             assert kwargs.get("poolclass") is NullPool

@@ -294,7 +294,8 @@ The web UI provides:
 - Global metrics configuration (compliance checks that run on all tests)
 - Test execution with real-time streaming transcripts
 - Cancel in-progress tests
-- Run history with detailed results and transcript inspection
+- Run history with detailed results, transcript inspection, and pass/fail filtering
+- Dynamic variables and models used shown per result (collapsible)
 - Audio evaluation with word-level diff of original vs. heard text
 - Settings configuration (models, max turns, streaming, audio eval)
 
@@ -669,6 +670,10 @@ The `ConversationEngine.advance()` method traverses the agent graph from the cur
 1. Maximum 20 hops per `advance()` call to prevent infinite loops
 
 Silent nodes auto-fire: logic nodes evaluate equations deterministically, extract nodes call the LLM once for variable extraction then evaluate equations. Tool messages record transitions and extractions in the transcript.
+
+**Transition evaluation** uses a structured two-phase output within a single LLM call. The signature includes an `objectives_complete` (bool) gate that the LLM must fill before selecting a transition target. If the node's objectives aren't met — for example, the agent asked a question the user hasn't addressed — the transition is blocked regardless of whether a condition matches. The evaluator also receives the agent's `last_agent_message` as a dedicated input to ground its completion assessment.
+
+**Metric evaluation** filters internal tool messages (transitions, variable extractions) from the transcript before sending it to the judge LLM. The judge only sees the user/assistant conversation, reducing noise that could cause false negatives.
 
 ### DI Container (Punq)
 

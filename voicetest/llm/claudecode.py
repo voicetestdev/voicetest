@@ -11,6 +11,7 @@ import subprocess
 from typing import Any
 
 import dspy
+from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.cache import request_cache
 
 
@@ -28,6 +29,10 @@ class ClaudeCodeLM(dspy.LM):
         - claudecode/opus → Claude Opus
         - claudecode/haiku → Claude Haiku
     """
+
+    # Claude Code sessions add their own formatting context which interferes
+    # with JSON/BAML adapters. Use ChatAdapter (text format) instead.
+    preferred_adapter = ChatAdapter()
 
     def __init__(self, model: str = "claudecode/sonnet", **kwargs):
         # Initialize parent class with model string

@@ -104,9 +104,9 @@ async def _call_llm_sync(
     predictor_class: type,
     **kwargs,
 ) -> dspy.Prediction:
-    """Non-streaming LLM call with BAMLAdapter for better structured output."""
+    """Non-streaming LLM call with structured output adapter."""
     lm = _create_lm(model, cache_salt=cache_salt, no_cache=no_cache)
-    adapter = BAMLAdapter()
+    adapter = getattr(lm, "preferred_adapter", BAMLAdapter())
 
     def run_predictor():
         with dspy.context(lm=lm, adapter=adapter):

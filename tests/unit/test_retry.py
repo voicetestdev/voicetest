@@ -283,6 +283,36 @@ class TestRetryableExceptions:
         assert len(errors_received) == 1
         assert errors_received[0].error_type == "Timeout"
 
+    async def test_retry_on_adapter_parse_error(self):
+        """Should retry on DSPy AdapterParseError (malformed LLM output)."""
+        import dspy
+        from dspy.utils.exceptions import AdapterParseError
+
+        from voicetest.retry import with_retry
+
+        # Create a minimal signature for the error constructor
+        class DummySig(dspy.Signature):
+            """Dummy."""
+
+            output: str = dspy.OutputField()
+
+        call_count = 0
+
+        async def fail_with_parse_error():
+            nonlocal call_count
+            call_count += 1
+            if call_count < 3:
+                raise AdapterParseError(
+                    adapter_name="JSONAdapter",
+                    signature=DummySig,
+                    lm_response='{"NEW:experimentation": "..."}',
+                )
+            return "success"
+
+        result = await with_retry(fail_with_parse_error, base_delay=0.01)
+        assert result == "success"
+        assert call_count == 3
+
 
 class TestCalculateDelay:
     """Tests for delay calculation."""
