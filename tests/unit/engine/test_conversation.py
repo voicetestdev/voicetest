@@ -1541,3 +1541,216 @@ class TestOnTurnCallback:
             result = await engine.advance()
 
         assert result.response == "Hello!"
+
+
+class TestGlobalNodeConversation:
+    """Tests for global node support in ConversationEngine."""
+
+    def test_engine_initial_originator_stack_empty(self, graph_with_global_node):
+        engine = ConversationEngine(graph_with_global_node, model="openai/gpt-4o-mini")
+        assert engine.originator_stack == []
+
+    @pytest.mark.asyncio
+    async def test_transition_to_global_node_pushes_originator(self, graph_with_global_node):
+        engine = ConversationEngine(graph_with_global_node, model="openai/gpt-4o-mini")
+
+        call_count = 0
+
+        async def mock_call_llm(model, signature, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            class ResponseResult:
+                response = "Hello!"
+
+            class TransitionToGlobal:
+                objectives_complete = True
+                transition_to = "cancel_request"
+                reasoning = ""
+
+            class NoTransition:
+                objectives_complete = False
+                transition_to = "none"
+                reasoning = ""
+
+            if call_count == 1:
+                return TransitionToGlobal()
+            if call_count == 2:
+                return ResponseResult()
+            return NoTransition()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("I want to cancel")
+            await engine.advance()
+
+        assert engine.current_node == "cancel_request"
+        assert engine.originator_stack == ["greeting"]
+
+    @pytest.mark.asyncio
+    async def test_go_back_pops_originator(self, graph_with_global_node):
+        engine = ConversationEngine(graph_with_global_node, model="openai/gpt-4o-mini")
+
+        call_count = 0
+
+        async def mock_call_llm(model, signature, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            class ResponseResult:
+                response = "OK!"
+
+            class TransitionToGlobal:
+                objectives_complete = True
+                transition_to = "cancel_request"
+                reasoning = ""
+
+            class GoBack:
+                objectives_complete = True
+                transition_to = "greeting"
+                reasoning = ""
+
+            class NoTransition:
+                objectives_complete = False
+                transition_to = "none"
+                reasoning = ""
+
+            # Turn 1: transition to cancel_request
+            if call_count == 1:
+                return TransitionToGlobal()
+            if call_count == 2:
+                return ResponseResult()
+            # Turn 2: go back to greeting
+            if call_count == 3:
+                return GoBack()
+            if call_count == 4:
+                return ResponseResult()
+            return NoTransition()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("I want to cancel")
+            await engine.advance()
+            assert engine.originator_stack == ["greeting"]
+
+            await engine.add_user_message("Actually, never mind")
+            await engine.advance()
+
+        assert engine.current_node == "greeting"
+        assert engine.originator_stack == []
+
+    @pytest.mark.asyncio
+    async def test_global_node_with_no_go_back_uses_regular_edges(
+        self, graph_with_global_no_go_back
+    ):
+        engine = ConversationEngine(graph_with_global_no_go_back, model="openai/gpt-4o-mini")
+
+        call_count = 0
+
+        async def mock_call_llm(model, signature, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            class ResponseResult:
+                response = "Emergency!"
+
+            class TransitionToGlobal:
+                objectives_complete = True
+                transition_to = "emergency_end"
+                reasoning = ""
+
+            if call_count == 1:
+                return TransitionToGlobal()
+            return ResponseResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("There is a fire!")
+            result = await engine.advance()
+
+        assert engine.current_node == "emergency_end"
+        assert result.end_call_invoked is True
+
+    def test_reset_clears_originator_stack(self, graph_with_global_node):
+        engine = ConversationEngine(graph_with_global_node, model="openai/gpt-4o-mini")
+        # Manually set state to simulate mid-conversation
+        engine._originator_stack = ["greeting"]
+        engine.reset()
+        assert engine.originator_stack == []
+
+    @pytest.mark.asyncio
+    async def test_stacking_multiple_global_nodes(self, graph_with_multiple_global_nodes):
+        """Entering global A from greeting, then global B from A, builds a stack."""
+        engine = ConversationEngine(graph_with_multiple_global_nodes, model="openai/gpt-4o-mini")
+
+        call_count = 0
+
+        async def mock_call_llm(model, signature, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            class ResponseResult:
+                response = "OK!"
+
+            class ToCancel:
+                objectives_complete = True
+                transition_to = "cancel_request"
+                reasoning = ""
+
+            class ToSpecials:
+                objectives_complete = True
+                transition_to = "ask_specials"
+                reasoning = ""
+
+            class BackToCancel:
+                objectives_complete = True
+                transition_to = "cancel_request"
+                reasoning = ""
+
+            class BackToGreeting:
+                objectives_complete = True
+                transition_to = "greeting"
+                reasoning = ""
+
+            class NoTransition:
+                objectives_complete = False
+                transition_to = "none"
+                reasoning = ""
+
+            # Turn 1: greeting -> cancel_request
+            if call_count == 1:
+                return ToCancel()
+            if call_count == 2:
+                return ResponseResult()
+            # Turn 2: cancel_request -> ask_specials (stacking)
+            if call_count == 3:
+                return ToSpecials()
+            if call_count == 4:
+                return ResponseResult()
+            # Turn 3: ask_specials -> cancel_request (go back one level)
+            if call_count == 5:
+                return BackToCancel()
+            if call_count == 6:
+                return ResponseResult()
+            # Turn 4: cancel_request -> greeting (go back to original)
+            if call_count == 7:
+                return BackToGreeting()
+            if call_count == 8:
+                return ResponseResult()
+            return NoTransition()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("I want to cancel")
+            await engine.advance()
+            assert engine.originator_stack == ["greeting"]
+
+            await engine.add_user_message("What are the specials?")
+            await engine.advance()
+            assert engine.originator_stack == ["greeting", "cancel_request"]
+
+            await engine.add_user_message("Not interested in specials")
+            await engine.advance()
+            assert engine.originator_stack == ["greeting"]
+            assert engine.current_node == "cancel_request"
+
+            await engine.add_user_message("Actually I want to keep ordering")
+            await engine.advance()
+            assert engine.originator_stack == []
+            assert engine.current_node == "greeting"

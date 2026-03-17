@@ -84,6 +84,25 @@ class ToolDefinition(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class GoBackCondition(BaseModel):
+    """Condition that returns from a global node to the originating node."""
+
+    id: str
+    condition: TransitionCondition
+
+
+class GlobalNodeSetting(BaseModel):
+    """Settings for a global node reachable from any conversation node.
+
+    Global nodes can be entered from any conversation node when
+    their condition matches. Go-back conditions allow returning
+    to the originating node.
+    """
+
+    condition: str
+    go_back_conditions: list[GoBackCondition] = Field(default_factory=list)
+
+
 class AgentNode(BaseModel):
     """Single node (state) in the agent workflow graph.
 
@@ -99,6 +118,7 @@ class AgentNode(BaseModel):
     transitions: list[Transition] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     variables_to_extract: list[VariableExtraction] = Field(default_factory=list)
+    global_node_setting: GlobalNodeSetting | None = None
 
     def model_post_init(self, __context: Any) -> None:
         """Infer node_type from structure when not explicitly set.
@@ -186,6 +206,11 @@ class AgentGraph(BaseModel):
     default_model: str | None = Field(
         default=None, description="Default LLM model for this agent (from import)"
     )
+
+    @property
+    def global_nodes(self) -> list[AgentNode]:
+        """Return all nodes that have a global_node_setting."""
+        return [n for n in self.nodes.values() if n.global_node_setting is not None]
 
     def get_entry_node(self) -> AgentNode:
         """Return the entry node of the graph."""

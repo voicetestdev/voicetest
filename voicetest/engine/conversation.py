@@ -79,6 +79,7 @@ class ConversationEngine:
         self._nodes_visited: list[str] = [graph.entry_node_id]
         self._tools_called: list[ToolCall] = []
         self._end_call_invoked = False
+        self._originator_stack: list[str] = []
 
     @property
     def current_node(self) -> str:
@@ -104,6 +105,11 @@ class ConversationEngine:
     def end_call_invoked(self) -> bool:
         """Whether end_call was invoked."""
         return self._end_call_invoked
+
+    @property
+    def originator_stack(self) -> list[str]:
+        """Stack of originator node IDs for global node go-back (copy)."""
+        return self._originator_stack.copy()
 
     async def _append_message(self, message: Message) -> None:
         """Append a message to the transcript and notify via callback."""
@@ -254,7 +260,10 @@ class ConversationEngine:
         the node's objectives are complete, then selects a transition only
         if they are.
         """
-        available_transitions = self._module.format_transitions(self._current_node)
+        originator_id = self._originator_stack[-1] if self._originator_stack else None
+        available_transitions = self._module.format_transitions(
+            self._current_node, originator_id=originator_id
+        )
         if not available_transitions:
             return None
 
@@ -334,7 +343,10 @@ class ConversationEngine:
 
         # Inject a fingerprint via cache_salt to bust cache when edges change.
         cache_salt = None
-        available_transitions = self._module.format_transitions(self._current_node)
+        originator_id = self._originator_stack[-1] if self._originator_stack else None
+        available_transitions = self._module.format_transitions(
+            self._current_node, originator_id=originator_id
+        )
         if available_transitions:
             cache_salt = hashlib.sha256(
                 json.dumps([t.model_dump() for t in available_transitions], sort_keys=True).encode()
@@ -375,7 +387,26 @@ class ConversationEngine:
         return turn_result
 
     async def _apply_transition(self, turn_result: TurnResult, target: str) -> None:
-        """Record a transition to the given target node."""
+        """Record a transition to the given target node.
+
+        Manages the originator stack for global node transitions:
+        - Entering a global node pushes the current node as originator
+        - Leaving a global node back to the originator pops the stack
+        """
+        source_node = self.graph.nodes[self._current_node]
+        target_node = self.graph.nodes.get(target)
+
+        # Go-back takes priority: if source is global and target is the originator, pop
+        if (
+            source_node.global_node_setting
+            and self._originator_stack
+            and self._originator_stack[-1] == target
+        ):
+            self._originator_stack.pop()
+        elif target_node and target_node.global_node_setting:
+            # Entering a global node: push current node as originator
+            self._originator_stack.append(self._current_node)
+
         self._current_node = target
         self._nodes_visited.append(target)
         turn_result.transitioned_to = target
@@ -511,3 +542,4 @@ class ConversationEngine:
         self._nodes_visited = [self.graph.entry_node_id]
         self._tools_called = []
         self._end_call_invoked = False
+        self._originator_stack = []

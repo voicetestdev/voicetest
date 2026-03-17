@@ -946,6 +946,105 @@ class TestRetellImporterAlwaysEdge:
         assert guardian_unavailable.transitions[0].condition.type == "always"
 
 
+class TestRetellImporterGlobalNodes:
+    """Tests for importing global_node_setting from Retell CF."""
+
+    def test_global_node_setting_imported(self, sample_retell_config_global_nodes):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        cancel = graph.nodes["cancel_request"]
+        assert cancel.global_node_setting is not None
+
+    def test_global_node_condition_text(self, sample_retell_config_global_nodes):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        cancel = graph.nodes["cancel_request"]
+        assert "cancel" in cancel.global_node_setting.condition.lower()
+
+    def test_global_node_go_back_conditions(self, sample_retell_config_global_nodes):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        cancel = graph.nodes["cancel_request"]
+        assert len(cancel.global_node_setting.go_back_conditions) == 1
+        gb = cancel.global_node_setting.go_back_conditions[0]
+        assert gb.condition.type == "llm_prompt"
+        assert "continue" in gb.condition.value.lower()
+
+    def test_global_node_go_back_condition_id(self, sample_retell_config_global_nodes):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        cancel = graph.nodes["cancel_request"]
+        assert cancel.global_node_setting.go_back_conditions[0].id == "go-back-cancel-1"
+
+    def test_multiple_go_back_conditions(self, sample_retell_config_global_nodes):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        specials = graph.nodes["ask_about_specials"]
+        assert specials.global_node_setting is not None
+        assert len(specials.global_node_setting.go_back_conditions) == 2
+        gb_ids = {gb.id for gb in specials.global_node_setting.go_back_conditions}
+        assert gb_ids == {"go-back-specials-1", "go-back-specials-2"}
+
+    def test_nodes_without_global_setting_unaffected(self, sample_retell_config_global_nodes):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        assert graph.nodes["greeting"].global_node_setting is None
+        assert graph.nodes["customize_order"].global_node_setting is None
+        assert graph.nodes["confirm_order"].global_node_setting is None
+        assert graph.nodes["order_complete"].global_node_setting is None
+
+    def test_global_node_regular_edges_preserved(self, sample_retell_config_global_nodes):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        cancel = graph.nodes["cancel_request"]
+        assert len(cancel.transitions) == 1
+        assert cancel.transitions[0].target_node_id == "order_complete"
+
+    def test_graph_global_nodes_property(self, sample_retell_config_global_nodes):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        global_ids = {n.id for n in graph.global_nodes}
+        assert global_ids == {"cancel_request", "ask_about_specials"}
+
+    def test_global_node_with_no_go_back_conditions(self):
+        config = {
+            "start_node_id": "main",
+            "nodes": [
+                {
+                    "id": "main",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Hello."},
+                    "edges": [],
+                },
+                {
+                    "id": "emergency",
+                    "type": "end",
+                    "instruction": {"type": "prompt", "text": "Emergency."},
+                    "edges": [],
+                    "global_node_setting": {
+                        "condition": "Caller reports an emergency",
+                        "go_back_conditions": [],
+                    },
+                },
+            ],
+        }
+        importer = RetellImporter()
+        graph = importer.import_agent(config)
+
+        emergency = graph.nodes["emergency"]
+        assert emergency.global_node_setting is not None
+        assert emergency.global_node_setting.condition == "Caller reports an emergency"
+        assert emergency.global_node_setting.go_back_conditions == []
+
+
 class TestRetellImporterWrappedFormat:
     """Tests for importing Retell UI agent wrapper format."""
 

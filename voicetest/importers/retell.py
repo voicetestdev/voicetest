@@ -14,6 +14,8 @@ from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import EquationClause
+from voicetest.models.agent import GlobalNodeSetting
+from voicetest.models.agent import GoBackCondition
 from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
@@ -129,6 +131,7 @@ class RetellNode(BaseModel):
     always_edge: RetellEdge | None = None
     display_position: dict[str, float] | None = None
     variables: list[RetellVariable] = []
+    global_node_setting: dict[str, Any] | None = None
 
 
 class RetellConfig(BaseModel):
@@ -239,6 +242,25 @@ class RetellImporter:
                 for v in retell_node.variables
             ]
 
+            global_setting = None
+            if retell_node.global_node_setting:
+                go_backs = []
+                for gb in retell_node.global_node_setting.get("go_back_conditions", []):
+                    tc = gb.get("transition_condition", {})
+                    go_backs.append(
+                        GoBackCondition(
+                            id=gb["id"],
+                            condition=TransitionCondition(
+                                type="llm_prompt",
+                                value=tc.get("prompt", ""),
+                            ),
+                        )
+                    )
+                global_setting = GlobalNodeSetting(
+                    condition=retell_node.global_node_setting["condition"],
+                    go_back_conditions=go_backs,
+                )
+
             nodes[retell_node.id] = AgentNode(
                 id=retell_node.id,
                 state_prompt=retell_node.instruction.text if retell_node.instruction else "",
@@ -247,6 +269,7 @@ class RetellImporter:
                 transitions=transitions,
                 metadata=metadata,
                 variables_to_extract=variables_to_extract,
+                global_node_setting=global_setting,
             )
 
         source_metadata: dict[str, Any] = {
