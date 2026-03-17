@@ -1668,6 +1668,99 @@ class TestGlobalNodeConversation:
         assert engine.current_node == "emergency_end"
         assert result.end_call_invoked is True
 
+    @pytest.mark.asyncio
+    async def test_forward_from_global_node_pops_originator(self):
+        """Taking a regular edge from a global node (not go-back) cleans up the stack."""
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import GlobalNodeSetting
+        from voicetest.models.agent import GoBackCondition
+        from voicetest.models.agent import Transition
+        from voicetest.models.agent import TransitionCondition
+
+        graph = AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet.",
+                    transitions=[],
+                ),
+                "cancel": AgentNode(
+                    id="cancel",
+                    state_prompt="Confirm cancellation.",
+                    transitions=[
+                        Transition(
+                            target_node_id="cancelled",
+                            condition=TransitionCondition(
+                                type="llm_prompt",
+                                value="Caller confirms cancel",
+                            ),
+                        ),
+                    ],
+                    global_node_setting=GlobalNodeSetting(
+                        condition="Caller wants to cancel",
+                        go_back_conditions=[
+                            GoBackCondition(
+                                id="gb-1",
+                                condition=TransitionCondition(
+                                    type="llm_prompt",
+                                    value="Caller changes mind",
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+                "cancelled": AgentNode(
+                    id="cancelled",
+                    state_prompt="Order cancelled.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="greeting",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(graph, model="openai/gpt-4o-mini")
+        call_count = 0
+
+        async def mock_call_llm(model, signature, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            class ResponseResult:
+                response = "OK!"
+
+            class ToCancel:
+                objectives_complete = True
+                transition_to = "cancel"
+                reasoning = ""
+
+            class ToCancelled:
+                objectives_complete = True
+                transition_to = "cancelled"
+                reasoning = ""
+
+            # Turn 1: greeting -> cancel (global entry)
+            if call_count == 1:
+                return ToCancel()
+            if call_count == 2:
+                return ResponseResult()
+            # Turn 2: cancel -> cancelled (regular forward edge, not go-back)
+            if call_count == 3:
+                return ToCancelled()
+            return ResponseResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("I want to cancel")
+            await engine.advance()
+            assert engine.originator_stack == ["greeting"]
+
+            await engine.add_user_message("Yes, cancel it")
+            await engine.advance()
+
+        assert engine.current_node == "cancelled"
+        assert engine.originator_stack == []
+
     def test_reset_clears_originator_stack(self, graph_with_global_node):
         engine = ConversationEngine(graph_with_global_node, model="openai/gpt-4o-mini")
         # Manually set state to simulate mid-conversation

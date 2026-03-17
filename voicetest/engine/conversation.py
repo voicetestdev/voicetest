@@ -111,6 +111,11 @@ class ConversationEngine:
         """Stack of originator node IDs for global node go-back (copy)."""
         return self._originator_stack.copy()
 
+    @property
+    def _current_originator(self) -> str | None:
+        """The originator node ID at the top of the stack, or None."""
+        return self._originator_stack[-1] if self._originator_stack else None
+
     async def _append_message(self, message: Message) -> None:
         """Append a message to the transcript and notify via callback."""
         self._transcript.append(message)
@@ -260,9 +265,8 @@ class ConversationEngine:
         the node's objectives are complete, then selects a transition only
         if they are.
         """
-        originator_id = self._originator_stack[-1] if self._originator_stack else None
         available_transitions = self._module.format_transitions(
-            self._current_node, originator_id=originator_id
+            self._current_node, originator_id=self._current_originator
         )
         if not available_transitions:
             return None
@@ -343,9 +347,8 @@ class ConversationEngine:
 
         # Inject a fingerprint via cache_salt to bust cache when edges change.
         cache_salt = None
-        originator_id = self._originator_stack[-1] if self._originator_stack else None
         available_transitions = self._module.format_transitions(
-            self._current_node, originator_id=originator_id
+            self._current_node, originator_id=self._current_originator
         )
         if available_transitions:
             cache_salt = hashlib.sha256(
@@ -391,12 +394,13 @@ class ConversationEngine:
 
         Manages the originator stack for global node transitions:
         - Entering a global node pushes the current node as originator
-        - Leaving a global node back to the originator pops the stack
+        - Going back to the originator pops the stack
+        - Leaving a global node forward (regular edge) also pops the stack
         """
         source_node = self.graph.nodes[self._current_node]
         target_node = self.graph.nodes.get(target)
 
-        # Go-back takes priority: if source is global and target is the originator, pop
+        # Go-back: source is global and target matches the originator
         if (
             source_node.global_node_setting
             and self._originator_stack
@@ -406,6 +410,9 @@ class ConversationEngine:
         elif target_node and target_node.global_node_setting:
             # Entering a global node: push current node as originator
             self._originator_stack.append(self._current_node)
+        elif source_node.global_node_setting and self._originator_stack:
+            # Leaving a global node forward via regular edge: pop originator
+            self._originator_stack.pop()
 
         self._current_node = target
         self._nodes_visited.append(target)

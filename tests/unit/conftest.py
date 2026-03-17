@@ -127,12 +127,6 @@ def sample_retell_config_global_nodes(retell_fixtures_dir: Path) -> dict:
 
 
 @pytest.fixture
-def sample_retell_config_global_nodes_path(retell_fixtures_dir: Path) -> Path:
-    """Return path to Retell CF configuration with global nodes."""
-    return retell_fixtures_dir / "sample_config_global_nodes.json"
-
-
-@pytest.fixture
 def sample_retell_config_logic_split(retell_fixtures_dir: Path) -> dict:
     """Load Retell CF configuration with a logic split node (no instruction)."""
     config_path = retell_fixtures_dir / "sample_config_logic_split.json"
