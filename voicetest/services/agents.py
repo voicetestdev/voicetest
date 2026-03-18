@@ -294,12 +294,18 @@ class AgentService:
         self._repo.update_metrics_config(agent_id, config)
         return config
 
+    # Map importer source_type to exporter format_id when they differ
+    _SOURCE_TYPE_TO_FORMAT: dict[str, str] = {
+        "retell": "retell-cf",
+    }
+
     def _write_graph_to_linked_file(self, graph: AgentGraph, source_path: str, agent: dict) -> None:
         """Export a graph back to a linked file on disk."""
         source_type = agent.get("source_type", "")
+        format_id = self._SOURCE_TYPE_TO_FORMAT.get(source_type, source_type)
 
-        # Try format-based exporter (e.g. retell-llm)
-        exporter = self._exporters.get(source_type)
+        # Try format-based exporter (e.g. retell-llm, retell-cf)
+        exporter = self._exporters.get(format_id)
         if exporter:
             exported = json.loads(exporter.export(graph))
             try:

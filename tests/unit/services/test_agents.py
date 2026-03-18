@@ -163,6 +163,61 @@ class TestLoadAndSaveGraph:
         assert reloaded.nodes["main"].state_prompt == "Updated prompt."
 
 
+class TestSaveGraphLinkedRetellCF:
+    """Saving a linked Retell CF agent writes back via the retell-cf exporter."""
+
+    def test_update_prompt_retell_cf_linked_file(self, svc, tmp_path):
+        retell_cf = {
+            "start_node_id": "greeting",
+            "nodes": [
+                {
+                    "id": "greeting",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Hello."},
+                    "edges": [],
+                },
+            ],
+        }
+        path = tmp_path / "agent_cf.json"
+        path.write_text(json.dumps(retell_cf))
+
+        created = svc.create_agent(name="Retell CF Agent", path=str(path))
+        graph = svc.update_prompt(created["id"], node_id="greeting", prompt_text="Updated hello.")
+
+        assert graph.nodes["greeting"].state_prompt == "Updated hello."
+
+        reloaded = json.loads(path.read_text())
+        # Retell CF exporter wraps in agent envelope with conversationFlow key
+        cf = reloaded.get("conversationFlow", reloaded)
+        greeting_node = next(n for n in cf["nodes"] if n["id"] == "greeting")
+        assert greeting_node["instruction"]["text"] == "Updated hello."
+
+    def test_update_general_prompt_retell_cf_linked_file(self, svc, tmp_path):
+        retell_cf = {
+            "start_node_id": "greeting",
+            "global_prompt": "Be friendly.",
+            "nodes": [
+                {
+                    "id": "greeting",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Hello."},
+                    "edges": [],
+                },
+            ],
+        }
+        path = tmp_path / "agent_cf.json"
+        path.write_text(json.dumps(retell_cf))
+
+        created = svc.create_agent(name="Retell CF Agent", path=str(path))
+        graph = svc.update_prompt(created["id"], prompt_text="Be very friendly.")
+
+        assert graph.source_metadata["general_prompt"] == "Be very friendly."
+
+        reloaded = json.loads(path.read_text())
+        cf = reloaded.get("conversationFlow", reloaded)
+        assert cf["global_prompt"] == "Be very friendly."
+
+
 class TestGetVariables:
     def test_no_variables(self, svc):
         config = {
