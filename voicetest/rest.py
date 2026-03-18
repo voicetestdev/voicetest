@@ -347,6 +347,20 @@ class UpdatePromptRequest(BaseModel):
     transition_target_id: str | None = None
 
 
+class GoBackConditionRequest(BaseModel):
+    """A go-back condition in a global node setting update."""
+
+    id: str
+    condition: str
+
+
+class UpdateGlobalNodeSettingRequest(BaseModel):
+    """Request to set a node's global_node_setting."""
+
+    condition: str
+    go_back_conditions: list[GoBackConditionRequest] = []
+
+
 class UpdateMetadataRequest(BaseModel):
     """Request to merge updates into an agent's source_metadata."""
 
@@ -829,6 +843,32 @@ async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGra
         detail = str(e)
         status = 400 if "Cannot write" in detail else 404
         raise HTTPException(status_code=status, detail=detail) from None
+
+
+@router.put("/agents/{agent_id}/nodes/{node_id}/global-setting", response_model=AgentGraph)
+async def update_global_node_setting(
+    agent_id: str, node_id: str, request: UpdateGlobalNodeSettingRequest
+) -> AgentGraph:
+    """Set a node's global_node_setting (entry condition + go-back conditions)."""
+    setting = {
+        "condition": request.condition,
+        "go_back_conditions": [
+            {"id": gb.id, "condition": gb.condition} for gb in request.go_back_conditions
+        ],
+    }
+    try:
+        return get_agent_service().update_global_node_setting(agent_id, node_id, setting)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+
+
+@router.delete("/agents/{agent_id}/nodes/{node_id}/global-setting", response_model=AgentGraph)
+async def delete_global_node_setting(agent_id: str, node_id: str) -> AgentGraph:
+    """Remove a node's global_node_setting."""
+    try:
+        return get_agent_service().update_global_node_setting(agent_id, node_id, None)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.put("/agents/{agent_id}/metadata", response_model=AgentGraph)

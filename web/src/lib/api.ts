@@ -285,6 +285,15 @@ export const api = {
       ...(transitionTargetId != null ? { transition_target_id: transitionTargetId } : {}),
     }),
 
+  updateGlobalNodeSetting: (
+    agentId: string,
+    nodeId: string,
+    setting: { condition: string; go_back_conditions: { id: string; condition: string }[] },
+  ) => put<AgentGraph>(`/agents/${agentId}/nodes/${nodeId}/global-setting`, setting),
+
+  deleteGlobalNodeSetting: (agentId: string, nodeId: string) =>
+    del<AgentGraph>(`/agents/${agentId}/nodes/${nodeId}/global-setting`),
+
   updateMetadata: (agentId: string, updates: Record<string, unknown>) =>
     put<AgentGraph>(`/agents/${agentId}/metadata`, { updates }),
 

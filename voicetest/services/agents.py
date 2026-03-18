@@ -7,7 +7,10 @@ from typing import Any
 from voicetest.exporters.registry import ExporterRegistry
 from voicetest.importers.registry import ImporterRegistry
 from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import GlobalNodeSetting
+from voicetest.models.agent import GoBackCondition
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.agent import TransitionCondition
 from voicetest.pathutil import resolve_file
 from voicetest.pathutil import resolve_path
 from voicetest.storage.linked_file import check_file
@@ -282,6 +285,48 @@ class AgentService:
         """Merge updates into an agent's source_metadata."""
         agent, graph = self.load_graph(agent_id)
         graph.source_metadata.update(updates)
+        self.save_graph(agent_id, agent, graph)
+        return graph
+
+    def update_global_node_setting(
+        self,
+        agent_id: str,
+        node_id: str,
+        setting: dict[str, Any] | None,
+    ) -> AgentGraph:
+        """Set or remove a node's global_node_setting.
+
+        Args:
+            agent_id: Agent ID.
+            node_id: Target node ID.
+            setting: Dict with 'condition' and 'go_back_conditions', or None to remove.
+
+        Returns:
+            Updated AgentGraph.
+        """
+        agent, graph = self.load_graph(agent_id)
+        node = graph.get_node(node_id)
+        if not node:
+            raise ValueError(f"Node not found: {node_id}")
+
+        if setting is None:
+            node.global_node_setting = None
+        else:
+            go_backs = [
+                GoBackCondition(
+                    id=gb["id"],
+                    condition=TransitionCondition(
+                        type="llm_prompt",
+                        value=gb["condition"],
+                    ),
+                )
+                for gb in setting.get("go_back_conditions", [])
+            ]
+            node.global_node_setting = GlobalNodeSetting(
+                condition=setting["condition"],
+                go_back_conditions=go_backs,
+            )
+
         self.save_graph(agent_id, agent, graph)
         return graph
 
