@@ -603,7 +603,18 @@
         editable: false,
       };
     }
-    return { title: nodeId, text: nodeData.state_prompt, editable: true };
+    let text = nodeData.state_prompt;
+    let title = nodeId;
+    const gns = nodeData.global_node_setting;
+    if (gns) {
+      title = `Global: ${nodeData.metadata?.name || nodeId}`;
+      text += `\n\n--- Entry condition ---\n${gns.condition}`;
+      if (gns.go_back_conditions.length > 0) {
+        const goBackTexts = gns.go_back_conditions.map(gb => gb.condition.value).join("\n");
+        text += `\n\n--- Go-back conditions ---\n${goBackTexts}`;
+      }
+    }
+    return { title, text, editable: true };
   }
 
   function edgeTooltipContent(conditionType: string, sourceNodeId: string, targetNodeId: string, fullCondition: string): { title: string; text: string; editable: boolean } {
