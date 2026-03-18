@@ -388,6 +388,23 @@ def _convert_node(
             for v in node.variables_to_extract
         ]
 
+    # Export global_node_setting if present
+    if node.global_node_setting:
+        gns: dict[str, Any] = {
+            "condition": node.global_node_setting.condition,
+            "go_back_conditions": [
+                {
+                    "id": gb.id,
+                    "transition_condition": {
+                        "type": "prompt",
+                        "prompt": gb.condition.value,
+                    },
+                }
+                for gb in node.global_node_setting.go_back_conditions
+            ],
+        }
+        result["global_node_setting"] = gns
+
     # Preserved position from import wins over computed position
     preserved = node.metadata.get("display_position")
     if preserved:

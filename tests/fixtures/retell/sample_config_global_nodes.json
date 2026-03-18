@@ -1,0 +1,147 @@
+{
+  "conversation_flow_id": "cf_pizza_order_001",
+  "version": 1,
+  "start_node_id": "greeting",
+  "start_speaker": "agent",
+  "model_choice": {
+    "type": "cascading",
+    "model": "gpt-4o"
+  },
+  "global_prompt": "You are a friendly pizza ordering assistant for Cosmic Slice Pizza.",
+  "nodes": [
+    {
+      "id": "greeting",
+      "name": "Greeting",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Greet the caller and ask what kind of pizza they would like to order."
+      },
+      "edges": [
+        {
+          "id": "edge-greeting-to-customize",
+          "destination_node_id": "customize_order",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "The caller has stated what kind of pizza they want"
+          }
+        }
+      ],
+      "display_position": { "x": 0, "y": 0 }
+    },
+    {
+      "id": "customize_order",
+      "name": "Customize Order",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Confirm the pizza order details: size, crust, and any extra toppings. Ask for their delivery address."
+      },
+      "edges": [
+        {
+          "id": "edge-customize-to-confirm",
+          "destination_node_id": "confirm_order",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "All order details and delivery address have been collected"
+          }
+        }
+      ],
+      "display_position": { "x": 500, "y": 0 }
+    },
+    {
+      "id": "confirm_order",
+      "name": "Confirm Order",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Read back the complete order to the caller and ask them to confirm. Include pizza type, size, toppings, and delivery address."
+      },
+      "edges": [
+        {
+          "id": "edge-confirm-to-end",
+          "destination_node_id": "order_complete",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "The caller has confirmed their order"
+          }
+        }
+      ],
+      "display_position": { "x": 1000, "y": 0 }
+    },
+    {
+      "id": "order_complete",
+      "name": "Order Complete",
+      "type": "end",
+      "instruction": {
+        "type": "prompt",
+        "text": "Thank the caller, give them an estimated delivery time of 30-45 minutes, and say goodbye."
+      },
+      "edges": [],
+      "display_position": { "x": 1500, "y": 0 }
+    },
+    {
+      "id": "cancel_request",
+      "name": "Cancel Request",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "The caller wants to cancel or hang up. Ask if they are sure they want to cancel their order."
+      },
+      "edges": [
+        {
+          "id": "edge-cancel-to-end",
+          "destination_node_id": "order_complete",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "The caller confirms they want to cancel"
+          }
+        }
+      ],
+      "global_node_setting": {
+        "condition": "The caller says they want to cancel, hang up, stop ordering, or they say goodbye",
+        "go_back_conditions": [
+          {
+            "id": "go-back-cancel-1",
+            "transition_condition": {
+              "type": "prompt",
+              "prompt": "The caller changes their mind and wants to continue ordering"
+            }
+          }
+        ]
+      },
+      "display_position": { "x": 750, "y": -400 }
+    },
+    {
+      "id": "ask_about_specials",
+      "name": "Ask About Specials",
+      "type": "conversation",
+      "instruction": {
+        "type": "prompt",
+        "text": "Tell the caller about today's specials: Large pepperoni for $12.99, and buy-two-get-one-free on medium pizzas."
+      },
+      "edges": [],
+      "global_node_setting": {
+        "condition": "The caller asks about specials, deals, promotions, or discounts",
+        "go_back_conditions": [
+          {
+            "id": "go-back-specials-1",
+            "transition_condition": {
+              "type": "prompt",
+              "prompt": "The caller has heard the specials and wants to continue with their order"
+            }
+          },
+          {
+            "id": "go-back-specials-2",
+            "transition_condition": {
+              "type": "prompt",
+              "prompt": "The caller says they are not interested in the specials"
+            }
+          }
+        ]
+      },
+      "display_position": { "x": 750, "y": 400 }
+    }
+  ],
+  "tools": []
+}

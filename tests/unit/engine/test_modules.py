@@ -3,6 +3,9 @@
 from voicetest.engine.modules import ConversationModule
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import GlobalNodeSetting
+from voicetest.models.agent import GoBackCondition
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.agent import TransitionOption
@@ -176,3 +179,156 @@ class TestFormatTransitions:
         result = module.format_transitions("a")
 
         assert result[0].description is None
+
+
+class TestGlobalNodeTransitions:
+    """Tests for global node conditions in format_transitions."""
+
+    def _make_graph_with_global(self):
+        """Build a graph with one global node for testing."""
+        return AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet.",
+                    transitions=[
+                        Transition(
+                            target_node_id="order",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="Caller wants to order"
+                            ),
+                        )
+                    ],
+                ),
+                "order": AgentNode(
+                    id="order",
+                    state_prompt="Take order.",
+                    transitions=[],
+                ),
+                "cancel": AgentNode(
+                    id="cancel",
+                    state_prompt="Ask about cancellation.",
+                    transitions=[],
+                    global_node_setting=GlobalNodeSetting(
+                        condition="Caller wants to cancel",
+                        go_back_conditions=[
+                            GoBackCondition(
+                                id="gb-1",
+                                condition=TransitionCondition(
+                                    type="llm_prompt",
+                                    value="Caller wants to continue",
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            },
+            entry_node_id="greeting",
+            source_type="retell",
+        )
+
+    def test_global_conditions_appended_to_conversation_node(self):
+        graph = self._make_graph_with_global()
+        module = ConversationModule(graph)
+        result = module.format_transitions("greeting")
+
+        # 1 local transition + 1 global entry condition
+        assert len(result) == 2
+        global_opt = result[1]
+        assert global_opt.target == "cancel"
+        assert global_opt.condition == "Caller wants to cancel"
+        assert global_opt.condition_type == "llm_prompt"
+
+    def test_global_conditions_appended_to_node_without_local_transitions(self):
+        graph = self._make_graph_with_global()
+        module = ConversationModule(graph)
+        result = module.format_transitions("order")
+
+        # 0 local transitions + 1 global entry condition
+        assert len(result) == 1
+        assert result[0].target == "cancel"
+
+    def test_global_conditions_not_appended_to_non_conversation_nodes(self):
+        graph = AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    node_type=NodeType.LOGIC,
+                    transitions=[
+                        Transition(
+                            target_node_id="a",
+                            condition=TransitionCondition(type="equation", value="x == 1"),
+                        ),
+                    ],
+                ),
+                "a": AgentNode(id="a", state_prompt="A."),
+                "cancel": AgentNode(
+                    id="cancel",
+                    state_prompt="Cancel.",
+                    global_node_setting=GlobalNodeSetting(
+                        condition="Caller wants to cancel",
+                    ),
+                ),
+            },
+            entry_node_id="router",
+            source_type="retell",
+        )
+        module = ConversationModule(graph)
+        result = module.format_transitions("router")
+
+        # Only the equation transition, no global
+        assert len(result) == 1
+        assert result[0].target == "a"
+
+    def test_no_self_transition_for_global_node(self):
+        graph = self._make_graph_with_global()
+        module = ConversationModule(graph)
+        result = module.format_transitions("cancel")
+
+        # Should not include cancel -> cancel
+        targets = {opt.target for opt in result}
+        assert "cancel" not in targets
+
+    def test_go_back_conditions_included_when_originator_set(self):
+        graph = self._make_graph_with_global()
+        module = ConversationModule(graph)
+        result = module.format_transitions("cancel", originator_id="greeting")
+
+        # Go-back condition should target the originator
+        go_back_opts = [opt for opt in result if opt.target == "greeting"]
+        assert len(go_back_opts) == 1
+        assert "continue" in go_back_opts[0].condition.lower()
+
+    def test_go_back_conditions_absent_without_originator(self):
+        graph = self._make_graph_with_global()
+        module = ConversationModule(graph)
+        result = module.format_transitions("cancel")
+
+        # No go-back since no originator
+        targets = {opt.target for opt in result}
+        assert "greeting" not in targets
+
+    def test_zero_global_nodes_unchanged_behavior(self):
+        graph = AgentGraph(
+            nodes={
+                "a": AgentNode(
+                    id="a",
+                    state_prompt="Greet.",
+                    transitions=[
+                        Transition(
+                            target_node_id="b",
+                            condition=TransitionCondition(type="llm_prompt", value="go to b"),
+                        )
+                    ],
+                ),
+                "b": AgentNode(id="b", state_prompt="Help."),
+            },
+            entry_node_id="a",
+            source_type="custom",
+        )
+        module = ConversationModule(graph)
+        result = module.format_transitions("a")
+
+        assert len(result) == 1
+        assert result[0].target == "b"

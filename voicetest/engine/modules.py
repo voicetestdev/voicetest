@@ -9,6 +9,7 @@ from typing import Any
 import dspy
 
 from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionOption
 
@@ -137,23 +138,58 @@ class ConversationModule(dspy.Module):
         """Get the state module for a given node ID."""
         return self._state_modules.get(node_id)
 
-    def format_transitions(self, node_id: str) -> list[TransitionOption]:
+    def format_transitions(
+        self, node_id: str, originator_id: str | None = None
+    ) -> list[TransitionOption]:
         """Format available transitions for a node as structured objects for LLM input.
 
         Excludes always-type transitions from conversation nodes since those
         fire automatically after the LLM responds (not LLM-decided).
+
+        Appends global node entry conditions for conversation nodes, and
+        go-back conditions when inside a global node with an originator.
         """
         node = self.graph.nodes.get(node_id)
-        if not node or not node.transitions:
-            return []
 
-        return [
-            TransitionOption(
-                target=t.target_node_id,
-                condition=t.condition.value or "No condition specified",
-                condition_type=t.condition.type,
-                description=t.description,
+        options: list[TransitionOption] = []
+
+        # Local transitions (excluding always-type)
+        if node and node.transitions:
+            options.extend(
+                TransitionOption(
+                    target=t.target_node_id,
+                    condition=t.condition.value or "No condition specified",
+                    condition_type=t.condition.type,
+                    description=t.description,
+                )
+                for t in node.transitions
+                if t.condition.type != "always"
             )
-            for t in node.transitions
-            if t.condition.type != "always"
-        ]
+
+        # Global node entry conditions (only for conversation nodes)
+        if node and node.node_type == NodeType.CONVERSATION:
+            for global_node in self.graph.global_nodes:
+                if global_node.id == node_id:
+                    continue
+                options.append(
+                    TransitionOption(
+                        target=global_node.id,
+                        condition=global_node.global_node_setting.condition,
+                        condition_type="llm_prompt",
+                        description=f"Global: {global_node.metadata.get('name', global_node.id)}",
+                    )
+                )
+
+        # Go-back conditions when inside a global node with an originator
+        if node and node.global_node_setting and originator_id:
+            for gb in node.global_node_setting.go_back_conditions:
+                options.append(
+                    TransitionOption(
+                        target=originator_id,
+                        condition=gb.condition.value,
+                        condition_type="llm_prompt",
+                        description="Return to previous conversation",
+                    )
+                )
+
+        return options

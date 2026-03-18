@@ -469,6 +469,157 @@ class TestNodeType:
         assert str(NodeType.TRANSFER) == "transfer"
 
 
+class TestGlobalNodeSetting:
+    """Tests for GlobalNodeSetting and GoBackCondition models."""
+
+    def test_create_go_back_condition(self):
+        from voicetest.models.agent import GoBackCondition
+        from voicetest.models.agent import TransitionCondition
+
+        gb = GoBackCondition(
+            id="go-back-1",
+            condition=TransitionCondition(
+                type="llm_prompt",
+                value="User wants to continue ordering",
+            ),
+        )
+        assert gb.id == "go-back-1"
+        assert gb.condition.type == "llm_prompt"
+        assert gb.condition.value == "User wants to continue ordering"
+
+    def test_create_global_node_setting(self):
+        from voicetest.models.agent import GlobalNodeSetting
+        from voicetest.models.agent import GoBackCondition
+        from voicetest.models.agent import TransitionCondition
+
+        setting = GlobalNodeSetting(
+            condition="User wants to cancel their order",
+            go_back_conditions=[
+                GoBackCondition(
+                    id="go-back-1",
+                    condition=TransitionCondition(
+                        type="llm_prompt",
+                        value="User changes their mind",
+                    ),
+                ),
+            ],
+        )
+        assert setting.condition == "User wants to cancel their order"
+        assert len(setting.go_back_conditions) == 1
+        assert setting.go_back_conditions[0].id == "go-back-1"
+
+    def test_global_node_setting_empty_go_backs(self):
+        from voicetest.models.agent import GlobalNodeSetting
+
+        setting = GlobalNodeSetting(
+            condition="User asks about specials",
+        )
+        assert setting.go_back_conditions == []
+
+    def test_agent_node_global_setting_none_by_default(self):
+        from voicetest.models.agent import AgentNode
+
+        node = AgentNode(id="main", state_prompt="Help.")
+        assert node.global_node_setting is None
+
+    def test_agent_node_with_global_setting(self):
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import GlobalNodeSetting
+
+        node = AgentNode(
+            id="cancel",
+            state_prompt="Ask if they want to cancel.",
+            global_node_setting=GlobalNodeSetting(
+                condition="User wants to cancel",
+            ),
+        )
+        assert node.global_node_setting is not None
+        assert node.global_node_setting.condition == "User wants to cancel"
+
+    def test_agent_graph_global_nodes_empty(self):
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
+
+        graph = AgentGraph(
+            nodes={
+                "a": AgentNode(id="a", state_prompt="A."),
+                "b": AgentNode(id="b", state_prompt="B."),
+            },
+            entry_node_id="a",
+            source_type="custom",
+        )
+        assert graph.global_nodes == []
+
+    def test_agent_graph_global_nodes_returns_marked_nodes(self):
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import GlobalNodeSetting
+
+        graph = AgentGraph(
+            nodes={
+                "a": AgentNode(id="a", state_prompt="A."),
+                "cancel": AgentNode(
+                    id="cancel",
+                    state_prompt="Cancel.",
+                    global_node_setting=GlobalNodeSetting(
+                        condition="User wants to cancel",
+                    ),
+                ),
+                "faq": AgentNode(
+                    id="faq",
+                    state_prompt="FAQ.",
+                    global_node_setting=GlobalNodeSetting(
+                        condition="User asks a question",
+                    ),
+                ),
+            },
+            entry_node_id="a",
+            source_type="custom",
+        )
+        global_ids = {n.id for n in graph.global_nodes}
+        assert global_ids == {"cancel", "faq"}
+
+    def test_global_node_setting_json_round_trip(self):
+        from voicetest.models.agent import AgentGraph
+        from voicetest.models.agent import AgentNode
+        from voicetest.models.agent import GlobalNodeSetting
+        from voicetest.models.agent import GoBackCondition
+        from voicetest.models.agent import TransitionCondition
+
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(id="main", state_prompt="Main."),
+                "global": AgentNode(
+                    id="global",
+                    state_prompt="Global.",
+                    global_node_setting=GlobalNodeSetting(
+                        condition="trigger condition",
+                        go_back_conditions=[
+                            GoBackCondition(
+                                id="gb-1",
+                                condition=TransitionCondition(
+                                    type="llm_prompt",
+                                    value="go back",
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            },
+            entry_node_id="main",
+            source_type="custom",
+        )
+
+        json_str = graph.model_dump_json()
+        restored = AgentGraph.model_validate_json(json_str)
+
+        assert restored.nodes["main"].global_node_setting is None
+        assert restored.nodes["global"].global_node_setting is not None
+        assert restored.nodes["global"].global_node_setting.condition == "trigger condition"
+        assert len(restored.nodes["global"].global_node_setting.go_back_conditions) == 1
+        assert restored.nodes["global"].global_node_setting.go_back_conditions[0].id == "gb-1"
+
+
 class TestGlobalMetric:
     """Tests for GlobalMetric model."""
 

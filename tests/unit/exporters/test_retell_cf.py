@@ -1491,3 +1491,90 @@ class TestExportLogicalOperator:
         router = _find_node(result["nodes"], "router")
         tc = router["edges"][0]["transition_condition"]
         assert tc["operator"] == "&&"
+
+
+class TestRetellCFExporterGlobalNodes:
+    """Tests for exporting global_node_setting back to Retell CF format."""
+
+    @patch("voicetest.exporters.retell_cf.load_settings")
+    def test_global_node_setting_round_trips(
+        self, mock_settings, sample_retell_config_global_nodes
+    ):
+        mock_settings.return_value = Settings()
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        result = export_retell_cf(graph)
+        cancel = _find_node(result["nodes"], "cancel_request")
+
+        assert "global_node_setting" in cancel
+        assert "cancel" in cancel["global_node_setting"]["condition"].lower()
+
+    @patch("voicetest.exporters.retell_cf.load_settings")
+    def test_go_back_conditions_exported(self, mock_settings, sample_retell_config_global_nodes):
+        mock_settings.return_value = Settings()
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        result = export_retell_cf(graph)
+        cancel = _find_node(result["nodes"], "cancel_request")
+
+        gbs = cancel["global_node_setting"]["go_back_conditions"]
+        assert len(gbs) == 1
+        assert gbs[0]["id"] == "go-back-cancel-1"
+        assert gbs[0]["transition_condition"]["type"] == "prompt"
+        assert "continue" in gbs[0]["transition_condition"]["prompt"].lower()
+
+    @patch("voicetest.exporters.retell_cf.load_settings")
+    def test_multiple_go_back_conditions_exported(
+        self, mock_settings, sample_retell_config_global_nodes
+    ):
+        mock_settings.return_value = Settings()
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        result = export_retell_cf(graph)
+        specials = _find_node(result["nodes"], "ask_about_specials")
+
+        gbs = specials["global_node_setting"]["go_back_conditions"]
+        assert len(gbs) == 2
+        gb_ids = {gb["id"] for gb in gbs}
+        assert gb_ids == {"go-back-specials-1", "go-back-specials-2"}
+
+    @patch("voicetest.exporters.retell_cf.load_settings")
+    def test_node_without_global_setting_has_no_field(
+        self, mock_settings, sample_retell_config_global_nodes
+    ):
+        mock_settings.return_value = Settings()
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_global_nodes)
+
+        result = export_retell_cf(graph)
+        greeting = _find_node(result["nodes"], "greeting")
+        assert "global_node_setting" not in greeting
+
+    @patch("voicetest.exporters.retell_cf.load_settings")
+    def test_global_node_with_empty_go_backs(self, mock_settings):
+        mock_settings.return_value = Settings()
+        from voicetest.models.agent import GlobalNodeSetting
+
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(id="main", state_prompt="Main."),
+                "emergency": AgentNode(
+                    id="emergency",
+                    state_prompt="Emergency.",
+                    node_type=NodeType.END,
+                    global_node_setting=GlobalNodeSetting(
+                        condition="Emergency detected",
+                    ),
+                ),
+            },
+            entry_node_id="main",
+            source_type="retell",
+        )
+        result = export_retell_cf(graph)
+        emergency = _find_node(result["nodes"], "emergency")
+
+        assert emergency["global_node_setting"]["condition"] == "Emergency detected"
+        assert emergency["global_node_setting"]["go_back_conditions"] == []

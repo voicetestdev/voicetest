@@ -120,6 +120,13 @@ def sample_retell_config_complex_path(retell_fixtures_dir: Path) -> Path:
 
 
 @pytest.fixture
+def sample_retell_config_global_nodes(retell_fixtures_dir: Path) -> dict:
+    """Load Retell CF configuration with global nodes (pizza ordering)."""
+    config_path = retell_fixtures_dir / "sample_config_global_nodes.json"
+    return json.loads(config_path.read_text())
+
+
+@pytest.fixture
 def sample_retell_config_logic_split(retell_fixtures_dir: Path) -> dict:
     """Load Retell CF configuration with a logic split node (no instruction)."""
     config_path = retell_fixtures_dir / "sample_config_logic_split.json"
@@ -397,6 +404,184 @@ def graph_with_metadata():
             "llm_id": "llm_test123",
             "model": "gpt-4o",
         },
+    )
+
+
+@pytest.fixture
+def graph_with_global_node():
+    """Graph with a single global node (cancel request)."""
+    from voicetest.models.agent import AgentGraph
+    from voicetest.models.agent import AgentNode
+    from voicetest.models.agent import GlobalNodeSetting
+    from voicetest.models.agent import GoBackCondition
+    from voicetest.models.agent import Transition
+    from voicetest.models.agent import TransitionCondition
+
+    return AgentGraph(
+        nodes={
+            "greeting": AgentNode(
+                id="greeting",
+                state_prompt="Greet the caller and ask what pizza they want.",
+                transitions=[
+                    Transition(
+                        target_node_id="customize",
+                        condition=TransitionCondition(
+                            type="llm_prompt", value="Caller stated their pizza choice"
+                        ),
+                    )
+                ],
+            ),
+            "customize": AgentNode(
+                id="customize",
+                state_prompt="Confirm size, crust, and toppings.",
+                transitions=[
+                    Transition(
+                        target_node_id="confirm",
+                        condition=TransitionCondition(
+                            type="llm_prompt", value="All details collected"
+                        ),
+                    )
+                ],
+            ),
+            "confirm": AgentNode(
+                id="confirm",
+                state_prompt="Read back the order and ask to confirm.",
+                transitions=[],
+            ),
+            "cancel_request": AgentNode(
+                id="cancel_request",
+                state_prompt="Ask if they are sure they want to cancel.",
+                transitions=[],
+                global_node_setting=GlobalNodeSetting(
+                    condition="Caller wants to cancel or hang up",
+                    go_back_conditions=[
+                        GoBackCondition(
+                            id="go-back-cancel-1",
+                            condition=TransitionCondition(
+                                type="llm_prompt",
+                                value="Caller changes their mind and wants to continue",
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+        },
+        entry_node_id="greeting",
+        source_type="retell",
+        source_metadata={"general_prompt": "You are a pizza ordering assistant."},
+    )
+
+
+@pytest.fixture
+def graph_with_multiple_global_nodes():
+    """Graph with two global nodes (cancel + specials)."""
+    from voicetest.models.agent import AgentGraph
+    from voicetest.models.agent import AgentNode
+    from voicetest.models.agent import GlobalNodeSetting
+    from voicetest.models.agent import GoBackCondition
+    from voicetest.models.agent import Transition
+    from voicetest.models.agent import TransitionCondition
+
+    return AgentGraph(
+        nodes={
+            "greeting": AgentNode(
+                id="greeting",
+                state_prompt="Greet the caller.",
+                transitions=[
+                    Transition(
+                        target_node_id="order",
+                        condition=TransitionCondition(
+                            type="llm_prompt", value="Caller wants to order"
+                        ),
+                    )
+                ],
+            ),
+            "order": AgentNode(
+                id="order",
+                state_prompt="Take the order.",
+                transitions=[],
+            ),
+            "cancel_request": AgentNode(
+                id="cancel_request",
+                state_prompt="Ask if they want to cancel.",
+                transitions=[],
+                global_node_setting=GlobalNodeSetting(
+                    condition="Caller wants to cancel or hang up",
+                    go_back_conditions=[
+                        GoBackCondition(
+                            id="go-back-cancel-1",
+                            condition=TransitionCondition(
+                                type="llm_prompt",
+                                value="Caller wants to continue",
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+            "ask_specials": AgentNode(
+                id="ask_specials",
+                state_prompt="Tell the caller about specials.",
+                transitions=[],
+                global_node_setting=GlobalNodeSetting(
+                    condition="Caller asks about specials or deals",
+                    go_back_conditions=[
+                        GoBackCondition(
+                            id="go-back-specials-1",
+                            condition=TransitionCondition(
+                                type="llm_prompt",
+                                value="Caller heard the specials and wants to continue",
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+        },
+        entry_node_id="greeting",
+        source_type="retell",
+        source_metadata={"general_prompt": "Pizza ordering assistant."},
+    )
+
+
+@pytest.fixture
+def graph_with_global_no_go_back():
+    """Graph where the global node has no go-back conditions (forward only)."""
+    from voicetest.models.agent import AgentGraph
+    from voicetest.models.agent import AgentNode
+    from voicetest.models.agent import GlobalNodeSetting
+    from voicetest.models.agent import NodeType
+    from voicetest.models.agent import Transition
+    from voicetest.models.agent import TransitionCondition
+
+    return AgentGraph(
+        nodes={
+            "greeting": AgentNode(
+                id="greeting",
+                state_prompt="Greet the caller.",
+                transitions=[
+                    Transition(
+                        target_node_id="order",
+                        condition=TransitionCondition(
+                            type="llm_prompt", value="Caller wants to order"
+                        ),
+                    )
+                ],
+            ),
+            "order": AgentNode(
+                id="order",
+                state_prompt="Take the order.",
+                transitions=[],
+            ),
+            "emergency_end": AgentNode(
+                id="emergency_end",
+                state_prompt="End the call immediately.",
+                node_type=NodeType.END,
+                global_node_setting=GlobalNodeSetting(
+                    condition="Caller reports an emergency",
+                ),
+            ),
+        },
+        entry_node_id="greeting",
+        source_type="retell",
     )
 
 
