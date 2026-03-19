@@ -527,3 +527,60 @@ class TestSnippetEndpoints:
             },
         )
         assert response.status_code == 200
+
+
+class TestGlobalNodeSettingEndpoint:
+    """Tests for PUT/DELETE /agents/{agent_id}/nodes/{node_id}/global-setting."""
+
+    def _create_agent(self, db_client, sample_retell_config):
+        response = db_client.post(
+            "/api/agents",
+            json={"name": "Global Test", "config": sample_retell_config},
+        )
+        return response.json()["id"]
+
+    def test_set_global_node_setting(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+        response = db_client.put(
+            f"/api/agents/{agent_id}/nodes/greeting/global-setting",
+            json={
+                "condition": "Caller wants to cancel",
+                "go_back_conditions": [
+                    {"id": "gb-1", "condition": "Caller changes mind"},
+                ],
+            },
+        )
+        assert response.status_code == 200
+        graph = response.json()
+        gns = graph["nodes"]["greeting"]["global_node_setting"]
+        assert gns["condition"] == "Caller wants to cancel"
+        assert len(gns["go_back_conditions"]) == 1
+        assert gns["go_back_conditions"][0]["id"] == "gb-1"
+
+    def test_remove_global_node_setting(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+        db_client.put(
+            f"/api/agents/{agent_id}/nodes/greeting/global-setting",
+            json={"condition": "Test", "go_back_conditions": []},
+        )
+        response = db_client.delete(
+            f"/api/agents/{agent_id}/nodes/greeting/global-setting",
+        )
+        assert response.status_code == 200
+        graph = response.json()
+        assert graph["nodes"]["greeting"]["global_node_setting"] is None
+
+    def test_node_not_found(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+        response = db_client.put(
+            f"/api/agents/{agent_id}/nodes/nonexistent/global-setting",
+            json={"condition": "Test", "go_back_conditions": []},
+        )
+        assert response.status_code == 404
+
+    def test_agent_not_found(self, db_client):
+        response = db_client.put(
+            "/api/agents/nonexistent/nodes/greeting/global-setting",
+            json={"condition": "Test", "go_back_conditions": []},
+        )
+        assert response.status_code == 404

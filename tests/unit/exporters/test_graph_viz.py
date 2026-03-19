@@ -6,6 +6,8 @@ from voicetest.exporters.graph_viz import export_mermaid
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import EquationClause
+from voicetest.models.agent import GlobalNodeSetting
+from voicetest.models.agent import GoBackCondition
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -285,3 +287,114 @@ class TestMermaidLogicNode:
         )
         result = export_mermaid(graph)
         assert 'branch1{"Logic Split<br/>branch1"}' in result
+
+
+class TestMermaidGlobalNode:
+    """Tests for global node styling in mermaid export."""
+
+    @pytest.fixture
+    def global_graph(self) -> AgentGraph:
+        """Graph with a global node."""
+        return AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet the caller.",
+                    transitions=[
+                        Transition(
+                            target_node_id="order",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="Caller wants to order"
+                            ),
+                        )
+                    ],
+                ),
+                "order": AgentNode(
+                    id="order",
+                    state_prompt="Take the order.",
+                    transitions=[],
+                ),
+                "cancel": AgentNode(
+                    id="cancel",
+                    state_prompt="Ask if they want to cancel.",
+                    transitions=[],
+                    global_node_setting=GlobalNodeSetting(
+                        condition="Caller wants to cancel",
+                        go_back_conditions=[
+                            GoBackCondition(
+                                id="gb-1",
+                                condition=TransitionCondition(
+                                    type="llm_prompt",
+                                    value="Caller changes mind",
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            },
+            entry_node_id="greeting",
+            source_type="retell",
+        )
+
+    def test_global_node_has_stroke_style(self, global_graph):
+        """Global nodes get a colored border via stroke style."""
+        result = export_mermaid(global_graph)
+        assert "style cancel" in result
+        assert "stroke:" in result
+
+    def test_global_node_stroke_is_purple(self, global_graph):
+        """Global nodes use a purple stroke to indicate global reachability."""
+        result = export_mermaid(global_graph)
+        # Find the style line for cancel
+        style_lines = [line for line in result.split("\n") if "style cancel" in line]
+        assert len(style_lines) == 1
+        assert "stroke:#7c3aed" in style_lines[0]
+
+    def test_global_node_has_thick_stroke(self, global_graph):
+        """Global nodes use a thicker border to stand out."""
+        result = export_mermaid(global_graph)
+        style_lines = [line for line in result.split("\n") if "style cancel" in line]
+        assert "stroke-width:3px" in style_lines[0]
+
+    def test_non_global_nodes_no_stroke_style(self, global_graph):
+        """Non-global nodes don't get the global stroke style."""
+        result = export_mermaid(global_graph)
+        style_lines = [line for line in result.split("\n") if "style order" in line]
+        assert len(style_lines) == 0
+
+    def test_global_node_keeps_rectangle_shape(self, global_graph):
+        """Global conversation nodes still use rectangle shape."""
+        result = export_mermaid(global_graph)
+        assert 'cancel["cancel<br/>' in result
+
+    def test_multiple_global_nodes_styled(self):
+        """All global nodes get the stroke style."""
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(id="main", state_prompt="Main."),
+                "faq": AgentNode(
+                    id="faq",
+                    state_prompt="FAQ.",
+                    global_node_setting=GlobalNodeSetting(condition="User asks FAQ"),
+                ),
+                "cancel": AgentNode(
+                    id="cancel",
+                    state_prompt="Cancel.",
+                    global_node_setting=GlobalNodeSetting(condition="User cancels"),
+                ),
+            },
+            entry_node_id="main",
+            source_type="retell",
+        )
+        result = export_mermaid(graph)
+        faq_styles = [line for line in result.split("\n") if "style faq" in line]
+        cancel_styles = [line for line in result.split("\n") if "style cancel" in line]
+        assert len(faq_styles) == 1
+        assert len(cancel_styles) == 1
+        assert "stroke:#7c3aed" in faq_styles[0]
+        assert "stroke:#7c3aed" in cancel_styles[0]
+
+    def test_no_global_nodes_no_stroke_styles(self, simple_graph):
+        """Graph without global nodes has no stroke styles."""
+        result = export_mermaid(simple_graph)
+        assert "stroke:#7c3aed" not in result

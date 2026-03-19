@@ -97,6 +97,10 @@ def export_mermaid(graph: AgentGraph) -> str:
             lines.append(f'    {node_id} -->|"{description}"| end_call')
         lines.append("    style end_call fill:#dc2626,color:#ffffff")
 
+    # Style global nodes with a purple border
+    for global_node in graph.global_nodes:
+        lines.append(f"    style {global_node.id} stroke:#7c3aed,stroke-width:3px")
+
     # Mark entry node with green fill and contrasting text
     lines.append(f"    style {graph.entry_node_id} fill:#16a34a,color:#ffffff")
 

@@ -163,6 +163,184 @@ class TestLoadAndSaveGraph:
         assert reloaded.nodes["main"].state_prompt == "Updated prompt."
 
 
+class TestSaveGraphLinkedRetellCF:
+    """Saving a linked Retell CF agent writes back via the retell-cf exporter."""
+
+    def test_update_prompt_retell_cf_linked_file(self, svc, tmp_path):
+        retell_cf = {
+            "start_node_id": "greeting",
+            "nodes": [
+                {
+                    "id": "greeting",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Hello."},
+                    "edges": [],
+                },
+            ],
+        }
+        path = tmp_path / "agent_cf.json"
+        path.write_text(json.dumps(retell_cf))
+
+        created = svc.create_agent(name="Retell CF Agent", path=str(path))
+        graph = svc.update_prompt(created["id"], node_id="greeting", prompt_text="Updated hello.")
+
+        assert graph.nodes["greeting"].state_prompt == "Updated hello."
+
+        reloaded = json.loads(path.read_text())
+        # Retell CF exporter wraps in agent envelope with conversationFlow key
+        cf = reloaded.get("conversationFlow", reloaded)
+        greeting_node = next(n for n in cf["nodes"] if n["id"] == "greeting")
+        assert greeting_node["instruction"]["text"] == "Updated hello."
+
+    def test_update_general_prompt_retell_cf_linked_file(self, svc, tmp_path):
+        retell_cf = {
+            "start_node_id": "greeting",
+            "global_prompt": "Be friendly.",
+            "nodes": [
+                {
+                    "id": "greeting",
+                    "type": "conversation",
+                    "instruction": {"type": "prompt", "text": "Hello."},
+                    "edges": [],
+                },
+            ],
+        }
+        path = tmp_path / "agent_cf.json"
+        path.write_text(json.dumps(retell_cf))
+
+        created = svc.create_agent(name="Retell CF Agent", path=str(path))
+        graph = svc.update_prompt(created["id"], prompt_text="Be very friendly.")
+
+        assert graph.source_metadata["general_prompt"] == "Be very friendly."
+
+        reloaded = json.loads(path.read_text())
+        cf = reloaded.get("conversationFlow", reloaded)
+        assert cf["global_prompt"] == "Be very friendly."
+
+
+class TestUpdateGlobalNodeSetting:
+    """Tests for updating global_node_setting on a node."""
+
+    def _make_agent(self, svc):
+        config = {
+            "source_type": "custom",
+            "entry_node_id": "main",
+            "nodes": {
+                "main": {
+                    "id": "main",
+                    "state_prompt": "Hello.",
+                    "transitions": [],
+                },
+                "cancel": {
+                    "id": "cancel",
+                    "state_prompt": "Cancel.",
+                    "transitions": [],
+                },
+            },
+            "source_metadata": {},
+        }
+        return svc.create_agent(name="Global Test", config=config)
+
+    def test_set_global_node_setting(self, svc):
+        created = self._make_agent(svc)
+        setting = {
+            "condition": "Caller wants to cancel",
+            "go_back_conditions": [
+                {"id": "gb-1", "condition": "Caller changes mind"},
+            ],
+        }
+        graph = svc.update_global_node_setting(created["id"], "cancel", setting)
+
+        assert graph.nodes["cancel"].global_node_setting is not None
+        assert graph.nodes["cancel"].global_node_setting.condition == "Caller wants to cancel"
+        assert len(graph.nodes["cancel"].global_node_setting.go_back_conditions) == 1
+        assert graph.nodes["cancel"].global_node_setting.go_back_conditions[0].id == "gb-1"
+
+    def test_set_global_node_setting_persists(self, svc):
+        created = self._make_agent(svc)
+        setting = {
+            "condition": "Caller wants to cancel",
+            "go_back_conditions": [],
+        }
+        svc.update_global_node_setting(created["id"], "cancel", setting)
+
+        _, reloaded = svc.load_graph(created["id"])
+        assert reloaded.nodes["cancel"].global_node_setting is not None
+        assert reloaded.nodes["cancel"].global_node_setting.condition == "Caller wants to cancel"
+
+    def test_update_global_node_setting_replaces(self, svc):
+        created = self._make_agent(svc)
+        svc.update_global_node_setting(
+            created["id"],
+            "cancel",
+            {
+                "condition": "Old condition",
+                "go_back_conditions": [{"id": "gb-1", "condition": "Old go back"}],
+            },
+        )
+        graph = svc.update_global_node_setting(
+            created["id"],
+            "cancel",
+            {
+                "condition": "New condition",
+                "go_back_conditions": [],
+            },
+        )
+
+        assert graph.nodes["cancel"].global_node_setting.condition == "New condition"
+        assert graph.nodes["cancel"].global_node_setting.go_back_conditions == []
+
+    def test_remove_global_node_setting(self, svc):
+        created = self._make_agent(svc)
+        svc.update_global_node_setting(
+            created["id"],
+            "cancel",
+            {
+                "condition": "Caller wants to cancel",
+                "go_back_conditions": [],
+            },
+        )
+        graph = svc.update_global_node_setting(created["id"], "cancel", None)
+
+        assert graph.nodes["cancel"].global_node_setting is None
+
+    def test_node_not_found_raises(self, svc):
+        created = self._make_agent(svc)
+        with pytest.raises(ValueError, match="Node not found"):
+            svc.update_global_node_setting(
+                created["id"],
+                "nonexistent",
+                {
+                    "condition": "Test",
+                    "go_back_conditions": [],
+                },
+            )
+
+    def test_agent_not_found_raises(self, svc):
+        with pytest.raises(ValueError, match="Agent not found"):
+            svc.update_global_node_setting(
+                "nonexistent",
+                "cancel",
+                {
+                    "condition": "Test",
+                    "go_back_conditions": [],
+                },
+            )
+
+    def test_other_nodes_unaffected(self, svc):
+        created = self._make_agent(svc)
+        graph = svc.update_global_node_setting(
+            created["id"],
+            "cancel",
+            {
+                "condition": "Caller wants to cancel",
+                "go_back_conditions": [],
+            },
+        )
+
+        assert graph.nodes["main"].global_node_setting is None
+
+
 class TestGetVariables:
     def test_no_variables(self, svc):
         config = {

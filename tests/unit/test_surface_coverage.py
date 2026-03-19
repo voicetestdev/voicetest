@@ -67,6 +67,7 @@ REST_SURFACED = {
     "AgentService.get_graph_with_etag",
     "AgentService.get_variables",
     "AgentService.update_prompt",
+    "AgentService.update_global_node_setting",
     "AgentService.update_metadata",
     # Metrics config
     "AgentService.get_metrics_config",
@@ -225,6 +226,7 @@ CLI_EXCLUDED_FROM_REST = {
     "AgentService.get_graph_with_etag": "HTTP caching optimization (ETag), not relevant for CLI",
     "AgentService.get_variables": "Web UI helper for variable picker, CLI uses file-based workflow",
     "AgentService.update_prompt": "Web UI inline edit, CLI edits files directly",
+    "AgentService.update_global_node_setting": "Web UI inline edit, CLI edits files directly",
     "AgentService.update_metadata": "Web UI inline edit, CLI edits files directly",
     "AgentService.get_metrics_config": "Web UI metrics panel, CLI uses file-based workflow",
     "AgentService.update_metrics_config": "Web UI metrics panel, CLI uses file-based workflow",

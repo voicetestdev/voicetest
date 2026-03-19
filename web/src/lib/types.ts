@@ -16,12 +16,23 @@ export interface ToolDefinition {
   type?: string;
 }
 
+export interface GoBackCondition {
+  id: string;
+  condition: TransitionCondition;
+}
+
+export interface GlobalNodeSetting {
+  condition: string;
+  go_back_conditions: GoBackCondition[];
+}
+
 export interface AgentNode {
   id: string;
   state_prompt: string;
   tools?: ToolDefinition[];
   transitions: Transition[];
   metadata: Record<string, unknown>;
+  global_node_setting?: GlobalNodeSetting | null;
 }
 
 export interface AgentGraph {
