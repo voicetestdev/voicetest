@@ -41,6 +41,7 @@ from voicetest.container import get_container
 from voicetest.container import get_session
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
+from voicetest.exceptions import QuotaExhaustedError
 from voicetest.executor import RunJob
 from voicetest.executor import get_executor_factory
 from voicetest.models.agent import AgentGraph
@@ -1553,6 +1554,34 @@ async def _execute_run(
                         "result_id": result_id,
                     },
                 )
+            except QuotaExhaustedError as e:
+                error_result = TestResult(
+                    test_name=test_case.name,
+                    status="error",
+                    transcript=last_transcript,
+                    error_message=str(e),
+                )
+                run_svc.complete_result(result_id, error_result)
+                await _broadcast_run_update(
+                    run_id,
+                    {
+                        "type": "quota_exhausted",
+                        "result_id": result_id,
+                        "message": str(e),
+                        "reset_message": e.reset_message,
+                    },
+                )
+                # Abort remaining tests — quota won't reset for hours,
+                # no point burning through retry backoff on each one.
+                remaining_idx = test_records.index(test_record) + 1
+                for remaining_record in test_records[remaining_idx:]:
+                    remaining_result_id = result_ids[remaining_record["id"]]
+                    run_svc.mark_result_cancelled(remaining_result_id)
+                    await _broadcast_run_update(
+                        run_id,
+                        {"type": "test_cancelled", "result_id": remaining_result_id},
+                    )
+                break
             except Exception as e:
                 error_result = TestResult(
                     test_name=test_case.name,

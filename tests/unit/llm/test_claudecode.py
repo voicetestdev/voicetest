@@ -552,6 +552,101 @@ class TestCreateLmCachePassthrough:
             assert lm.cache is False
 
 
+class TestClaudeCodeLMQuotaExhausted:
+    """Test quota exhaustion detection from Claude Code CLI."""
+
+    def test_detects_hit_your_limit(self):
+        """Should raise QuotaExhaustedError for the known Claude Code quota message."""
+        from voicetest.exceptions import QuotaExhaustedError
+        from voicetest.llm.claudecode import ClaudeCodeLM
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = json.dumps(
+            {
+                "is_error": True,
+                "result": "You've hit your limit · resets 3pm (America/New_York)",
+            }
+        )
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", return_value=mock_result),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(QuotaExhaustedError) as exc_info:
+                lm("test prompt")
+
+            assert "quota exhausted" in str(exc_info.value).lower()
+
+    def test_parses_reset_time_from_message(self):
+        """Should extract reset time into reset_message attribute."""
+        from voicetest.exceptions import QuotaExhaustedError
+        from voicetest.llm.claudecode import ClaudeCodeLM
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = json.dumps(
+            {
+                "is_error": True,
+                "result": "You've hit your limit · resets 3pm (America/New_York)",
+            }
+        )
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", return_value=mock_result),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(QuotaExhaustedError) as exc_info:
+                lm("test prompt")
+
+            assert exc_info.value.reset_message == "3pm (America/New_York)"
+
+    def test_detection_is_case_insensitive(self):
+        """Should detect 'hit your limit' regardless of case."""
+        from voicetest.exceptions import QuotaExhaustedError
+        from voicetest.llm.claudecode import ClaudeCodeLM
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = json.dumps(
+            {
+                "is_error": True,
+                "result": "You've HIT YOUR LIMIT · resets 5pm (America/Chicago)",
+            }
+        )
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", return_value=mock_result),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(QuotaExhaustedError):
+                lm("test prompt")
+
+    def test_other_errors_still_raise_runtime_error(self):
+        """Non-quota is_error responses should still raise RuntimeError."""
+        from voicetest.llm.claudecode import ClaudeCodeLM
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stdout = json.dumps(
+            {
+                "is_error": True,
+                "result": "Credit balance is too low",
+            }
+        )
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", return_value=mock_result),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(RuntimeError, match="Credit balance is too low"):
+                lm("test prompt")
+
+
 class TestPackageExports:
     """Test that package exports match the original llm.py module."""
 

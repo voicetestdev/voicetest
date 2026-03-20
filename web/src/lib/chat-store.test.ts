@@ -88,5 +88,38 @@ describe("chat-store", () => {
       expect(state.status).toBe("error");
       expect(state.error).toBe("Connection failed");
     });
+
+    it("should support quota exhausted error without changing status", () => {
+      chatState.update((s) => ({
+        ...s,
+        status: "active" as const,
+        error: "Quota exhausted. Resets 3pm (America/New_York).",
+      }));
+
+      const state = get(chatState);
+      expect(state.status).toBe("active");
+      expect(state.error).toContain("Quota exhausted");
+    });
+
+    it("should clear quota error on new message", () => {
+      chatState.update((s) => ({
+        ...s,
+        status: "active" as const,
+        error: "Quota exhausted.",
+        streaming: true,
+        streamingContent: "",
+      }));
+
+      // Simulate sendMessage clearing the error
+      chatState.update((s) => ({
+        ...s,
+        streaming: true,
+        streamingContent: "",
+        error: null,
+      }));
+
+      const state = get(chatState);
+      expect(state.error).toBeNull();
+    });
   });
 });

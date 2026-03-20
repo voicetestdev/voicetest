@@ -125,6 +125,11 @@
         </div>
       {/if}
     </div>
+    {#if chat.error && chat.status === "active"}
+      <div class="quota-banner">
+        {chat.error}
+      </div>
+    {/if}
     {#if chat.status === "active"}
       <div class="input-area">
         <input
@@ -338,6 +343,14 @@
   .error-text {
     color: var(--danger-text);
     font-size: 0.85rem;
+  }
+
+  .quota-banner {
+    padding: 0.4rem var(--space-3);
+    background: var(--warning-bg, #3d2e00);
+    color: var(--warning-text, #f5c542);
+    font-size: 0.8rem;
+    border-top: 1px solid var(--border-color);
   }
 
   .empty-state {

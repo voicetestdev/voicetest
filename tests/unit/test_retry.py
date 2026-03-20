@@ -314,6 +314,47 @@ class TestRetryableExceptions:
         assert call_count == 3
 
 
+class TestQuotaExhaustedNotRetried:
+    """QuotaExhaustedError should NOT be retried — it's a hard stop."""
+
+    async def test_quota_exhausted_not_retried_async(self):
+        """Should immediately propagate QuotaExhaustedError without retrying."""
+        from voicetest.exceptions import QuotaExhaustedError
+        from voicetest.retry import with_retry
+
+        call_count = 0
+
+        async def fail_with_quota():
+            nonlocal call_count
+            call_count += 1
+            raise QuotaExhaustedError(
+                "Claude Code quota exhausted. Resets 3pm (America/New_York).",
+                reset_message="3pm (America/New_York)",
+            )
+
+        with pytest.raises(QuotaExhaustedError):
+            await with_retry(fail_with_quota, max_attempts=5, base_delay=0.01)
+
+        assert call_count == 1
+
+    def test_quota_exhausted_not_retried_sync(self):
+        """Should immediately propagate QuotaExhaustedError without retrying (sync)."""
+        from voicetest.exceptions import QuotaExhaustedError
+        from voicetest.retry import with_retry_sync
+
+        call_count = 0
+
+        def fail_with_quota():
+            nonlocal call_count
+            call_count += 1
+            raise QuotaExhaustedError("Claude Code quota exhausted.")
+
+        with pytest.raises(QuotaExhaustedError):
+            with_retry_sync(fail_with_quota, max_attempts=5, base_delay=0.01)
+
+        assert call_count == 1
+
+
 class TestCalculateDelay:
     """Tests for delay calculation."""
 

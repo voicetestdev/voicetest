@@ -793,7 +793,11 @@
                     <div class="retry-notice failed">
                       <span class="retry-icon">⚠️</span>
                       <span class="retry-text">
-                        Failed after {retry.attempt} retry attempts ({retry.error_type})
+                        {#if retry.error_type === "QuotaExhaustedError"}
+                          {retry.message}
+                        {:else}
+                          Failed after {retry.attempt} retry attempts ({retry.error_type})
+                        {/if}
                       </span>
                     </div>
                   {/if}

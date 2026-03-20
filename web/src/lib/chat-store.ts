@@ -65,11 +65,12 @@ export function sendMessage(content: string): void {
 
   ws.send(JSON.stringify({ type: "message", content }));
 
-  // Set streaming state while waiting for agent response
+  // Set streaming state and clear any previous rate limit error
   chatState.update((s) => ({
     ...s,
     streaming: true,
     streamingContent: "",
+    error: null,
   }));
 }
 
@@ -135,6 +136,15 @@ function connectChatWebSocket(chatId: string): void {
         streamingContent: "",
       }));
       disconnectChatWebSocket();
+    } else if (data.type === "quota_exhausted") {
+      chatState.update((s) => ({
+        ...s,
+        error: data.reset_message
+          ? `Quota exhausted. Resets ${data.reset_message}.`
+          : "Quota exhausted. Please try again later.",
+        streaming: false,
+        streamingContent: "",
+      }));
     } else if (data.type === "error") {
       chatState.update((s) => ({
         ...s,
