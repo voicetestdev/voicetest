@@ -552,12 +552,12 @@ class TestCreateLmCachePassthrough:
             assert lm.cache is False
 
 
-class TestClaudeCodeLMRateLimitDetection:
-    """Test rate limit detection and RateLimitError raising."""
+class TestClaudeCodeLMQuotaExhausted:
+    """Test quota exhaustion detection from Claude Code CLI."""
 
-    def test_detects_hit_your_limit_phrase(self):
-        """Should raise RateLimitError when response contains 'hit your limit'."""
-        from voicetest.exceptions import RateLimitError
+    def test_detects_hit_your_limit(self):
+        """Should raise QuotaExhaustedError for the known Claude Code quota message."""
+        from voicetest.exceptions import QuotaExhaustedError
         from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
@@ -574,58 +574,14 @@ class TestClaudeCodeLMRateLimitDetection:
             patch("subprocess.run", return_value=mock_result),
         ):
             lm = ClaudeCodeLM(cache=False)
-            with pytest.raises(RateLimitError) as exc_info:
+            with pytest.raises(QuotaExhaustedError) as exc_info:
                 lm("test prompt")
 
-            assert "rate limit" in str(exc_info.value).lower()
-
-    def test_detects_rate_limit_phrase(self):
-        """Should raise RateLimitError when response contains 'rate limit'."""
-        from voicetest.exceptions import RateLimitError
-        from voicetest.llm.claudecode import ClaudeCodeLM
-
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = json.dumps(
-            {
-                "is_error": True,
-                "result": "Rate limit exceeded, please try again later",
-            }
-        )
-
-        with (
-            patch("shutil.which", return_value="/usr/local/bin/claude"),
-            patch("subprocess.run", return_value=mock_result),
-        ):
-            lm = ClaudeCodeLM(cache=False)
-            with pytest.raises(RateLimitError):
-                lm("test prompt")
-
-    def test_detects_too_many_requests_phrase(self):
-        """Should raise RateLimitError when response contains 'too many requests'."""
-        from voicetest.exceptions import RateLimitError
-        from voicetest.llm.claudecode import ClaudeCodeLM
-
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = json.dumps(
-            {
-                "is_error": True,
-                "result": "Too many requests. Please wait before trying again.",
-            }
-        )
-
-        with (
-            patch("shutil.which", return_value="/usr/local/bin/claude"),
-            patch("subprocess.run", return_value=mock_result),
-        ):
-            lm = ClaudeCodeLM(cache=False)
-            with pytest.raises(RateLimitError):
-                lm("test prompt")
+            assert "quota exhausted" in str(exc_info.value).lower()
 
     def test_parses_reset_time_from_message(self):
         """Should extract reset time into reset_message attribute."""
-        from voicetest.exceptions import RateLimitError
+        from voicetest.exceptions import QuotaExhaustedError
         from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
@@ -642,14 +598,14 @@ class TestClaudeCodeLMRateLimitDetection:
             patch("subprocess.run", return_value=mock_result),
         ):
             lm = ClaudeCodeLM(cache=False)
-            with pytest.raises(RateLimitError) as exc_info:
+            with pytest.raises(QuotaExhaustedError) as exc_info:
                 lm("test prompt")
 
             assert exc_info.value.reset_message == "3pm (America/New_York)"
 
-    def test_reset_message_is_none_when_no_reset_info(self):
-        """Should set reset_message to None when no reset time in error."""
-        from voicetest.exceptions import RateLimitError
+    def test_detection_is_case_insensitive(self):
+        """Should detect 'hit your limit' regardless of case."""
+        from voicetest.exceptions import QuotaExhaustedError
         from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
@@ -657,7 +613,7 @@ class TestClaudeCodeLMRateLimitDetection:
         mock_result.stdout = json.dumps(
             {
                 "is_error": True,
-                "result": "Rate limit exceeded",
+                "result": "You've HIT YOUR LIMIT · resets 5pm (America/Chicago)",
             }
         )
 
@@ -666,13 +622,11 @@ class TestClaudeCodeLMRateLimitDetection:
             patch("subprocess.run", return_value=mock_result),
         ):
             lm = ClaudeCodeLM(cache=False)
-            with pytest.raises(RateLimitError) as exc_info:
+            with pytest.raises(QuotaExhaustedError):
                 lm("test prompt")
 
-            assert exc_info.value.reset_message is None
-
-    def test_non_rate_limit_error_raises_runtime_error(self):
-        """Non-rate-limit is_error responses should still raise RuntimeError."""
+    def test_other_errors_still_raise_runtime_error(self):
+        """Non-quota is_error responses should still raise RuntimeError."""
         from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
@@ -690,28 +644,6 @@ class TestClaudeCodeLMRateLimitDetection:
         ):
             lm = ClaudeCodeLM(cache=False)
             with pytest.raises(RuntimeError, match="Credit balance is too low"):
-                lm("test prompt")
-
-    def test_rate_limit_detection_is_case_insensitive(self):
-        """Should detect rate limit phrases regardless of case."""
-        from voicetest.exceptions import RateLimitError
-        from voicetest.llm.claudecode import ClaudeCodeLM
-
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = json.dumps(
-            {
-                "is_error": True,
-                "result": "You've HIT YOUR LIMIT · resets 5pm (America/Chicago)",
-            }
-        )
-
-        with (
-            patch("shutil.which", return_value="/usr/local/bin/claude"),
-            patch("subprocess.run", return_value=mock_result),
-        ):
-            lm = ClaudeCodeLM(cache=False)
-            with pytest.raises(RateLimitError):
                 lm("test prompt")
 
 

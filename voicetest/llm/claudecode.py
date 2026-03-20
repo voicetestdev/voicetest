@@ -15,7 +15,7 @@ import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.cache import request_cache
 
-from voicetest.exceptions import RateLimitError
+from voicetest.exceptions import QuotaExhaustedError
 
 
 class ClaudeCodeLM(dspy.LM):
@@ -133,19 +133,14 @@ class ClaudeCodeLM(dspy.LM):
         # Check for error in JSON response
         if response.get("is_error"):
             error_msg = response.get("result", "unknown error")
-            error_lower = error_msg.lower()
-            rate_limit_phrases = [
-                "hit your limit",
-                "rate limit",
-                "too many requests",
-            ]
-            if any(phrase in error_lower for phrase in rate_limit_phrases):
+            # "You've hit your limit · resets 3pm (America/New_York)"
+            if "hit your limit" in error_msg.lower():
                 reset_match = re.search(r"resets?\s+(.+)", error_msg)
                 reset_message = reset_match.group(1) if reset_match else None
-                detail = "Claude Code rate limit reached."
+                detail = "Claude Code quota exhausted."
                 if reset_message:
                     detail += f" Resets {reset_message}."
-                raise RateLimitError(detail, reset_message=reset_message)
+                raise QuotaExhaustedError(detail, reset_message=reset_message)
             raise RuntimeError(f"Claude Code error: {error_msg}")
 
         return [{"text": response["result"]}]

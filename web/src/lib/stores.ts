@@ -540,22 +540,22 @@ export function connectRunWebSocket(runId: string): void {
           };
         });
       }).catch((e) => console.error("[ws] Error refreshing run:", e));
-    } else if (data.type === "rate_limit") {
-      // Rate limit hit — update result with error and show rate limit info
+    } else if (data.type === "quota_exhausted") {
+      // Provider quota exhausted — update result and show reset info
       retryStatus.update((obj) => ({
         ...obj,
         [data.result_id]: {
           result_id: data.result_id,
-          error_type: "RateLimitError",
+          error_type: "QuotaExhaustedError",
           message: data.reset_message
-            ? `Rate limit reached. Resets ${data.reset_message}.`
-            : "Rate limit reached. Please try again later.",
+            ? `Quota exhausted. Resets ${data.reset_message}.`
+            : "Quota exhausted. Please try again later.",
           attempt: 0,
           max_attempts: 0,
           retry_after: 0,
         },
       }));
-      // Refresh the run to pick up the error result
+      // Refresh the run to pick up the error result and cancelled tests
       const runId = get(currentRunWithResults)?.id;
       if (runId) {
         api.getRun(runId).then((freshRun) => {

@@ -126,7 +126,7 @@
       {/if}
     </div>
     {#if chat.error && chat.status === "active"}
-      <div class="rate-limit-banner">
+      <div class="quota-banner">
         {chat.error}
       </div>
     {/if}
@@ -345,7 +345,7 @@
     font-size: 0.85rem;
   }
 
-  .rate-limit-banner {
+  .quota-banner {
     padding: 0.4rem var(--space-3);
     background: var(--warning-bg, #3d2e00);
     color: var(--warning-text, #f5c542);

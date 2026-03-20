@@ -314,93 +314,45 @@ class TestRetryableExceptions:
         assert call_count == 3
 
 
-class TestVoicetestRateLimitRetry:
-    """Tests for retrying on voicetest RateLimitError (Claude Code rate limits)."""
+class TestQuotaExhaustedNotRetried:
+    """QuotaExhaustedError should NOT be retried — it's a hard stop."""
 
-    async def test_retry_on_voicetest_rate_limit_error(self):
-        """Should retry on voicetest.exceptions.RateLimitError."""
-        from voicetest.exceptions import RateLimitError
+    async def test_quota_exhausted_not_retried_async(self):
+        """Should immediately propagate QuotaExhaustedError without retrying."""
+        from voicetest.exceptions import QuotaExhaustedError
         from voicetest.retry import with_retry
 
         call_count = 0
 
-        async def fail_then_succeed():
+        async def fail_with_quota():
             nonlocal call_count
             call_count += 1
-            if call_count < 3:
-                raise RateLimitError(
-                    "Claude Code rate limit reached. Resets 3pm (America/New_York).",
-                    reset_message="3pm (America/New_York)",
-                )
-            return "success"
+            raise QuotaExhaustedError(
+                "Claude Code quota exhausted. Resets 3pm (America/New_York).",
+                reset_message="3pm (America/New_York)",
+            )
 
-        result = await with_retry(fail_then_succeed, base_delay=0.01)
-        assert result == "success"
-        assert call_count == 3
+        with pytest.raises(QuotaExhaustedError):
+            await with_retry(fail_with_quota, max_attempts=5, base_delay=0.01)
 
-    async def test_voicetest_rate_limit_exhausts_retries(self):
-        """Should raise RateLimitError after exhausting retries."""
-        from voicetest.exceptions import RateLimitError
-        from voicetest.retry import with_retry
+        assert call_count == 1
 
-        call_count = 0
-
-        async def always_fail():
-            nonlocal call_count
-            call_count += 1
-            raise RateLimitError("Claude Code rate limit reached.")
-
-        with pytest.raises(RateLimitError):
-            await with_retry(always_fail, max_attempts=3, base_delay=0.01)
-
-        assert call_count == 3
-
-    def test_sync_retry_on_voicetest_rate_limit_error(self):
-        """Should retry on voicetest.exceptions.RateLimitError (sync)."""
-        from voicetest.exceptions import RateLimitError
+    def test_quota_exhausted_not_retried_sync(self):
+        """Should immediately propagate QuotaExhaustedError without retrying (sync)."""
+        from voicetest.exceptions import QuotaExhaustedError
         from voicetest.retry import with_retry_sync
 
         call_count = 0
 
-        def fail_then_succeed():
+        def fail_with_quota():
             nonlocal call_count
             call_count += 1
-            if call_count < 2:
-                raise RateLimitError("Claude Code rate limit reached.")
-            return "success"
+            raise QuotaExhaustedError("Claude Code quota exhausted.")
 
-        result = with_retry_sync(fail_then_succeed, base_delay=0.01)
-        assert result == "success"
-        assert call_count == 2
+        with pytest.raises(QuotaExhaustedError):
+            with_retry_sync(fail_with_quota, max_attempts=5, base_delay=0.01)
 
-    async def test_on_error_callback_reports_voicetest_rate_limit(self):
-        """on_error should report RateLimitError type for voicetest rate limits."""
-        from voicetest.exceptions import RateLimitError
-        from voicetest.retry import RetryError
-        from voicetest.retry import with_retry
-
-        errors_received: list[RetryError] = []
-
-        async def on_error(error: RetryError):
-            errors_received.append(error)
-
-        call_count = 0
-
-        async def fail_once():
-            nonlocal call_count
-            call_count += 1
-            if call_count < 2:
-                raise RateLimitError(
-                    "Claude Code rate limit reached.",
-                    reset_message="3pm (America/New_York)",
-                )
-            return "success"
-
-        await with_retry(fail_once, base_delay=0.01, on_error=on_error)
-
-        assert len(errors_received) == 1
-        assert errors_received[0].error_type == "RateLimitError"
-        assert "rate limit" in errors_received[0].message.lower()
+        assert call_count == 1
 
 
 class TestCalculateDelay:

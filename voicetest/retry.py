@@ -11,8 +11,6 @@ from dspy.utils.exceptions import AdapterParseError
 import litellm
 import openai
 
-from voicetest.exceptions import RateLimitError
-
 
 @dataclass
 class RetryError:
@@ -35,7 +33,6 @@ RETRYABLE_EXCEPTIONS = (
     litellm.APIConnectionError,
     openai.APITimeoutError,
     AdapterParseError,
-    RateLimitError,
 )
 
 

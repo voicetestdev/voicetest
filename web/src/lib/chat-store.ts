@@ -136,12 +136,12 @@ function connectChatWebSocket(chatId: string): void {
         streamingContent: "",
       }));
       disconnectChatWebSocket();
-    } else if (data.type === "rate_limit") {
+    } else if (data.type === "quota_exhausted") {
       chatState.update((s) => ({
         ...s,
         error: data.reset_message
-          ? `Rate limit reached. Resets ${data.reset_message}.`
-          : "Rate limit reached. Please try again later.",
+          ? `Quota exhausted. Resets ${data.reset_message}.`
+          : "Quota exhausted. Please try again later.",
         streaming: false,
         streamingContent: "",
       }));

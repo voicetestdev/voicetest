@@ -291,15 +291,15 @@ class TestChatManagerProcessMessage:
         await chat_manager.process_message("nonexistent", "hello", call_repo)
 
 
-class TestChatManagerRateLimitHandling:
-    """Tests for rate limit error handling in chat sessions."""
+class TestChatManagerQuotaExhausted:
+    """Tests for quota exhaustion handling in chat sessions."""
 
     @pytest.mark.asyncio
-    async def test_rate_limit_broadcasts_structured_message(
+    async def test_quota_exhausted_broadcasts_structured_message(
         self, chat_manager, call_repo, single_node_graph
     ):
-        """RateLimitError should broadcast a 'rate_limit' message, not a generic error."""
-        from voicetest.exceptions import RateLimitError
+        """QuotaExhaustedError should broadcast a 'quota_exhausted' message, not a generic error."""
+        from voicetest.exceptions import QuotaExhaustedError
 
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
@@ -314,8 +314,8 @@ class TestChatManagerRateLimitHandling:
         mock_engine = MagicMock()
         mock_engine.add_user_message = AsyncMock()
         mock_engine.advance = AsyncMock(
-            side_effect=RateLimitError(
-                "Claude Code rate limit reached. Resets 3pm (America/New_York).",
+            side_effect=QuotaExhaustedError(
+                "Claude Code quota exhausted. Resets 3pm (America/New_York).",
                 reset_message="3pm (America/New_York)",
             )
         )
@@ -328,17 +328,17 @@ class TestChatManagerRateLimitHandling:
         import json
 
         sent_messages = [json.loads(call.args[0]) for call in ws.send_text.call_args_list]
-        rate_limit_msgs = [m for m in sent_messages if m.get("type") == "rate_limit"]
+        rate_limit_msgs = [m for m in sent_messages if m.get("type") == "quota_exhausted"]
 
         assert len(rate_limit_msgs) == 1
         assert rate_limit_msgs[0]["reset_message"] == "3pm (America/New_York)"
 
     @pytest.mark.asyncio
-    async def test_rate_limit_does_not_set_error_status(
+    async def test_quota_exhausted_does_not_set_error_status(
         self, chat_manager, call_repo, single_node_graph
     ):
-        """RateLimitError should not send a generic 'error' message type."""
-        from voicetest.exceptions import RateLimitError
+        """QuotaExhaustedError should not send a generic 'error' message type."""
+        from voicetest.exceptions import QuotaExhaustedError
 
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
@@ -351,7 +351,7 @@ class TestChatManagerRateLimitHandling:
         active = chat_manager.get_active_chat(chat_id)
         mock_engine = MagicMock()
         mock_engine.add_user_message = AsyncMock()
-        mock_engine.advance = AsyncMock(side_effect=RateLimitError("Rate limit hit."))
+        mock_engine.advance = AsyncMock(side_effect=QuotaExhaustedError("Quota exhausted."))
         mock_engine.transcript = []
         active.engine = mock_engine
 

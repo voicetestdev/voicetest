@@ -14,7 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from voicetest.engine.conversation import ConversationEngine
-from voicetest.exceptions import RateLimitError
+from voicetest.exceptions import QuotaExhaustedError
 from voicetest.models.agent import AgentGraph
 from voicetest.models.test_case import RunOptions
 from voicetest.settings import resolve_model
@@ -159,12 +159,12 @@ class ChatManager:
                 call_repo.end_call(chat_id)
                 del self._active_chats[chat_id]
 
-        except RateLimitError as e:
-            logger.warning("Rate limit hit during chat %s: %s", chat_id, e)
+        except QuotaExhaustedError as e:
+            logger.warning("Quota exhausted during chat %s: %s", chat_id, e)
             await self._broadcast_update(
                 chat_id,
                 {
-                    "type": "rate_limit",
+                    "type": "quota_exhausted",
                     "message": str(e),
                     "reset_message": e.reset_message,
                 },
