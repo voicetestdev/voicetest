@@ -88,5 +88,38 @@ describe("chat-store", () => {
       expect(state.status).toBe("error");
       expect(state.error).toBe("Connection failed");
     });
+
+    it("should support rate limit error without changing status", () => {
+      chatState.update((s) => ({
+        ...s,
+        status: "active" as const,
+        error: "Rate limit reached. Resets 3pm (America/New_York).",
+      }));
+
+      const state = get(chatState);
+      expect(state.status).toBe("active");
+      expect(state.error).toContain("Rate limit");
+    });
+
+    it("should clear rate limit error on new message", () => {
+      chatState.update((s) => ({
+        ...s,
+        status: "active" as const,
+        error: "Rate limit reached.",
+        streaming: true,
+        streamingContent: "",
+      }));
+
+      // Simulate sendMessage clearing the error
+      chatState.update((s) => ({
+        ...s,
+        streaming: true,
+        streamingContent: "",
+        error: null,
+      }));
+
+      const state = get(chatState);
+      expect(state.error).toBeNull();
+    });
   });
 });

@@ -14,6 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from voicetest.engine.conversation import ConversationEngine
+from voicetest.exceptions import RateLimitError
 from voicetest.models.agent import AgentGraph
 from voicetest.models.test_case import RunOptions
 from voicetest.settings import resolve_model
@@ -158,6 +159,16 @@ class ChatManager:
                 call_repo.end_call(chat_id)
                 del self._active_chats[chat_id]
 
+        except RateLimitError as e:
+            logger.warning("Rate limit hit during chat %s: %s", chat_id, e)
+            await self._broadcast_update(
+                chat_id,
+                {
+                    "type": "rate_limit",
+                    "message": str(e),
+                    "reset_message": e.reset_message,
+                },
+            )
         except Exception as e:
             logger.exception("Error processing chat message for %s", chat_id)
             await self._broadcast_update(

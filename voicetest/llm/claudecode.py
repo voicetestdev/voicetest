@@ -6,6 +6,7 @@ environment variable is not set.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from typing import Any
@@ -13,6 +14,8 @@ from typing import Any
 import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.cache import request_cache
+
+from voicetest.exceptions import RateLimitError
 
 
 class ClaudeCodeLM(dspy.LM):
@@ -130,6 +133,19 @@ class ClaudeCodeLM(dspy.LM):
         # Check for error in JSON response
         if response.get("is_error"):
             error_msg = response.get("result", "unknown error")
+            error_lower = error_msg.lower()
+            rate_limit_phrases = [
+                "hit your limit",
+                "rate limit",
+                "too many requests",
+            ]
+            if any(phrase in error_lower for phrase in rate_limit_phrases):
+                reset_match = re.search(r"resets?\s+(.+)", error_msg)
+                reset_message = reset_match.group(1) if reset_match else None
+                detail = "Claude Code rate limit reached."
+                if reset_message:
+                    detail += f" Resets {reset_message}."
+                raise RateLimitError(detail, reset_message=reset_message)
             raise RuntimeError(f"Claude Code error: {error_msg}")
 
         return [{"text": response["result"]}]

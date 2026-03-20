@@ -41,6 +41,7 @@ from voicetest.container import get_container
 from voicetest.container import get_session
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
+from voicetest.exceptions import RateLimitError
 from voicetest.executor import RunJob
 from voicetest.executor import get_executor_factory
 from voicetest.models.agent import AgentGraph
@@ -1551,6 +1552,23 @@ async def _execute_run(
                     {
                         "type": "test_cancelled",
                         "result_id": result_id,
+                    },
+                )
+            except RateLimitError as e:
+                error_result = TestResult(
+                    test_name=test_case.name,
+                    status="error",
+                    transcript=last_transcript,
+                    error_message=str(e),
+                )
+                run_svc.complete_result(result_id, error_result)
+                await _broadcast_run_update(
+                    run_id,
+                    {
+                        "type": "rate_limit",
+                        "result_id": result_id,
+                        "message": str(e),
+                        "reset_message": e.reset_message,
                     },
                 )
             except Exception as e:

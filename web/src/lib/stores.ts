@@ -540,6 +540,34 @@ export function connectRunWebSocket(runId: string): void {
           };
         });
       }).catch((e) => console.error("[ws] Error refreshing run:", e));
+    } else if (data.type === "rate_limit") {
+      // Rate limit hit — update result with error and show rate limit info
+      retryStatus.update((obj) => ({
+        ...obj,
+        [data.result_id]: {
+          result_id: data.result_id,
+          error_type: "RateLimitError",
+          message: data.reset_message
+            ? `Rate limit reached. Resets ${data.reset_message}.`
+            : "Rate limit reached. Please try again later.",
+          attempt: 0,
+          max_attempts: 0,
+          retry_after: 0,
+        },
+      }));
+      // Refresh the run to pick up the error result
+      const runId = get(currentRunWithResults)?.id;
+      if (runId) {
+        api.getRun(runId).then((freshRun) => {
+          currentRunWithResults.update((run) => {
+            if (!run) return run;
+            return {
+              ...run,
+              results: freshRun.results ?? run.results,
+            };
+          });
+        }).catch((e) => console.error("[ws] Error refreshing run:", e));
+      }
     } else if (data.type === "retry_error") {
       // Track retry status for display
       retryStatus.update((obj) => ({
