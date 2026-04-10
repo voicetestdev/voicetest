@@ -4,6 +4,7 @@ import pytest
 
 from voicetest.judges.flow import FlowJudge
 from voicetest.judges.flow import FlowResult
+from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -26,16 +27,20 @@ class TestFlowJudge:
     async def test_evaluate_empty_nodes_visited(self):
         judge = FlowJudge("openai/gpt-4o-mini")
 
-        nodes = {
-            "greeting": AgentNode(
-                id="greeting",
-                state_prompt="Greet the user",
-                transitions=[],
-            )
-        }
+        graph = AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet the user",
+                    transitions=[],
+                )
+            },
+            entry_node_id="greeting",
+            source_type="test",
+        )
         transcript = [Message(role="assistant", content="Hello!")]
 
-        result = await judge.evaluate(nodes, transcript, nodes_visited=[])
+        result = await judge.evaluate(graph, transcript, nodes_visited=[])
 
         assert result.valid is True
         assert result.issues == []
@@ -51,29 +56,33 @@ class TestFlowJudge:
             reasoning="The transition skipped required identity check",
         )
 
-        nodes = {
-            "greeting": AgentNode(
-                id="greeting",
-                state_prompt="Greet the user",
-                transitions=[
-                    Transition(
-                        target_node_id="verify",
-                        condition=TransitionCondition(
-                            type="llm_prompt", value="User wants to proceed"
-                        ),
-                    )
-                ],
-            ),
-            "verify": AgentNode(id="verify", state_prompt="Verify identity", transitions=[]),
-            "billing": AgentNode(id="billing", state_prompt="Handle billing", transitions=[]),
-        }
+        graph = AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet the user",
+                    transitions=[
+                        Transition(
+                            target_node_id="verify",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="User wants to proceed"
+                            ),
+                        )
+                    ],
+                ),
+                "verify": AgentNode(id="verify", state_prompt="Verify identity", transitions=[]),
+                "billing": AgentNode(id="billing", state_prompt="Handle billing", transitions=[]),
+            },
+            entry_node_id="greeting",
+            source_type="test",
+        )
         transcript = [
             Message(role="assistant", content="Hello!"),
             Message(role="user", content="I want to pay my bill"),
             Message(role="assistant", content="Here's your bill."),
         ]
 
-        result = await judge.evaluate(nodes, transcript, nodes_visited=["greeting", "billing"])
+        result = await judge.evaluate(graph, transcript, nodes_visited=["greeting", "billing"])
 
         assert result.valid is False
         assert len(result.issues) == 1

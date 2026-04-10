@@ -10,6 +10,7 @@
     loadRun,
     startRun,
     currentView,
+    selectedResultId,
   } from "../lib/stores";
   import type {
     RunResultRecord,
@@ -47,7 +48,7 @@
 
   // Reset diagnosis state when selected result changes
   $effect(() => {
-    selectedResultId;
+    $selectedResultId;
     diagnosisResult = null;
     fixResult = null;
     currentChanges = [];
@@ -317,7 +318,7 @@
     await loadRun(runId);
   }
 
-  let selectedResultId = $state<string | null>(null);
+  let userPinned = $state(false);
   let statusFilter = $state<"pass" | "fail" | null>(null);
   let deleting = $state(false);
   let rerunOpen = $state(false);
@@ -325,22 +326,35 @@
   let detailContainer = $state<HTMLElement>();
   let prevMessageCount = 0;
 
-  // Auto-select: running test takes priority, otherwise first result
+  function selectResult(id: string) {
+    userPinned = true;
+    $selectedResultId = id;
+  }
+
+  // Auto-select: only when user hasn't pinned a result
   $effect(() => {
     const results = $currentRunWithResults?.results ?? [];
     if (results.length === 0) return;
 
-    const runningResult = results.find((r) => r.status === "running");
-    if (runningResult && selectedResultId !== runningResult.id) {
-      // Running test takes priority
-      const currentSelection = results.find((r) => r.id === selectedResultId);
-      if (!currentSelection || currentSelection.status !== "running") {
-        selectedResultId = runningResult.id;
-      }
-    } else if (!selectedResultId || !results.find((r) => r.id === selectedResultId)) {
-      // Nothing selected or selection no longer exists - select first result
-      selectedResultId = results[0].id;
+    // If the current selection still exists, respect it
+    if ($selectedResultId && results.find((r) => r.id === $selectedResultId)) {
+      if (userPinned) return;
     }
+
+    // Auto-follow running test when not pinned
+    const runningResult = results.find((r) => r.status === "running");
+    if (runningResult && !userPinned) {
+      $selectedResultId = runningResult.id;
+    } else if (!$selectedResultId || !results.find((r) => r.id === $selectedResultId)) {
+      // Nothing selected or selection no longer exists — select first result
+      $selectedResultId = results[0].id;
+    }
+  });
+
+  // Reset pin when switching runs
+  $effect(() => {
+    $currentRunId;
+    userPinned = false;
   });
 
 
@@ -432,7 +446,7 @@
   }
 
   const selectedRerunResult = $derived(
-    rerunnableResults.find((r) => r.id === selectedResultId) ?? null
+    rerunnableResults.find((r) => r.id === $selectedResultId) ?? null
   );
 
   async function rerunTests(testIds: string[], noCache = false) {
@@ -459,7 +473,7 @@
   }
 
   const selectedResult = $derived(
-    $currentRunWithResults?.results.find((r) => r.id === selectedResultId) ?? null
+    $currentRunWithResults?.results.find((r) => r.id === $selectedResultId) ?? null
   );
 
   // Auto-scroll detail view to bottom only when NEW messages arrive
@@ -483,7 +497,7 @@
 
   // Reset message count when switching results
   $effect(() => {
-    selectedResultId;
+    $selectedResultId;
     prevMessageCount = 0;
   });
 </script>
@@ -615,12 +629,12 @@
       <section class="results">
         <ul class="results-list">
           {#each filteredResults() as result}
-            <li class:selected={selectedResultId === result.id}>
+            <li class:selected={$selectedResultId === result.id}>
               <div class="result-row">
                 <button
                   type="button"
                   class="result-select-btn"
-                  onclick={() => (selectedResultId = result.id)}
+                  onclick={() => selectResult(result.id)}
                 >
                   {#if result.status === "running"}
                     <span class="mini-spinner"></span>
@@ -752,8 +766,8 @@
                       <span class="state-name">{msg.content}</span>
                     </div>
                   {:else}
-                    <div class="message {msg.role}">
-                      <span class="role">{msg.role}</span>
+                    <div class="message" class:user={msg.role === "user"} class:agent={msg.role === "assistant"}>
+                      <span class="role">{msg.role === "assistant" ? "agent" : msg.role}</span>
                       {#if msg.metadata?.heard && msg.role === "assistant"}
                         <div class="audio-diff">
                           {@html diffWords(msg.content, msg.metadata.heard as string)}
@@ -1596,7 +1610,7 @@
     border-left: 3px solid var(--accent-blue);
   }
 
-  .message.assistant {
+  .message.agent {
     border-left: 3px solid var(--color-pass);
   }
 

@@ -44,6 +44,23 @@ export interface AgentGraph {
   default_model?: string | null;
 }
 
+/**
+ * Produce a string fingerprint of a graph that changes whenever
+ * any content visible in the rendered diagram changes (node prompts,
+ * transition conditions, structure).  Used to decide when to
+ * re-render the mermaid visualization.
+ */
+export function graphFingerprint(graph: AgentGraph): string {
+  const parts = [graph.entry_node_id, String(graph.source_metadata?.general_prompt ?? "")];
+  for (const [id, node] of Object.entries(graph.nodes)) {
+    parts.push(id, node.state_prompt);
+    for (const t of node.transitions) {
+      parts.push(t.target_node_id, t.condition.value);
+    }
+  }
+  return parts.join("\0");
+}
+
 export interface Message {
   role: "user" | "assistant" | "system" | "tool";
   content: string;

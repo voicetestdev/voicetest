@@ -122,7 +122,7 @@ class DecomposeJudge:
         if self._mock_mode and self._mock_plan:
             return self._mock_plan
 
-        formatted_graph = self._format_graph_full(graph)
+        formatted_graph = graph.format_graph()
         is_monolithic = len(graph.nodes) <= 1
 
         result = await call_llm(
@@ -163,7 +163,7 @@ class DecomposeJudge:
                 self._mock_node_prompts or {},
             )
 
-        formatted_graph = self._format_graph_full(graph)
+        formatted_graph = graph.format_graph()
         original_general = graph.source_metadata.get("general_prompt", "")
 
         # Sanitize node IDs: strip "NEW:" prefix so the LLM sees clean IDs
@@ -207,28 +207,6 @@ class DecomposeJudge:
             node_prompts[node_id] = node_result.refined_state_prompt
 
         return general_result.refined_general_prompt, node_prompts
-
-    def _format_graph_full(self, graph: AgentGraph) -> str:
-        """Format the agent graph with full prompt texts for analysis."""
-        lines = []
-
-        general_prompt = graph.source_metadata.get("general_prompt")
-        if general_prompt:
-            lines.append("=== GENERAL PROMPT ===")
-            lines.append(general_prompt)
-            lines.append("")
-
-        for node_id, node in graph.nodes.items():
-            lines.append(f"=== NODE: {node_id} ===")
-            lines.append(f"State Prompt: {node.state_prompt}")
-            if node.transitions:
-                lines.append("Transitions:")
-                for t in node.transitions:
-                    condition = t.condition.value or "unconditional"
-                    lines.append(f"  -> {t.target_node_id}: {condition}")
-            lines.append("")
-
-        return "\n".join(lines)
 
     def _parse_plan(
         self,

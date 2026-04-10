@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import dspy
 
 from voicetest.llm import call_llm
-from voicetest.models.agent import AgentNode
+from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message
 from voicetest.retry import OnErrorCallback
 
@@ -67,7 +67,7 @@ class FlowJudge:
 
     async def evaluate(
         self,
-        nodes: dict[str, AgentNode],
+        graph: AgentGraph,
         transcript: list[Message],
         nodes_visited: list[str],
         on_error: OnErrorCallback | None = None,
@@ -75,7 +75,7 @@ class FlowJudge:
         """Evaluate if conversation flow was logical.
 
         Args:
-            nodes: Agent graph nodes dict.
+            graph: Agent graph to validate against.
             transcript: Conversation transcript.
             nodes_visited: Sequence of node IDs visited.
             on_error: Optional callback for retry notifications.
@@ -89,18 +89,18 @@ class FlowJudge:
         if not nodes_visited:
             return FlowResult(valid=True, issues=[], reasoning="No nodes visited")
 
-        return await self._evaluate_with_llm(nodes, transcript, nodes_visited, on_error)
+        return await self._evaluate_with_llm(graph, transcript, nodes_visited, on_error)
 
     async def _evaluate_with_llm(
         self,
-        nodes: dict[str, AgentNode],
+        graph: AgentGraph,
         transcript: list[Message],
         nodes_visited: list[str],
         on_error: OnErrorCallback | None = None,
     ) -> FlowResult:
         """Evaluate using LLM."""
         formatted_transcript = self._format_transcript(transcript)
-        formatted_graph = self._format_graph(nodes)
+        formatted_graph = graph.format_graph()
 
         result = await call_llm(
             self.model,
@@ -123,17 +123,4 @@ class FlowJudge:
         lines = []
         for msg in transcript:
             lines.append(f"{msg.role.upper()}: {msg.content}")
-        return "\n".join(lines)
-
-    def _format_graph(self, nodes: dict[str, AgentNode]) -> str:
-        """Format agent graph nodes as a string for LLM input."""
-        lines = []
-        for node_id, node in nodes.items():
-            lines.append(f"[{node_id}]")
-            lines.append(f"  Instructions: {node.state_prompt[:200]}...")
-            if node.transitions:
-                lines.append("  Transitions:")
-                for t in node.transitions:
-                    condition = t.condition.value or "unconditional"
-                    lines.append(f"    -> {t.target_node_id}: {condition}")
         return "\n".join(lines)

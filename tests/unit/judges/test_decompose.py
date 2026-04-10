@@ -81,17 +81,17 @@ class TestDecomposeJudgeInit:
 
 class TestFormatGraphFull:
     def test_includes_general_prompt(self, judge, multi_node_graph):
-        formatted = judge._format_graph_full(multi_node_graph)
+        formatted = multi_node_graph.format_graph()
         assert "You are a professional customer service agent." in formatted
 
     def test_includes_node_prompts(self, judge, multi_node_graph):
-        formatted = judge._format_graph_full(multi_node_graph)
+        formatted = multi_node_graph.format_graph()
         assert "Greet the customer warmly" in formatted
         assert "Help the customer with billing" in formatted
         assert "Provide technical support" in formatted
 
     def test_includes_transitions(self, judge, multi_node_graph):
-        formatted = judge._format_graph_full(multi_node_graph)
+        formatted = multi_node_graph.format_graph()
         assert "User has billing question" in formatted
         assert "billing" in formatted
 
@@ -103,12 +103,12 @@ class TestFormatGraphFull:
             entry_node_id="main",
             source_type="custom",
         )
-        formatted = judge._format_graph_full(graph)
+        formatted = graph.format_graph()
         assert "Hello" in formatted
         assert "GENERAL PROMPT" not in formatted
 
     def test_monolithic_graph(self, judge, monolithic_graph):
-        formatted = judge._format_graph_full(monolithic_graph)
+        formatted = monolithic_graph.format_graph()
         assert "scheduling assistant" in formatted
         assert "Handle everything" in formatted
 

@@ -25,6 +25,7 @@ export const settings = writable<Settings | null>(null);
 
 export const isRunning = writable(false);
 export const selectedTestId = writable<string | null>(null);
+export const selectedResultId = writable<string | null>(null);
 
 export const runHistory = writable<RunRecord[]>([]);
 export const currentRunId = writable<string | null>(null);
@@ -63,27 +64,28 @@ if (typeof window !== "undefined") {
   expandedAgents.subscribe((v) => localStorage.setItem("expandedAgents", JSON.stringify(v)));
 }
 
-function parseHash(): { agentId: string | null; view: NavView; runId: string | null } {
-  if (typeof window === "undefined") return { agentId: null, view: "import", runId: null };
+function parseHash(): { agentId: string | null; view: NavView; runId: string | null; resultId: string | null } {
+  if (typeof window === "undefined") return { agentId: null, view: "import", runId: null, resultId: null };
   const hash = window.location.hash.slice(1);
-  if (!hash) return { agentId: null, view: "import", runId: null };
+  if (!hash) return { agentId: null, view: "import", runId: null, resultId: null };
 
   const parts = hash.split("/").filter(Boolean);
   if (parts[0] === "settings") {
-    return { agentId: null, view: "settings", runId: null };
+    return { agentId: null, view: "settings", runId: null, resultId: null };
   }
   if (parts[0] === "import") {
-    return { agentId: null, view: "import", runId: null };
+    return { agentId: null, view: "import", runId: null, resultId: null };
   }
   if (parts[0] === "agent" && parts[1]) {
     const view = (parts[2] as NavView) || "config";
     const runId = view === "runs" && parts[3] ? parts[3] : null;
-    return { agentId: parts[1], view, runId };
+    const resultId = view === "runs" && parts[4] ? parts[4] : null;
+    return { agentId: parts[1], view, runId, resultId };
   }
-  return { agentId: null, view: "import", runId: null };
+  return { agentId: null, view: "import", runId: null, resultId: null };
 }
 
-function updateHash(agentId: string | null, view: NavView, runId: string | null): void {
+function updateHash(agentId: string | null, view: NavView, runId: string | null, resultId: string | null = null): void {
   if (typeof window === "undefined") return;
   let hash = "";
   if (view === "settings") {
@@ -91,7 +93,9 @@ function updateHash(agentId: string | null, view: NavView, runId: string | null)
   } else if (view === "import" || !agentId) {
     hash = "#/import";
   } else if (view === "runs" && runId) {
-    hash = `#/agent/${agentId}/runs/${runId}`;
+    hash = resultId
+      ? `#/agent/${agentId}/runs/${runId}/${resultId}`
+      : `#/agent/${agentId}/runs/${runId}`;
   } else {
     hash = `#/agent/${agentId}/${view}`;
   }
@@ -103,45 +107,58 @@ function updateHash(agentId: string | null, view: NavView, runId: string | null)
 let currentAgentIdValue: string | null = null;
 let currentViewValue: NavView = "import";
 let currentRunIdValue: string | null = null;
+let selectedResultIdValue: string | null = null;
 // Disabled initially - subscriptions fire immediately with default values which would corrupt the hash
 let hashUpdateEnabled = false;
 
 currentAgentId.subscribe((v) => {
   currentAgentIdValue = v;
   if (hashUpdateEnabled) {
-    updateHash(v, currentViewValue, currentRunIdValue);
+    updateHash(v, currentViewValue, currentRunIdValue, selectedResultIdValue);
   }
 });
 
 currentView.subscribe((v) => {
   currentViewValue = v;
   if (hashUpdateEnabled) {
-    updateHash(currentAgentIdValue, v, currentRunIdValue);
+    updateHash(currentAgentIdValue, v, currentRunIdValue, selectedResultIdValue);
   }
 });
 
 currentRunId.subscribe((v) => {
   currentRunIdValue = v;
   if (hashUpdateEnabled) {
-    updateHash(currentAgentIdValue, currentViewValue, v);
+    updateHash(currentAgentIdValue, currentViewValue, v, selectedResultIdValue);
+  }
+});
+
+selectedResultId.subscribe((v) => {
+  selectedResultIdValue = v;
+  if (hashUpdateEnabled) {
+    updateHash(currentAgentIdValue, currentViewValue, currentRunIdValue, v);
   }
 });
 
 if (typeof window !== "undefined") {
   window.addEventListener("hashchange", async () => {
-    const { agentId, view, runId } = parseHash();
+    const { agentId, view, runId, resultId } = parseHash();
     if (view === "settings") {
       currentView.set("settings");
       currentAgentId.set(null);
     } else if (agentId && agentId !== currentAgentIdValue) {
       await selectAgent(agentId, view, runId);
+      if (resultId) selectedResultId.set(resultId);
     } else if (view !== currentViewValue) {
       currentView.set(view);
       if (view === "runs" && runId) {
         await loadRun(runId);
+        if (resultId) selectedResultId.set(resultId);
       }
     } else if (view === "runs" && runId && runId !== currentRunIdValue) {
       await loadRun(runId);
+      if (resultId) selectedResultId.set(resultId);
+    } else if (view === "runs" && resultId && resultId !== selectedResultIdValue) {
+      selectedResultId.set(resultId);
     }
   });
 }
@@ -284,7 +301,7 @@ export async function initStores(): Promise<void> {
 
   const agentList = get(agents);
 
-  const { agentId, view, runId } = parseHash();
+  const { agentId, view, runId, resultId } = parseHash();
 
   if (view === "settings") {
     currentView.set("settings");
@@ -292,6 +309,7 @@ export async function initStores(): Promise<void> {
     currentView.set("import");
   } else if (agentId && agentList.some((a) => a.id === agentId)) {
     await selectAgent(agentId, view, runId);
+    if (resultId) selectedResultId.set(resultId);
   } else if (agentList.length > 0) {
     await selectAgent(agentList[0].id, "config");
   } else {

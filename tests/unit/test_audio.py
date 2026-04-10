@@ -76,8 +76,8 @@ class TestTransformTranscript:
         assert "heard" not in result[0].metadata
 
     @pytest.mark.asyncio
-    async def test_assistant_messages_get_heard(self):
-        """Assistant messages should get metadata['heard'] populated."""
+    async def test_agent_messages_get_heard(self):
+        """Agent messages should get metadata['heard'] populated."""
         rt = AudioRoundTrip()
 
         async def mock_round_trip(text):
@@ -116,8 +116,8 @@ class TestTransformTranscript:
         assert "heard" not in transcript[0].metadata
 
     @pytest.mark.asyncio
-    async def test_empty_assistant_message_skipped(self):
-        """Empty assistant messages should not be round-tripped."""
+    async def test_empty_agent_message_skipped(self):
+        """Empty agent messages should not be round-tripped."""
         rt = AudioRoundTrip()
         calls = []
 

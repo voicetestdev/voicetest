@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GlobalMetric, MetricsConfig, MetricResult, Settings, AgentGraph, Message } from "./types";
-import { nextExpectedRole } from "./types";
+import { nextExpectedRole, graphFingerprint } from "./types";
 
 describe("types", () => {
   describe("GlobalMetric", () => {
@@ -371,6 +371,84 @@ describe("types", () => {
 
       expect(graph.default_model).toBe("openai/gpt-4o");
       expect(graph.source_type).toBe("retell-llm");
+    });
+  });
+
+  describe("graphFingerprint", () => {
+    function makeGraph(overrides: Partial<AgentGraph> = {}): AgentGraph {
+      return {
+        nodes: {
+          greeting: {
+            id: "greeting",
+            state_prompt: "Hello there",
+            tools: [],
+            transitions: [
+              { target_node_id: "billing", condition: { type: "llm_prompt", value: "wants billing" } },
+            ],
+            metadata: {},
+          },
+        },
+        entry_node_id: "greeting",
+        source_type: "test",
+        source_metadata: {},
+        ...overrides,
+      };
+    }
+
+    it("returns the same fingerprint for identical graphs", () => {
+      expect(graphFingerprint(makeGraph())).toBe(graphFingerprint(makeGraph()));
+    });
+
+    it("changes when a node prompt changes", () => {
+      const before = graphFingerprint(makeGraph());
+      const after = graphFingerprint(
+        makeGraph({
+          nodes: {
+            greeting: {
+              id: "greeting",
+              state_prompt: "Hi, updated prompt",
+              tools: [],
+              transitions: [
+                { target_node_id: "billing", condition: { type: "llm_prompt", value: "wants billing" } },
+              ],
+              metadata: {},
+            },
+          },
+        }),
+      );
+      expect(before).not.toBe(after);
+    });
+
+    it("changes when general_prompt changes", () => {
+      const before = graphFingerprint(makeGraph({ source_metadata: { general_prompt: "v1" } }));
+      const after = graphFingerprint(makeGraph({ source_metadata: { general_prompt: "v2" } }));
+      expect(before).not.toBe(after);
+    });
+
+    it("changes when a transition condition changes", () => {
+      const before = graphFingerprint(makeGraph());
+      const after = graphFingerprint(
+        makeGraph({
+          nodes: {
+            greeting: {
+              id: "greeting",
+              state_prompt: "Hello there",
+              tools: [],
+              transitions: [
+                { target_node_id: "billing", condition: { type: "llm_prompt", value: "needs invoice" } },
+              ],
+              metadata: {},
+            },
+          },
+        }),
+      );
+      expect(before).not.toBe(after);
+    });
+
+    it("changes when entry_node_id changes", () => {
+      const before = graphFingerprint(makeGraph());
+      const after = graphFingerprint(makeGraph({ entry_node_id: "billing" }));
+      expect(before).not.toBe(after);
     });
   });
 });

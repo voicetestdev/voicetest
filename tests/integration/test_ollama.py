@@ -145,10 +145,10 @@ class TestOllamaExecution:
         )
 
         user_messages = [m for m in result.transcript if m.role == "user"]
-        assistant_messages = [m for m in result.transcript if m.role == "assistant"]
+        agent_messages = [m for m in result.transcript if m.role == "assistant"]
 
         assert len(user_messages) > 0, "No user messages in transcript"
-        assert len(assistant_messages) > 0, "No assistant messages in transcript"
+        assert len(agent_messages) > 0, "No agent messages in transcript"
 
     @pytest.mark.asyncio
     async def test_metric_evaluation_has_reasoning(

@@ -288,7 +288,7 @@ class TestExecutionService:
             flow_issues: list[str] = []
             if options.flow_judge:
                 flow_result = await flow_judge.evaluate(
-                    graph.nodes, state.transcript, state.nodes_visited, on_error=on_error
+                    graph, state.transcript, state.nodes_visited, on_error=on_error
                 )
                 flow_issues = flow_result.issues
 

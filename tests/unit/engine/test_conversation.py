@@ -173,10 +173,10 @@ class TestProcessTurn:
             await engine.add_user_message("Hi!")
             await engine.advance()
 
-        # Should have the user message and assistant response
-        assistant_msgs = [m for m in engine.transcript if m.role == "assistant"]
-        assert len(assistant_msgs) == 1
-        assert assistant_msgs[0].content == "Hello there!"
+        # Should have the user message and agent response
+        agent_msgs = [m for m in engine.transcript if m.role == "assistant"]
+        assert len(agent_msgs) == 1
+        assert agent_msgs[0].content == "Hello there!"
 
     @pytest.mark.asyncio
     async def test_advance_handles_transition(self, simple_graph):
@@ -1074,10 +1074,10 @@ class TestToolMessagesInTranscript:
         assert tool_msgs[0].metadata["node_id"] == "premium_support"
 
     @pytest.mark.asyncio
-    async def test_logic_node_produces_tool_message_not_empty_assistant(
+    async def test_logic_node_produces_tool_message_not_empty_agent(
         self, logic_graph_with_fallback
     ):
-        """Logic node should produce tool messages, not an empty assistant message."""
+        """Logic node should produce tool messages, not an empty agent message."""
         with patch("voicetest.engine.conversation.call_llm"):
             engine = ConversationEngine(
                 logic_graph_with_fallback,
@@ -1091,10 +1091,10 @@ class TestToolMessagesInTranscript:
         assert len(tool_msgs) >= 1
         assert "Transitioned to premium_support" in tool_msgs[0].content
 
-        # Should NOT have an empty assistant message
-        assistant_msgs = [m for m in engine._transcript if m.role == "assistant"]
-        empty_assistant = [m for m in assistant_msgs if m.content == ""]
-        assert len(empty_assistant) == 0
+        # Should NOT have an empty agent message
+        agent_msgs = [m for m in engine._transcript if m.role == "assistant"]
+        empty_agent = [m for m in agent_msgs if m.content == ""]
+        assert len(empty_agent) == 0
 
     @pytest.mark.asyncio
     async def test_logic_node_always_fallback_produces_tool_message(
@@ -1205,7 +1205,7 @@ class TestTranscriptOrdering:
     @pytest.mark.asyncio
     async def test_transition_before_response_in_transcript(self, two_node_graph):
         """When advance() transitions and responds, the transition tool message
-        should precede the assistant response (agent responds from destination)."""
+        should precede the agent response (agent responds from destination)."""
         engine = ConversationEngine(
             graph=two_node_graph,
             model="test/model",
@@ -1225,18 +1225,18 @@ class TestTranscriptOrdering:
 
         transcript = engine.transcript
         tool_msgs = [m for m in transcript if m.role == "tool"]
-        assistant_msgs = [m for m in transcript if m.role == "assistant"]
+        agent_msgs = [m for m in transcript if m.role == "assistant"]
 
         assert len(tool_msgs) == 1
         assert "billing" in tool_msgs[0].content
-        assert len(assistant_msgs) == 1
+        assert len(agent_msgs) == 1
 
         # Transition appears before response (agent responds from destination)
         tool_idx = next(i for i, m in enumerate(transcript) if m.role == "tool")
-        assistant_idx = next(i for i, m in enumerate(transcript) if m.role == "assistant")
-        assert tool_idx < assistant_idx, (
+        agent_idx = next(i for i, m in enumerate(transcript) if m.role == "assistant")
+        assert tool_idx < agent_idx, (
             f"Transition (index {tool_idx}) should come before "
-            f"assistant response (index {assistant_idx}). "
+            f"agent response (index {agent_idx}). "
             f"Transcript: {[(m.role, m.content[:40]) for m in transcript]}"
         )
 
@@ -1481,13 +1481,13 @@ class TestOnTurnCallback:
             await engine.add_user_message("I want to leave")
             await engine.advance()
 
-        # Should have fired for: user message, transition tool message, assistant response
+        # Should have fired for: user message, transition tool message, agent response
         assert len(snapshots) == 3
         # First snapshot: user message added
         assert snapshots[0] == ["user"]
         # Second snapshot: transition tool message added
         assert snapshots[1] == ["user", "tool"]
-        # Third snapshot: assistant response added
+        # Third snapshot: agent response added
         assert snapshots[2] == ["user", "tool", "assistant"]
 
     @pytest.mark.asyncio
@@ -1516,7 +1516,7 @@ class TestOnTurnCallback:
             await engine.add_user_message("Hi!")
             await engine.advance()
 
-        # Should have fired for: user message, assistant response
+        # Should have fired for: user message, agent response
         assert len(snapshots) == 2
         assert snapshots[0] == ["user"]
         assert snapshots[1] == ["user", "assistant"]
