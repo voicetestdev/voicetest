@@ -151,7 +151,7 @@ class TestMessageNodeMetadata:
 
 
 class TestResponseNodeMetadata:
-    """Test that assistant messages have the correct generating node_id."""
+    """Test that agent messages have the correct generating node_id."""
 
     @pytest.mark.asyncio
     async def test_response_metadata_reflects_generating_node(self, simple_graph):
@@ -184,11 +184,11 @@ class TestResponseNodeMetadata:
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
             state = await runner.run(test_case, simulator)
 
-        # The assistant message should be labeled with "greeting" (the generating node),
+        # The agent message should be labeled with "greeting" (the generating node),
         # not "farewell" (the transition target)
-        assistant_msgs = [m for m in state.transcript if m.role == "assistant"]
-        assert len(assistant_msgs) >= 1
-        assert assistant_msgs[0].metadata["node_id"] == "greeting"
+        agent_msgs = [m for m in state.transcript if m.role == "assistant"]
+        assert len(agent_msgs) >= 1
+        assert agent_msgs[0].metadata["node_id"] == "greeting"
 
 
 class TestDynamicVariableSubstitution:

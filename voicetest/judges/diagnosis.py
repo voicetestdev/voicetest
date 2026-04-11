@@ -144,7 +144,7 @@ class DiagnosisJudge:
         if self._mock_mode and self._mock_diagnosis:
             return self._mock_diagnosis
 
-        formatted_graph = self._format_graph_full(graph)
+        formatted_graph = graph.format_graph()
         formatted_transcript = self._format_transcript_with_nodes(transcript)
         formatted_metrics = self._format_failed_metrics(failed_metrics)
 
@@ -179,7 +179,7 @@ class DiagnosisJudge:
         if self._mock_mode and self._mock_fix:
             return self._mock_fix
 
-        formatted_graph = self._format_graph_full(graph)
+        formatted_graph = graph.format_graph()
         formatted_metrics = self._format_failed_metrics(failed_metrics)
 
         diagnosis_summary = f"Root cause: {diagnosis.root_cause}\nFault locations:\n"
@@ -220,7 +220,7 @@ class DiagnosisJudge:
         if self._mock_mode and self._mock_fix:
             return self._mock_fix
 
-        formatted_graph = self._format_graph_full(graph)
+        formatted_graph = graph.format_graph()
         prev_changes_json = json.dumps([c.model_dump() for c in prev_changes])
         formatted_metrics = self._format_all_metrics(new_metrics)
 
@@ -242,50 +242,6 @@ class DiagnosisJudge:
             summary=result.summary,
             confidence=float(result.confidence),
         )
-
-    def _format_graph_full(self, graph: AgentGraph) -> str:
-        """Format the agent graph with FULL prompt texts for diagnosis."""
-        lines = []
-
-        general_prompt = graph.source_metadata.get("general_prompt")
-        if general_prompt:
-            lines.append("=== GENERAL PROMPT ===")
-            lines.append(general_prompt)
-            lines.append("")
-
-        for node_id, node in graph.nodes.items():
-            if node.is_logic_node():
-                name = node.metadata.get("name", node_id)
-                lines.append(f"=== NODE: {node_id} (Logic Split: {name}) ===")
-                lines.append(
-                    "This node routes deterministically based on variable "
-                    "conditions — no LLM prompt is used."
-                )
-                lines.append("Routes:")
-                for t in node.transitions:
-                    if t.condition.type == "always":
-                        lines.append(f"  -> {t.target_node_id}: [else/fallback]")
-                    elif t.condition.equations:
-                        clauses = []
-                        for eq in t.condition.equations:
-                            if eq.operator in ("exists", "not_exist"):
-                                clauses.append(f"{eq.left} {eq.operator}")
-                            else:
-                                clauses.append(f"{eq.left} {eq.operator} {eq.right}")
-                        lines.append(f"  -> {t.target_node_id}: {' AND '.join(clauses)}")
-                    else:
-                        lines.append(f"  -> {t.target_node_id}: {t.condition.value}")
-            else:
-                lines.append(f"=== NODE: {node_id} ===")
-                lines.append(f"State Prompt: {node.state_prompt}")
-                if node.transitions:
-                    lines.append("Transitions:")
-                    for t in node.transitions:
-                        condition = t.condition.value or "unconditional"
-                        lines.append(f"  -> {t.target_node_id}: {condition}")
-            lines.append("")
-
-        return "\n".join(lines)
 
     def _format_transcript_with_nodes(self, transcript: list[Message]) -> str:
         """Format transcript with node_id annotations per message."""

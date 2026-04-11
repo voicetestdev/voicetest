@@ -13,6 +13,7 @@ export {
   settings,
   isRunning,
   selectedTestId,
+  selectedResultId,
   runHistory,
   currentRunId,
   currentRunWithResults,

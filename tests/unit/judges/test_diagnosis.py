@@ -122,18 +122,18 @@ class TestDiagnosisJudgeInit:
 
 class TestFormatGraphFull:
     def test_includes_general_prompt(self, judge, sample_graph):
-        formatted = judge._format_graph_full(sample_graph)
+        formatted = sample_graph.format_graph()
         assert "You are a professional customer service agent." in formatted
 
     def test_includes_complete_node_prompts(self, judge, sample_graph):
-        formatted = judge._format_graph_full(sample_graph)
+        formatted = sample_graph.format_graph()
         assert "Greet the user warmly and ask how you can help." in formatted
         assert "Help the customer with billing inquiries." in formatted
         assert "Provide technical support." in formatted
         assert "Thank the customer and end the call politely." in formatted
 
     def test_includes_transitions(self, judge, sample_graph):
-        formatted = judge._format_graph_full(sample_graph)
+        formatted = sample_graph.format_graph()
         assert "User has billing question" in formatted
         assert "User needs technical support" in formatted
         assert "billing" in formatted
@@ -147,24 +147,24 @@ class TestFormatGraphFull:
             entry_node_id="main",
             source_type="custom",
         )
-        formatted = judge._format_graph_full(graph)
+        formatted = graph.format_graph()
         assert "Hello" in formatted
 
     def test_logic_node_annotated(self, judge, logic_split_graph):
         """Logic split nodes should be annotated as deterministic routing."""
-        formatted = judge._format_graph_full(logic_split_graph)
+        formatted = logic_split_graph.format_graph()
         assert "LOGIC SPLIT" in formatted or "Logic Split" in formatted
 
     def test_logic_node_equation_details(self, judge, logic_split_graph):
         """Equation clauses should be formatted with variable details."""
-        formatted = judge._format_graph_full(logic_split_graph)
+        formatted = logic_split_graph.format_graph()
         assert "account_type" in formatted
         assert "==" in formatted
         assert "premium" in formatted
 
     def test_logic_node_else_annotated(self, judge, logic_split_graph):
         """Always/else transitions should be clearly labeled."""
-        formatted = judge._format_graph_full(logic_split_graph)
+        formatted = logic_split_graph.format_graph()
         # The else/fallback transition should be clearly identified
         assert "else" in formatted.lower() or "fallback" in formatted.lower()
 

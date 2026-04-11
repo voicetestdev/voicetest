@@ -15,7 +15,7 @@ class TestMessage:
         assert msg.timestamp is None
         assert msg.metadata == {}
 
-    def test_create_assistant_message_with_timestamp(self):
+    def test_create_agent_message_with_timestamp(self):
         from voicetest.models.results import Message
 
         now = datetime.now()

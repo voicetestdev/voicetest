@@ -8,6 +8,7 @@
     refreshAgent,
     currentView,
   } from "../lib/stores";
+  import { graphFingerprint } from "../lib/types";
   import type { SyncStatus } from "../lib/types";
   import CallView from "./CallView.svelte";
   import ChatView from "./ChatView.svelte";
@@ -98,8 +99,7 @@
 
   $effect(() => {
     const graph = $agentGraph;
-    const transitionCount = graph ? Object.values(graph.nodes).reduce((sum, n) => sum + n.transitions.length, 0) : 0;
-    const graphId = graph ? `${graph.entry_node_id}-${Object.keys(graph.nodes).length}-${transitionCount}` : null;
+    const graphId = graph ? graphFingerprint(graph) : null;
     const currentTheme = theme;
 
     if (graphId && (graphId !== lastGraphId || currentTheme !== lastTheme)) {
