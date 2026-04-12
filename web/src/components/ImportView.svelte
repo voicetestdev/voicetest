@@ -388,35 +388,42 @@
   <div class="section">
     <div class="section-header">Details</div>
     <div class="section-body">
-      <div class="form-row">
-        <label>
-          Name:
-          <input type="text" bind:value={agentName} placeholder="Agent name" />
-        </label>
-      </div>
+      {#if importing}
+        <div class="importing-state">
+          <span class="spinner"></span>
+          <span>Importing agent...</span>
+        </div>
+      {:else}
+        <div class="form-row">
+          <label>
+            Name:
+            <input type="text" bind:value={agentName} placeholder="Agent name" />
+          </label>
+        </div>
 
-      <button class="method-toggle" onclick={() => showJson = !showJson}>
-        <span class="caret" class:open={showJson}>▶</span> {jsonToggleLabel}
-      </button>
-
-      {#if showJson}
-        <textarea
-          bind:value={configText}
-          placeholder="Paste agent config JSON here..."
-          rows={12}
-          class="json-editor"
-        ></textarea>
-      {/if}
-
-      <div class="button-row">
-        <button
-          class="import-button"
-          onclick={importAgent}
-          disabled={importing || !hasInput}
-        >
-          {importing ? "Importing..." : "Import Agent"}
+        <button class="method-toggle" onclick={() => showJson = !showJson}>
+          <span class="caret" class:open={showJson}>▶</span> {jsonToggleLabel}
         </button>
-      </div>
+
+        {#if showJson}
+          <textarea
+            bind:value={configText}
+            placeholder="Paste agent config JSON here..."
+            rows={12}
+            class="json-editor"
+          ></textarea>
+        {/if}
+
+        <div class="button-row">
+          <button
+            class="import-button"
+            onclick={importAgent}
+            disabled={!hasInput}
+          >
+            Import Agent
+          </button>
+        </div>
+      {/if}
     </div>
   </div>
 
@@ -820,5 +827,27 @@
     .drop-zone {
       padding: 1.5rem 1rem;
     }
+  }
+
+  .importing-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    color: var(--text-secondary);
+  }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 </style>
