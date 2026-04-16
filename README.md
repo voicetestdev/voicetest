@@ -547,6 +547,14 @@ options = RunOptions(
 )
 ```
 
+For Vertex AI models that aren't available in the default `us-central1` region, set the `VERTEXAI_LOCATION` environment variable to the required region:
+
+```bash
+export VERTEXAI_LOCATION=global  # needed for e.g. gemini-3.1-flash-lite-preview
+```
+
+See the [LiteLLM Vertex AI docs](https://docs.litellm.ai/docs/providers/vertex) for supported regions.
+
 In the shell:
 
 ```
