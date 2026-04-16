@@ -137,6 +137,7 @@ dev = [
     "pyyaml>=6.0.3",
     "boto3>=1.35",
     "cloudpickle>=3.0",
+    "mkdocs-material>=9.7.6",
 ]
 
 [tool.uv]

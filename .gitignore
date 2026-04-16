@@ -21,6 +21,9 @@ node_modules/
 # wt copy
 .voicetest.toml
 
+# MkDocs build output
+site/
+
 # Demo temp
 docs/demos/test-results
 
