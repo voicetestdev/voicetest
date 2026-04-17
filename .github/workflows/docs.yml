@@ -17,11 +17,8 @@ jobs:
 
       - uses: astral-sh/setup-uv@v5
 
-      - name: Install dependencies
-        run: uv sync --only-group dev
-
       - name: Build docs
-        run: uv run mkdocs build --strict --site-dir _site
+        run: uvx --with mkdocs-material mkdocs build --strict --site-dir _site
 
       - name: Deploy to GitHub Pages repo
         uses: peaceiris/actions-gh-pages@v4
