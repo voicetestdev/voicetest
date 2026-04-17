@@ -4,41 +4,12 @@ voicetest is an open-source test harness for voice agent workflows. Define agent
 
 ## Where to start
 
-<div class="grid cards" markdown>
-
-- **New to voicetest?**
-
-  ______________________________________________________________________
-
-  Install, run the demo, and execute your first test in under 5 minutes.
-
-  [:octicons-arrow-right-24: Getting Started](getting-started.md)
-
-- **Have an agent to test?**
-
-  ______________________________________________________________________
-
-  CLI commands for running tests, managing agents, and exporting results.
-
-  [:octicons-arrow-right-24: CLI Reference](cli.md)
-
-- **Understand the model**
-
-  ______________________________________________________________________
-
-  Agent graphs, node types, transitions, dynamic variables, and test cases.
-
-  [:octicons-arrow-right-24: Core Concepts](concepts.md)
-
-- **Configure models and settings**
-
-  ______________________________________________________________________
-
-  LLM providers, run options, Claude Code passthrough, and platform credentials.
-
-  [:octicons-arrow-right-24: Configuration](configuration.md)
-
-</div>
+| If you want to...                                                                      | Go here                               |
+| -------------------------------------------------------------------------------------- | ------------------------------------- |
+| **Get up and running** — install, run the demo, first test in 5 minutes                | [Getting Started](getting-started.md) |
+| **Test an agent** — CLI commands for running tests, managing agents, exporting results | [CLI Reference](cli.md)               |
+| **Understand the model** — agent graphs, node types, transitions, dynamic variables    | [Core Concepts](concepts.md)          |
+| **Configure models and settings** — LLM providers, run options, platform credentials   | [Configuration](configuration.md)     |
 
 ## Feature highlights
 
