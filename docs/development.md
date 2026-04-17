@@ -12,7 +12,7 @@ uv run pre-commit run --all-files
 
 - **Python**: `ruff` (lint + auto-fix) and `ruff-format`
 - **TypeScript/Svelte**: `svelte-check` and `tsc --noEmit`
-- **Markdown**: `mdformat` with GFM support
+- **Markdown**: `mdformat` with MkDocs support
 - **General**: trailing-whitespace, end-of-file-fixer, check-yaml, check-json
 
 **Python style (pyproject.toml):**

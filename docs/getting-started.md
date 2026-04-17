@@ -4,25 +4,21 @@
 
 === "uv (recommended)"
 
-````
-```bash
-uv tool install voicetest
-```
+    ```bash
+    uv tool install voicetest
+    ```
 
-Or add to a project:
+    Or add to a project:
 
-```bash
-uv add voicetest
-```
-````
+    ```bash
+    uv add voicetest
+    ```
 
 === "pip"
 
-````
-```bash
-pip install voicetest
-```
-````
+    ```bash
+    pip install voicetest
+    ```
 
 ## Quick start with the demo
 
@@ -40,7 +36,8 @@ voicetest demo --serve
 ```
 
 !!! tip "No API key? Use Claude Code"
-If you have [Claude Code](https://claude.ai/claude-code) installed, skip API key setup and use `claudecode/sonnet` as your model. See [Claude Code Passthrough](configuration.md#claude-code-passthrough).
+
+    If you have [Claude Code](https://claude.ai/claude-code) installed, skip API key setup and use `claudecode/sonnet` as your model. See [Claude Code Passthrough](configuration.md#claude-code-passthrough).
 
 The demo includes test cases covering appointment scheduling, identity verification, and more.
 
