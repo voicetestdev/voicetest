@@ -1,6 +1,7 @@
 name: Deploy docs
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
@@ -23,7 +24,7 @@ jobs:
       - name: Deploy to GitHub Pages repo
         uses: peaceiris/actions-gh-pages@v4
         with:
-          deploy_key: ${{ secrets.DOCS_DEPLOY_KEY }}
+          personal_token: ${{ secrets.DOCS_DEPLOY_TOKEN }}
           external_repository: voicetestdev/voicetestdev.github.io
           publish_branch: main
           publish_dir: ./_site
