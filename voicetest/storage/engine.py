@@ -8,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import StaticPool
 
 from voicetest.config import get_db_path
 from voicetest.storage.models import Base
@@ -165,15 +166,22 @@ def create_db_engine(url: str | None = None) -> Engine:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         url = f"duckdb:///{db_path}"
 
-    # For serverless PostgreSQL (Neon), use NullPool so each request gets
-    # a fresh connection. Neon drops idle SSL connections and pools them
-    # externally, so SQLAlchemy's built-in pool just accumulates dead
-    # connections that trigger PendingRollbackError cascades.
+    # Pool strategy by backend:
+    # - Neon (serverless Postgres): NullPool — Neon drops idle SSL connections
+    #   and pools externally, so SQLAlchemy's pool accumulates dead connections.
+    # - DuckDB (embedded): StaticPool — DuckDB is in-process and single-writer.
+    #   Multiple connections to the same file segfault under concurrent
+    #   read+write load (observed with DuckDB 1.6.0.dev12). A single shared
+    #   connection serializes all access safely.
+    # - Other (e.g. Postgres): default QueuePool with pre-ping and recycling.
     use_nullpool = "neon" in url.lower() or "pooler_mode" in url.lower()
+    use_staticpool = url.startswith("duckdb")
 
     pool_kwargs: dict = {"echo": False}
     if use_nullpool:
         pool_kwargs["poolclass"] = NullPool
+    elif use_staticpool:
+        pool_kwargs["poolclass"] = StaticPool
     else:
         pool_kwargs["pool_pre_ping"] = True
         pool_kwargs["pool_recycle"] = 300

@@ -1092,27 +1092,42 @@ async def list_runs_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
 
 
 @router.get("/runs/{run_id}")
-async def get_run(run_id: str) -> dict:
+async def get_run(run_id: str, background_tasks: BackgroundTasks) -> dict:
     """Get a run with all results."""
     run_svc = get_run_service()
     run = run_svc.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    # Detect orphaned run: not completed but not actively running
+    # Detect orphaned run: not completed but not actively running.
+    # Correct the response dict immediately so the client sees accurate state,
+    # but defer the DB writes to a background task so they don't hold the
+    # DuckDB connection during the response (reduces contention window).
     if run["completed_at"] is None and run_id not in _active_runs:
-        run_svc.complete(run_id)
         run["completed_at"] = datetime.now(UTC).isoformat()
 
-    # Fix inconsistent state: run complete but results still "running"
-    if run["completed_at"] is not None:
+        orphaned_result_ids: list[str] = []
         for result in run["results"]:
             if result["status"] == "running":
-                run_svc.mark_result_error(result["id"], "Run orphaned - backend stopped")
+                orphaned_result_ids.append(result["id"])
                 result["status"] = "error"
                 result["error_message"] = "Run orphaned - backend stopped"
 
+        background_tasks.add_task(_cleanup_orphaned_run, run_id, orphaned_result_ids)
+
     return run
+
+
+def _cleanup_orphaned_run(run_id: str, result_ids: list[str]) -> None:
+    """Persist orphan-cleanup state to DB. Runs after the response is sent.
+
+    Idempotent — if this fails, the next GET for the same run will
+    re-detect the orphan and schedule another cleanup.
+    """
+    run_svc = get_run_service()
+    run_svc.complete(run_id)
+    for result_id in result_ids:
+        run_svc.mark_result_error(result_id, "Run orphaned - backend stopped")
 
 
 @router.delete("/runs/{run_id}")

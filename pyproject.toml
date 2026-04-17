@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "0.35"
+version = "0.36"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -137,6 +137,7 @@ dev = [
     "pyyaml>=6.0.3",
     "boto3>=1.35",
     "cloudpickle>=3.0",
+    "mkdocs-material>=9.7.6",
 ]
 
 [tool.uv]
