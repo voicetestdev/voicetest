@@ -1,11 +1,12 @@
 """Subprocess script: hammer DuckDB with concurrent reads and writes.
 
-Used by test_duckdb_concurrency.py. Runs in a subprocess so a segfault
-doesn't kill the test runner.
+Used by test_engine.py::TestDuckDBConcurrency. Runs in a subprocess so a
+segfault doesn't kill the test runner.
 
-Uses engine.connect() directly to test the cursor-level lock. In production,
-the lock serializes cursor.execute() calls from the event loop thread and
-background task threads sharing the same StaticPool connection.
+The engine factory uses QueuePool(pool_size=1, max_overflow=0) to serialize
+access — only one thread holds the connection at a time. Without this,
+concurrent access on a shared DuckDB connection segfaults or raises
+transaction errors.
 """
 
 import sys
