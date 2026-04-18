@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "0.36"
+version = "0.37"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -29,7 +29,7 @@ dependencies = [
     "click>=8.0",
     "rich>=13.0",
     "textual>=7.2.0",
-    "duckdb>=1.4.3",
+    "duckdb>=1.5.2",
     "pyarrow>=22.0.0",
     "punq>=0.7.0",
     "fastapi>=0.115",
@@ -141,4 +141,4 @@ dev = [
 ]
 
 [tool.uv]
-prerelease = "allow"
+prerelease = "disallow"
