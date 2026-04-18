@@ -23,6 +23,8 @@
     AutoFixStopCondition,
   } from "../lib/types";
   import { nextExpectedRole } from "../lib/types";
+  import { setFaviconState, resetFavicon } from "../lib/favicon";
+  import { onDestroy } from "svelte";
 
   let audioEvalLoading = $state<string | null>(null);
 
@@ -357,6 +359,25 @@
     userPinned = false;
   });
 
+  // Dynamic favicon: show pass/fail/running badge in browser tab
+  $effect(() => {
+    const run = $currentRunWithResults;
+    if (!run) {
+      resetFavicon();
+      return;
+    }
+    const results = run.results ?? [];
+    if (!run.completed_at && results.some((r) => r.status === "running")) {
+      setFaviconState("running");
+    } else if (run.completed_at) {
+      const hasFailures = results.some(
+        (r) => r.status === "fail" || r.status === "error",
+      );
+      setFaviconState(hasFailures ? "fail" : "pass");
+    }
+  });
+
+  onDestroy(() => resetFavicon());
 
   function parseTranscript(json: string | Message[] | null): Message[] {
     if (!json) return [];
