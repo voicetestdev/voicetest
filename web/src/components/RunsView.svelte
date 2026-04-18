@@ -7,10 +7,10 @@
     runHistory,
     cancelTest,
     retryStatus,
-    loadRun,
     startRun,
     currentView,
     selectedResultId,
+    clearCurrentRun,
   } from "../lib/stores";
   import type {
     RunResultRecord,
@@ -315,11 +315,6 @@
     return `${days}d ago`;
   }
 
-  async function selectRun(runId: string) {
-    statusFilter = null;
-    await loadRun(runId);
-  }
-
   let userPinned = $state(false);
   let statusFilter = $state<"pass" | "fail" | null>(null);
   let deleting = $state(false);
@@ -534,18 +529,11 @@
     </div>
   {:else}
     <div class="run-header">
-      {#if $runHistory.length > 0}
-        <select
-          class="run-select"
-          value={$currentRunId || ""}
-          onchange={(e) => selectRun(e.currentTarget.value)}
-        >
-          {#each $runHistory as run}
-            <option value={run.id}>
-              {formatRelativeTime(run.started_at)}{!run.completed_at ? " (running)" : ""}
-            </option>
-          {/each}
-        </select>
+      <button class="back-btn" onclick={() => clearCurrentRun()}>
+        &larr; Runs
+      </button>
+      {#if $currentRunWithResults}
+        <span class="run-date">{formatRelativeTime($currentRunWithResults.started_at)}</span>
       {/if}
       {#if $currentRunWithResults}
         {#if !$currentRunWithResults.completed_at}
@@ -1200,21 +1188,19 @@
     flex-direction: column;
   }
 
-  .run-select {
-    min-width: 160px;
-    padding: var(--space-2) var(--space-3);
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    color: var(--text-primary);
+  .back-btn {
+    padding: var(--space-1) var(--space-2);
+    background: none;
+    border: none;
+    color: var(--text-secondary);
     font-size: var(--text-sm);
     cursor: pointer;
+    border-radius: var(--radius-sm);
   }
 
-  .run-select:focus {
-    outline: none;
-    border-color: var(--accent-blue);
-    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.3);
+  .back-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
   }
 
   .run-header {

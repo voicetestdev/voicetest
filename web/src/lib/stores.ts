@@ -85,17 +85,13 @@ function parseHash(): { agentId: string | null; view: NavView; runId: string | n
   return { agentId: null, view: "import", runId: null, resultId: null };
 }
 
-function updateHash(agentId: string | null, view: NavView, runId: string | null, resultId: string | null = null): void {
+function updateHash(agentId: string | null, view: NavView): void {
   if (typeof window === "undefined") return;
   let hash = "";
   if (view === "settings") {
     hash = "#/settings";
   } else if (view === "import" || !agentId) {
     hash = "#/import";
-  } else if (view === "runs" && runId) {
-    hash = resultId
-      ? `#/agent/${agentId}/runs/${runId}/${resultId}`
-      : `#/agent/${agentId}/runs/${runId}`;
   } else {
     hash = `#/agent/${agentId}/${view}`;
   }
@@ -114,29 +110,23 @@ let hashUpdateEnabled = false;
 currentAgentId.subscribe((v) => {
   currentAgentIdValue = v;
   if (hashUpdateEnabled) {
-    updateHash(v, currentViewValue, currentRunIdValue, selectedResultIdValue);
+    updateHash(v, currentViewValue);
   }
 });
 
 currentView.subscribe((v) => {
   currentViewValue = v;
   if (hashUpdateEnabled) {
-    updateHash(currentAgentIdValue, v, currentRunIdValue, selectedResultIdValue);
+    updateHash(currentAgentIdValue, v);
   }
 });
 
 currentRunId.subscribe((v) => {
   currentRunIdValue = v;
-  if (hashUpdateEnabled) {
-    updateHash(currentAgentIdValue, currentViewValue, v, selectedResultIdValue);
-  }
 });
 
 selectedResultId.subscribe((v) => {
   selectedResultIdValue = v;
-  if (hashUpdateEnabled) {
-    updateHash(currentAgentIdValue, currentViewValue, currentRunIdValue, v);
-  }
 });
 
 if (typeof window !== "undefined") {
@@ -222,7 +212,7 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
       currentRunId.set(runId);
     }
     hashUpdateEnabled = true;
-    updateHash(agentId, view, runId);
+    updateHash(agentId, view);
 
     if (view === "runs" && runId) {
       await loadRun(runId);
@@ -239,7 +229,7 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
   }
   hashUpdateEnabled = true;
   // Now update hash once with all correct values
-  updateHash(agentId, view, runId);
+  updateHash(agentId, view);
 
   expandedAgents.update((arr) => {
     if (arr.includes(agentId)) return arr;
@@ -257,13 +247,9 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
   testCases.set(records.map(parseTestCaseRecord));
   runHistory.set(runs);
 
-  // Load specific run or first run when viewing runs
-  if (view === "runs") {
-    if (runId) {
-      await loadRun(runId);
-    } else if (runs.length > 0) {
-      await loadRun(runs[0].id);
-    }
+  // Load specific run if deep-linked, otherwise show the runs list
+  if (view === "runs" && runId) {
+    await loadRun(runId);
   }
 }
 
@@ -333,7 +319,7 @@ export async function selectRun(agentId: string, runId: string): Promise<void> {
     currentView.set("runs");
     currentRunId.set(runId);
     hashUpdateEnabled = true;
-    updateHash(agentId, "runs", runId);
+    updateHash(agentId, "runs");
     await loadRun(runId);
   } else {
     await selectAgent(agentId, "runs", runId);
@@ -643,6 +629,13 @@ export function disconnectRunWebSocket(): void {
     ws.close();
     runWebSocket.set(null);
   }
+}
+
+export function clearCurrentRun(): void {
+  disconnectRunWebSocket();
+  currentRunId.set(null);
+  currentRunWithResults.set(null);
+  isRunning.set(false);
 }
 
 export function cancelTest(resultId: string): void {

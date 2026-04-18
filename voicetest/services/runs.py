@@ -23,8 +23,8 @@ class RunService:
         return self._runs.create(agent_id)
 
     def list_runs(self, agent_id: str, limit: int = 50) -> list[dict]:
-        """List runs for an agent."""
-        return self._runs.list_for_agent(agent_id, limit)
+        """List runs for an agent with result summary counts."""
+        return self._runs.list_for_agent_with_summary(agent_id, limit)
 
     def get_run(self, run_id: str) -> dict | None:
         """Get a run with all results, enriched with dynamic variables."""

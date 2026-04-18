@@ -246,11 +246,21 @@ export interface GalleryItem {
   tests: TestCase[];
 }
 
+export interface RunSummary {
+  total: number;
+  passed: number;
+  failed: number;
+  errors: number;
+  running: number;
+  failed_names: string[];
+}
+
 export interface RunRecord {
   id: string;
   agent_id: string;
   started_at: string;
   completed_at: string | null;
+  summary?: RunSummary;
 }
 
 export interface RunResultRecord {

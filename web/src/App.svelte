@@ -8,13 +8,13 @@
     selectAgent,
     testCaseRecords,
     runHistory,
-    loadRun,
     currentRunId,
+    clearCurrentRun,
   } from "./lib/stores";
-  import { get } from "svelte/store";
   import AgentView from "./components/AgentView.svelte";
   import TestsView from "./components/TestsView.svelte";
   import MetricsView from "./components/MetricsView.svelte";
+  import RunsList from "./components/RunsList.svelte";
   import RunsView from "./components/RunsView.svelte";
   import SettingsView from "./components/SettingsView.svelte";
   import ImportView from "./components/ImportView.svelte";
@@ -64,11 +64,8 @@
   async function switchView(view: "config" | "tests" | "metrics" | "runs" | "optimize") {
     currentView.set(view);
     if (view === "runs") {
-      const runs = get(runHistory);
-      const currentRun = get(currentRunId);
-      if (runs.length > 0 && !currentRun) {
-        await loadRun(runs[0].id);
-      }
+      // Show the runs list — clear any selected run so Level 1 renders
+      clearCurrentRun();
     }
   }
 </script>
@@ -183,7 +180,11 @@
             {:else if view === "metrics"}
               <MetricsView />
             {:else if view === "runs"}
-              <RunsView />
+              {#if $currentRunId}
+                <RunsView />
+              {:else}
+                <RunsList />
+              {/if}
             {:else if view === "optimize"}
               <OptimizeView />
             {/if}
