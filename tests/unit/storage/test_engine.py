@@ -1,7 +1,11 @@
 """Tests for SQLAlchemy engine factory."""
 
 import os
+from pathlib import Path
+import subprocess
+import sys
 
+import pytest
 from sqlalchemy import Engine
 from sqlalchemy import create_engine
 from sqlalchemy import inspect
@@ -428,3 +432,39 @@ class TestMigrateSchema:
             v2 = _get_current_version(conn)
 
         assert v1 == v2
+
+
+_STRESS_SCRIPT = str(Path(__file__).parent / "_concurrent_stress.py")
+
+
+class TestDuckDBConcurrency:
+    """Concurrent DuckDB access must not segfault.
+
+    DuckDB's C extension isn't thread-safe on a single connection.
+    The engine factory uses QueuePool(pool_size=1, max_overflow=0) to
+    ensure only one thread holds the connection at a time.
+
+    Runs in a subprocess so a segfault doesn't kill the test runner.
+    """
+
+    def test_concurrent_reads_and_writes_survive(self, tmp_path):
+        """8 threads (4 readers + 4 writers) hammering DuckDB concurrently."""
+        db_path = tmp_path / "concurrent.duckdb"
+        result = subprocess.run(
+            [sys.executable, _STRESS_SCRIPT, str(db_path)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        if result.returncode < 0:
+            signal_num = -result.returncode
+            pytest.fail(
+                f"Subprocess killed by signal {signal_num} "
+                f"(SIGSEGV=11). DuckDB concurrent access is not serialized.\n"
+                f"stderr: {result.stderr}"
+            )
+        elif result.returncode != 0:
+            pytest.fail(
+                f"Subprocess exited with code {result.returncode}.\nstderr: {result.stderr}"
+            )

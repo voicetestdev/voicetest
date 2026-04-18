@@ -8,7 +8,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
-from sqlalchemy.pool import StaticPool
 
 from voicetest.config import get_db_path
 from voicetest.storage.models import Base
@@ -169,24 +168,27 @@ def create_db_engine(url: str | None = None) -> Engine:
     # Pool strategy by backend:
     # - Neon (serverless Postgres): NullPool — Neon drops idle SSL connections
     #   and pools externally, so SQLAlchemy's pool accumulates dead connections.
-    # - DuckDB (embedded): StaticPool — DuckDB is in-process and single-writer.
-    #   Multiple connections to the same file segfault under concurrent
-    #   read+write load (observed with DuckDB 1.6.0.dev12). A single shared
-    #   connection serializes all access safely.
+    # - DuckDB (embedded): QueuePool with pool_size=1, max_overflow=0.
+    #   DuckDB's C extension isn't thread-safe on a single connection and
+    #   segfaults under concurrent access. A single-slot pool ensures only
+    #   one thread holds the connection at a time — the pool blocks other
+    #   threads until the connection is returned.
     # - Other (e.g. Postgres): default QueuePool with pre-ping and recycling.
     use_nullpool = "neon" in url.lower() or "pooler_mode" in url.lower()
-    use_staticpool = url.startswith("duckdb")
+    is_duckdb = url.startswith("duckdb")
 
     pool_kwargs: dict = {"echo": False}
     if use_nullpool:
         pool_kwargs["poolclass"] = NullPool
-    elif use_staticpool:
-        pool_kwargs["poolclass"] = StaticPool
+    elif is_duckdb:
+        pool_kwargs["pool_size"] = 1
+        pool_kwargs["max_overflow"] = 0
     else:
         pool_kwargs["pool_pre_ping"] = True
         pool_kwargs["pool_recycle"] = 300
 
     engine = create_engine(url, **pool_kwargs)
+
     # Migrate BEFORE create_all so ALTERs run against the existing schema
     _migrate_schema(engine)
     Base.metadata.create_all(engine)
