@@ -1,25 +1,41 @@
-# voicetest docs
+# voicetest — Voice Agent Testing
 
-voicetest is an open-source test harness for voice agent workflows. Define agent graphs, simulate conversations with LLM-powered users, evaluate transcripts with LLM judges, and convert between platform formats (Retell, VAPI, LiveKit, Bland, Telnyx).
+Voice agents break in ways unit tests can't catch: wrong transitions, bad prompts, numbers that TTS mangles into nonsense. voicetest simulates real multi-turn conversations against your agent, then judges the results with LLMs — so you find the problems before your users do.
+
+Open source. Apache 2.0. Free forever.
+
+**For teams building voice agents on Retell, VAPI, LiveKit, Bland, or Telnyx.**
+
+![Web UI](demos/web-demo-light.gif)
 
 ## Where to start
 
-| If you want to...                                                                      | Go here                               |
-| -------------------------------------------------------------------------------------- | ------------------------------------- |
-| **Get up and running** — install, run the demo, first test in 5 minutes                | [Getting Started](getting-started.md) |
-| **Test an agent** — CLI commands for running tests, managing agents, exporting results | [CLI Reference](cli.md)               |
-| **Understand the model** — agent graphs, node types, transitions, dynamic variables    | [Core Concepts](concepts.md)          |
-| **Configure models and settings** — LLM providers, run options, platform credentials   | [Configuration](configuration.md)     |
+| If you want to...                                                                         | Go here                               |
+| ----------------------------------------------------------------------------------------- | ------------------------------------- |
+| **Get your first test running in 5 minutes** — install, run the demo, see results         | [Getting Started](getting-started.md) |
+| **Test an agent you've already built** — CLI commands, managing agents, exporting results | [CLI Reference](cli.md)               |
+| **Understand agent graphs and test cases** — nodes, transitions, dynamic variables        | [Core Concepts](concepts.md)          |
+| **Configure LLM models and platforms** — providers, run options, credentials              | [Configuration](configuration.md)     |
 
-## Feature highlights
+## What you can do
 
-- **[Format conversion](features.md#format-conversion)** — Import from any supported platform, export to any other
-- **[Platform integration](features.md#platform-integration)** — Import, push, and sync agents with Retell, VAPI, LiveKit, Bland, Telnyx
-- **[Diagnosis and auto-fix](features.md#diagnosis-auto-fix)** — LLM-powered root cause analysis with automated prompt repair
-- **[Audio evaluation](features.md#audio-evaluation)** — TTS/STT round-trip catches pronunciation and number-reading issues
-- **[Global metrics](features.md#global-metrics)** — Compliance checks (HIPAA, PCI-DSS) that run on every test
-- **[Agent decomposition](features.md#agent-decomposition)** — Split large agents into focused sub-agents
-- **[CI/CD integration](getting-started.md#cicd)** — Run voice agent tests in GitHub Actions
+- **[Import from Retell, export to VAPI](features.md#format-conversion)** — convert between any supported platform via a unified agent graph
+- **[Push and sync with live platforms](features.md#platform-integration)** — import, push, and sync agent configs directly from the Web UI or CLI
+- **[Diagnose failures and auto-fix prompts](features.md#diagnosis-auto-fix)** — LLM analyzes why a test failed and proposes prompt changes, with an automated repair loop
+- **[Catch what LLM judges miss](features.md#audio-evaluation)** — TTS/STT round-trip evaluation catches pronunciation and number-reading issues
+- **[Enforce compliance on every test](features.md#global-metrics)** — HIPAA, PCI-DSS, brand voice checks that run automatically
+- **[Break large agents into sub-agents](features.md#agent-decomposition)** — LLM-powered decomposition with handoff rules
+- **[Test in CI/CD](getting-started.md#cicd)** — run voice agent tests in GitHub Actions, block bad deploys
+
+## Platform support
+
+| Platform | Import | Export | Push | Sync |
+| -------- | ------ | ------ | ---- | ---- |
+| Retell   | ✓      | ✓      | ✓    | ✓    |
+| VAPI     | ✓      | ✓      | ✓    | ✓    |
+| LiveKit  | ✓      | ✓      | ✓    | ✓    |
+| Bland    | ✓      | ✓      | ✓    |      |
+| Telnyx   | ✓      | ✓      | ✓    | ✓    |
 
 ## Interfaces
 

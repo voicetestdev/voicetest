@@ -13,6 +13,7 @@
     refreshAgent,
   } from "../lib/stores";
   import type { TestCase, TestCaseRecord } from "../lib/types";
+  import ListPanel from "./ListPanel.svelte";
   import Modal from "./Modal.svelte";
 
   let newTest = $state<Partial<TestCase>>({
@@ -577,7 +578,7 @@
         </section>
       {/if}
 
-      <section class="test-list-section">
+      <ListPanel>
         {#if $testCaseRecords.length === 0}
           <p class="empty">No test cases yet. Click "New Test" or "Import" to add tests.</p>
         {:else}
@@ -654,7 +655,7 @@
         {#if runError}
           <p class="error-message">{runError}</p>
         {/if}
-      </section>
+      </ListPanel>
     </div>
   {/if}
 </div>
@@ -993,25 +994,6 @@
     gap: 1.5rem;
   }
 
-  .test-list-section {
-    background: var(--bg-secondary);
-    padding: var(--space-4);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
-  }
-
-  .test-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .test-table th,
-  .test-table td {
-    padding: var(--space-2) var(--space-3);
-    text-align: left;
-    border-bottom: 1px solid var(--border-color);
-  }
-
   .test-table th {
     color: var(--text-secondary);
     font-weight: 500;
@@ -1036,17 +1018,6 @@
     opacity: 0.7;
   }
 
-  .test-table tbody tr {
-    transition: background 80ms ease-out;
-  }
-
-  .test-table tbody tr:hover {
-    background: var(--bg-hover);
-  }
-
-  .test-table tbody tr.selected {
-    background: var(--bg-tertiary);
-  }
 
   .col-select {
     width: 40px;
@@ -1428,9 +1399,4 @@
     transition: width 150ms ease-out;
   }
 
-  @media (max-width: 768px) {
-    .test-list-section {
-      max-width: 100%;
-    }
-  }
 </style>

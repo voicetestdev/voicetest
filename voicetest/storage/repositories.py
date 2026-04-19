@@ -9,6 +9,8 @@ from uuid import NAMESPACE_URL
 from uuid import uuid4
 from uuid import uuid5
 
+from sqlalchemy import case
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from voicetest.models.agent import AgentGraph
@@ -524,6 +526,73 @@ class RunRepository:
             query = query.filter(Run.user_id == user_id)
         runs = query.order_by(Run.started_at.desc()).limit(limit).all()
         return [self._run_to_dict(r) for r in runs]
+
+    def list_for_agent_with_summary(
+        self, agent_id: str, limit: int = 50, user_id: str | None = None
+    ) -> list[dict]:
+        """List runs for an agent with per-run result status counts.
+
+        Returns the same fields as list_for_agent plus a ``summary`` dict
+        containing total, passed, failed, errors, and running counts.
+        Uses a single grouped query to avoid N+1.
+        """
+        # Subquery: per-run result status counts
+        counts = (
+            self.session.query(
+                Result.run_id,
+                func.count().label("total"),
+                func.sum(case((Result.status == "pass", 1), else_=0)).label("passed"),
+                func.sum(case((Result.status == "fail", 1), else_=0)).label("failed"),
+                func.sum(case((Result.status == "error", 1), else_=0)).label("errors"),
+                func.sum(case((Result.status == "running", 1), else_=0)).label("running"),
+            )
+            .group_by(Result.run_id)
+            .subquery()
+        )
+
+        query = (
+            self.session.query(Run, counts)
+            .outerjoin(counts, Run.id == counts.c.run_id)
+            .filter(Run.agent_id == agent_id)
+        )
+        if user_id is not None:
+            query = query.filter(Run.user_id == user_id)
+
+        rows = query.order_by(Run.started_at.desc()).limit(limit).all()
+
+        results = []
+        run_ids = []
+        for row in rows:
+            run = row[0]
+            d = self._run_to_dict(run)
+            d["summary"] = {
+                "total": row.total or 0,
+                "passed": row.passed or 0,
+                "failed": row.failed or 0,
+                "errors": row.errors or 0,
+                "running": row.running or 0,
+                "failed_names": [],
+            }
+            results.append(d)
+            run_ids.append(run.id)
+
+        # Batch-fetch failed/error test names for all runs in one query
+        if run_ids:
+            failed_rows = (
+                self.session.query(Result.run_id, Result.test_name)
+                .filter(
+                    Result.run_id.in_(run_ids),
+                    Result.status.in_(["fail", "error"]),
+                )
+                .all()
+            )
+            failed_by_run: dict[str, list[str]] = {}
+            for run_id, test_name in failed_rows:
+                failed_by_run.setdefault(run_id, []).append(test_name or "Unnamed test")
+            for d in results:
+                d["summary"]["failed_names"] = failed_by_run.get(d["id"], [])
+
+        return results
 
     def get_with_results(self, run_id: str, user_id: str | None = None) -> dict | None:
         """Get a run with all its results, optionally checking ownership."""
