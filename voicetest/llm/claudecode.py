@@ -93,6 +93,14 @@ class ClaudeCodeLM(dspy.LM):
             **self.kwargs,
         }
 
+        # Record the request so try_evict_last_call can reconstruct the cache key.
+        # ClaudeCodeLM doesn't populate dspy.LM's `history` (it overrides __call__),
+        # so we keep our own last-request pointer for eviction support.
+        self._last_request = request
+        self._last_cache_fn_identifier = (
+            f"{type(self).__module__}.{type(self).__qualname__}._run_cli"
+        )
+
         completion = self._run_cli
         if self.cache:
             completion = request_cache(cache_arg_name="request")(completion)

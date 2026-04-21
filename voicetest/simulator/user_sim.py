@@ -6,14 +6,18 @@ using an LLM to simulate realistic user behavior.
 
 from collections.abc import Awaitable
 from collections.abc import Callable
-from dataclasses import dataclass
 import re
+import uuid
 
 import dspy
+from pydantic import BaseModel
+from pydantic import ValidationError
 
+from voicetest.cache import try_evict_last_call
 from voicetest.llm import _invoke_callback
 from voicetest.llm import call_llm
 from voicetest.models.results import Message
+from voicetest.retry import EmptyLLMOutputError
 from voicetest.retry import OnErrorCallback
 
 
@@ -40,8 +44,7 @@ class UserSimSignature(dspy.Signature):
     )
 
 
-@dataclass
-class SimulatorResponse:
+class SimulatorResponse(BaseModel):
     """Response from user simulator."""
 
     message: str
@@ -127,20 +130,44 @@ class UserSimulator:
         async def user_token_callback(token: str) -> None:
             await _invoke_callback(on_token, token, "user")
 
-        result = await call_llm(
-            self.model,
-            UserSimSignature,
-            on_token=user_token_callback if on_token else None,
-            stream_field="message" if on_token else None,
-            on_error=on_error,
-            predictor_class=dspy.Predict,
-            persona=user_prompt,
-            conversation_history=conversation_history,
-            current_agent_message=current_agent_message or "(agent has not spoken yet)",
-            turn_number=turn_number,
-        )
+        # One retry if the LLM returns None for `message`. Pydantic's ValidationError
+        # on SimulatorResponse is the signal — we translate to EmptyLLMOutputError
+        # so the failure surfaces with a clear diagnostic.
+        #
+        # Retry uses a random salt AND no_cache=True so it (a) never reads a cached
+        # entry and (b) never writes one (no accumulation of zombie retry entries).
+        # On ValidationError we also evict the poisoned cache entry from the first
+        # call so future runs don't hit it.
+        last_error: ValidationError | None = None
+        for attempt in range(2):
+            is_retry = attempt > 0
+            cache_salt = uuid.uuid4().hex if is_retry else None
+            lm_holder: list = []
+            result = await call_llm(
+                self.model,
+                UserSimSignature,
+                on_token=user_token_callback if on_token else None,
+                stream_field="message" if on_token else None,
+                on_error=on_error,
+                cache_salt=cache_salt,
+                no_cache=is_retry,
+                predictor_class=dspy.Predict,
+                lm_holder=lm_holder,
+                persona=user_prompt,
+                conversation_history=conversation_history,
+                current_agent_message=current_agent_message or "(agent has not spoken yet)",
+                turn_number=turn_number,
+            )
 
-        return SimulatorResponse(message=result.message)
+            try:
+                return SimulatorResponse(message=result.message)
+            except ValidationError as e:
+                last_error = e
+                # Evict the poisoned cache entry (no-op if retry call had no_cache=True)
+                if lm_holder:
+                    try_evict_last_call(lm_holder[0])
+
+        raise EmptyLLMOutputError(field_name="message", model=self.model) from last_error
 
     def _format_transcript(self, transcript: list[Message]) -> str:
         """Format transcript for LLM input."""
