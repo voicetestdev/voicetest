@@ -12,26 +12,26 @@ Convert a voice agent from one platform format to another.
 
 1. **Show capabilities** — Run both commands to show what's available:
 
-   ```bash
-   voicetest --json importers
-   voicetest --json exporters
-   ```
+    ```bash
+    voicetest --json importers
+    voicetest --json exporters
+    ```
 
 1. **Import** — voicetest auto-detects the source format. The import step is implicit
-   in the export command — just provide the source file.
+    in the export command — just provide the source file.
 
 1. **Export to target** — Run:
 
-   ```bash
-   voicetest --json export -a <source-agent-path> -f <target-format> -o <output-path>
-   ```
+    ```bash
+    voicetest --json export -a <source-agent-path> -f <target-format> -o <output-path>
+    ```
 
 1. **Report** — Confirm conversion details:
 
-   - Source format (auto-detected)
-   - Target format
-   - Output file path
-   - Node count, transition count
+    - Source format (auto-detected)
+    - Target format
+    - Output file path
+    - Node count, transition count
 
 ## Common Conversions
 
