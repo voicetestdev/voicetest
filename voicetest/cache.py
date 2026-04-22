@@ -227,6 +227,8 @@ def try_evict_last_call(lm: Any) -> bool:
             del dspy.cache.disk_cache[key]
             evicted = True
         except KeyError:
+            # Cache miss is expected in best-effort eviction; the key may not exist
+            # in this layer or may already have been evicted.
             pass
         except Exception as e:  # noqa: BLE001 — disk backends (S3, FanoutCache) raise varied errors
             logger.debug("Disk cache eviction failure for key %s: %s", key, e)
