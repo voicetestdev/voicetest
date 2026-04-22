@@ -66,9 +66,15 @@ async def call_llm(
     cache_salt: str | None = None,
     no_cache: bool = False,
     predictor_class: type,
-    lm_holder: list | None = None,
     **kwargs,
 ) -> dspy.Prediction:
+    """Call an LLM and return its Prediction.
+
+    The returned Prediction has a `_voicetest_lm` attribute holding the LM
+    instance used for the call, so callers can pass it to
+    `voicetest.cache.try_evict_last_call` if downstream validation detects a
+    poisoned cache entry.
+    """
     if on_token:
         if not stream_field:
             raise ValueError("stream_field required when on_token is provided")
@@ -81,7 +87,6 @@ async def call_llm(
             cache_salt=cache_salt,
             no_cache=no_cache,
             predictor_class=predictor_class,
-            lm_holder=lm_holder,
             **kwargs,
         )
     else:
@@ -92,7 +97,6 @@ async def call_llm(
             cache_salt=cache_salt,
             no_cache=no_cache,
             predictor_class=predictor_class,
-            lm_holder=lm_holder,
             **kwargs,
         )
 
@@ -105,14 +109,10 @@ async def _call_llm_sync(
     cache_salt: str | None = None,
     no_cache: bool = False,
     predictor_class: type,
-    lm_holder: list | None = None,
     **kwargs,
 ) -> dspy.Prediction:
     """Non-streaming LLM call with structured output adapter."""
     lm = _create_lm(model, cache_salt=cache_salt, no_cache=no_cache)
-    if lm_holder is not None:
-        lm_holder.clear()
-        lm_holder.append(lm)
     adapter = getattr(lm, "preferred_adapter", BAMLAdapter())
 
     def run_predictor():
@@ -124,7 +124,9 @@ async def _call_llm_sync(
         return await asyncio.to_thread(run_predictor)
 
     # Retry at async level so we use asyncio.sleep() instead of blocking time.sleep()
-    return await with_retry(call_in_thread, on_error=on_error)
+    result = await with_retry(call_in_thread, on_error=on_error)
+    result._voicetest_lm = lm
+    return result
 
 
 async def _call_llm_streaming(
@@ -137,16 +139,12 @@ async def _call_llm_streaming(
     cache_salt: str | None = None,
     no_cache: bool = False,
     predictor_class: type,
-    lm_holder: list | None = None,
     **kwargs,
 ) -> dspy.Prediction:
     """Streaming LLM call with token callbacks."""
 
     async def stream():
         lm = _create_lm(model, cache_salt=cache_salt, no_cache=no_cache)
-        if lm_holder is not None:
-            lm_holder.clear()
-            lm_holder.append(lm)
         predictor = predictor_class(signature_class)
         stream_listeners = [StreamListener(signature_field_name=stream_field)]
 
@@ -171,6 +169,7 @@ async def _call_llm_streaming(
         if result is None:
             raise RuntimeError("Streaming predictor did not return a Prediction")
 
+        result._voicetest_lm = lm
         return result
 
     return await with_retry(stream, on_error=on_error)

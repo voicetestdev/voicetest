@@ -142,7 +142,6 @@ class UserSimulator:
         for attempt in range(2):
             is_retry = attempt > 0
             cache_salt = uuid.uuid4().hex if is_retry else None
-            lm_holder: list = []
             result = await call_llm(
                 self.model,
                 UserSimSignature,
@@ -152,7 +151,6 @@ class UserSimulator:
                 cache_salt=cache_salt,
                 no_cache=is_retry,
                 predictor_class=dspy.Predict,
-                lm_holder=lm_holder,
                 persona=user_prompt,
                 conversation_history=conversation_history,
                 current_agent_message=current_agent_message or "(agent has not spoken yet)",
@@ -164,8 +162,9 @@ class UserSimulator:
             except ValidationError as e:
                 last_error = e
                 # Evict the poisoned cache entry (no-op if retry call had no_cache=True)
-                if lm_holder:
-                    try_evict_last_call(lm_holder[0])
+                lm = getattr(result, "_voicetest_lm", None)
+                if lm is not None:
+                    try_evict_last_call(lm)
 
         raise EmptyLLMOutputError(field_name="message", model=self.model) from last_error
 

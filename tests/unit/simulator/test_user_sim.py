@@ -293,7 +293,10 @@ class TestUserSimulatorGenerate:
     @pytest.mark.asyncio
     async def test_llm_none_evicts_poisoned_cache_entry(self):
         """On ValidationError, the simulator evicts the poisoned cache entry
-        from the first call so future runs don't replay it."""
+        from the first call so future runs don't replay it.
+
+        The LM used for each call is attached to the returned Prediction as
+        `_voicetest_lm` — the simulator reads it to pass to try_evict_last_call."""
         from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator(
@@ -301,17 +304,17 @@ class TestUserSimulatorGenerate:
             "gemini/gemini-3.1-flash-lite",
         )
 
-        responses = iter([dspy.Prediction(message=None), dspy.Prediction(message="ok")])
+        fake_lms = [object(), object()]
+        messages = ["bad", "good"]
         captured_lms: list = []
 
-        async def mock_call_llm(model, sig, lm_holder=None, **kwargs):
-            # Simulate what real call_llm does: populate lm_holder with a fake LM
-            fake_lm = object()
-            if lm_holder is not None:
-                lm_holder.clear()
-                lm_holder.append(fake_lm)
-            captured_lms.append(fake_lm)
-            return next(responses)
+        async def mock_call_llm(model, sig, **kwargs):
+            lm = fake_lms[len(captured_lms)]
+            captured_lms.append(lm)
+            msg = messages[len(captured_lms) - 1]
+            result = dspy.Prediction(message=None if msg == "bad" else msg)
+            result._voicetest_lm = lm
+            return result
 
         evicted: list = []
 
@@ -325,7 +328,7 @@ class TestUserSimulatorGenerate:
         ):
             response = await simulator.generate([Message(role="assistant", content="Hi there!")])
 
-        assert response.message == "ok"
+        assert response.message == "good"
         # Eviction was called exactly once — for the first (poisoned) call's LM
         assert len(evicted) == 1
         assert evicted[0] is captured_lms[0]

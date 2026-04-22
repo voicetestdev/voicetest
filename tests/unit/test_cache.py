@@ -299,8 +299,8 @@ class TestTryEvictLastCall:
         lm.history = []
         # Explicitly None — MagicMock auto-creates any accessed attribute, which
         # would send try_evict_last_call down the ClaudeCodeLM path by accident.
-        lm._last_request = None
-        lm._last_cache_fn_identifier = None
+        lm._voicetest_last_request = None
+        lm._voicetest_last_cache_fn_identifier = None
         return lm
 
     def _put_via_dspy(self, cache: Cache, lm, messages: list[dict], forward_kwargs: dict):

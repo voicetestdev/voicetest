@@ -151,21 +151,29 @@ def _reconstruct_last_request(lm: Any) -> tuple[dict | None, str | None]:
 
     Two paths:
 
-    - ClaudeCodeLM (voicetest/llm/claudecode.py) records `_last_request` and
-      `_last_cache_fn_identifier` on each call because it overrides __call__ and
-      does not populate lm.history.
+    - ClaudeCodeLM (voicetest/llm/claudecode.py) records `_voicetest_last_request`
+      and `_voicetest_last_cache_fn_identifier` on each call because it overrides
+      __call__ and does not populate lm.history.
     - Standard dspy.LM populates lm.history via `_process_lm_response`; we
       replicate dspy.LM.forward's request construction from the history entry.
+
+    Only "chat" model_type is supported for the dspy.LM path. Other model types
+    ("text", "responses") would need their own fn_identifier string and request
+    shape — they aren't exercised by voicetest today, so reconstruction returns
+    (None, None) for them (eviction silently skips, which is safe).
     """
-    last_request = getattr(lm, "_last_request", None)
-    if last_request is not None:
-        fn_identifier = getattr(lm, "_last_cache_fn_identifier", None)
-        if fn_identifier is None:
+    last_request = getattr(lm, "_voicetest_last_request", None)
+    if last_request:
+        fn_identifier = getattr(lm, "_voicetest_last_cache_fn_identifier", None)
+        if not fn_identifier:
             return None, None
         return dict(last_request), fn_identifier
 
     if not getattr(lm, "history", None):
         return None, None
+    if getattr(lm, "model_type", None) != "chat":
+        return None, None
+
     entry = lm.history[-1]
 
     forward_kwargs = dict(entry.get("kwargs", {}))
@@ -184,13 +192,7 @@ def _reconstruct_last_request(lm: Any) -> tuple[dict | None, str | None]:
         messages = [{"role": "user", "content": prompt}]
 
     request = {"model": lm.model, "messages": messages, **merged}
-    if lm.model_type == "chat":
-        fn_identifier = "dspy.clients.lm.litellm_completion"
-    elif lm.model_type == "text":
-        fn_identifier = "dspy.clients.lm.litellm_text_completion"
-    else:
-        fn_identifier = "dspy.clients.lm.litellm_responses_completion"
-    return request, fn_identifier
+    return request, "dspy.clients.lm.litellm_completion"
 
 
 def try_evict_last_call(lm: Any) -> bool:
@@ -218,12 +220,16 @@ def try_evict_last_call(lm: Any) -> bool:
             del dspy.cache.memory_cache[key]
             evicted = True
         except KeyError:
+            # Cache miss is expected — entry may never have been written, may have
+            # already been evicted, or may only live in the disk layer.
             pass
         try:
             del dspy.cache.disk_cache[key]
             evicted = True
-        except (KeyError, Exception) as e:  # noqa: BLE001 — disk backends raise varied errors
-            logger.debug("Disk cache eviction miss/failure for key %s: %s", key, e)
+        except KeyError:
+            pass
+        except Exception as e:  # noqa: BLE001 — disk backends (S3, FanoutCache) raise varied errors
+            logger.debug("Disk cache eviction failure for key %s: %s", key, e)
         return evicted
     except Exception as e:  # noqa: BLE001 — eviction is best-effort
         logger.warning("Failed to reconstruct cache key for eviction: %s", e)
