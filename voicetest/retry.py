@@ -23,6 +23,21 @@ class RetryError:
     retry_after: float
 
 
+class EmptyLLMOutputError(Exception):
+    """Raised when an LLM returns None/empty for a required output field.
+
+    Surfaced as a clear diagnostic instead of letting the None propagate
+    into downstream pydantic validation with an opaque stacktrace.
+    """
+
+    def __init__(self, field_name: str, model: str):
+        self.field_name = field_name
+        self.model = model
+        super().__init__(
+            f"LLM returned None for required output field '{field_name}' (model: {model})"
+        )
+
+
 # Callback type for error notifications
 OnErrorCallback = Callable[[RetryError], Awaitable[None] | None]
 

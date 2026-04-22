@@ -11,35 +11,35 @@ Show all available voicetest capabilities.
 
 1. **List importers** — Show supported agent formats:
 
-   ```bash
-   voicetest --json importers
-   ```
+    ```bash
+    voicetest --json importers
+    ```
 
 1. **List exporters** — Show available export formats:
 
-   ```bash
-   voicetest --json exporters
-   ```
+    ```bash
+    voicetest --json exporters
+    ```
 
 1. **List platforms** — Show platform integrations and configuration status:
 
-   ```bash
-   voicetest --json platforms
-   ```
+    ```bash
+    voicetest --json platforms
+    ```
 
 1. **Show settings** — Display current configuration:
 
-   ```bash
-   voicetest --json settings
-   ```
+    ```bash
+    voicetest --json settings
+    ```
 
 1. **Present summary** — Combine all information into a clear overview:
 
-   - Available source types (importers)
-   - Available export formats
-   - Platform integrations (configured/unconfigured)
-   - Current model settings (agent, simulator, judge)
-   - Run configuration (max_turns, verbose, etc.)
+    - Available source types (importers)
+    - Available export formats
+    - Platform integrations (configured/unconfigured)
+    - Current model settings (agent, simulator, judge)
+    - Run configuration (max_turns, verbose, etc.)
 
 ## Agent Database
 

@@ -101,6 +101,12 @@ class S3CacheBackend:
         except (ClientError, Exception):
             logger.warning("Failed to write cache key %s", key)
 
+    def __delitem__(self, key: str) -> None:
+        try:
+            self._client.delete_object(Bucket=self.bucket, Key=self._s3_key(key))
+        except ClientError as e:
+            logger.warning("Failed to delete cache key %s: %s", key, e)
+
 
 class S3Cache(Cache):
     """DSPy Cache subclass that uses S3 for persistent storage.
@@ -137,6 +143,99 @@ class S3Cache(Cache):
             client=s3_client,
         )
         self._lock = threading.RLock()
+
+
+def _reconstruct_last_request(lm: Any) -> tuple[dict | None, str | None]:
+    """Rebuild the request dict + fn_identifier used as the cache key on the LM's
+    most recent call. Returns (None, None) if reconstruction is impossible.
+
+    Two paths:
+
+    - ClaudeCodeLM (voicetest/llm/claudecode.py) records `_voicetest_last_request`
+      and `_voicetest_last_cache_fn_identifier` on each call because it overrides
+      __call__ and does not populate lm.history.
+    - Standard dspy.LM populates lm.history via `_process_lm_response`; we
+      replicate dspy.LM.forward's request construction from the history entry.
+
+    Only "chat" model_type is supported for the dspy.LM path. Other model types
+    ("text", "responses") would need their own fn_identifier string and request
+    shape — they aren't exercised by voicetest today, so reconstruction returns
+    (None, None) for them (eviction silently skips, which is safe).
+    """
+    last_request = getattr(lm, "_voicetest_last_request", None)
+    if last_request:
+        fn_identifier = getattr(lm, "_voicetest_last_cache_fn_identifier", None)
+        if not fn_identifier:
+            return None, None
+        return dict(last_request), fn_identifier
+
+    if not getattr(lm, "history", None):
+        return None, None
+    if getattr(lm, "model_type", None) != "chat":
+        return None, None
+
+    entry = lm.history[-1]
+
+    forward_kwargs = dict(entry.get("kwargs", {}))
+    forward_kwargs.pop("cache", None)
+    merged = {**lm.kwargs, **forward_kwargs}
+    if merged.get("rollout_id") is None:
+        merged.pop("rollout_id", None)
+
+    # history stores the original messages/prompt args — forward() converts
+    # `prompt=` into messages before building the cache request.
+    messages = entry.get("messages")
+    if messages is None:
+        prompt = entry.get("prompt")
+        if prompt is None:
+            return None, None
+        messages = [{"role": "user", "content": prompt}]
+
+    request = {"model": lm.model, "messages": messages, **merged}
+    return request, "dspy.clients.lm.litellm_completion"
+
+
+def try_evict_last_call(lm: Any) -> bool:
+    """Best-effort: evict the cache entry for this LM's most recent call.
+
+    Used when a cached completion is poisoned (parses to None for a required field);
+    eviction lets the next run re-roll against a clean cache instead of replaying
+    the bad string forever.
+
+    Returns True if at least one cache layer had the entry removed.
+    """
+    try:
+        request, fn_identifier = _reconstruct_last_request(lm)
+        if request is None or fn_identifier is None:
+            return False
+        request["_fn_identifier"] = fn_identifier
+
+        key = dspy.cache.cache_key(
+            request,
+            ignored_args_for_cache_key=["api_key", "api_base", "base_url"],
+        )
+
+        evicted = False
+        try:
+            del dspy.cache.memory_cache[key]
+            evicted = True
+        except KeyError:
+            # Cache miss is expected — entry may never have been written, may have
+            # already been evicted, or may only live in the disk layer.
+            pass
+        try:
+            del dspy.cache.disk_cache[key]
+            evicted = True
+        except KeyError:
+            # Cache miss is expected in best-effort eviction; the key may not exist
+            # in this layer or may already have been evicted.
+            pass
+        except Exception as e:  # noqa: BLE001 — disk backends (S3, FanoutCache) raise varied errors
+            logger.debug("Disk cache eviction failure for key %s: %s", key, e)
+        return evicted
+    except Exception as e:  # noqa: BLE001 — eviction is best-effort
+        logger.warning("Failed to reconstruct cache key for eviction: %s", e)
+        return False
 
 
 def setup_cache_from_settings(cache_settings: Any) -> None:

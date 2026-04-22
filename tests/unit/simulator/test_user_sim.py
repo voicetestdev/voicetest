@@ -232,3 +232,103 @@ class TestUserSimulatorGenerate:
             )
 
         assert response.message == "Thanks, bye!"
+
+    @pytest.mark.asyncio
+    async def test_llm_none_message_retries_then_raises(self):
+        """If the LLM returns None for `message`, retry once with a random salt
+        and no_cache=True; if still None, raise EmptyLLMOutputError."""
+        from voicetest.retry import EmptyLLMOutputError
+        from voicetest.simulator.user_sim import UserSimulator
+
+        simulator = UserSimulator(
+            "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",
+            "gemini/gemini-3.1-flash-lite",
+        )
+
+        calls: list[dict] = []
+
+        async def mock_call_llm(model, sig, **kwargs):
+            calls.append(kwargs)
+            return dspy.Prediction(message=None)
+
+        with (
+            patch("voicetest.simulator.user_sim.call_llm", side_effect=mock_call_llm),
+            pytest.raises(EmptyLLMOutputError) as excinfo,
+        ):
+            await simulator.generate([Message(role="assistant", content="Hi there!")])
+
+        assert len(calls) == 2
+        # Initial call: default cache behavior (cache reads allowed, no salt)
+        assert calls[0].get("cache_salt") is None
+        assert calls[0].get("no_cache") is False
+        # Retry: random salt + no_cache so it never hits or writes cache
+        retry_salt = calls[1].get("cache_salt")
+        assert retry_salt is not None and retry_salt != "empty_retry_1"
+        assert len(retry_salt) == 32  # uuid4().hex
+        assert calls[1].get("no_cache") is True
+        assert "message" in str(excinfo.value)
+        assert "gemini-3.1-flash-lite" in str(excinfo.value)
+
+    @pytest.mark.asyncio
+    async def test_llm_none_then_recovers_on_retry(self):
+        """If the first call returns None but the retry returns a valid message,
+        the simulator succeeds without raising."""
+        from voicetest.simulator.user_sim import UserSimulator
+
+        simulator = UserSimulator(
+            "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",
+            "gemini/gemini-3.1-flash-lite",
+        )
+
+        responses = iter([dspy.Prediction(message=None), dspy.Prediction(message="ok")])
+
+        async def mock_call_llm(model, sig, **kwargs):
+            return next(responses)
+
+        with patch("voicetest.simulator.user_sim.call_llm", side_effect=mock_call_llm):
+            response = await simulator.generate([Message(role="assistant", content="Hi there!")])
+
+        assert response.message == "ok"
+
+    @pytest.mark.asyncio
+    async def test_llm_none_evicts_poisoned_cache_entry(self):
+        """On ValidationError, the simulator evicts the poisoned cache entry
+        from the first call so future runs don't replay it.
+
+        The LM used for each call is attached to the returned Prediction as
+        `_voicetest_lm` — the simulator reads it to pass to try_evict_last_call."""
+        from voicetest.simulator.user_sim import UserSimulator
+
+        simulator = UserSimulator(
+            "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",
+            "gemini/gemini-3.1-flash-lite",
+        )
+
+        fake_lms = [object(), object()]
+        messages = ["bad", "good"]
+        captured_lms: list = []
+
+        async def mock_call_llm(model, sig, **kwargs):
+            lm = fake_lms[len(captured_lms)]
+            captured_lms.append(lm)
+            msg = messages[len(captured_lms) - 1]
+            result = dspy.Prediction(message=None if msg == "bad" else msg)
+            result._voicetest_lm = lm
+            return result
+
+        evicted: list = []
+
+        def mock_evict(lm):
+            evicted.append(lm)
+            return True
+
+        with (
+            patch("voicetest.simulator.user_sim.call_llm", side_effect=mock_call_llm),
+            patch("voicetest.simulator.user_sim.try_evict_last_call", side_effect=mock_evict),
+        ):
+            response = await simulator.generate([Message(role="assistant", content="Hi there!")])
+
+        assert response.message == "good"
+        # Eviction was called exactly once — for the first (poisoned) call's LM
+        assert len(evicted) == 1
+        assert evicted[0] is captured_lms[0]

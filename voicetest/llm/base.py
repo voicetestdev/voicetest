@@ -68,6 +68,13 @@ async def call_llm(
     predictor_class: type,
     **kwargs,
 ) -> dspy.Prediction:
+    """Call an LLM and return its Prediction.
+
+    The returned Prediction has a `_voicetest_lm` attribute holding the LM
+    instance used for the call, so callers can pass it to
+    `voicetest.cache.try_evict_last_call` if downstream validation detects a
+    poisoned cache entry.
+    """
     if on_token:
         if not stream_field:
             raise ValueError("stream_field required when on_token is provided")
@@ -117,7 +124,9 @@ async def _call_llm_sync(
         return await asyncio.to_thread(run_predictor)
 
     # Retry at async level so we use asyncio.sleep() instead of blocking time.sleep()
-    return await with_retry(call_in_thread, on_error=on_error)
+    result = await with_retry(call_in_thread, on_error=on_error)
+    result._voicetest_lm = lm
+    return result
 
 
 async def _call_llm_streaming(
@@ -160,6 +169,7 @@ async def _call_llm_streaming(
         if result is None:
             raise RuntimeError("Streaming predictor did not return a Prediction")
 
+        result._voicetest_lm = lm
         return result
 
     return await with_retry(stream, on_error=on_error)

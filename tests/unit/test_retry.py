@@ -377,3 +377,32 @@ class TestCalculateDelay:
         # Attempt 10 with base_delay=1 would be 512s, but max_delay=60 caps it
         delay = _calculate_delay(10, 1.0, 60.0)
         assert delay <= 66.0  # 60 + 10% jitter
+
+
+class TestEmptyLLMOutputError:
+    """Tests for EmptyLLMOutputError — the diagnostic raised when an LLM
+    returns None for a required output field after retries are exhausted."""
+
+    def test_message_includes_field_and_model(self):
+        from voicetest.retry import EmptyLLMOutputError
+
+        err = EmptyLLMOutputError(field_name="message", model="gemini/gemini-3.1-flash-lite")
+
+        msg = str(err)
+        assert "message" in msg
+        assert "gemini/gemini-3.1-flash-lite" in msg
+        assert "None" in msg
+
+    def test_exposes_field_and_model_attributes(self):
+        from voicetest.retry import EmptyLLMOutputError
+
+        err = EmptyLLMOutputError(field_name="answer", model="openai/gpt-4o-mini")
+
+        assert err.field_name == "answer"
+        assert err.model == "openai/gpt-4o-mini"
+
+    def test_is_an_exception(self):
+        from voicetest.retry import EmptyLLMOutputError
+
+        err = EmptyLLMOutputError(field_name="f", model="m")
+        assert isinstance(err, Exception)

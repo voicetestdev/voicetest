@@ -85,21 +85,6 @@ function parseHash(): { agentId: string | null; view: NavView; runId: string | n
   return { agentId: null, view: "import", runId: null, resultId: null };
 }
 
-function updateHash(agentId: string | null, view: NavView): void {
-  if (typeof window === "undefined") return;
-  let hash = "";
-  if (view === "settings") {
-    hash = "#/settings";
-  } else if (view === "import" || !agentId) {
-    hash = "#/import";
-  } else {
-    hash = `#/agent/${agentId}/${view}`;
-  }
-  if (window.location.hash !== hash) {
-    window.history.replaceState(null, "", hash);
-  }
-}
-
 let currentAgentIdValue: string | null = null;
 let currentViewValue: NavView = "import";
 let currentRunIdValue: string | null = null;
@@ -107,26 +92,47 @@ let selectedResultIdValue: string | null = null;
 // Disabled initially - subscriptions fire immediately with default values which would corrupt the hash
 let hashUpdateEnabled = false;
 
+function updateHash(): void {
+  if (typeof window === "undefined") return;
+  let hash = "";
+  if (currentViewValue === "settings") {
+    hash = "#/settings";
+  } else if (currentViewValue === "import" || !currentAgentIdValue) {
+    hash = "#/import";
+  } else {
+    hash = `#/agent/${currentAgentIdValue}/${currentViewValue}`;
+    // Deep-link into a specific run (and optionally a specific test result)
+    // so reloads keep the user on the same screen.
+    if (currentViewValue === "runs" && currentRunIdValue) {
+      hash += `/${currentRunIdValue}`;
+      if (selectedResultIdValue) {
+        hash += `/${selectedResultIdValue}`;
+      }
+    }
+  }
+  if (window.location.hash !== hash) {
+    window.history.replaceState(null, "", hash);
+  }
+}
+
 currentAgentId.subscribe((v) => {
   currentAgentIdValue = v;
-  if (hashUpdateEnabled) {
-    updateHash(v, currentViewValue);
-  }
+  if (hashUpdateEnabled) updateHash();
 });
 
 currentView.subscribe((v) => {
   currentViewValue = v;
-  if (hashUpdateEnabled) {
-    updateHash(currentAgentIdValue, v);
-  }
+  if (hashUpdateEnabled) updateHash();
 });
 
 currentRunId.subscribe((v) => {
   currentRunIdValue = v;
+  if (hashUpdateEnabled) updateHash();
 });
 
 selectedResultId.subscribe((v) => {
   selectedResultIdValue = v;
+  if (hashUpdateEnabled) updateHash();
 });
 
 if (typeof window !== "undefined") {
@@ -212,7 +218,7 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
       currentRunId.set(runId);
     }
     hashUpdateEnabled = true;
-    updateHash(agentId, view);
+    updateHash();
 
     if (view === "runs" && runId) {
       await loadRun(runId);
@@ -229,7 +235,7 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
   }
   hashUpdateEnabled = true;
   // Now update hash once with all correct values
-  updateHash(agentId, view);
+  updateHash();
 
   expandedAgents.update((arr) => {
     if (arr.includes(agentId)) return arr;
@@ -319,7 +325,7 @@ export async function selectRun(agentId: string, runId: string): Promise<void> {
     currentView.set("runs");
     currentRunId.set(runId);
     hashUpdateEnabled = true;
-    updateHash(agentId, "runs");
+    updateHash();
     await loadRun(runId);
   } else {
     await selectAgent(agentId, "runs", runId);
