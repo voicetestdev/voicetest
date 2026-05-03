@@ -12,10 +12,21 @@ import dspy
 from dspy.adapters.baml_adapter import BAMLAdapter
 from dspy.streaming import StreamListener
 from dspy.streaming import streamify
+import litellm
+import openai
 
 from voicetest.llm.claudecode import ClaudeCodeLM
 from voicetest.retry import OnErrorCallback
 from voicetest.retry import with_retry
+
+
+# Timeouts cost the full request timeout per attempt (unlike rate limits which
+# fail fast), so we cap them tightly to bound worst-case wallclock. Other
+# retryable errors keep the default budget.
+_MAX_ATTEMPTS_BY_EXCEPTION: dict[type, int] = {
+    litellm.Timeout: 2,
+    openai.APITimeoutError: 2,
+}
 
 
 # Callback type for token updates: receives token string
@@ -124,7 +135,11 @@ async def _call_llm_sync(
         return await asyncio.to_thread(run_predictor)
 
     # Retry at async level so we use asyncio.sleep() instead of blocking time.sleep()
-    result = await with_retry(call_in_thread, on_error=on_error)
+    result = await with_retry(
+        call_in_thread,
+        on_error=on_error,
+        max_attempts_by_exception=_MAX_ATTEMPTS_BY_EXCEPTION,
+    )
     result._voicetest_lm = lm
     return result
 
@@ -172,4 +187,8 @@ async def _call_llm_streaming(
         result._voicetest_lm = lm
         return result
 
-    return await with_retry(stream, on_error=on_error)
+    return await with_retry(
+        stream,
+        on_error=on_error,
+        max_attempts_by_exception=_MAX_ATTEMPTS_BY_EXCEPTION,
+    )

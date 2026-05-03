@@ -153,16 +153,23 @@ class TestClaudeCodeLMCall:
                 lm("test prompt")
 
     def test_raises_on_timeout(self):
-        """Should propagate TimeoutExpired from subprocess."""
+        """Subprocess timeouts are translated to litellm.Timeout (retryable)
+        so with_retry handles them alongside other timeout errors. The original
+        TimeoutExpired is preserved on __cause__ for diagnostics."""
+        import litellm
+
         from voicetest.llm.claudecode import ClaudeCodeLM
 
         with (
             patch("shutil.which", return_value="/usr/local/bin/claude"),
-            patch("subprocess.run", side_effect=subprocess.TimeoutExpired("claude", 120)),
+            patch("subprocess.run", side_effect=subprocess.TimeoutExpired("claude", 600)),
         ):
             lm = ClaudeCodeLM(cache=False)
-            with pytest.raises(subprocess.TimeoutExpired):
+            with pytest.raises(litellm.Timeout) as excinfo:
                 lm("test prompt")
+
+        assert "600s" in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, subprocess.TimeoutExpired)
 
     def test_uses_correct_variant_in_command(self):
         """Should use the variant specified in model string."""
