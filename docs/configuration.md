@@ -98,6 +98,12 @@ Available model strings:
 
 This invokes the `claude` CLI via subprocess, using your existing Claude Code authentication.
 
+### Subprocess timeout
+
+Each call has a 600-second timeout on the `claude` CLI subprocess. If a request exceeds it, voicetest translates the failure into a retryable timeout error. Timeouts are capped at **2 attempts** (vs. the default 8 used for rate limits and connection errors) because each attempt costs the full timeout — bounding worst-case wallclock at roughly twice the timeout. If both attempts fail, the test surfaces as `status="error"` with a clear message rather than a raw `subprocess.TimeoutExpired` stacktrace.
+
+If you consistently hit the timeout on legitimate long generations, raise the `timeout` argument when constructing the LM (Python API), or split the workload into smaller prompts.
+
 ## Claude Code plugin
 
 voicetest ships with a Claude Code plugin for agent-assisted voice testing. Slash commands and auto-activating skills help Claude Code discover importers/exporters, run tests, export agents, and convert between formats.

@@ -14,8 +14,16 @@ from typing import Any
 import dspy
 from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.cache import request_cache
+import litellm
 
 from voicetest.exceptions import QuotaExhaustedError
+
+
+# Default timeout for the Claude Code CLI subprocess. Long generations
+# occasionally exceed shorter values; with_retry handles the rare case where
+# even this is too short by translating subprocess.TimeoutExpired into
+# litellm.Timeout (a retryable exception).
+DEFAULT_CLAUDECODE_TIMEOUT = 600
 
 
 class ClaudeCodeLM(dspy.LM):
@@ -111,10 +119,16 @@ class ClaudeCodeLM(dspy.LM):
         if self.cache:
             completion = request_cache(cache_arg_name="request")(completion)
 
-        return completion(request=request, timeout=kwargs.get("timeout", 120))
+        return completion(
+            request=request,
+            timeout=kwargs.get("timeout", DEFAULT_CLAUDECODE_TIMEOUT),
+        )
 
     def _run_cli(
-        self, request: dict[str, Any], timeout: int = 120, **kwargs
+        self,
+        request: dict[str, Any],
+        timeout: int = DEFAULT_CLAUDECODE_TIMEOUT,
+        **kwargs,
     ) -> list[dict[str, Any]]:
         """Execute the Claude CLI subprocess."""
         messages = request.get("messages", [])
@@ -126,13 +140,22 @@ class ClaudeCodeLM(dspy.LM):
         env.pop("ANTHROPIC_API_KEY", None)
         env.pop("CLAUDECODE", None)
 
-        result = subprocess.run(
-            ["claude", "-p", "--output-format", "json", "--model", self.variant, prompt_text],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            env=env,
-        )
+        try:
+            result = subprocess.run(
+                ["claude", "-p", "--output-format", "json", "--model", self.variant, prompt_text],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as err:
+            # Translate to litellm.Timeout so with_retry treats it as retryable
+            # alongside other timeout errors (see voicetest/retry.py:RETRYABLE_EXCEPTIONS).
+            raise litellm.Timeout(
+                message=f"Claude Code CLI timed out after {timeout}s",
+                model=self.model,
+                llm_provider="claudecode",
+            ) from err
 
         # Try to parse JSON response (Claude Code outputs JSON even on errors)
         try:
