@@ -1,6 +1,12 @@
 """Run service: persisted test run management."""
 
+from voicetest.engine.session import ConversationRunner
+from voicetest.models.agent import AgentGraph
+from voicetest.models.results import Message
 from voicetest.models.results import TestResult
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
+from voicetest.simulator.scripted import ScriptedUserSimulator
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
@@ -119,3 +125,67 @@ class RunService:
             self.add_result(run["id"], result)
         self.complete(run["id"])
         return self.get_run(run["id"])
+
+    async def replay_run(
+        self,
+        source_run_id: str,
+        graph: AgentGraph,
+        options: RunOptions,
+    ) -> dict:
+        """Replay a source Run against the agent's current graph.
+
+        For each Result in the source Run, drives a fresh conversation against
+        `graph` using a ScriptedUserSimulator that yields the source's recorded
+        user turns in order. The live agent's responses replace the recorded
+        ones. Each replay produces a new Result inside a new Run.
+
+        Status is "pass" by default — replay results are passive captures of
+        live behavior; judging happens later when metrics are configured. The
+        diff against the source is implicit (same source, different agent
+        responses) and consumed by the diff view.
+
+        Returns the new Run record.
+
+        Raises:
+            ValueError: source run not found, or has no replayable results.
+        """
+        source = self.get_run(source_run_id)
+        if not source:
+            raise ValueError(f"Source run not found: {source_run_id}")
+        if not source["results"]:
+            raise ValueError(f"Source run has no results to replay: {source_run_id}")
+
+        new_run = self.create_run(source["agent_id"])
+
+        for source_result in source["results"]:
+            transcript_data = source_result.get("transcript_json") or []
+            messages = [Message(**m) for m in transcript_data]
+
+            simulator = ScriptedUserSimulator(messages)
+            runner = ConversationRunner(graph, options)
+
+            # Runner takes a TestCase but only uses it in mock mode (which we
+            # aren't using). A minimal placeholder satisfies the type.
+            placeholder = TestCase(
+                name=f"Replay of {source_result.get('test_name', 'call')}",
+                user_prompt="",
+            )
+
+            state = await runner.run(placeholder, simulator)
+
+            replay_result = TestResult(
+                test_id=source_result.get("id"),
+                test_name=f"Replay of {source_result.get('test_name', 'call')}",
+                status="pass",
+                transcript=state.transcript,
+                turn_count=state.turn_count,
+                duration_ms=0,
+                end_reason=state.end_reason,
+                nodes_visited=state.nodes_visited,
+                tools_called=state.tools_called,
+            )
+
+            self.add_result(new_run["id"], replay_result)
+
+        self.complete(new_run["id"])
+        return self.get_run(new_run["id"])

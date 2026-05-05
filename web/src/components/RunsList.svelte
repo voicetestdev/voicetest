@@ -44,10 +44,11 @@
     return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
   }
 
-  function getRunStatus(run: RunRecord): "pass" | "fail" | "running" | "empty" {
+  function getRunStatus(run: RunRecord): "pass" | "fail" | "running" | "empty" | "imported" {
     const s = run.summary;
     if (!s || s.total === 0) return "empty";
     if (s.running > 0) return "running";
+    if ((s.imported ?? 0) > 0 && s.imported === s.total) return "imported";
     if (s.failed > 0 || s.errors > 0) return "fail";
     return "pass";
   }
@@ -58,6 +59,9 @@
     if (s.running > 0) {
       const done = s.passed + s.failed + s.errors;
       return `Running (${done}/${s.total} complete)`;
+    }
+    if ((s.imported ?? 0) > 0 && s.imported === s.total) {
+      return `${s.imported} imported call${s.imported === 1 ? "" : "s"}`;
     }
     const parts: string[] = [];
     parts.push(`${s.passed} passed`);
@@ -112,6 +116,10 @@
                     </svg>
                   {:else if status === "running"}
                     <span class="mini-spinner"></span>
+                  {:else if status === "imported"}
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor" aria-label="Imported">
+                      <path fill-rule="evenodd" d="M8 0a.75.75 0 01.75.75v6.69l2.22-2.22a.75.75 0 111.06 1.06l-3.5 3.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 011.06-1.06l2.22 2.22V.75A.75.75 0 018 0zM2.75 12a.75.75 0 00-.75.75V14a2 2 0 002 2h8a2 2 0 002-2v-1.25a.75.75 0 00-1.5 0V14a.5.5 0 01-.5.5H4a.5.5 0 01-.5-.5v-1.25a.75.75 0 00-.75-.75z"/>
+                    </svg>
                   {:else}
                     <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
                       <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/>
@@ -211,6 +219,10 @@
 
   .status-icon.empty {
     color: var(--text-tertiary);
+  }
+
+  .status-icon.imported {
+    color: var(--text-secondary);
   }
 
   .mini-spinner {

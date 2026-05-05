@@ -44,6 +44,7 @@ from voicetest.demo import get_demo_tests
 from voicetest.exceptions import QuotaExhaustedError
 from voicetest.executor import RunJob
 from voicetest.executor import get_executor_factory
+from voicetest.importers.transcripts.retell import parse_retell_file
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import GlobalMetric
 from voicetest.models.agent import MetricsConfig
@@ -755,6 +756,54 @@ async def apply_snippets(agent_id: str, request: ApplySnippetsRequest) -> AgentG
         raise HTTPException(status_code=404, detail=str(e)) from None
 
 
+_SUPPORTED_TRANSCRIPT_FORMATS = {"retell"}
+
+
+@router.post("/agents/{agent_id}/import-call")
+async def import_call(
+    agent_id: str,
+    file: UploadFile,
+    format: str = "retell",
+) -> dict:
+    """Import call transcripts as a new Run with imported Results.
+
+    The uploaded file's content is parsed by a platform-specific adapter
+    (currently Retell only). Each conversation in the file becomes one Result
+    inside the created Run, with status="imported" and no test_case_id linkage.
+    """
+    _require_agent(agent_id)
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    if format not in _SUPPORTED_TRANSCRIPT_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported format: {format!r}. "
+                f"Supported: {sorted(_SUPPORTED_TRANSCRIPT_FORMATS)}"
+            ),
+        )
+
+    suffix = Path(file.filename).suffix
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = Path(tmp.name)
+        try:
+            results = parse_retell_file(tmp_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+    if not results:
+        raise HTTPException(status_code=400, detail="No conversations found in file")
+
+    return get_run_service().import_calls(agent_id, results)
+
+
 @router.post("/agents")
 async def create_agent(request: CreateAgentRequest) -> dict:
     """Create an agent from config dict or file path."""
@@ -1143,6 +1192,31 @@ async def delete_run(run_id: str) -> dict:
 
     get_run_service().delete_run(run_id)
     return {"status": "deleted", "id": run_id}
+
+
+@router.post("/runs/{source_run_id}/replay")
+async def replay_run(source_run_id: str) -> dict:
+    """Replay a source Run against the agent's current graph.
+
+    Loads the source Run, drives a fresh conversation per source Result using
+    the source's recorded user turns as a script, and persists the live
+    conversations as a new Run.
+    """
+    run_svc = get_run_service()
+    source = run_svc.get_run(source_run_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source run not found")
+
+    _agent, graph = _load_agent_graph(source["agent_id"])
+
+    settings = load_settings()
+    settings.apply_env()
+    options = _build_run_options(settings, None)
+
+    try:
+        return await run_svc.replay_run(source_run_id, graph, options)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 @router.post("/results/{result_id}/audio-eval")

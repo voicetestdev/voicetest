@@ -252,6 +252,7 @@ export interface RunSummary {
   failed: number;
   errors: number;
   running: number;
+  imported: number;
   failed_names: string[];
 }
 

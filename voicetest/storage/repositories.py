@@ -545,6 +545,7 @@ class RunRepository:
                 func.sum(case((Result.status == "fail", 1), else_=0)).label("failed"),
                 func.sum(case((Result.status == "error", 1), else_=0)).label("errors"),
                 func.sum(case((Result.status == "running", 1), else_=0)).label("running"),
+                func.sum(case((Result.status == "imported", 1), else_=0)).label("imported"),
             )
             .group_by(Result.run_id)
             .subquery()
@@ -571,6 +572,7 @@ class RunRepository:
                 "failed": row.failed or 0,
                 "errors": row.errors or 0,
                 "running": row.running or 0,
+                "imported": row.imported or 0,
                 "failed_names": [],
             }
             results.append(d)

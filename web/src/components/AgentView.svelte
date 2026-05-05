@@ -13,6 +13,7 @@
   import CallView from "./CallView.svelte";
   import ChatView from "./ChatView.svelte";
   import ExportModal from "./ExportModal.svelte";
+  import ImportCallsModal from "./ImportCallsModal.svelte";
   import MetadataEditor from "./MetadataEditor.svelte";
   import NodePromptModal from "./NodePromptModal.svelte";
   import TransitionModal from "./TransitionModal.svelte";
@@ -26,6 +27,7 @@
   let error = $state("");
   let mermaidSvg = $state("");
   let showExportModal = $state(false);
+  let showImportCallsModal = $state(false);
   let lastGraphId = $state<string | null>(null);
   let lastTheme = $state<string | null>(null);
   let renderCounter = 0;
@@ -721,29 +723,39 @@
         </div>
       {/if}
       <div class="actions">
-        <ChatView />
-        <CallView />
-        <button
-          class="btn-primary"
-          onclick={() => (showExportModal = true)}
-        >
-          Export Agent...
-        </button>
-        {#if syncStatus?.can_sync}
+        <div class="action-group session">
+          <div class="session-item"><ChatView /></div>
+          <div class="session-item"><CallView /></div>
+        </div>
+        <div class="action-group data">
           <button
-            class="sync-btn"
-            onclick={syncToSource}
-            disabled={syncing}
+            class="secondary"
+            onclick={() => (showImportCallsModal = true)}
           >
-            {#if syncing}
-              Syncing...
-            {:else if syncSuccess}
-              Synced!
-            {:else}
-              Sync to {getPlatformDisplayName(syncStatus.platform || "")}
-            {/if}
+            Import Calls...
           </button>
-        {/if}
+          <button
+            class="secondary"
+            onclick={() => (showExportModal = true)}
+          >
+            Export Agent...
+          </button>
+          {#if syncStatus?.can_sync}
+            <button
+              class="sync-btn"
+              onclick={syncToSource}
+              disabled={syncing}
+            >
+              {#if syncing}
+                Syncing...
+              {:else if syncSuccess}
+                Synced!
+              {:else}
+                Sync to {getPlatformDisplayName(syncStatus.platform || "")}
+              {/if}
+            </button>
+          {/if}
+        </div>
       </div>
     </section>
     {#if error}
@@ -781,6 +793,7 @@
     </section>
 
     <ExportModal bind:show={showExportModal} onerror={handleChildError} />
+    <ImportCallsModal bind:show={showImportCallsModal} onerror={handleChildError} />
 
     <section class="graph-section">
       <div class="graph-header">
@@ -1128,9 +1141,47 @@
   .actions {
     margin-bottom: 1rem;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.75rem;
     flex-wrap: wrap;
+  }
+
+  .action-group {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .action-group.session {
+    align-items: flex-start;
+  }
+
+  .action-group.data {
+    align-items: center;
+  }
+
+  /* Each session widget renders its button + any error/status indicator
+     stacked vertically inside its own column. The min/max-width caps prevent
+     status changes (Connecting spinner, error-inline, quota-banner) from
+     pushing the data cluster horizontally. */
+  .session-item {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25rem;
+    min-width: 9rem;
+    max-width: 14rem;
+  }
+
+  .secondary {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+  }
+
+  .secondary:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .sync-btn {
