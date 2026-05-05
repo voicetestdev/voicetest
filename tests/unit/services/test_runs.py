@@ -90,3 +90,64 @@ class TestCompleteRun:
         svc.complete(created["id"])
         run = svc.get_run(created["id"])
         assert run["completed_at"] is not None
+
+
+class TestImportCalls:
+    def _make_imported(self, name: str, transcript: list | None = None):
+        from voicetest.models.results import Message
+        from voicetest.models.results import TestResult
+
+        return TestResult(
+            test_name=name,
+            status="imported",
+            transcript=transcript
+            or [
+                Message(role="assistant", content="Hi"),
+                Message(role="user", content="Hello"),
+            ],
+            turn_count=2,
+            duration_ms=12000,
+            end_reason="ended",
+        )
+
+    def test_imports_one_call(self, agent_id):
+        svc = get_run_service()
+        results = [self._make_imported("call_001")]
+
+        run = svc.import_calls(agent_id, results)
+
+        assert run is not None
+        assert run["agent_id"] == agent_id
+        assert run["completed_at"] is not None  # marked complete immediately
+        assert len(run["results"]) == 1
+        assert run["results"][0]["status"] == "imported"
+        assert run["results"][0]["test_name"] == "call_001"
+        assert run["results"][0]["test_case_id"] is None
+        assert run["results"][0]["call_id"] is None
+
+    def test_imports_multiple_calls_into_one_run(self, agent_id):
+        svc = get_run_service()
+        results = [
+            self._make_imported("call_a"),
+            self._make_imported("call_b"),
+            self._make_imported("call_c"),
+        ]
+
+        run = svc.import_calls(agent_id, results)
+
+        assert len(run["results"]) == 3
+        assert {r["test_name"] for r in run["results"]} == {"call_a", "call_b", "call_c"}
+        assert all(r["status"] == "imported" for r in run["results"])
+
+    def test_empty_results_creates_empty_run(self, agent_id):
+        """Edge case: importing zero conversations still creates a (complete) Run.
+
+        Worth keeping rather than raising, because the adapter might be the
+        place that rejects empty payloads — the service shouldn't second-guess.
+        """
+        svc = get_run_service()
+        run = svc.import_calls(agent_id, [])
+
+        assert run is not None
+        assert run["completed_at"] is not None
+        assert run["results"] == []

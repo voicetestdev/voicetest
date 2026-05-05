@@ -1,5 +1,6 @@
 """Run service: persisted test run management."""
 
+from voicetest.models.results import TestResult
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
@@ -50,9 +51,20 @@ class RunService:
 
         return run
 
-    def add_result(self, run_id: str, test_case_id: str, result) -> None:
-        """Add a completed result to a run."""
-        self._runs.add_result(run_id, test_case_id, result)
+    def add_result(
+        self,
+        run_id: str,
+        result,
+        *,
+        test_case_id: str | None = None,
+        call_id: str | None = None,
+    ) -> str:
+        """Add a completed result to a run.
+
+        Pass `test_case_id` for test runs, `call_id` for live calls, or neither
+        for imported transcripts. Returns the new result id.
+        """
+        return self._runs.add_result(run_id, result, test_case_id=test_case_id, call_id=call_id)
 
     def delete_run(self, run_id: str) -> None:
         """Delete a run and all its results."""
@@ -86,6 +98,24 @@ class RunService:
         """Update a result with audio eval data."""
         self._runs.update_audio_eval(result_id, transformed, audio_metrics)
 
-    def add_result_from_call(self, run_id: str, call_id: str, test_result) -> None:
-        """Add a result to a run from a completed call."""
-        self._runs.add_result_from_call(run_id, call_id, test_result)
+    def add_result_from_call(self, run_id: str, call_id: str, test_result) -> str:
+        """Back-compat alias — prefer add_result(run_id, result, call_id=...).
+
+        Retained because external integrators may depend on this entry point.
+        """
+        return self.add_result(run_id, test_result, call_id=call_id)
+
+    def import_calls(self, agent_id: str, results: list[TestResult]) -> dict:
+        """Persist a batch of imported call transcripts as a single Run.
+
+        Creates one Run with N Results — each Result holds one call's transcript
+        with status="imported" and no test_case_id/call_id linkage. The Run is
+        marked complete immediately since imports are historical, not running.
+
+        Returns the created Run record.
+        """
+        run = self.create_run(agent_id)
+        for result in results:
+            self.add_result(run["id"], result)
+        self.complete(run["id"])
+        return self.get_run(run["id"])

@@ -425,7 +425,7 @@ class TestRunRepository:
         run_record = run_repo.create(agent["id"])
 
         for result in sample_run.results:
-            run_repo.add_result(run_record["id"], "test-case-1", result)
+            run_repo.add_result(run_record["id"], result, test_case_id="test-case-1")
         run_repo.complete(run_record["id"])
 
         run = run_repo.get_with_results(run_record["id"])
@@ -440,11 +440,24 @@ class TestRunRepository:
         run_record = run_repo.create(agent["id"])
         result = sample_run.results[0]
 
-        run_repo.add_result(run_record["id"], "tc-1", result)
+        run_repo.add_result(run_record["id"], result, test_case_id="tc-1")
 
         run = run_repo.get_with_results(run_record["id"])
         assert len(run["results"]) == 1
         assert run["results"][0]["test_name"] == "Test One"
+
+    def test_add_result_for_import_no_links(self, run_repo, agent_repo, sample_run):
+        """Imported transcripts pass neither test_case_id nor call_id."""
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+        result = sample_run.results[0]
+
+        result_id = run_repo.add_result(run_record["id"], result)
+
+        assert result_id is not None
+        run = run_repo.get_with_results(run_record["id"])
+        assert run["results"][0]["test_case_id"] is None
+        assert run["results"][0]["call_id"] is None
 
     def test_complete(self, run_repo, agent_repo):
         agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
@@ -472,7 +485,7 @@ class TestRunRepository:
         run_record = run_repo.create(agent["id"])
 
         for result in sample_run.results:
-            run_repo.add_result(run_record["id"], "test-case-1", result)
+            run_repo.add_result(run_record["id"], result, test_case_id="test-case-1")
         run_repo.complete(run_record["id"])
 
         run = run_repo.get_with_results(run_record["id"])

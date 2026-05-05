@@ -106,6 +106,7 @@ REST_SURFACED = {
     "RunService.list_runs",
     "RunService.get_run",
     "RunService.delete_run",
+    "RunService.import_calls",
     # Platforms
     "PlatformService.list_platforms",
     "PlatformService.get_status",
@@ -154,6 +155,7 @@ CLI_SURFACED = {
     "RunService.list_runs",
     "RunService.get_run",
     "RunService.delete_run",
+    "RunService.import_calls",
     # Snippets
     "SnippetService.get_snippets",
     "SnippetService.update_all_snippets",

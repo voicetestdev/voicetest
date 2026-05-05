@@ -62,7 +62,7 @@ class TestResult(BaseModel):
 
     test_id: str | None = None
     test_name: str
-    status: Literal["pass", "fail", "error"]
+    status: Literal["pass", "fail", "error", "imported"]
     transcript: list[Message] = Field(default_factory=list)
     metric_results: list[MetricResult] = Field(default_factory=list)
     audio_metric_results: list[MetricResult] = Field(default_factory=list)

@@ -257,7 +257,7 @@ async def _run_cli(
         run_svc = get_run_service()
         db_run = run_svc.create_run(agent_id)
         for result in run_result.results:
-            run_svc.add_result(db_run["id"], "", result)
+            run_svc.add_result(db_run["id"], result)
         run_svc.complete(db_run["id"])
         _echo(f"[dim]Run saved to database: {db_run['id']}[/dim]")
 
