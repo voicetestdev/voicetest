@@ -1,5 +1,12 @@
 """Run service: persisted test run management."""
 
+from voicetest.engine.session import ConversationRunner
+from voicetest.models.agent import AgentGraph
+from voicetest.models.results import Message
+from voicetest.models.results import TestResult
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
+from voicetest.simulator.scripted import ScriptedUserSimulator
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
@@ -50,9 +57,20 @@ class RunService:
 
         return run
 
-    def add_result(self, run_id: str, test_case_id: str, result) -> None:
-        """Add a completed result to a run."""
-        self._runs.add_result(run_id, test_case_id, result)
+    def add_result(
+        self,
+        run_id: str,
+        result,
+        *,
+        test_case_id: str | None = None,
+        call_id: str | None = None,
+    ) -> str:
+        """Add a completed result to a run.
+
+        Pass `test_case_id` for test runs, `call_id` for live calls, or neither
+        for imported transcripts. Returns the new result id.
+        """
+        return self._runs.add_result(run_id, result, test_case_id=test_case_id, call_id=call_id)
 
     def delete_run(self, run_id: str) -> None:
         """Delete a run and all its results."""
@@ -86,6 +104,88 @@ class RunService:
         """Update a result with audio eval data."""
         self._runs.update_audio_eval(result_id, transformed, audio_metrics)
 
-    def add_result_from_call(self, run_id: str, call_id: str, test_result) -> None:
-        """Add a result to a run from a completed call."""
-        self._runs.add_result_from_call(run_id, call_id, test_result)
+    def add_result_from_call(self, run_id: str, call_id: str, test_result) -> str:
+        """Back-compat alias — prefer add_result(run_id, result, call_id=...).
+
+        Retained because external integrators may depend on this entry point.
+        """
+        return self.add_result(run_id, test_result, call_id=call_id)
+
+    def import_calls(self, agent_id: str, results: list[TestResult]) -> dict:
+        """Persist a batch of imported call transcripts as a single Run.
+
+        Creates one Run with N Results — each Result holds one call's transcript
+        with status="imported" and no test_case_id/call_id linkage. The Run is
+        marked complete immediately since imports are historical, not running.
+
+        Returns the created Run record.
+        """
+        run = self.create_run(agent_id)
+        for result in results:
+            self.add_result(run["id"], result)
+        self.complete(run["id"])
+        return self.get_run(run["id"])
+
+    async def replay_run(
+        self,
+        source_run_id: str,
+        graph: AgentGraph,
+        options: RunOptions,
+    ) -> dict:
+        """Replay a source Run against the agent's current graph.
+
+        For each Result in the source Run, drives a fresh conversation against
+        `graph` using a ScriptedUserSimulator that yields the source's recorded
+        user turns in order. The live agent's responses replace the recorded
+        ones. Each replay produces a new Result inside a new Run.
+
+        Status is "pass" by default — replay results are passive captures of
+        live behavior; judging happens later when metrics are configured. The
+        diff against the source is implicit (same source, different agent
+        responses) and consumed by the diff view.
+
+        Returns the new Run record.
+
+        Raises:
+            ValueError: source run not found, or has no replayable results.
+        """
+        source = self.get_run(source_run_id)
+        if not source:
+            raise ValueError(f"Source run not found: {source_run_id}")
+        if not source["results"]:
+            raise ValueError(f"Source run has no results to replay: {source_run_id}")
+
+        new_run = self.create_run(source["agent_id"])
+
+        for source_result in source["results"]:
+            transcript_data = source_result.get("transcript_json") or []
+            messages = [Message(**m) for m in transcript_data]
+
+            simulator = ScriptedUserSimulator(messages)
+            runner = ConversationRunner(graph, options)
+
+            # Runner takes a TestCase but only uses it in mock mode (which we
+            # aren't using). A minimal placeholder satisfies the type.
+            placeholder = TestCase(
+                name=f"Replay of {source_result.get('test_name', 'call')}",
+                user_prompt="",
+            )
+
+            state = await runner.run(placeholder, simulator)
+
+            replay_result = TestResult(
+                test_id=source_result.get("id"),
+                test_name=f"Replay of {source_result.get('test_name', 'call')}",
+                status="pass",
+                transcript=state.transcript,
+                turn_count=state.turn_count,
+                duration_ms=0,
+                end_reason=state.end_reason,
+                nodes_visited=state.nodes_visited,
+                tools_called=state.tools_called,
+            )
+
+            self.add_result(new_run["id"], replay_result)
+
+        self.complete(new_run["id"])
+        return self.get_run(new_run["id"])

@@ -171,7 +171,7 @@ test.describe("Agent Config Reactivity", () => {
     await page.locator(".view-tabs button:has-text('Tests')").click();
     await expect(page.locator("h2:has-text('Tests')")).toBeVisible();
 
-    await page.locator(".view-tabs button:has-text('Config')").click();
+    await page.locator(".view-tabs button:has-text('Agent')").click();
     await expect(page.locator(".agent-info")).toBeVisible();
 
     // Verify still shows the value (store reactivity)

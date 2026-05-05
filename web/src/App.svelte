@@ -140,7 +140,7 @@
               class="tab-item"
               class:active={view === "config"}
               onclick={() => switchView("config")}
-            >Config</button>
+            >Agent</button>
             <button
               class="tab-item"
               class:active={view === "metrics"}

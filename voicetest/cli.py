@@ -23,6 +23,7 @@ from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
 from voicetest.engine.conversation import ConversationEngine
 from voicetest.formatting import format_run
+from voicetest.importers.transcripts.retell import parse_retell_file
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
@@ -257,7 +258,7 @@ async def _run_cli(
         run_svc = get_run_service()
         db_run = run_svc.create_run(agent_id)
         for result in run_result.results:
-            run_svc.add_result(db_run["id"], "", result)
+            run_svc.add_result(db_run["id"], result)
         run_svc.complete(db_run["id"])
         _echo(f"[dim]Run saved to database: {db_run['id']}[/dim]")
 
@@ -731,6 +732,131 @@ def down():
             raise SystemExit(1)
 
         console.print("[dim]Infrastructure stopped.[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# import-call (top-level)
+# ---------------------------------------------------------------------------
+
+
+_TRANSCRIPT_FORMATS = {"retell"}
+
+
+@main.command("import-call")
+@click.option("--agent", "agent_id", required=True, help="Target agent ID in the database")
+@click.option(
+    "--transcript",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to a transcript file (JSON)",
+)
+@click.option(
+    "--format",
+    "format_",
+    default="retell",
+    type=click.Choice(sorted(_TRANSCRIPT_FORMATS)),
+    help="Source platform format",
+)
+@click.pass_context
+def import_call(ctx, agent_id: str, transcript: Path, format_: str):
+    """Import call transcripts from a platform export and persist as a Run.
+
+    Each conversation in the transcript file becomes a Result inside the
+    created Run, with status="imported" and no test_case_id linkage.
+
+    Example:
+
+        voicetest import-call --agent <id> --transcript calls.json
+    """
+    json_mode = ctx.obj.get("json", False)
+
+    if format_ != "retell":
+        _echo(f"[red]Unsupported format: {format_}[/red]")
+        raise SystemExit(1)
+
+    try:
+        results = parse_retell_file(transcript)
+    except ValueError as e:
+        _echo(f"[red]Failed to parse transcript: {e}[/red]")
+        raise SystemExit(1) from None
+
+    if not results:
+        _echo("[red]No conversations found in transcript file.[/red]")
+        raise SystemExit(1)
+
+    agent_svc = get_agent_service()
+    if not agent_svc.get_agent(agent_id):
+        _echo(f"[red]Agent not found: {agent_id}[/red]")
+        raise SystemExit(1)
+
+    run_svc = get_run_service()
+    run = run_svc.import_calls(agent_id, results)
+
+    if json_mode:
+        click.echo(json.dumps(run, default=str))
+    else:
+        _echo(
+            f"[green]Imported {len(results)} conversation(s) into run "
+            f"[bold]{run['id']}[/bold][/green]"
+        )
+
+
+# ---------------------------------------------------------------------------
+# replay (top-level)
+# ---------------------------------------------------------------------------
+
+
+@main.command("replay")
+@click.argument("source_run_id")
+@click.pass_context
+def replay(ctx, source_run_id: str):
+    """Replay a source Run against the agent's current graph.
+
+    Drives a fresh conversation per source Result using the source's recorded
+    user turns as a script. Persists the live conversations as a new Run.
+
+    Example:
+
+        voicetest replay <run-id>
+    """
+    json_mode = ctx.obj.get("json", False)
+
+    settings = load_settings()
+    settings.apply_env()
+    setup_cache_from_settings(settings.cache)
+
+    run_svc = get_run_service()
+    source = run_svc.get_run(source_run_id)
+    if not source:
+        _echo(f"[red]Source run not found: {source_run_id}[/red]")
+        raise SystemExit(1)
+
+    agent_svc = get_agent_service()
+    try:
+        _agent, graph = agent_svc.load_graph(source["agent_id"])
+    except (ValueError, FileNotFoundError) as e:
+        _echo(f"[red]Failed to load agent graph: {e}[/red]")
+        raise SystemExit(1) from None
+
+    options = RunOptions(
+        agent_model=settings.models.agent,
+        simulator_model=settings.models.simulator,
+        judge_model=settings.models.judge,
+    )
+
+    try:
+        new_run = asyncio.run(run_svc.replay_run(source_run_id, graph, options))
+    except ValueError as e:
+        _echo(f"[red]Replay failed: {e}[/red]")
+        raise SystemExit(1) from None
+
+    if json_mode:
+        click.echo(json.dumps(new_run, default=str))
+    else:
+        _echo(
+            f"[green]Replayed {len(new_run['results'])} conversation(s) into run "
+            f"[bold]{new_run['id']}[/bold][/green]"
+        )
 
 
 # ---------------------------------------------------------------------------

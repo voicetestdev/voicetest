@@ -545,6 +545,7 @@ class RunRepository:
                 func.sum(case((Result.status == "fail", 1), else_=0)).label("failed"),
                 func.sum(case((Result.status == "error", 1), else_=0)).label("errors"),
                 func.sum(case((Result.status == "running", 1), else_=0)).label("running"),
+                func.sum(case((Result.status == "imported", 1), else_=0)).label("imported"),
             )
             .group_by(Result.run_id)
             .subquery()
@@ -571,6 +572,7 @@ class RunRepository:
                 "failed": row.failed or 0,
                 "errors": row.errors or 0,
                 "running": row.running or 0,
+                "imported": row.imported or 0,
                 "failed_names": [],
             }
             results.append(d)
@@ -630,8 +632,23 @@ class RunRepository:
             "completed_at": None,
         }
 
-    def add_result(self, run_id: str, test_case_id: str, result: TestResult) -> None:
-        """Add a result to a run."""
+    def add_result(
+        self,
+        run_id: str,
+        result: TestResult,
+        *,
+        test_case_id: str | None = None,
+        call_id: str | None = None,
+    ) -> str:
+        """Add a result to a run.
+
+        At most one of `test_case_id` or `call_id` is set per result:
+          - test runs: pass `test_case_id`
+          - live calls: pass `call_id`
+          - imported transcripts: pass neither (both columns null)
+
+        Returns the new result id.
+        """
         result_id = str(uuid4())
         now = datetime.now(UTC)
         data = self._serialize_result_data(result)
@@ -640,38 +657,6 @@ class RunRepository:
             id=result_id,
             run_id=run_id,
             test_case_id=test_case_id,
-            test_name=result.test_name,
-            status=result.status,
-            duration_ms=result.duration_ms,
-            turn_count=result.turn_count,
-            end_reason=result.end_reason,
-            error_message=result.error_message,
-            transcript_json=data["transcript"],
-            metrics_json=data["metrics"],
-            audio_metrics_json=data["audio_metrics"],
-            nodes_visited=result.nodes_visited,
-            tools_called=data["tools"],
-            models_used=data["models"],
-            created_at=now,
-        )
-        self.session.add(db_result)
-        self.session.commit()
-
-    def add_result_from_call(
-        self,
-        run_id: str,
-        call_id: str,
-        result: TestResult,
-    ) -> str:
-        """Add a result linked to a live call (no test case)."""
-        result_id = str(uuid4())
-        now = datetime.now(UTC)
-        data = self._serialize_result_data(result)
-
-        db_result = Result(
-            id=result_id,
-            run_id=run_id,
-            test_case_id=None,
             call_id=call_id,
             test_name=result.test_name,
             status=result.status,
@@ -690,6 +675,18 @@ class RunRepository:
         self.session.add(db_result)
         self.session.commit()
         return result_id
+
+    def add_result_from_call(
+        self,
+        run_id: str,
+        call_id: str,
+        result: TestResult,
+    ) -> str:
+        """Back-compat alias — prefer add_result(run_id, result, call_id=...).
+
+        Retained because external integrators may depend on this entry point.
+        """
+        return self.add_result(run_id, result, call_id=call_id)
 
     def create_pending_result(self, run_id: str, test_case_id: str, test_name: str) -> str:
         """Create a pending result for an in-progress test."""

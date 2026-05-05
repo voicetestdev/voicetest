@@ -1089,3 +1089,177 @@ class TestCLIDecompose:
 
         assert result.exit_code == 0
         assert "decompose" in result.output
+
+
+def _create_agent_for_cli(sample_retell_config) -> str:
+    """Create an agent via the service and return its id (CLI-test helper)."""
+    from voicetest.services import get_agent_service
+
+    agent = get_agent_service().create_agent(name="CLI Test Agent", config=sample_retell_config)
+    return agent["id"]
+
+
+class TestCLIImportCall:
+    """Tests for the import-call CLI command."""
+
+    def test_imports_single_call(
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call
+    ):
+        from voicetest.cli import main
+
+        monkeypatch.chdir(tmp_path)
+        agent_id = _create_agent_for_cli(sample_retell_config)
+
+        transcript_path = tmp_path / "call.json"
+        transcript_path.write_text(json.dumps(retell_call()))
+
+        result = cli_runner.invoke(
+            main,
+            ["import-call", "--agent", agent_id, "--transcript", str(transcript_path)],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Imported 1 conversation" in result.output
+
+    def test_imports_array_of_calls(
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call
+    ):
+        from voicetest.cli import main
+
+        monkeypatch.chdir(tmp_path)
+        agent_id = _create_agent_for_cli(sample_retell_config)
+
+        transcript_path = tmp_path / "calls.json"
+        transcript_path.write_text(json.dumps([retell_call("call_a"), retell_call("call_b")]))
+
+        result = cli_runner.invoke(
+            main,
+            ["import-call", "--agent", agent_id, "--transcript", str(transcript_path)],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert "Imported 2 conversation" in result.output
+
+    def test_json_mode_outputs_run_record(
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call
+    ):
+        from voicetest.cli import main
+
+        monkeypatch.chdir(tmp_path)
+        agent_id = _create_agent_for_cli(sample_retell_config)
+
+        transcript_path = tmp_path / "call.json"
+        transcript_path.write_text(json.dumps(retell_call()))
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "--json",
+                "import-call",
+                "--agent",
+                agent_id,
+                "--transcript",
+                str(transcript_path),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        run = json.loads(result.output)
+        assert run["agent_id"] == agent_id
+        assert len(run["results"]) == 1
+        assert run["results"][0]["status"] == "imported"
+
+    def test_unknown_agent_fails(self, cli_runner, tmp_path, monkeypatch, retell_call):
+        from voicetest.cli import main
+
+        monkeypatch.chdir(tmp_path)
+
+        transcript_path = tmp_path / "call.json"
+        transcript_path.write_text(json.dumps(retell_call()))
+
+        result = cli_runner.invoke(
+            main,
+            ["import-call", "--agent", "nonexistent", "--transcript", str(transcript_path)],
+        )
+
+        assert result.exit_code != 0
+        assert "Agent not found" in result.output
+
+    def test_invalid_transcript_fails(
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config
+    ):
+        from voicetest.cli import main
+
+        monkeypatch.chdir(tmp_path)
+        agent_id = _create_agent_for_cli(sample_retell_config)
+
+        transcript_path = tmp_path / "garbage.json"
+        transcript_path.write_text("not json at all")
+
+        result = cli_runner.invoke(
+            main,
+            ["import-call", "--agent", agent_id, "--transcript", str(transcript_path)],
+        )
+
+        assert result.exit_code != 0
+        assert "Failed to parse transcript" in result.output
+
+    def test_payload_with_no_calls_fails(
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config
+    ):
+        from voicetest.cli import main
+
+        monkeypatch.chdir(tmp_path)
+        agent_id = _create_agent_for_cli(sample_retell_config)
+
+        transcript_path = tmp_path / "empty.json"
+        transcript_path.write_text(json.dumps({"unrelated": "payload"}))
+
+        result = cli_runner.invoke(
+            main,
+            ["import-call", "--agent", agent_id, "--transcript", str(transcript_path)],
+        )
+
+        assert result.exit_code != 0
+        # The Retell adapter raises before we reach the no-conversations check,
+        # because an unrecognized payload is "no Retell call objects".
+        assert "Failed to parse transcript" in result.output
+
+
+class TestCLIReplay:
+    """Tests for the replay CLI command."""
+
+    def test_unknown_source_run_fails(self, cli_runner, tmp_path, monkeypatch):
+        from voicetest.cli import main
+
+        monkeypatch.chdir(tmp_path)
+        result = cli_runner.invoke(main, ["replay", "nonexistent-run"])
+
+        assert result.exit_code != 0
+        assert "Source run not found" in result.output
+
+    def test_replay_drives_runner_against_graph(
+        self,
+        cli_runner,
+        tmp_path,
+        monkeypatch,
+        sample_retell_config,
+        retell_call,
+        stub_conversation_runner,
+    ):
+        """End-to-end CLI: import a call to seed a source run, then replay it.
+        The stub_conversation_runner fixture replaces the real runner."""
+        from voicetest.cli import main
+        from voicetest.importers.transcripts.retell import parse_retell
+        from voicetest.services import get_run_service
+
+        monkeypatch.chdir(tmp_path)
+        agent_id = _create_agent_for_cli(sample_retell_config)
+
+        source_results = parse_retell(retell_call("src"))
+        source_run = get_run_service().import_calls(agent_id, source_results)
+
+        result = cli_runner.invoke(main, ["replay", source_run["id"]])
+
+        assert result.exit_code == 0, result.output
+        assert "Replayed 1 conversation" in result.output

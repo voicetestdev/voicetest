@@ -326,6 +326,26 @@ export const api = {
   startRun: (agentId: string, testIds?: string[], options?: Partial<RunOptions>) =>
     post<StartRunResponse>(`/agents/${agentId}/runs`, { test_ids: testIds, options }),
 
+  importCall: async (agentId: string, file: File, format = "retell"): Promise<RunWithResults> => {
+    const headers = await getHeaders();
+    const formData = new FormData();
+    formData.append("file", file);
+    const url = `${globalConfig.baseUrl}/agents/${agentId}/import-call?format=${encodeURIComponent(format)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(parseErrorMessage(text, res.statusText));
+    }
+    return res.json();
+  },
+
+  replayRun: (sourceRunId: string) =>
+    post<RunWithResults>(`/runs/${sourceRunId}/replay`, {}),
+
   getMetricsConfig: (agentId: string) =>
     get<MetricsConfig>(`/agents/${agentId}/metrics-config`),
 

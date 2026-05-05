@@ -35,6 +35,7 @@ nav:
   - CLI Reference: cli.md
   - Features: features.md
   - Configuration: configuration.md
+  - Importing transcripts: transcripts.md
   - Architecture: architecture.md
   - Development: development.md
 

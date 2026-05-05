@@ -11,6 +11,8 @@
     currentView,
     selectedResultId,
     clearCurrentRun,
+    loadRun,
+    loadRunHistory,
   } from "../lib/stores";
   import type {
     RunResultRecord,
@@ -318,6 +320,7 @@
   let userPinned = $state(false);
   let statusFilter = $state<"pass" | "fail" | null>(null);
   let deleting = $state(false);
+  let replaying = $state(false);
   let rerunOpen = $state(false);
   let rerunDropdownEl = $state<HTMLElement>();
   let detailContainer = $state<HTMLElement>();
@@ -434,6 +437,23 @@
       alert(e instanceof Error ? e.message : "Failed to delete run");
     }
     deleting = false;
+  }
+
+  async function replayRun() {
+    const runId = $currentRunId;
+    const agentId = $currentAgentId;
+    if (!runId || !agentId || replaying) return;
+
+    replaying = true;
+    try {
+      const newRun = await api.replayRun(runId);
+      // Refresh runs list and navigate to the new replay run
+      await loadRunHistory(agentId);
+      await loadRun(newRun.id);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to replay run");
+    }
+    replaying = false;
   }
 
   function handleClickOutside(event: MouseEvent) {
@@ -621,6 +641,16 @@
               </ul>
             {/if}
           </div>
+        {/if}
+        {#if $currentRunWithResults.completed_at}
+          <button
+            class="replay-btn"
+            onclick={replayRun}
+            disabled={replaying || $currentRunWithResults.results.length === 0}
+            title="Replay this run's user turns against the agent's current graph"
+          >
+            {replaying ? "Replaying..." : "Replay"}
+          </button>
         {/if}
         <button
           class="delete-run-btn"
@@ -1405,6 +1435,24 @@
   }
 
   .delete-run-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .replay-btn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .replay-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .replay-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }

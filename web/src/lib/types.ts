@@ -112,7 +112,7 @@ export interface ModelOverride {
 export interface TestResult {
   test_id: string;
   test_name: string;
-  status: "pass" | "fail" | "error" | "running" | "cancelled";
+  status: "pass" | "fail" | "error" | "running" | "cancelled" | "imported";
   transcript: Message[];
   metric_results: MetricResult[];
   nodes_visited: string[];
@@ -252,6 +252,7 @@ export interface RunSummary {
   failed: number;
   errors: number;
   running: number;
+  imported: number;
   failed_names: string[];
 }
 
@@ -269,7 +270,7 @@ export interface RunResultRecord {
   test_case_id: string | null;
   call_id?: string | null;
   test_name: string;
-  status: "pass" | "fail" | "error" | "running" | "cancelled";
+  status: "pass" | "fail" | "error" | "running" | "cancelled" | "imported";
   duration_ms: number | null;
   turn_count: number | null;
   end_reason: string | null;
