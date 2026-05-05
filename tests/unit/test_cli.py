@@ -1091,41 +1091,27 @@ class TestCLIDecompose:
         assert "decompose" in result.output
 
 
-def _retell_call_payload(call_id: str = "call_001") -> dict:
-    return {
-        "call_id": call_id,
-        "agent_id": "agent_xyz",
-        "call_type": "phone_call",
-        "call_status": "ended",
-        "start_timestamp": 1700000000000,
-        "end_timestamp": 1700000060000,
-        "duration_ms": 60000,
-        "transcript_object": [
-            {"role": "agent", "content": "Hi, how can I help?"},
-            {"role": "user", "content": "I need to cancel."},
-        ],
-    }
+def _create_agent_for_cli(sample_retell_config) -> str:
+    """Create an agent via the service and return its id (CLI-test helper)."""
+    from voicetest.services import get_agent_service
+
+    agent = get_agent_service().create_agent(name="CLI Test Agent", config=sample_retell_config)
+    return agent["id"]
 
 
 class TestCLIImportCall:
     """Tests for the import-call CLI command."""
 
-    def _create_agent(self, sample_retell_config) -> str:
-        """Create an agent via the service and return its id."""
-        from voicetest.services import get_agent_service
-
-        agent_svc = get_agent_service()
-        agent = agent_svc.create_agent(name="Import CLI Agent", config=sample_retell_config)
-        return agent["id"]
-
-    def test_imports_single_call(self, cli_runner, tmp_path, monkeypatch, sample_retell_config):
+    def test_imports_single_call(
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call
+    ):
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
-        agent_id = self._create_agent(sample_retell_config)
+        agent_id = _create_agent_for_cli(sample_retell_config)
 
         transcript_path = tmp_path / "call.json"
-        transcript_path.write_text(json.dumps(_retell_call_payload()))
+        transcript_path.write_text(json.dumps(retell_call()))
 
         result = cli_runner.invoke(
             main,
@@ -1135,16 +1121,16 @@ class TestCLIImportCall:
         assert result.exit_code == 0, result.output
         assert "Imported 1 conversation" in result.output
 
-    def test_imports_array_of_calls(self, cli_runner, tmp_path, monkeypatch, sample_retell_config):
+    def test_imports_array_of_calls(
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call
+    ):
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
-        agent_id = self._create_agent(sample_retell_config)
+        agent_id = _create_agent_for_cli(sample_retell_config)
 
         transcript_path = tmp_path / "calls.json"
-        transcript_path.write_text(
-            json.dumps([_retell_call_payload("call_a"), _retell_call_payload("call_b")])
-        )
+        transcript_path.write_text(json.dumps([retell_call("call_a"), retell_call("call_b")]))
 
         result = cli_runner.invoke(
             main,
@@ -1155,15 +1141,15 @@ class TestCLIImportCall:
         assert "Imported 2 conversation" in result.output
 
     def test_json_mode_outputs_run_record(
-        self, cli_runner, tmp_path, monkeypatch, sample_retell_config
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call
     ):
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
-        agent_id = self._create_agent(sample_retell_config)
+        agent_id = _create_agent_for_cli(sample_retell_config)
 
         transcript_path = tmp_path / "call.json"
-        transcript_path.write_text(json.dumps(_retell_call_payload()))
+        transcript_path.write_text(json.dumps(retell_call()))
 
         result = cli_runner.invoke(
             main,
@@ -1183,13 +1169,13 @@ class TestCLIImportCall:
         assert len(run["results"]) == 1
         assert run["results"][0]["status"] == "imported"
 
-    def test_unknown_agent_fails(self, cli_runner, tmp_path, monkeypatch, sample_retell_config):
+    def test_unknown_agent_fails(self, cli_runner, tmp_path, monkeypatch, retell_call):
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
 
         transcript_path = tmp_path / "call.json"
-        transcript_path.write_text(json.dumps(_retell_call_payload()))
+        transcript_path.write_text(json.dumps(retell_call()))
 
         result = cli_runner.invoke(
             main,
@@ -1205,7 +1191,7 @@ class TestCLIImportCall:
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
-        agent_id = self._create_agent(sample_retell_config)
+        agent_id = _create_agent_for_cli(sample_retell_config)
 
         transcript_path = tmp_path / "garbage.json"
         transcript_path.write_text("not json at all")
@@ -1224,7 +1210,7 @@ class TestCLIImportCall:
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
-        agent_id = self._create_agent(sample_retell_config)
+        agent_id = _create_agent_for_cli(sample_retell_config)
 
         transcript_path = tmp_path / "empty.json"
         transcript_path.write_text(json.dumps({"unrelated": "payload"}))
@@ -1253,50 +1239,25 @@ class TestCLIReplay:
         assert "Source run not found" in result.output
 
     def test_replay_drives_runner_against_graph(
-        self, cli_runner, tmp_path, monkeypatch, sample_retell_config
+        self,
+        cli_runner,
+        tmp_path,
+        monkeypatch,
+        sample_retell_config,
+        retell_call,
+        stub_conversation_runner,
     ):
         """End-to-end CLI: import a call to seed a source run, then replay it.
-        Stub ConversationRunner.run to avoid needing real LLMs."""
+        The stub_conversation_runner fixture replaces the real runner."""
         from voicetest.cli import main
-        from voicetest.engine.session import ConversationState
-        from voicetest.models.results import Message
-        from voicetest.services import get_agent_service
+        from voicetest.importers.transcripts.retell import parse_retell
         from voicetest.services import get_run_service
 
         monkeypatch.chdir(tmp_path)
+        agent_id = _create_agent_for_cli(sample_retell_config)
 
-        # Seed an imported source run
-        agent_svc = get_agent_service()
-        agent = agent_svc.create_agent(name="Replay CLI Agent", config=sample_retell_config)
-
-        from voicetest.importers.transcripts.retell import parse_retell
-
-        source_results = parse_retell(
-            {
-                "call_id": "src",
-                "transcript_object": [
-                    {"role": "agent", "content": "Hi"},
-                    {"role": "user", "content": "Hello"},
-                ],
-            }
-        )
-        source_run = get_run_service().import_calls(agent["id"], source_results)
-
-        async def fake_run(self, test_case, simulator, **kwargs):
-            transcript = []
-            while True:
-                response = await simulator.generate(transcript)
-                if response is None:
-                    break
-                transcript.append(Message(role="user", content=response.message))
-                transcript.append(Message(role="assistant", content="agent reply"))
-            state = ConversationState()
-            state.transcript = transcript
-            state.turn_count = len(transcript) // 2
-            state.end_reason = "ended"
-            return state
-
-        monkeypatch.setattr("voicetest.engine.session.ConversationRunner.run", fake_run)
+        source_results = parse_retell(retell_call("src"))
+        source_run = get_run_service().import_calls(agent_id, source_results)
 
         result = cli_runner.invoke(main, ["replay", source_run["id"]])
 

@@ -3,23 +3,6 @@
 import json
 
 
-def _retell_call(call_id: str = "call_001") -> dict:
-    """A minimal Retell call object suitable for upload."""
-    return {
-        "call_id": call_id,
-        "agent_id": "agent_xyz",
-        "call_type": "phone_call",
-        "call_status": "ended",
-        "start_timestamp": 1700000000000,
-        "end_timestamp": 1700000060000,
-        "duration_ms": 60000,
-        "transcript_object": [
-            {"role": "agent", "content": "Hi, how can I help?"},
-            {"role": "user", "content": "I need to cancel."},
-        ],
-    }
-
-
 def _create_agent(client, sample_retell_config) -> str:
     """Create an agent and return its id."""
     response = client.post(
@@ -30,9 +13,9 @@ def _create_agent(client, sample_retell_config) -> str:
 
 
 class TestImportCallEndpoint:
-    def test_import_single_call(self, db_client, sample_retell_config):
+    def test_import_single_call(self, db_client, sample_retell_config, retell_call):
         agent_id = _create_agent(db_client, sample_retell_config)
-        payload = json.dumps(_retell_call("call_001"))
+        payload = json.dumps(retell_call("call_001"))
 
         response = db_client.post(
             f"/api/agents/{agent_id}/import-call",
@@ -52,9 +35,9 @@ class TestImportCallEndpoint:
         # Transcript is stored on the result
         assert len(result["transcript_json"]) == 2
 
-    def test_import_array_of_calls(self, db_client, sample_retell_config):
+    def test_import_array_of_calls(self, db_client, sample_retell_config, retell_call):
         agent_id = _create_agent(db_client, sample_retell_config)
-        payload = json.dumps([_retell_call("call_a"), _retell_call("call_b")])
+        payload = json.dumps([retell_call("call_a"), retell_call("call_b")])
 
         response = db_client.post(
             f"/api/agents/{agent_id}/import-call",
@@ -66,10 +49,10 @@ class TestImportCallEndpoint:
         assert len(run["results"]) == 2
         assert {r["test_name"] for r in run["results"]} == {"call_a", "call_b"}
 
-    def test_import_webhook_envelope(self, db_client, sample_retell_config):
+    def test_import_webhook_envelope(self, db_client, sample_retell_config, retell_call):
         """Retell webhook payloads wrap the call object — adapter should handle it."""
         agent_id = _create_agent(db_client, sample_retell_config)
-        payload = json.dumps({"event": "call_ended", "call": _retell_call("call_wh")})
+        payload = json.dumps({"event": "call_ended", "call": retell_call("call_wh")})
 
         response = db_client.post(
             f"/api/agents/{agent_id}/import-call",
@@ -81,8 +64,8 @@ class TestImportCallEndpoint:
         assert len(run["results"]) == 1
         assert run["results"][0]["test_name"] == "call_wh"
 
-    def test_unknown_agent_returns_404(self, db_client):
-        payload = json.dumps(_retell_call())
+    def test_unknown_agent_returns_404(self, db_client, retell_call):
+        payload = json.dumps(retell_call())
         response = db_client.post(
             "/api/agents/nonexistent/import-call",
             files={"file": ("call.json", payload, "application/json")},
@@ -91,9 +74,9 @@ class TestImportCallEndpoint:
         assert response.status_code == 404
         assert "Agent not found" in response.json()["detail"]
 
-    def test_unsupported_format_returns_400(self, db_client, sample_retell_config):
+    def test_unsupported_format_returns_400(self, db_client, sample_retell_config, retell_call):
         agent_id = _create_agent(db_client, sample_retell_config)
-        payload = json.dumps(_retell_call())
+        payload = json.dumps(retell_call())
 
         response = db_client.post(
             f"/api/agents/{agent_id}/import-call?format=vapi",
@@ -146,36 +129,16 @@ class TestReplayEndpoint:
         assert "no results to replay" in response.json()["detail"]
 
     def test_replay_drives_runner_against_current_graph(
-        self, db_client, sample_retell_config, monkeypatch
+        self, db_client, sample_retell_config, retell_call, stub_conversation_runner
     ):
         """End-to-end: import a call, replay it, verify a new Run is produced
         whose Results were driven by ConversationRunner against the agent's
-        current graph. Stub the runner to avoid needing real LLMs."""
-        from voicetest.engine.session import ConversationState
-        from voicetest.models.results import Message
-
-        async def fake_run(self, test_case, simulator, **kwargs):
-            # Drive the simulator to exhaustion to verify it's a script
-            transcript = []
-            while True:
-                response = await simulator.generate(transcript)
-                if response is None:
-                    break
-                transcript.append(Message(role="user", content=response.message))
-                transcript.append(Message(role="assistant", content="agent reply"))
-            state = ConversationState()
-            state.transcript = transcript
-            state.turn_count = len(transcript) // 2
-            state.end_reason = "ended"
-            return state
-
-        monkeypatch.setattr("voicetest.engine.session.ConversationRunner.run", fake_run)
-
-        # Import a call to create a source run
+        current graph. The stub_conversation_runner fixture replaces the real
+        runner so we don't need LLMs."""
         agent_id = _create_agent(db_client, sample_retell_config)
         import_response = db_client.post(
             f"/api/agents/{agent_id}/import-call",
-            files={"file": ("call.json", json.dumps(_retell_call()), "application/json")},
+            files={"file": ("call.json", json.dumps(retell_call()), "application/json")},
         )
         source_run_id = import_response.json()["id"]
 
@@ -191,5 +154,7 @@ class TestReplayEndpoint:
         assert result["test_name"].startswith("Replay of ")
         assert result["status"] == "pass"
         # The replay's transcript came from the runner (user turns from source,
-        # agent turns from our fake_run).
+        # agent turns from the stub).
         assert len(result["transcript_json"]) > 0
+        # The stub captured one simulator invocation
+        assert len(stub_conversation_runner) == 1

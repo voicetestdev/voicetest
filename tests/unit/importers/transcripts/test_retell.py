@@ -8,28 +8,19 @@ from voicetest.importers.transcripts.retell import parse_retell
 from voicetest.importers.transcripts.retell import parse_retell_file
 
 
-def _sample_call(call_id: str = "call_001") -> dict:
-    """A minimal but realistic Retell call object."""
-    return {
-        "call_id": call_id,
-        "agent_id": "agent_xyz",
-        "call_type": "phone_call",
-        "call_status": "ended",
-        "start_timestamp": 1700000000000,
-        "end_timestamp": 1700000060000,
-        "duration_ms": 60000,
-        "transcript_object": [
-            {"role": "agent", "content": "Hi, how can I help?"},
-            {"role": "user", "content": "I need to cancel my appointment."},
-            {"role": "agent", "content": "Sure — what's your account number?"},
-            {"role": "user", "content": "12345."},
-        ],
-    }
+# A 4-turn transcript used by the parsing tests below — overrides the
+# 2-turn default in the shared retell_call fixture.
+_FOUR_TURN_TRANSCRIPT = [
+    {"role": "agent", "content": "Hi, how can I help?"},
+    {"role": "user", "content": "I need to cancel my appointment."},
+    {"role": "agent", "content": "Sure — what's your account number?"},
+    {"role": "user", "content": "12345."},
+]
 
 
 class TestParseRetell:
-    def test_single_call_object(self):
-        result = parse_retell(_sample_call())
+    def test_single_call_object(self, retell_call):
+        result = parse_retell(retell_call(transcript_object=_FOUR_TURN_TRANSCRIPT))
 
         assert len(result) == 1
         tr = result[0]
@@ -43,14 +34,14 @@ class TestParseRetell:
         assert tr.turn_count == 4
         assert tr.duration_ms == 60000
 
-    def test_role_mapping_agent_to_assistant(self):
-        result = parse_retell(_sample_call())
+    def test_role_mapping_agent_to_assistant(self, retell_call):
+        result = parse_retell(retell_call(transcript_object=_FOUR_TURN_TRANSCRIPT))
 
         roles = [m.role for m in result[0].transcript]
         assert roles == ["assistant", "user", "assistant", "user"]
 
-    def test_array_of_calls(self):
-        payload = [_sample_call("call_a"), _sample_call("call_b")]
+    def test_array_of_calls(self, retell_call):
+        payload = [retell_call("call_a"), retell_call("call_b")]
 
         result = parse_retell(payload)
 
@@ -58,18 +49,18 @@ class TestParseRetell:
         assert result[0].test_name == "call_a"
         assert result[1].test_name == "call_b"
 
-    def test_webhook_envelope(self):
-        payload = {"event": "call_ended", "call": _sample_call("call_wh")}
+    def test_webhook_envelope(self, retell_call):
+        payload = {"event": "call_ended", "call": retell_call("call_wh")}
 
         result = parse_retell(payload)
 
         assert len(result) == 1
         assert result[0].test_name == "call_wh"
 
-    def test_array_of_webhook_envelopes(self):
+    def test_array_of_webhook_envelopes(self, retell_call):
         payload = [
-            {"event": "call_ended", "call": _sample_call("call_a")},
-            {"event": "call_ended", "call": _sample_call("call_b")},
+            {"event": "call_ended", "call": retell_call("call_a")},
+            {"event": "call_ended", "call": retell_call("call_b")},
         ]
 
         result = parse_retell(payload)
@@ -77,10 +68,12 @@ class TestParseRetell:
         assert len(result) == 2
         assert {tr.test_name for tr in result} == {"call_a", "call_b"}
 
-    def test_skips_turns_with_empty_content(self):
-        call = _sample_call()
-        call["transcript_object"].append({"role": "user", "content": ""})
-        call["transcript_object"].append({"role": "agent", "content": None})
+    def test_skips_turns_with_empty_content(self, retell_call):
+        transcript = _FOUR_TURN_TRANSCRIPT + [
+            {"role": "user", "content": ""},
+            {"role": "agent", "content": None},
+        ]
+        call = retell_call(transcript_object=transcript)
 
         result = parse_retell(call)
 
@@ -88,8 +81,8 @@ class TestParseRetell:
         assert len(result[0].transcript) == 4
         assert result[0].turn_count == 4
 
-    def test_derives_duration_from_timestamps_if_missing(self):
-        call = _sample_call()
+    def test_derives_duration_from_timestamps_if_missing(self, retell_call):
+        call = retell_call()
         del call["duration_ms"]
 
         result = parse_retell(call)
@@ -103,16 +96,15 @@ class TestParseRetell:
 
         assert result[0].duration_ms == 0
 
-    def test_uses_disconnection_reason_for_end_reason(self):
-        call = _sample_call()
-        call["disconnection_reason"] = "user_hangup"
+    def test_uses_disconnection_reason_for_end_reason(self, retell_call):
+        call = retell_call(disconnection_reason="user_hangup")
 
         result = parse_retell(call)
 
         assert result[0].end_reason == "user_hangup"
 
-    def test_falls_back_to_call_status_for_end_reason(self):
-        result = parse_retell(_sample_call())
+    def test_falls_back_to_call_status_for_end_reason(self, retell_call):
+        result = parse_retell(retell_call())
 
         assert result[0].end_reason == "ended"
 
@@ -146,9 +138,9 @@ class TestParseRetell:
 
 
 class TestParseRetellFile:
-    def test_reads_file(self, tmp_path):
+    def test_reads_file(self, tmp_path, retell_call):
         path = tmp_path / "call.json"
-        path.write_text(json.dumps(_sample_call()), encoding="utf-8")
+        path.write_text(json.dumps(retell_call()), encoding="utf-8")
 
         result = parse_retell_file(path)
 

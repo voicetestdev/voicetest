@@ -73,6 +73,97 @@ def sample_retell_config_path(retell_fixtures_dir: Path) -> Path:
     return retell_fixtures_dir / "sample_config.json"
 
 
+# ---------------------------------------------------------------------------
+# Fixtures for the call-transcript import + replay feature
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def retell_call():
+    """Factory fixture: build a minimal Retell call object.
+
+    Usage:
+        retell_call()                     # default call_id="call_001"
+        retell_call("call_a")             # custom id
+        retell_call("call_a", duration_ms=999)  # override any field
+    """
+
+    def _build(call_id: str = "call_001", **overrides) -> dict:
+        payload = {
+            "call_id": call_id,
+            "agent_id": "agent_xyz",
+            "call_type": "phone_call",
+            "call_status": "ended",
+            "start_timestamp": 1700000000000,
+            "end_timestamp": 1700000060000,
+            "duration_ms": 60000,
+            "transcript_object": [
+                {"role": "agent", "content": "Hi, how can I help?"},
+                {"role": "user", "content": "I need to cancel."},
+            ],
+        }
+        payload.update(overrides)
+        return payload
+
+    return _build
+
+
+@pytest.fixture
+def imported_test_result():
+    """Factory fixture: build a TestResult with status='imported'."""
+    from voicetest.models.results import Message
+    from voicetest.models.results import TestResult
+
+    def _build(name: str = "call_001", *, transcript: list | None = None) -> TestResult:
+        return TestResult(
+            test_name=name,
+            status="imported",
+            transcript=transcript
+            or [
+                Message(role="assistant", content="Hi"),
+                Message(role="user", content="Hello"),
+            ],
+            turn_count=2,
+            duration_ms=12000,
+            end_reason="ended",
+        )
+
+    return _build
+
+
+@pytest.fixture
+def stub_conversation_runner(monkeypatch):
+    """Stub ConversationRunner.run so replay-flow tests don't need a real graph
+    or LLM. The stub drains the user simulator into a transcript with placeholder
+    agent replies, then returns a populated ConversationState.
+
+    Returns a list that captures each simulator instance the runner was invoked
+    with — useful for asserting the right scripted simulator was constructed.
+    """
+    from voicetest.engine.session import ConversationState
+    from voicetest.models.results import Message
+
+    captured_simulators: list = []
+
+    async def fake_run(self, test_case, simulator, **kwargs):
+        captured_simulators.append(simulator)
+        transcript = []
+        while True:
+            response = await simulator.generate(transcript)
+            if response is None:
+                break
+            transcript.append(Message(role="user", content=response.message))
+            transcript.append(Message(role="assistant", content="agent reply"))
+        state = ConversationState()
+        state.transcript = transcript
+        state.turn_count = len(transcript) // 2
+        state.end_reason = "ended"
+        return state
+
+    monkeypatch.setattr("voicetest.engine.session.ConversationRunner.run", fake_run)
+    return captured_simulators
+
+
 @pytest.fixture
 def sample_test_cases(retell_fixtures_dir: Path) -> list[dict]:
     """Load sample test cases."""

@@ -8,6 +8,8 @@ Or: uvicorn voicetest.rest:app --reload
 """
 
 import asyncio
+from collections.abc import AsyncIterator
+import contextlib
 from datetime import UTC
 from datetime import datetime
 from importlib.metadata import version as pkg_version
@@ -509,20 +511,9 @@ async def import_agent(request: ImportRequest) -> AgentGraph:
 @router.post("/agents/import-file", response_model=AgentGraph)
 async def import_agent_file(file: UploadFile, source: str | None = None) -> AgentGraph:
     """Import an agent from an uploaded file (XLSForm, JSON, etc.)."""
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename provided")
-
-    suffix = Path(file.filename).suffix
     try:
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
-
-        try:
+        async with _saved_upload(file) as tmp_path:
             return await get_agent_service().import_agent(tmp_path, source=source)
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
@@ -686,6 +677,25 @@ def _require_agent(agent_id: str) -> dict:
     return agent
 
 
+@contextlib.asynccontextmanager
+async def _saved_upload(file: UploadFile) -> AsyncIterator[Path]:
+    """Save an UploadFile to a temp path; remove it on exit.
+
+    Yields the Path. Raises HTTPException(400) if no filename was provided.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+    suffix = Path(file.filename).suffix
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        content = await file.read()
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+    try:
+        yield tmp_path
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 def _load_agent_graph(agent_id: str) -> tuple[dict, AgentGraph]:
     """Load agent record and its graph. Raises HTTPException on failure."""
     try:
@@ -773,9 +783,6 @@ async def import_call(
     """
     _require_agent(agent_id)
 
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename provided")
-
     if format not in _SUPPORTED_TRANSCRIPT_FORMATS:
         raise HTTPException(
             status_code=400,
@@ -785,16 +792,9 @@ async def import_call(
             ),
         )
 
-    suffix = Path(file.filename).suffix
     try:
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = Path(tmp.name)
-        try:
+        async with _saved_upload(file) as tmp_path:
             results = parse_retell_file(tmp_path)
-        finally:
-            tmp_path.unlink(missing_ok=True)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
@@ -836,19 +836,11 @@ async def create_agent_from_file(
         raise HTTPException(status_code=400, detail="No filename provided")
 
     agent_name = name or Path(file.filename).stem
-    suffix = Path(file.filename).suffix
     agent_svc = get_agent_service()
 
     try:
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
-
-        try:
+        async with _saved_upload(file) as tmp_path:
             graph = await agent_svc.import_agent(tmp_path, source=source)
-        finally:
-            Path(tmp_path).unlink(missing_ok=True)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
