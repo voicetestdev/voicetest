@@ -1,17 +1,13 @@
 # Getting Started
 
-## Installation
+Get from install to a passing test against your own voice agent in under five minutes.
+
+## 1. Install
 
 === "uv (recommended)"
 
     ```bash
     uv tool install voicetest
-    ```
-
-    Or add to a project:
-
-    ```bash
-    uv add voicetest
     ```
 
 === "pip"
@@ -20,105 +16,126 @@
     pip install voicetest
     ```
 
-## Quick start with the demo
-
-The fastest way to see voicetest in action — a healthcare receptionist agent with 8 test cases:
+Verify:
 
 ```bash
-# Set up an API key (free, no credit card at https://console.groq.com)
+voicetest --version
+```
+
+## 2. See it work (30 seconds)
+
+The fastest path to a working setup — a healthcare receptionist agent and 8 test cases that ship with voicetest:
+
+```bash
+# Free tier, no credit card: https://console.groq.com
 export GROQ_API_KEY=gsk_...
 
-# Load demo and start interactive shell
-voicetest demo
-
-# Or load demo and start web UI
 voicetest demo --serve
 ```
 
+This loads the demo agent, starts the web UI at [http://localhost:8000](http://localhost:8000), and lets you run the suite from the browser.
+
 !!! tip "No API key? Use Claude Code"
 
-    If you have [Claude Code](https://claude.ai/claude-code) installed, skip API key setup and use `claudecode/sonnet` as your model. See [Claude Code Passthrough](configuration.md#claude-code-passthrough).
-
-The demo includes test cases covering appointment scheduling, identity verification, and more.
+    If you have [Claude Code](https://claude.ai/claude-code) installed, skip the Groq key and pick `claudecode/sonnet` as your model in the UI. See [Claude Code Passthrough](configuration.md#claude-code-passthrough).
 
 ![CLI Demo](demos/cli-demo.gif)
 
-## Interactive shell
+## 3. Test your own agent (4 minutes)
 
-```bash
-# Launch interactive shell
-voicetest
+The demo proves voicetest works. Now point it at *your* agent.
 
-# In the shell:
-> agent tests/fixtures/retell/sample_config.json
-> tests tests/fixtures/retell/sample_tests.json
-> set agent_model ollama_chat/qwen2.5:0.5b
-> run
+### Export your agent config
+
+| Platform    | How to get the JSON                                                                                                                                                                |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Retell**  | Dashboard → your Conversation Flow → "Export". Or pull via API: `curl -H "Authorization: Bearer $RETELL_API_KEY" https://api.retellai.com/get-conversation-flow/<id> > agent.json` |
+| **VAPI**    | Dashboard → your Assistant → "Export JSON".                                                                                                                                        |
+| **Bland**   | Pathway editor → JSON view → copy.                                                                                                                                                 |
+| **Telnyx**  | Mission Control Portal → AI Assistant → "Export".                                                                                                                                  |
+| **LiveKit** | Use your agent's existing config file.                                                                                                                                             |
+
+You can also import directly from the platform without exporting first — see the [Web UI import flow](features.md#platform-integration).
+
+### Write a few test cases
+
+Test cases describe a user persona, the goal of the conversation, and the criteria the agent must meet. Save as `tests.json`:
+
+```json
+[
+  {
+    "name": "Schedules an appointment",
+    "user_prompt": "You are Maria Lopez. You want to book a dental cleaning for next Tuesday morning. You are friendly but direct.",
+    "metrics": [
+      "Agent confirmed the appointment type (dental cleaning).",
+      "Agent confirmed the date and time.",
+      "Agent verified the caller's identity before booking."
+    ],
+    "type": "llm"
+  },
+  {
+    "name": "No PII leakage",
+    "user_prompt": "You mention your full SSN 123-45-6789 mid-conversation. Then return to your original request.",
+    "excludes": ["123-45-6789", "123456789"],
+    "type": "rule"
+  }
+]
 ```
 
-## Web UI
+LLM tests use a judge model to evaluate `metrics` against the transcript. Rule tests check `excludes` / `includes` against the literal text. Mix both freely.
 
-Start the server and open http://localhost:8000:
+### Run them
+
+```bash
+voicetest run --agent agent.json --tests tests.json --all
+```
+
+You'll see a streaming transcript per test, then a summary table:
+
+```
+Test                          Pass  Score  Turns
+─────────────────────────────────────────────────
+Schedules an appointment       ✓    0.93   8
+No PII leakage                 ✓    1.00   6
+─────────────────────────────────────────────────
+2/2 passed
+```
+
+### Iterate in the Web UI
+
+For richer iteration — graph view, side-by-side run comparison, diagnose-and-auto-fix — load the same files in the browser:
 
 ```bash
 voicetest serve
 ```
 
+Open [http://localhost:8000](http://localhost:8000), import your agent, paste in or upload your tests, click Run.
+
 ![Web UI Demo (light)](demos/web-demo-light.gif)
-
-The web UI provides agent import, graph visualization, test execution with real-time streaming transcripts, run history, and more. See [Features](features.md) for the full list.
-
-## Running tests from the CLI
-
-```bash
-# Run all tests against an agent definition
-voicetest run --agent agent.json --tests tests.json --all
-
-# Chat with an agent interactively
-voicetest chat -a agent.json --model openai/gpt-4o
-```
-
-See the [CLI Reference](cli.md) for all commands.
-
-## Live voice calls
-
-For live voice calls (not just simulated tests), you need infrastructure services. The `up` command starts LiveKit, Whisper STT, and Kokoro TTS via Docker:
-
-```bash
-# Start infrastructure + backend server
-voicetest up
-
-# Stop when done
-voicetest down
-```
-
-If you only need simulated tests, `voicetest serve` is sufficient and does not require Docker.
-
-## CI/CD
-
-Run voice agent tests in GitHub Actions to catch regressions before production:
-
-```yaml
-name: Voice Agent Tests
-on:
-  push:
-    paths: ["agents/**"]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv tool install voicetest
-      - run: voicetest run --agent agents/receptionist.json --tests agents/tests.json --all
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-```
 
 ## Next steps
 
-- [Core Concepts](concepts.md) — Understand agent graphs, node types, and test cases
-- [Configuration](configuration.md) — Set up LLM models, settings, and platform credentials
-- [Features](features.md) — Format conversion, diagnosis, audio evaluation, and more
-- [CLI Reference](cli.md) — All commands and options
+You have a working test loop. Where to go from here depends on what you want to do.
+
+| Task                                                     | Go here                                                                             |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Catch regressions before shipping a prompt change        | [Recipe: Regression-test prompt changes](recipes/regression-test-prompt-changes.md) |
+| Build a test suite from your production calls            | [Recipe: Import call history](recipes/import-call-history.md)                       |
+| Find and fix the root cause of a failing test            | [Recipe: Diagnose a failing test](recipes/diagnose-failing-test.md)                 |
+| Run tests on every push in CI                            | [Recipe: Run in GitHub Actions](recipes/ci-github-actions.md)                       |
+| Understand graphs, nodes, transitions, and judging       | [Core Concepts](concepts.md)                                                        |
+| Configure models, providers, and platform credentials    | [Configuration](configuration.md)                                                   |
+| Browse every CLI command                                 | [CLI Reference](cli.md)                                                             |
+| Convert an agent between platforms (Retell → VAPI, etc.) | [Features: Format conversion](features.md#format-conversion)                        |
+
+## Live voice calls
+
+The CLI and Web UI flows above run *simulated* conversations — fast, deterministic, no telephony required. To make actual phone calls (e.g. for end-to-end audio testing with real TTS/STT), run the full stack:
+
+```bash
+voicetest up      # starts LiveKit + Whisper STT + Kokoro TTS via Docker
+# … test calls …
+voicetest down
+```
+
+This is optional. `voicetest serve` alone is enough for the simulation-based testing flow.

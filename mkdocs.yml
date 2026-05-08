@@ -31,6 +31,12 @@ extra_css:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Recipes:
+    - recipes/index.md
+    - Regression-test prompt changes: recipes/regression-test-prompt-changes.md
+    - Import call history: recipes/import-call-history.md
+    - Diagnose a failing test: recipes/diagnose-failing-test.md
+    - Run in GitHub Actions: recipes/ci-github-actions.md
   - Core Concepts: concepts.md
   - CLI Reference: cli.md
   - Features: features.md
