@@ -30,3 +30,4 @@ jobs:
           publish_dir: ./_site
           destination_dir: docs
           keep_files: true
+          enable_jekyll: true
