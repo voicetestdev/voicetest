@@ -25,7 +25,7 @@ Open source. Apache 2.0. Free forever.
 - **[Catch what LLM judges miss](features.md#audio-evaluation)** — TTS/STT round-trip evaluation catches pronunciation and number-reading issues
 - **[Enforce compliance on every test](features.md#global-metrics)** — HIPAA, PCI-DSS, brand voice checks that run automatically
 - **[Break large agents into sub-agents](features.md#agent-decomposition)** — LLM-powered decomposition with handoff rules
-- **[Test in CI/CD](getting-started.md#cicd)** — run voice agent tests in GitHub Actions, block bad deploys
+- **[Test in CI/CD](recipes/ci-github-actions.md)** — run voice agent tests in GitHub Actions, block bad deploys
 
 ## Platform support
 
