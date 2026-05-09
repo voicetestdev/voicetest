@@ -173,6 +173,58 @@ s3_region = "us-east-1"
 
 Disable caching for a run with `no_cache = true` in run options or `--no-cache` on the CLI.
 
+## Transcript import & replay
+
+Voicetest can ingest real production call transcripts as Runs, alongside the simulated runs the harness generates. Imported transcripts share the same storage and UI surfaces as simulated runs, and can be **replayed** against the agent's current graph to detect behavioral drift.
+
+| Operation        | What it does                                                                                             | UI                                       | CLI                                                         | REST                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------- |
+| **Import calls** | Parse a platform-specific transcript dump and persist as a Run with `status="imported"` Results          | "Import Calls…" button on the agent page | `voicetest import-call --agent <id> --transcript file.json` | `POST /api/agents/{id}/import-call` (multipart) |
+| **Replay**       | Drive a fresh conversation against the agent's current graph using a source Run's user turns as a script | "Replay" button on the run detail page   | `voicetest replay <run-id>`                                 | `POST /api/runs/{id}/replay`                    |
+
+### Supported formats
+
+**Retell** — accepts the call object as returned by `GET /v2/get-call/{call_id}`, the post-call webhook envelope (`{"event": ..., "call": {...}}`), or arrays of either:
+
+```json
+{
+  "call_id": "call_abc123",
+  "transcript_object": [
+    {"role": "agent", "content": "Hi, how can I help?"},
+    {"role": "user", "content": "I need to cancel my order."}
+  ],
+  "duration_ms": 60000,
+  "start_timestamp": 1700000000000,
+  "end_timestamp": 1700000060000
+}
+```
+
+The adapter maps Retell's `role: "agent"` → `role: "assistant"` (voicetest convention) and ignores word-level timing details.
+
+Other platforms (VAPI, LiveKit, Telnyx, Bland) are **not yet supported** — `--format` is parameterized so adapters can be added without breaking changes.
+
+### Data model
+
+- **Imported run** — a `Run` whose `Result`s have `status="imported"`, `test_case_id=null`, `call_id=null`. Each Result holds one call's transcript.
+- **Replay run** — a `Run` produced by replaying a source Run. Results have `status="pass"` (replay results are passive captures of live behavior; judging happens later when metrics are configured).
+
+Both kinds render in the existing runs UI alongside simulated runs. The runs list shows an "imported" badge for runs whose Results are all imported.
+
+### Replay semantics
+
+`ScriptedUserSimulator` yields the source's recorded user turns in order. The live agent's responses replace the recorded ones; the source's agent turns are not used. If the live agent diverges from the recorded conversation, the next recorded user turn may not fit perfectly — the replay continues anyway, since the conversation as a whole still produces a transcript you can judge.
+
+Replay is **best-effort**: there is no LLM-based divergence handling in v1.
+
+### Limitations
+
+- Single-platform support (Retell only).
+- No PII redaction at import time — clients with sensitive data should redact before ingesting.
+- No diff view between source and replay yet; they're separate runs in the UI.
+- No batch import via UI — large dumps are easier via CLI.
+
+For the workflow walkthrough, see the [Import call history recipe](recipes/import-call-history.md).
+
 ## Web UI
 
 Start the server and open http://localhost:8000:

@@ -26,7 +26,7 @@ This works for ~1000 production calls in about a minute end-to-end after the ini
 
     Voicetest accepts both the single-call shape and the post-call webhook envelope, as a single object or an array.
 
-Other platforms (VAPI, LiveKit, Telnyx, Bland) are not yet supported in v1 of the transcript importer. See [Importing transcripts](../transcripts.md) for the format reference.
+Other platforms (VAPI, LiveKit, Telnyx, Bland) are not yet supported in v1 of the transcript importer. See [Features: Transcript import & replay](../features.md#transcript-import-replay) for the format reference.
 
 ## 2. Import as a Run
 
@@ -96,5 +96,5 @@ voicetest replay $(latest_weekly_run_id)
 ## Related
 
 - [Replay Production Call Transcripts (blog post)](https://voicetest.dev/blog/replay-production-call-transcripts-voice-agent-regression/) — narrative walkthrough
-- [Importing transcripts](../transcripts.md) — full reference for the import + replay APIs
+- [Features: Transcript import & replay](../features.md#transcript-import-replay) — full reference for the import + replay APIs
 - [Regression-test prompt changes](regression-test-prompt-changes.md) — the synthetic-suite version of the same loop

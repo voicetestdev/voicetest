@@ -5,6 +5,8 @@ edit_uri: edit/main/docs/
 
 theme:
   name: material
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
   palette:
     - scheme: slate
       primary: custom
@@ -21,6 +23,8 @@ theme:
   features:
     - navigation.instant
     - navigation.sections
+    - navigation.expand
+    - navigation.indexes
     - navigation.top
     - search.highlight
     - content.code.copy
@@ -30,20 +34,21 @@ extra_css:
 
 nav:
   - Home: index.md
-  - Getting Started: getting-started.md
+  - Start Here:
+    - Getting Started: getting-started.md
+    - Core Concepts: concepts.md
   - Recipes:
     - recipes/index.md
-    - Regression-test prompt changes: recipes/regression-test-prompt-changes.md
-    - Import call history: recipes/import-call-history.md
     - Diagnose a failing test: recipes/diagnose-failing-test.md
+    - Import call history: recipes/import-call-history.md
+    - Regression-test prompt changes: recipes/regression-test-prompt-changes.md
     - Run in GitHub Actions: recipes/ci-github-actions.md
-  - Core Concepts: concepts.md
-  - CLI Reference: cli.md
-  - Features: features.md
-  - Configuration: configuration.md
-  - Importing transcripts: transcripts.md
-  - Architecture: architecture.md
-  - Development: development.md
+  - Details:
+    - Architecture: architecture.md
+    - CLI Reference: cli.md
+    - Configuration: configuration.md
+    - Development: development.md
+    - Features: features.md
 
 markdown_extensions:
   - admonition
