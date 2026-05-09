@@ -1,9 +1,210 @@
+/* Align mkdocs Material with voicetest.dev's brand palette and typography. */
+
 :root {
-  --md-primary-fg-color: #00B4D8;
-  --md-accent-fg-color: #00B4D8;
+  --vt-accent: #00B4D8;
+  --vt-success: #22C55E;
+  --vt-font-stack: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --vt-mono-stack: 'SF Mono', Monaco, 'Courier New', monospace;
+
+  --md-primary-fg-color: var(--vt-accent);
+  --md-accent-fg-color: var(--vt-accent);
 }
 
+/* Force the typeset font stack everywhere — mkdocs Material caches this once. */
+body,
+.md-typeset,
+.md-header,
+.md-tabs,
+.md-nav {
+  font-family: var(--vt-font-stack);
+}
+
+.md-typeset code,
+.md-typeset pre,
+.md-typeset kbd,
+code,
+pre {
+  font-family: var(--vt-mono-stack);
+}
+
+/* Dark scheme: voicetest.dev's exact palette. */
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #00B4D8;
-  --md-accent-fg-color: #00B4D8;
+  --md-hue: 220;
+
+  --md-default-bg-color:        #0a0a0a;
+  --md-default-bg-color--light: #141414;
+  --md-default-bg-color--lighter: rgba(255, 255, 255, 0.04);
+  --md-default-bg-color--lightest: rgba(255, 255, 255, 0.07);
+
+  --md-default-fg-color:        #fafafa;
+  --md-default-fg-color--light: #b0b0b0;
+  --md-default-fg-color--lighter: #888888;
+  --md-default-fg-color--lightest: #666666;
+
+  --md-typeset-color:   #fafafa;
+  --md-typeset-a-color: var(--vt-accent);
+
+  --md-code-bg-color: #141414;
+  --md-code-fg-color: #fafafa;
+  --md-code-hl-color: rgba(0, 180, 216, 0.15);
+
+  /* Material treats --md-primary-bg-color as the FG (text/icon) drawn on top
+     of the primary surface (header, tabs). Keep it light so the header text
+     remains readable on the #0a0a0a header background below. */
+  --md-primary-fg-color:         var(--vt-accent);
+  --md-primary-fg-color--light:  var(--vt-accent);
+  --md-primary-fg-color--dark:   #008cb0;
+  --md-primary-bg-color:         #fafafa;
+  --md-primary-bg-color--light:  rgba(250, 250, 250, 0.7);
+
+  --md-accent-fg-color:         var(--vt-accent);
+  --md-accent-fg-color--transparent: rgba(0, 180, 216, 0.1);
+  --md-accent-bg-color:         #fafafa;
+  --md-accent-bg-color--light:  rgba(250, 250, 250, 0.7);
+
+  --md-footer-bg-color:        #0a0a0a;
+  --md-footer-bg-color--dark:  #0a0a0a;
+  --md-footer-fg-color:        #fafafa;
+  --md-footer-fg-color--light: #888888;
+}
+
+[data-md-color-scheme="slate"] .md-header,
+[data-md-color-scheme="slate"] .md-tabs {
+  background: #0a0a0a;
+  border-bottom: 1px solid #262626;
+  box-shadow: none;
+}
+
+[data-md-color-scheme="slate"] .md-sidebar {
+  background: #0a0a0a;
+}
+
+/* Hide the "voicetest docs" site title at the top of the left sidebar.
+   It's redundant — the same name is already in the header next to the logo. */
+.md-nav--primary > .md-nav__title {
+  display: none;
+}
+
+/* Pull the top of the nav up to where the title used to be. */
+.md-nav--primary > .md-nav__list {
+  padding-top: 0.5rem;
+}
+
+[data-md-color-scheme="slate"] .md-typeset hr {
+  border-color: #262626;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) {
+  background: #0a0a0a;
+  border: 1px solid #262626;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) th {
+  background: #141414;
+  border-bottom: 2px solid #262626;
+}
+
+[data-md-color-scheme="slate"] .md-typeset table:not([class]) td {
+  border-bottom: 1px solid #262626;
+}
+
+[data-md-color-scheme="slate"] .md-typeset blockquote {
+  border-left: 3px solid var(--vt-accent);
+  color: #888888;
+}
+
+[data-md-color-scheme="slate"] .md-typeset pre > code {
+  border: 1px solid #262626;
+}
+
+[data-md-color-scheme="slate"] .md-typeset :not(pre) > code {
+  background: #141414;
+  border: 1px solid #262626;
+  color: #fafafa;
+}
+
+/* Light scheme: a calm light variant — same accent, white-ish bg. */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:        var(--vt-accent);
+  --md-accent-fg-color:         var(--vt-accent);
+  --md-typeset-a-color:         #008cb0;
+}
+
+/* ── Header chips ──────────────────────────────────────────────────
+   Match voicetest.dev's `.github-stars`-style: dark surface, subtle
+   border, small radius. Applies to both the GitHub source link and
+   the search box so the header has a coherent visual rhythm against
+   the pure #0a0a0a background. */
+
+[data-md-color-scheme="slate"] .md-header {
+  color: #fafafa;
+}
+
+/* GitHub link in the header: no box / no border, plain inline content
+   so it fits the header height and doesn't compete with the search box. */
+[data-md-color-scheme="slate"] .md-header__source {
+  background: transparent;
+  border: none;
+  color: #fafafa;
+}
+
+[data-md-color-scheme="slate"] .md-header__source:hover {
+  background: transparent;
+}
+
+[data-md-color-scheme="slate"] .md-source__repository {
+  color: #fafafa;
+}
+
+[data-md-color-scheme="slate"] .md-source__repository:hover {
+  color: var(--vt-accent);
+}
+
+[data-md-color-scheme="slate"] .md-source__facts,
+[data-md-color-scheme="slate"] .md-source__fact {
+  color: #888888;
+}
+
+/* Search input: match the same chip style. */
+[data-md-color-scheme="slate"] .md-search__form {
+  background: #141414;
+  border: 1px solid #262626;
+  border-radius: 6px;
+  height: 2rem;
+}
+
+[data-md-color-scheme="slate"] .md-search__form:hover,
+[data-md-color-scheme="slate"] [data-md-toggle="search"]:checked ~ .md-header .md-search__form {
+  background: #141414;
+  border-color: #888888;
+}
+
+[data-md-color-scheme="slate"] .md-search__input {
+  color: #fafafa;
+}
+
+[data-md-color-scheme="slate"] .md-search__input::placeholder,
+[data-md-color-scheme="slate"] .md-search__input + .md-search__icon {
+  color: #888888;
+}
+
+/* Search results dropdown panel. */
+[data-md-color-scheme="slate"] .md-search__output {
+  background: #0a0a0a;
+  border: 1px solid #262626;
+  border-radius: 6px;
+}
+
+[data-md-color-scheme="slate"] .md-search-result__meta,
+[data-md-color-scheme="slate"] .md-search-result__teaser {
+  color: #888888;
+}
+
+[data-md-color-scheme="slate"] .md-search-result__article {
+  background: #0a0a0a;
+}
+
+[data-md-color-scheme="slate"] .md-search-result__article:hover,
+[data-md-color-scheme="slate"] .md-search-result__article[data-md-state="active"] {
+  background: #141414;
 }

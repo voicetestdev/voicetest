@@ -1,3 +1,7 @@
+---
+description: Snapshot your test suite before a prompt change, re-run after, compare runs side by side to catch regressions before they ship.
+---
+
 # Regression-test prompt changes
 
 **The problem:** You've maintained a voice agent for months. Today you want to edit a prompt — tighten an instruction, change a tone, add a new transition condition. You're 90% sure the change is safe, but you've been burned before: a one-word edit that broke identity verification on a flow nobody had touched in weeks.

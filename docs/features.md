@@ -1,3 +1,7 @@
+---
+description: Format conversion, platform integration, snippets, global metrics, diagnosis, audio evaluation, decomposition, caching, and transcript replay.
+---
+
 # Features
 
 ## Format conversion
@@ -5,21 +9,21 @@
 voicetest converts between agent formats via its unified AgentGraph representation:
 
 ```
-Retell CF ─────┐                  ┌───▶ Retell LLM
-               │                  │
-Retell LLM ────┼                  ├───▶ Retell CF
-               │                  │
-VAPI ──────────┼                  ├───▶ VAPI
-               │                  │
-Bland ─────────┼───▶ AgentGraph ──┼───▶ Bland
-               │                  │
-Telnyx ────────┤                  ├───▶ Telnyx
-               │                  │
-LiveKit ───────┤                  ├───▶ LiveKit
-               │                  │
-XLSForm ───────┤                  ├───▶ Mermaid
-               │                  │
-Custom ────────┘                  └───▶ Voicetest JSON
+Retell CF ─────┐                   ┌───▶ Retell LLM
+               │                   │
+Retell LLM ────┼                   ├───▶ Retell CF
+               │                   │
+VAPI ──────────┼                   ├───▶ VAPI Assistant
+               │                   │
+Bland ─────────┼───▶ AgentGraph ───┼───▶ VAPI Squad
+               │                   │
+Telnyx ────────┤                   ├───▶ Bland
+               │                   │
+LiveKit ───────┤                   ├───▶ Telnyx
+               │                   │
+XLSForm ───────┤                   ├───▶ LiveKit
+               │                   │
+Custom ────────┘                   └───▶ Mermaid · Voicetest JSON
 ```
 
 Import from any supported format, then export to any other:
@@ -106,7 +110,22 @@ Example use cases:
 
 ## Diagnosis & auto-fix
 
-When a test fails, voicetest can diagnose the root cause and suggest concrete prompt changes to fix it.
+When a test fails, voicetest can diagnose the root cause and suggest concrete prompt changes to fix it. Available from the CLI and the Web UI.
+
+**CLI:**
+
+```bash
+# One-shot: print fault location and proposed prompt change
+voicetest diagnose --agent agent.json --tests tests.json --test "Schedules an appointment"
+
+# Auto-fix loop: propose, apply, re-run until pass or iteration cap
+voicetest diagnose --agent agent.json --tests tests.json --all \
+  --auto-fix --max-iterations 5 --save fixed_agent.json
+```
+
+`--save` writes the fixed graph; the original `agent.json` is untouched.
+
+**Web UI:**
 
 1. **Diagnose** — Click "Diagnose" on a failed result. The LLM analyzes the graph, transcript, and failed metrics to identify fault locations and root cause.
 1. **Review & Edit** — Proposed changes are shown as editable textareas. Modify the suggested text before applying.
@@ -114,7 +133,9 @@ When a test fails, voicetest can diagnose the root cause and suggest concrete pr
 1. **Iterate** — If not all metrics pass, click "Try Again" to revise the fix based on the latest results.
 1. **Save** — Click "Save Changes" to persist the fix to the agent graph.
 
-**Auto-Fix Mode** runs an automated diagnose-apply-revise loop. Configure stop condition ("On improvement" or "When all pass") and max iterations (1-10, default 3).
+**Auto-Fix Mode** in the UI runs the same loop without prompting between iterations. Configure stop condition ("On improvement" or "When all pass") and max iterations (1–10, default 3).
+
+For a full walkthrough including what diagnose is good and bad at, see the [Diagnose a failing test recipe](recipes/diagnose-failing-test.md).
 
 ## Audio evaluation
 
@@ -227,26 +248,8 @@ For the workflow walkthrough, see the [Import call history recipe](recipes/impor
 
 ## Web UI
 
-Start the server and open http://localhost:8000:
+`voicetest serve` starts a local server at [http://localhost:8000](http://localhost:8000) with visual surfaces for every feature on this page — graph visualization, test management, streaming transcripts, run history, side-by-side run comparison, diagnosis, audio evaluation, and settings.
 
-```bash
-voicetest serve
-```
+The REST API lives at [http://localhost:8000/api](http://localhost:8000/api). Full API documentation: [voicetest.dev/api](https://voicetest.dev/api/).
 
-The web UI provides:
-
-- Agent import and graph visualization
-- Export agents to multiple formats (Mermaid, LiveKit, Retell, VAPI, Bland, Telnyx)
-- Platform integration: import, push, and sync agents with Retell, VAPI, LiveKit, Telnyx
-- Test case management with persistence
-- Global metrics configuration (compliance checks that run on all tests)
-- Test execution with real-time streaming transcripts
-- Cancel in-progress tests
-- Run history with detailed results, transcript inspection, and pass/fail filtering
-- Dynamic variables and models used shown per result (collapsible)
-- Audio evaluation with word-level diff of original vs. heard text
-- Settings configuration (models, max turns, streaming, audio eval)
-
-Data is persisted to `.voicetest/data.duckdb` (configurable via `VOICETEST_DB_PATH`).
-
-The REST API is available at http://localhost:8000/api. Full API documentation is at [voicetest.dev/api](https://voicetest.dev/api/).
+Data is persisted to `.voicetest/data.duckdb` (override with `VOICETEST_DB_PATH`).

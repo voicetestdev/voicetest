@@ -1,3 +1,7 @@
+---
+description: Pull production calls from Retell, import them as voicetest Runs, replay against the agent's current graph, and find behavioral drift.
+---
+
 # Import call history as a regression suite
 
 **The problem:** You have a synthetic test suite, but it's bounded by the imagination of whoever wrote it. Real callers say things you didn't anticipate — filler, hedging, unusual order combinations, intents your suite doesn't cover. You want production traffic to be the regression net for the cases you haven't thought of.

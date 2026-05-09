@@ -1,3 +1,7 @@
+---
+description: Run voicetest on every push with GitHub Actions — single workflow, multi-platform matrix, branch protection, auto-deploy on green.
+---
+
 # Run in GitHub Actions
 
 **The problem:** Manual testing of voice agents doesn't scale. You run a few conversations in the dashboard, ship the change, and find out from a customer that your prompt edit broke the appointment flow. The feedback loop is days, not minutes.

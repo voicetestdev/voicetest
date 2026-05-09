@@ -1,3 +1,7 @@
+---
+description: Install voicetest, run the demo, and run your first test against your own voice agent — under five minutes from start to finish.
+---
+
 # Getting Started
 
 Get from install to a passing test against your own voice agent in under five minutes.
@@ -37,7 +41,7 @@ This loads the demo agent, starts the web UI at [http://localhost:8000](http://l
 
 !!! tip "No API key? Use Claude Code"
 
-    If you have [Claude Code](https://claude.ai/claude-code) installed, skip the Groq key and pick `claudecode/sonnet` as your model in the UI. See [Claude Code Passthrough](configuration.md#claude-code-passthrough).
+    If you have [Claude Code](https://claude.ai/claude-code) installed, skip the Groq key and pick `claudecode/sonnet` as your model in the UI. See [Claude Code Integration](claude-code.md).
 
 ![CLI Demo](demos/cli-demo.gif)
 

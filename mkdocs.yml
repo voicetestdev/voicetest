@@ -3,10 +3,14 @@ site_url: https://voicetest.dev/docs/
 repo_url: https://github.com/voicetestdev/voicetest
 edit_uri: edit/main/docs/
 
+extra:
+  homepage: https://voicetest.dev/
+
 theme:
   name: material
   logo: assets/logo.svg
   favicon: assets/favicon.svg
+  font: false
   palette:
     - scheme: slate
       primary: custom
@@ -26,6 +30,7 @@ theme:
     - navigation.expand
     - navigation.indexes
     - navigation.top
+    - toc.follow
     - search.highlight
     - content.code.copy
 
@@ -34,6 +39,7 @@ extra_css:
 
 nav:
   - Home: index.md
+  - Changelog: changelog.md
   - Start Here:
     - Getting Started: getting-started.md
     - Core Concepts: concepts.md
@@ -45,10 +51,12 @@ nav:
     - Run in GitHub Actions: recipes/ci-github-actions.md
   - Details:
     - Architecture: architecture.md
+    - Claude Code Integration: claude-code.md
     - CLI Reference: cli.md
     - Configuration: configuration.md
     - Development: development.md
     - Features: features.md
+    - Models guide: models.md
 
 markdown_extensions:
   - admonition

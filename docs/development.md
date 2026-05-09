@@ -1,3 +1,7 @@
+---
+description: Contributor guide — code quality, fixtures, Docker development, frontend, and voicetest's internals.
+---
+
 # Development
 
 ## Code quality

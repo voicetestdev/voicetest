@@ -4,27 +4,38 @@ description: How voicetest is structured — the AgentGraph IR, the conversation
 
 # Architecture
 
+## System overview
+
+Voicetest is built around one central data structure — the **AgentGraph IR** — and a thin layering above and below it:
+
+```
+              ┌─────────────────────────────────────────┐
+  Surfaces    │  CLI    Web UI / REST    Shell    Plugin│
+              └────────────────────┬────────────────────┘
+                                   │
+              ┌────────────────────▼────────────────────┐
+  Services    │  agents · runs · diagnosis · snippets   │
+              └────────────────────┬────────────────────┘
+                                   │
+                       ┌───────────┼───────────┐
+                       ▼           ▼           ▼
+  Core             Importers     Engine     Exporters
+                       │       + Judges        ▲
+                       │           │           │
+                       └──▶ AgentGraph IR ◀────┘
+                                   │
+                                   ▼
+                              TestResult
+                                   │
+                                   ▼
+  Storage           DuckDB  (.voicetest/data.duckdb)
+```
+
+The surfaces are thin wrappers — CLI commands, REST handlers, the interactive shell, and the Claude Code plugin all delegate to the **service layer**. Services orchestrate the **core** components: importers parse platform configs into the IR, exporters render the IR out to other formats, the engine drives an IR through a conversation, and judges evaluate the resulting transcripts. Everything persists to DuckDB through a shared repository layer.
+
 ## The AgentGraph IR
 
-Every importer in voicetest converts platform-specific configs into a single internal representation: the **AgentGraph**. Every exporter renders an AgentGraph back out to a platform format. This is the central architectural choice: it keeps the conversation engine, judges, and tooling agnostic to where an agent originally came from.
-
-```
-Retell CF ─────┐                   ┌───▶ Retell LLM
-               │                   │
-Retell LLM ────┼                   ├───▶ Retell CF
-               │                   │
-VAPI ──────────┼                   ├───▶ VAPI Assistant
-               │                   │
-Bland ─────────┼───▶ AgentGraph ───┼───▶ VAPI Squad
-               │                   │
-Telnyx ────────┤                   ├───▶ Bland
-               │                   │
-LiveKit ───────┤                   ├───▶ Telnyx
-               │                   │
-XLSForm ───────┤                   ├───▶ LiveKit
-               │                   │
-Custom ────────┘                   └───▶ Mermaid · Voicetest JSON
-```
+Every importer converts platform-specific configs into the AgentGraph; every exporter renders one back out. This is the central architectural choice: it keeps the conversation engine, judges, and tooling agnostic to where an agent originally came from. For the import/export matrix, see [Features: Format conversion](features.md#format-conversion).
 
 The IR captures:
 
