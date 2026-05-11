@@ -100,23 +100,50 @@ _vt_logger.info("voicetest logging configured at %s", _log_level)
 _active_runs: dict[str, dict[str, Any]] = {}
 
 # Orphan-cleanup guard: run_ids currently being cleaned up. Prevents N
-# concurrent GETs for the same orphaned run from each firing a cleanup,
-# which would pile competing writes onto the (now per-request) DuckDB
-# sessions and could still segfault the DuckDB C extension under load.
+# concurrent GETs for the same orphaned run from each firing a cleanup
+# at once. Use _orphan_cleanup_lock(run_id) to claim/release a slot.
 _cleaning_orphans: set[str] = set()
 _cleaning_orphans_lock = threading.Lock()
 
-# Pre-compiled SQL for orphan cleanup. Two bulk UPDATEs replace the prior
-# N+1 round-trip pattern, keeping the DuckDB connection held only briefly.
-_UPDATE_RUN_COMPLETED = text("UPDATE runs SET completed_at = :ts WHERE id = :rid")
+_logger = logging.getLogger("voicetest.rest")
+
+_ORPHAN_ERROR_MESSAGE = "Run orphaned - backend stopped"
+
+# Pre-compiled SQL for orphan cleanup. Two bulk UPDATEs replace N+1
+# round-trips and use guard clauses so a redundant cleanup (e.g. after a
+# server restart where the in-memory guard was lost) is a no-op rather
+# than overwriting an already-finalized run/result.
+_UPDATE_RUN_COMPLETED = text(
+    "UPDATE runs SET completed_at = :ts WHERE id = :rid AND completed_at IS NULL"
+)
 _UPDATE_RESULTS_ORPHANED = text(
     "UPDATE results "
-    "SET status = 'error', "
-    "    error_message = 'Run orphaned - backend stopped' "
-    "WHERE id IN :rids"
+    "SET status = 'error', error_message = :msg "
+    "WHERE id IN :rids AND status = 'running'"
 ).bindparams(bindparam("rids", expanding=True))
 
 _initialized = False
+
+
+@contextlib.contextmanager
+def _orphan_cleanup_lock(run_id: str):
+    """Claim the orphan-cleanup slot for a run.
+
+    Yields True if this caller owns the cleanup; False if another caller
+    already claimed it. The slot is released on exit either way.
+    """
+    with _cleaning_orphans_lock:
+        if run_id in _cleaning_orphans:
+            owns = False
+        else:
+            _cleaning_orphans.add(run_id)
+            owns = True
+    try:
+        yield owns
+    finally:
+        if owns:
+            with _cleaning_orphans_lock:
+                _cleaning_orphans.discard(run_id)
 
 
 def init_storage() -> None:
@@ -1153,7 +1180,7 @@ async def list_runs_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
 
 
 @router.get("/runs/{run_id}")
-async def get_run(run_id: str, background_tasks: BackgroundTasks) -> dict:
+async def get_run(run_id: str) -> dict:
     """Get a run with all results."""
     run_svc = get_run_service()
     run = run_svc.get_run(run_id)
@@ -1164,9 +1191,9 @@ async def get_run(run_id: str, background_tasks: BackgroundTasks) -> dict:
     # Correct the response dict immediately so the client sees accurate state,
     # and persist the cleanup inline using 2 bulk UPDATEs on the singleton
     # session (already holds the pool's only connection — spawning a separate
-    # session would deadlock waiting for that slot). The idempotency guard
-    # prevents N concurrent clicks from each running the cleanup writes;
-    # the losers see should_clean=False and skip straight to the response.
+    # session would deadlock waiting for that slot). The cleanup slot is
+    # single-flighted per run_id; concurrent clicks see owns=False and skip
+    # straight to the response while the writes happen exactly once.
     if run["completed_at"] is None and run_id not in _active_runs:
         run["completed_at"] = datetime.now(UTC).isoformat()
 
@@ -1175,19 +1202,11 @@ async def get_run(run_id: str, background_tasks: BackgroundTasks) -> dict:
             if result["status"] == "running":
                 orphaned_result_ids.append(result["id"])
                 result["status"] = "error"
-                result["error_message"] = "Run orphaned - backend stopped"
+                result["error_message"] = _ORPHAN_ERROR_MESSAGE
 
-        with _cleaning_orphans_lock:
-            should_clean = run_id not in _cleaning_orphans
-            if should_clean:
-                _cleaning_orphans.add(run_id)
-
-        if should_clean:
-            try:
+        with _orphan_cleanup_lock(run_id) as owns:
+            if owns:
                 _cleanup_orphaned_run(run_id, orphaned_result_ids)
-            finally:
-                with _cleaning_orphans_lock:
-                    _cleaning_orphans.discard(run_id)
 
     return run
 
@@ -1195,20 +1214,28 @@ async def get_run(run_id: str, background_tasks: BackgroundTasks) -> dict:
 def _cleanup_orphaned_run(run_id: str, result_ids: list[str]) -> None:
     """Persist orphan-cleanup state to DB using the singleton session.
 
-    Issues 2 bulk UPDATEs (one for the run, one for the result rows)
-    instead of N+1 round-trips, so the singleton session is held only for
-    a few ms. If this raises, the caller releases the in-flight lock and
-    a subsequent GET will re-detect the orphan and try again.
+    Issues 2 bulk UPDATEs (run + results) with guard clauses so they're
+    no-ops if the rows were already finalized by an earlier cleanup. DB
+    errors are logged and swallowed: the in-memory response dict is
+    already correctly patched, so the client gets the right view even if
+    persistence fails — and the next GET will re-attempt the cleanup.
     """
-    logger = logging.getLogger("voicetest.rest")
-    logger.info("orphan-cleanup start run=%s n_results=%d", run_id, len(result_ids))
-    session = get_session()
-    now = datetime.now(UTC)
-    session.execute(_UPDATE_RUN_COMPLETED, {"ts": now, "rid": run_id})
-    if result_ids:
-        session.execute(_UPDATE_RESULTS_ORPHANED, {"rids": result_ids})
-    session.commit()
-    logger.info("orphan-cleanup committed run=%s", run_id)
+    _logger.info("orphan-cleanup start run=%s n_results=%d", run_id, len(result_ids))
+    try:
+        session = get_session()
+        session.execute(
+            _UPDATE_RUN_COMPLETED,
+            {"ts": datetime.now(UTC), "rid": run_id},
+        )
+        if result_ids:
+            session.execute(
+                _UPDATE_RESULTS_ORPHANED,
+                {"rids": result_ids, "msg": _ORPHAN_ERROR_MESSAGE},
+            )
+        session.commit()
+        _logger.info("orphan-cleanup committed run=%s", run_id)
+    except Exception:
+        _logger.exception("orphan-cleanup failed run=%s", run_id)
 
 
 @router.delete("/runs/{run_id}")
