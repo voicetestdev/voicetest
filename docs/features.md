@@ -1,3 +1,7 @@
+---
+description: Format conversion, platform integration, snippets, global metrics, diagnosis, audio evaluation, decomposition, caching, and transcript replay.
+---
+
 # Features
 
 ## Format conversion
@@ -5,21 +9,21 @@
 voicetest converts between agent formats via its unified AgentGraph representation:
 
 ```
-Retell CF ─────┐                  ┌───▶ Retell LLM
-               │                  │
-Retell LLM ────┼                  ├───▶ Retell CF
-               │                  │
-VAPI ──────────┼                  ├───▶ VAPI
-               │                  │
-Bland ─────────┼───▶ AgentGraph ──┼───▶ Bland
-               │                  │
-Telnyx ────────┤                  ├───▶ Telnyx
-               │                  │
-LiveKit ───────┤                  ├───▶ LiveKit
-               │                  │
-XLSForm ───────┤                  ├───▶ Mermaid
-               │                  │
-Custom ────────┘                  └───▶ Voicetest JSON
+Retell CF ─────┐                   ┌───▶ Retell LLM
+               │                   │
+Retell LLM ────┼                   ├───▶ Retell CF
+               │                   │
+VAPI ──────────┼                   ├───▶ VAPI Assistant
+               │                   │
+Bland ─────────┼───▶ AgentGraph ───┼───▶ VAPI Squad
+               │                   │
+Telnyx ────────┤                   ├───▶ Bland
+               │                   │
+LiveKit ───────┤                   ├───▶ Telnyx
+               │                   │
+XLSForm ───────┤                   ├───▶ LiveKit
+               │                   │
+Custom ────────┘                   └───▶ Mermaid · Voicetest JSON
 ```
 
 Import from any supported format, then export to any other:
@@ -106,7 +110,22 @@ Example use cases:
 
 ## Diagnosis & auto-fix
 
-When a test fails, voicetest can diagnose the root cause and suggest concrete prompt changes to fix it.
+When a test fails, voicetest can diagnose the root cause and suggest concrete prompt changes to fix it. Available from the CLI and the Web UI.
+
+**CLI:**
+
+```bash
+# One-shot: print fault location and proposed prompt change
+voicetest diagnose --agent agent.json --tests tests.json --test "Schedules an appointment"
+
+# Auto-fix loop: propose, apply, re-run until pass or iteration cap
+voicetest diagnose --agent agent.json --tests tests.json --all \
+  --auto-fix --max-iterations 5 --save fixed_agent.json
+```
+
+`--save` writes the fixed graph; the original `agent.json` is untouched.
+
+**Web UI:**
 
 1. **Diagnose** — Click "Diagnose" on a failed result. The LLM analyzes the graph, transcript, and failed metrics to identify fault locations and root cause.
 1. **Review & Edit** — Proposed changes are shown as editable textareas. Modify the suggested text before applying.
@@ -114,7 +133,9 @@ When a test fails, voicetest can diagnose the root cause and suggest concrete pr
 1. **Iterate** — If not all metrics pass, click "Try Again" to revise the fix based on the latest results.
 1. **Save** — Click "Save Changes" to persist the fix to the agent graph.
 
-**Auto-Fix Mode** runs an automated diagnose-apply-revise loop. Configure stop condition ("On improvement" or "When all pass") and max iterations (1-10, default 3).
+**Auto-Fix Mode** in the UI runs the same loop without prompting between iterations. Configure stop condition ("On improvement" or "When all pass") and max iterations (1–10, default 3).
+
+For a full walkthrough including what diagnose is good and bad at, see the [Diagnose a failing test recipe](recipes/diagnose-failing-test.md).
 
 ## Audio evaluation
 
@@ -173,28 +194,62 @@ s3_region = "us-east-1"
 
 Disable caching for a run with `no_cache = true` in run options or `--no-cache` on the CLI.
 
-## Web UI
+## Transcript import & replay
 
-Start the server and open http://localhost:8000:
+Voicetest can ingest real production call transcripts as Runs, alongside the simulated runs the harness generates. Imported transcripts share the same storage and UI surfaces as simulated runs, and can be **replayed** against the agent's current graph to detect behavioral drift.
 
-```bash
-voicetest serve
+| Operation        | What it does                                                                                             | UI                                       | CLI                                                         | REST                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------- |
+| **Import calls** | Parse a platform-specific transcript dump and persist as a Run with `status="imported"` Results          | "Import Calls…" button on the agent page | `voicetest import-call --agent <id> --transcript file.json` | `POST /api/agents/{id}/import-call` (multipart) |
+| **Replay**       | Drive a fresh conversation against the agent's current graph using a source Run's user turns as a script | "Replay" button on the run detail page   | `voicetest replay <run-id>`                                 | `POST /api/runs/{id}/replay`                    |
+
+### Supported formats
+
+**Retell** — accepts the call object as returned by `GET /v2/get-call/{call_id}`, the post-call webhook envelope (`{"event": ..., "call": {...}}`), or arrays of either:
+
+```json
+{
+  "call_id": "call_abc123",
+  "transcript_object": [
+    {"role": "agent", "content": "Hi, how can I help?"},
+    {"role": "user", "content": "I need to cancel my order."}
+  ],
+  "duration_ms": 60000,
+  "start_timestamp": 1700000000000,
+  "end_timestamp": 1700000060000
+}
 ```
 
-The web UI provides:
+The adapter maps Retell's `role: "agent"` → `role: "assistant"` (voicetest convention) and ignores word-level timing details.
 
-- Agent import and graph visualization
-- Export agents to multiple formats (Mermaid, LiveKit, Retell, VAPI, Bland, Telnyx)
-- Platform integration: import, push, and sync agents with Retell, VAPI, LiveKit, Telnyx
-- Test case management with persistence
-- Global metrics configuration (compliance checks that run on all tests)
-- Test execution with real-time streaming transcripts
-- Cancel in-progress tests
-- Run history with detailed results, transcript inspection, and pass/fail filtering
-- Dynamic variables and models used shown per result (collapsible)
-- Audio evaluation with word-level diff of original vs. heard text
-- Settings configuration (models, max turns, streaming, audio eval)
+Other platforms (VAPI, LiveKit, Telnyx, Bland) are **not yet supported** — `--format` is parameterized so adapters can be added without breaking changes.
 
-Data is persisted to `.voicetest/data.duckdb` (configurable via `VOICETEST_DB_PATH`).
+### Data model
 
-The REST API is available at http://localhost:8000/api. Full API documentation is at [voicetest.dev/api](https://voicetest.dev/api/).
+- **Imported run** — a `Run` whose `Result`s have `status="imported"`, `test_case_id=null`, `call_id=null`. Each Result holds one call's transcript.
+- **Replay run** — a `Run` produced by replaying a source Run. Results have `status="pass"` (replay results are passive captures of live behavior; judging happens later when metrics are configured).
+
+Both kinds render in the existing runs UI alongside simulated runs. The runs list shows an "imported" badge for runs whose Results are all imported.
+
+### Replay semantics
+
+`ScriptedUserSimulator` yields the source's recorded user turns in order. The live agent's responses replace the recorded ones; the source's agent turns are not used. If the live agent diverges from the recorded conversation, the next recorded user turn may not fit perfectly — the replay continues anyway, since the conversation as a whole still produces a transcript you can judge.
+
+Replay is **best-effort**: there is no LLM-based divergence handling in v1.
+
+### Limitations
+
+- Single-platform support (Retell only).
+- No PII redaction at import time — clients with sensitive data should redact before ingesting.
+- No diff view between source and replay yet; they're separate runs in the UI.
+- No batch import via UI — large dumps are easier via CLI.
+
+For the workflow walkthrough, see the [Import call history recipe](recipes/import-call-history.md).
+
+## Web UI
+
+`voicetest serve` starts a local server at [http://localhost:8000](http://localhost:8000) with visual surfaces for every feature on this page — graph visualization, test management, streaming transcripts, run history, side-by-side run comparison, diagnosis, audio evaluation, and settings.
+
+The REST API lives at [http://localhost:8000/api](http://localhost:8000/api). Full API documentation: [voicetest.dev/api](https://voicetest.dev/api/).
+
+Data is persisted to `.voicetest/data.duckdb` (override with `VOICETEST_DB_PATH`).

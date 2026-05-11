@@ -1,3 +1,7 @@
+---
+description: Use voicetest diagnose to identify the node at fault for a failing test and propose a prompt fix, with optional auto-iterate.
+---
+
 # Diagnose and auto-fix a failing test
 
 **The problem:** A test failed. The judge says "Agent did not confirm the appointment time" but the transcript looks reasonable to you. You don't know which prompt to edit, and rewriting half the graph by hand is exhausting.

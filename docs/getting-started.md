@@ -1,6 +1,10 @@
+---
+description: Install voicetest, run the demo, and run your first test against your own voice agent
+---
+
 # Getting Started
 
-Get from install to a passing test against your own voice agent in under five minutes.
+Get from install to a passing test against your own voice agent.
 
 ## 1. Install
 
@@ -22,7 +26,7 @@ Verify:
 voicetest --version
 ```
 
-## 2. See it work (30 seconds)
+## 2. See it work
 
 The fastest path to a working setup — a healthcare receptionist agent and 8 test cases that ship with voicetest:
 
@@ -37,11 +41,11 @@ This loads the demo agent, starts the web UI at [http://localhost:8000](http://l
 
 !!! tip "No API key? Use Claude Code"
 
-    If you have [Claude Code](https://claude.ai/claude-code) installed, skip the Groq key and pick `claudecode/sonnet` as your model in the UI. See [Claude Code Passthrough](configuration.md#claude-code-passthrough).
+    If you have [Claude Code](https://claude.ai/claude-code) installed, skip the Groq key and pick `claudecode/sonnet` as your model in the UI. See [Claude Code Integration](claude-code.md).
 
 ![CLI Demo](demos/cli-demo.gif)
 
-## 3. Test your own agent (4 minutes)
+## 3. Test your own agent
 
 The demo proves voicetest works. Now point it at *your* agent.
 

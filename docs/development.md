@@ -1,3 +1,7 @@
+---
+description: Contributor guide — code quality, fixtures, Docker development, frontend, and voicetest's internals.
+---
+
 # Development
 
 ## Code quality
@@ -149,6 +153,62 @@ cd web && mise exec -- bun run build
 ```
 
 Svelte 5 reactivity guidelines are documented in `web/README.md`.
+
+## Internals
+
+These details are useful when contributing to voicetest or building on its Python API. Public users don't need to read this section.
+
+### DI container (Punq)
+
+The project uses [Punq](https://github.com/bobthemighty/punq) for dependency injection. Key singletons:
+
+- `Engine`, `sessionmaker`, `Session` — SQLAlchemy database layer (DuckDB-backed)
+- `ImporterRegistry`, `ExporterRegistry`, `PlatformRegistry` — registries
+
+Repositories are transient but share the singleton session:
+
+- `AgentRepository`, `TestCaseRepository`, `RunRepository`, `CallRepository`
+
+Get instances via `voicetest.container`:
+
+```python
+from voicetest.container import get_session, get_importer_registry
+```
+
+**When to use DI:**
+
+- Use `get_*` helpers for app code (REST handlers, CLI commands).
+- Use `container.resolve(Type)` when you need the container directly.
+- For tests, use `reset_container()` to get fresh state.
+- Don't instantiate repositories directly; let Punq inject the session.
+
+### DSPy signatures
+
+When defining DSPy signatures, type the fields accurately:
+
+```python
+class MySignature(dspy.Signature):
+    """Docstring becomes the prompt context."""
+
+    input_text: str = dspy.InputField(desc="What this input contains")
+    count: int = dspy.InputField(desc="Numeric input")
+
+    result: str = dspy.OutputField(desc="What the LLM should produce")
+    score: float = dspy.OutputField(desc="Numeric score from 0.0 to 1.0")
+    items: list[str] = dspy.OutputField(desc="List of extracted items")
+    valid: bool = dspy.OutputField(desc="True/False judgment")
+```
+
+The type annotations (`str`, `int`, `float`, `bool`, `list[str]`) guide the LLM's output format. The `desc` should clarify semantics, not just repeat the type.
+
+### Retell terminal-tool conversion
+
+When importing Retell LLM-format agents, terminal tools (`end_call`, `transfer_call`) are converted to proper CF node types during export rather than remaining as tools in the tools array:
+
+- `end_call` tools become `type=end` nodes in the Conversation Flow.
+- `transfer_call` tools become `type=transfer_call` nodes with `transfer_destination` and `transfer_option`.
+- Tool metadata carries `transfer_destination` and `transfer_option` through the import/export pipeline.
+- The agent envelope (voice_id, language, etc.) is preserved from LLM format through CF export so the result re-imports cleanly into the Retell UI.
 
 ## Project structure
 

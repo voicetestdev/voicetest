@@ -1,3 +1,7 @@
+---
+description: Task-oriented walkthroughs for the most common voicetest workflows — regression testing, importing call history, diagnosing failures, and CI.
+---
+
 # Recipes
 
 Task-oriented walkthroughs for the most common voicetest workflows. Each recipe assumes you already have voicetest installed and a passing test against the demo agent — see [Getting Started](../getting-started.md) if not.

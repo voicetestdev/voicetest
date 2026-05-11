@@ -113,8 +113,10 @@ def create_container() -> punq.Container:
     # - PostgreSQL (Neon): transient — fresh session per resolve call.
     #   Neon drops idle SSL connections; with NullPool + transient sessions,
     #   a single failed request can't poison subsequent ones.
-    # - DuckDB (CLI): singleton — DuckDB is in-process and single-writer,
-    #   so sharing one session avoids connection contention.
+    # - DuckDB (CLI): singleton — DuckDB is in-process with pool_size=1, so
+    #   multiple concurrent transient sessions deadlock waiting for the pool's
+    #   single connection. Thread-safety of the singleton Session is enforced
+    #   by the lock-wrapping in voicetest/storage/duckdb.py.
     session_scope = None if _is_postgres_url(db_url) else punq.Scope.singleton
     container.register(
         Session,

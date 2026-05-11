@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import dataclasses
+import faulthandler
 import importlib.resources
 import json
 import os
@@ -69,6 +70,11 @@ def _echo(msg: str) -> None:
 
 def _start_server(host: str, port: int, reload: bool = False) -> None:
     """Start the uvicorn web server."""
+    # Print a C-level stack trace to stderr if a native extension (DuckDB,
+    # anyio's threadpool, etc.) crashes the interpreter. Without this a
+    # segfault produces a silent kill that is very hard to diagnose.
+    faulthandler.enable()
+
     console.print("[bold]Starting voicetest API server...[/bold]")
     console.print(f"  URL: http://{host}:{port}")
     console.print(f"  Docs: http://{host}:{port}/docs")

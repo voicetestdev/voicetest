@@ -1,3 +1,7 @@
+---
+description: LLM models, run options, settings.toml — every knob voicetest exposes.
+---
+
 # Configuration
 
 ## LLM models
@@ -31,6 +35,8 @@ In the shell:
 > set agent_model gemini/gemini-1.5-flash
 > set simulator_model ollama_chat/qwen2.5:0.5b
 ```
+
+For guidance on which model to use for each role, see the [Models guide](models.md).
 
 ### Vertex AI
 
@@ -78,63 +84,30 @@ stt_url = "http://localhost:8001/v1"
 cache_backend = "disk"
 ```
 
-## Claude Code passthrough
+| Section    | Keys                                                   | Notes                                                              |
+| ---------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
+| `[models]` | `agent`, `simulator`, `judge`                          | LiteLLM strings; required for any non-local model                  |
+| `[run]`    | `max_turns`, `audio_eval`, `streaming`, etc.           | Defaults for new runs; per-run overrides win                       |
+| `[audio]`  | `tts_url`, `stt_url`                                   | Set when audio eval is enabled                                     |
+| `[cache]`  | `cache_backend`, `s3_bucket`, `s3_prefix`, `s3_region` | See [Features: LLM response cache](features.md#llm-response-cache) |
 
-If you have [Claude Code](https://claude.ai/claude-code) installed, you can use it as your LLM backend without configuring API keys:
+`voicetest settings` prints the active configuration; `voicetest settings --set <key>=<value>` updates it.
 
-```toml
-# .voicetest/settings.toml
-[models]
-agent = "claudecode/sonnet"
-simulator = "claudecode/haiku"
-judge = "claudecode/sonnet"
-```
+## Environment variables
 
-Available model strings:
+| Variable                                 | Purpose                                                             |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| `GROQ_API_KEY`                           | Default LLM provider for the demo agent and quickstart              |
+| `OPENAI_API_KEY`                         | OpenAI models                                                       |
+| `ANTHROPIC_API_KEY`                      | Anthropic Claude models                                             |
+| `VERTEXAI_LOCATION`                      | Override the Vertex AI region (default `us-central1`)               |
+| `VOICETEST_DB_PATH`                      | Override DuckDB storage location (default `.voicetest/data.duckdb`) |
+| `RETELL_API_KEY`                         | Retell platform integration                                         |
+| `VAPI_API_KEY`                           | VAPI platform integration                                           |
+| `BLAND_API_KEY`                          | Bland platform integration                                          |
+| `TELNYX_API_KEY`                         | Telnyx platform integration                                         |
+| `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` | LiveKit platform integration                                        |
 
-- `claudecode/sonnet` — Claude Sonnet
-- `claudecode/opus` — Claude Opus
-- `claudecode/haiku` — Claude Haiku
+## Using Claude Code as your LLM backend
 
-This invokes the `claude` CLI via subprocess, using your existing Claude Code authentication.
-
-### Subprocess timeout
-
-Each call has a 600-second timeout on the `claude` CLI subprocess. If a request exceeds it, voicetest translates the failure into a retryable timeout error. Timeouts are capped at **2 attempts** (vs. the default 8 used for rate limits and connection errors) because each attempt costs the full timeout — bounding worst-case wallclock at roughly twice the timeout. If both attempts fail, the test surfaces as `status="error"` with a clear message rather than a raw `subprocess.TimeoutExpired` stacktrace.
-
-If you consistently hit the timeout on legitimate long generations, raise the `timeout` argument when constructing the LM (Python API), or split the workload into smaller prompts.
-
-## Claude Code plugin
-
-voicetest ships with a Claude Code plugin for agent-assisted voice testing. Slash commands and auto-activating skills help Claude Code discover importers/exporters, run tests, export agents, and convert between formats.
-
-**For repo contributors** (automatic):
-
-Skills and commands load automatically from `.claude/` (symlinked to `claude-plugin/`).
-
-**Install as a marketplace plugin:**
-
-```
-/plugin marketplace add voicetestdev/voicetest
-/plugin install voicetest@voicetest-plugins
-```
-
-**For pip-installed users:**
-
-```bash
-cd your-project
-voicetest init-claude
-```
-
-**Available slash commands:**
-
-- `/voicetest-run` — Run tests against an agent
-- `/voicetest-export` — Export agent to a different format
-- `/voicetest-convert` — Convert between platform formats
-- `/voicetest-info` — List importers, exporters, platforms, and settings
-
-**Plugin path** (for manual plugin loading):
-
-```bash
-claude --plugin-dir $(voicetest claude-plugin-path)
-```
+If you have [Claude Code](https://claude.ai/claude-code) installed, you can route LLM calls through your existing Claude subscription instead of configuring a separate API key. See [Claude Code Integration](claude-code.md).

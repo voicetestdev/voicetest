@@ -1,3 +1,7 @@
+---
+description: Every voicetest CLI command — testing, agent management, run history, snippets, exports, platform integration, and infrastructure.
+---
+
 # CLI Reference
 
 ## Testing
