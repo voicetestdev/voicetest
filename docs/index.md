@@ -8,8 +8,6 @@ Voice agents break in ways unit tests can't catch: a transition that fires too e
 
 **Voicetest is the test harness that closes that loop.** It simulates real multi-turn conversations against your agent, judges the results with LLMs, and catches regressions before your users do.
 
-Open source. Apache 2.0. Free forever.
-
 ![Web UI](demos/web-demo-light.gif)
 
 ## What you get
