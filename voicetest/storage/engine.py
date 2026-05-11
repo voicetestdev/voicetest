@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
 from voicetest.config import get_db_path
+from voicetest.storage.duckdb import DuckDBSessionMaker
 from voicetest.storage.models import Base
 
 
@@ -198,10 +199,16 @@ def create_db_engine(url: str | None = None) -> Engine:
 def get_session_factory(engine: Engine) -> sessionmaker[Session]:
     """Create a session factory bound to the given engine.
 
+    For DuckDB engines, returns a session factory whose sessions are
+    instrumented to serialize concurrent access on a single lock (see
+    voicetest/storage/duckdb.py). Other backends get the plain sessionmaker.
+
     Args:
         engine: SQLAlchemy Engine instance.
 
     Returns:
         A sessionmaker that creates Session instances.
     """
+    if str(engine.url).startswith("duckdb"):
+        return DuckDBSessionMaker(bind=engine)
     return sessionmaker(bind=engine)

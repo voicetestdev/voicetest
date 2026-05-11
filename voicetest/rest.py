@@ -18,6 +18,7 @@ import logging
 import os
 from pathlib import Path
 import tempfile
+import threading
 from typing import Any
 
 from fastapi import APIRouter
@@ -33,6 +34,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from sqlalchemy import bindparam
+from sqlalchemy import text
 from starlette.websockets import WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
@@ -95,6 +98,23 @@ _vt_logger.info("voicetest logging configured at %s", _log_level)
 
 # Active runs: run_id -> {"cancel": Event, "websockets": set[WebSocket], "message_queue": list}
 _active_runs: dict[str, dict[str, Any]] = {}
+
+# Orphan-cleanup guard: run_ids currently being cleaned up. Prevents N
+# concurrent GETs for the same orphaned run from each firing a cleanup,
+# which would pile competing writes onto the (now per-request) DuckDB
+# sessions and could still segfault the DuckDB C extension under load.
+_cleaning_orphans: set[str] = set()
+_cleaning_orphans_lock = threading.Lock()
+
+# Pre-compiled SQL for orphan cleanup. Two bulk UPDATEs replace the prior
+# N+1 round-trip pattern, keeping the DuckDB connection held only briefly.
+_UPDATE_RUN_COMPLETED = text("UPDATE runs SET completed_at = :ts WHERE id = :rid")
+_UPDATE_RESULTS_ORPHANED = text(
+    "UPDATE results "
+    "SET status = 'error', "
+    "    error_message = 'Run orphaned - backend stopped' "
+    "WHERE id IN :rids"
+).bindparams(bindparam("rids", expanding=True))
 
 _initialized = False
 
@@ -1142,8 +1162,11 @@ async def get_run(run_id: str, background_tasks: BackgroundTasks) -> dict:
 
     # Detect orphaned run: not completed but not actively running.
     # Correct the response dict immediately so the client sees accurate state,
-    # but defer the DB writes to a background task so they don't hold the
-    # DuckDB connection during the response (reduces contention window).
+    # and persist the cleanup inline using 2 bulk UPDATEs on the singleton
+    # session (already holds the pool's only connection — spawning a separate
+    # session would deadlock waiting for that slot). The idempotency guard
+    # prevents N concurrent clicks from each running the cleanup writes;
+    # the losers see should_clean=False and skip straight to the response.
     if run["completed_at"] is None and run_id not in _active_runs:
         run["completed_at"] = datetime.now(UTC).isoformat()
 
@@ -1154,21 +1177,38 @@ async def get_run(run_id: str, background_tasks: BackgroundTasks) -> dict:
                 result["status"] = "error"
                 result["error_message"] = "Run orphaned - backend stopped"
 
-        background_tasks.add_task(_cleanup_orphaned_run, run_id, orphaned_result_ids)
+        with _cleaning_orphans_lock:
+            should_clean = run_id not in _cleaning_orphans
+            if should_clean:
+                _cleaning_orphans.add(run_id)
+
+        if should_clean:
+            try:
+                _cleanup_orphaned_run(run_id, orphaned_result_ids)
+            finally:
+                with _cleaning_orphans_lock:
+                    _cleaning_orphans.discard(run_id)
 
     return run
 
 
 def _cleanup_orphaned_run(run_id: str, result_ids: list[str]) -> None:
-    """Persist orphan-cleanup state to DB. Runs after the response is sent.
+    """Persist orphan-cleanup state to DB using the singleton session.
 
-    Idempotent — if this fails, the next GET for the same run will
-    re-detect the orphan and schedule another cleanup.
+    Issues 2 bulk UPDATEs (one for the run, one for the result rows)
+    instead of N+1 round-trips, so the singleton session is held only for
+    a few ms. If this raises, the caller releases the in-flight lock and
+    a subsequent GET will re-detect the orphan and try again.
     """
-    run_svc = get_run_service()
-    run_svc.complete(run_id)
-    for result_id in result_ids:
-        run_svc.mark_result_error(result_id, "Run orphaned - backend stopped")
+    logger = logging.getLogger("voicetest.rest")
+    logger.info("orphan-cleanup start run=%s n_results=%d", run_id, len(result_ids))
+    session = get_session()
+    now = datetime.now(UTC)
+    session.execute(_UPDATE_RUN_COMPLETED, {"ts": now, "rid": run_id})
+    if result_ids:
+        session.execute(_UPDATE_RESULTS_ORPHANED, {"rids": result_ids})
+    session.commit()
+    logger.info("orphan-cleanup committed run=%s", run_id)
 
 
 @router.delete("/runs/{run_id}")
