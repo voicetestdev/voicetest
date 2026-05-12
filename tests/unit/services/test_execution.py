@@ -9,12 +9,13 @@ from voicetest.models.agent import MetricsConfig
 from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import TestCase
+from voicetest.services.settings import SettingsService
 from voicetest.services.testing.execution import TestExecutionService
 
 
 @pytest.fixture
 def svc():
-    return TestExecutionService()
+    return TestExecutionService(SettingsService())
 
 
 @pytest.fixture

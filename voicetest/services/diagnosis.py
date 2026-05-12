@@ -11,14 +11,26 @@ from voicetest.models.diagnosis import PromptChange
 from voicetest.models.results import MetricResult
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
+from voicetest.services.settings import SettingsService
 from voicetest.services.testing.execution import TestExecutionService
+from voicetest.settings import resolve_model
 
 
 class DiagnosisService:
     """Diagnoses test failures and suggests prompt fixes. Stateless."""
 
-    def __init__(self, test_execution_service: TestExecutionService):
+    def __init__(
+        self,
+        test_execution_service: TestExecutionService,
+        settings_service: SettingsService,
+    ):
         self._execution = test_execution_service
+        self._settings = settings_service
+
+    def _resolve_judge_model(self, judge_model: str | None) -> str:
+        if judge_model is not None:
+            return judge_model
+        return resolve_model(self._settings.get_settings().models.judge)
 
     async def diagnose_failure(
         self,
@@ -27,7 +39,7 @@ class DiagnosisService:
         nodes_visited: list[str],
         failed_metrics: list[MetricResult],
         test_scenario: str,
-        judge_model: str,
+        judge_model: str | None = None,
     ) -> DiagnosisResult:
         """Diagnose a test failure and suggest a fix.
 
@@ -37,12 +49,12 @@ class DiagnosisService:
             nodes_visited: Sequence of node IDs visited during the test.
             failed_metrics: Metric results (including failures).
             test_scenario: The user prompt / test scenario.
-            judge_model: LLM model for diagnosis.
+            judge_model: LLM model for diagnosis. Reads from settings if None.
 
         Returns:
             DiagnosisResult with diagnosis and suggested fix.
         """
-        judge = DiagnosisJudge(judge_model)
+        judge = DiagnosisJudge(self._resolve_judge_model(judge_model))
         diagnosis = await judge.diagnose(
             graph, transcript, nodes_visited, failed_metrics, test_scenario
         )
@@ -101,7 +113,7 @@ class DiagnosisService:
         diagnosis: Diagnosis,
         prev_changes: list[PromptChange],
         new_metrics: list[MetricResult],
-        judge_model: str,
+        judge_model: str | None = None,
     ) -> FixSuggestion:
         """Revise a previous fix suggestion based on new metric results.
 
@@ -110,12 +122,12 @@ class DiagnosisService:
             diagnosis: Original diagnosis.
             prev_changes: Changes that were applied in the previous attempt.
             new_metrics: Metric results after previous fix.
-            judge_model: LLM model for revision.
+            judge_model: LLM model for revision. Reads from settings if None.
 
         Returns:
             Revised FixSuggestion.
         """
-        judge = DiagnosisJudge(judge_model)
+        judge = DiagnosisJudge(self._resolve_judge_model(judge_model))
         return await judge.revise_fix(graph, diagnosis, prev_changes, new_metrics)
 
     def apply_fix_to_graph(self, graph: AgentGraph, changes: list[PromptChange]) -> AgentGraph:

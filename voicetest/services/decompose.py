@@ -8,15 +8,20 @@ from voicetest.models.decompose import DecompositionResult
 from voicetest.models.decompose import OrchestratorManifest
 from voicetest.models.decompose import SubAgentManifestEntry
 from voicetest.models.decompose import SubAgentSpec
+from voicetest.services.settings import SettingsService
+from voicetest.settings import resolve_model
 
 
 class DecomposeService:
     """Splits an AgentGraph into M coherent sub-agents. Stateless."""
 
+    def __init__(self, settings_service: SettingsService):
+        self._settings = settings_service
+
     async def decompose(
         self,
         graph: AgentGraph,
-        model: str,
+        model: str | None = None,
         num_agents: int = 0,
         *,
         _mock_plan: DecompositionPlan | None = None,
@@ -27,7 +32,7 @@ class DecomposeService:
 
         Args:
             graph: The agent graph to decompose.
-            model: LLM model for analysis and refinement.
+            model: LLM model for analysis and refinement. Reads from settings if None.
             num_agents: Requested number of sub-agents (0 = LLM decides).
             _mock_plan: For testing — bypass LLM analyze step.
             _mock_refined_prompt: For testing — bypass LLM refine step.
@@ -36,6 +41,8 @@ class DecomposeService:
         Returns:
             DecompositionResult with plan, sub-graphs, and manifest.
         """
+        if model is None:
+            model = resolve_model(self._settings.get_settings().models.judge)
         judge = DecomposeJudge(model)
 
         if _mock_plan is not None:

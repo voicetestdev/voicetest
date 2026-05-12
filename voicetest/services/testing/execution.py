@@ -23,6 +23,7 @@ from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.retry import OnErrorCallback
+from voicetest.services.settings import SettingsService
 from voicetest.settings import resolve_model
 from voicetest.simulator.user_sim import SimulatorResponse
 from voicetest.simulator.user_sim import UserSimulator
@@ -36,14 +37,54 @@ OnTurnCallback = Callable[[list[Message]], Awaitable[None] | None]
 OnTokenCallback = Callable[[str, str], Awaitable[None] | None]
 
 
+def resolve_run_options(
+    options: RunOptions | None,
+    settings_service: SettingsService,
+) -> RunOptions:
+    """Fill missing model fields from settings.
+
+    If options is None, all run params come from settings too. If options
+    is provided, only the None model fields are filled — caller's run
+    params (max_turns, timeout, etc.) are respected.
+    """
+    settings = settings_service.get_settings()
+    if options is None:
+        return RunOptions(
+            agent_model=settings.models.agent,
+            simulator_model=settings.models.simulator,
+            judge_model=settings.models.judge,
+            max_turns=settings.run.max_turns,
+            turn_timeout_seconds=settings.run.turn_timeout_seconds,
+            verbose=settings.run.verbose,
+            flow_judge=settings.run.flow_judge,
+            streaming=settings.run.streaming,
+            test_model_precedence=settings.run.test_model_precedence,
+            audio_eval=settings.run.audio_eval,
+            pattern_engine=settings.run.pattern_engine,
+        )
+    return options.model_copy(
+        update={
+            "agent_model": options.agent_model or settings.models.agent,
+            "simulator_model": options.simulator_model or settings.models.simulator,
+            "judge_model": options.judge_model or settings.models.judge,
+        }
+    )
+
+
 class TestExecutionService:
     """Runs tests against agent graphs. Stateless."""
+
+    def __init__(self, settings_service: SettingsService):
+        self._settings = settings_service
+
+    def _resolve_options(self, options: RunOptions | None) -> RunOptions:
+        return resolve_run_options(options, self._settings)
 
     async def evaluate_global_metrics(
         self,
         transcript: list[Message],
         metrics_config: MetricsConfig,
-        judge_model: str,
+        judge_model: str | None = None,
         on_error: OnErrorCallback | None = None,
         use_heard: bool = False,
     ) -> list[MetricResult]:
@@ -52,13 +93,15 @@ class TestExecutionService:
         Args:
             transcript: Conversation transcript to evaluate.
             metrics_config: Agent metrics configuration with threshold and global metrics.
-            judge_model: LLM model to use for evaluation.
+            judge_model: LLM model to use for evaluation. Reads from settings if None.
             on_error: Optional callback for retry notifications.
             use_heard: If True, use metadata["heard"] for assistant messages.
 
         Returns:
             List of MetricResult objects for each enabled global metric.
         """
+        if judge_model is None:
+            judge_model = resolve_model(self._settings.get_settings().models.judge)
         metric_judge = MetricJudge(judge_model)
         threshold = metrics_config.threshold
         results: list[MetricResult] = []
@@ -104,7 +147,7 @@ class TestExecutionService:
         Returns:
             TestResult with pass/fail status, transcript, and metrics.
         """
-        options = options or RunOptions()
+        options = self._resolve_options(options)
         overrides: list[ModelOverride] = []
         tmp = options.test_model_precedence
 
@@ -363,6 +406,7 @@ class TestExecutionService:
         run_id = str(uuid.uuid4())
         started_at = datetime.now()
 
+        options = self._resolve_options(options)
         results = []
         for test_case in test_cases:
             result = await self.run_test(graph, test_case, options, _mock_mode=_mock_mode)

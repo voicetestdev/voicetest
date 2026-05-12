@@ -74,9 +74,8 @@ from voicetest.services import get_settings_service
 from voicetest.services import get_snippet_service
 from voicetest.services import get_test_case_service
 from voicetest.services import get_test_execution_service
+from voicetest.services.testing.execution import resolve_run_options
 from voicetest.settings import Settings
-from voicetest.settings import load_settings
-from voicetest.settings import resolve_model
 from voicetest.storage.models import Result as ResultModel
 from voicetest.storage.models import Run as RunModel
 from voicetest.storage.repositories import AgentRepository
@@ -577,59 +576,23 @@ async def export_agent(request: ExportRequest) -> dict[str, str]:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
 
-def _build_run_options(settings: Settings, request_options: RunOptions | None) -> RunOptions:
-    """Build RunOptions from settings, with request options for run params only.
-
-    Models come from settings (can be None if not configured).
-    Run parameters (max_turns, timeout, verbose, flow_judge, streaming) come from
-    request if provided, otherwise from settings.
-    """
-    return RunOptions(
-        agent_model=settings.models.agent,
-        simulator_model=settings.models.simulator,
-        judge_model=settings.models.judge,
-        max_turns=request_options.max_turns if request_options else settings.run.max_turns,
-        turn_timeout_seconds=(
-            request_options.turn_timeout_seconds
-            if request_options
-            else settings.run.turn_timeout_seconds
-        ),
-        verbose=(request_options.verbose if request_options else False) or settings.run.verbose,
-        flow_judge=(
-            (request_options.flow_judge if request_options else False) or settings.run.flow_judge
-        ),
-        streaming=settings.run.streaming,
-        test_model_precedence=settings.run.test_model_precedence,
-        audio_eval=(
-            (request_options.audio_eval if request_options else False) or settings.run.audio_eval
-        ),
-        no_cache=(request_options.no_cache if request_options else False),
-    )
-
-
 @router.post("/runs/single", response_model=TestResult)
 async def run_test(request: RunTestRequest) -> TestResult:
     """Run a single test case."""
-    settings = load_settings()
-    settings.apply_env()
-    options = _build_run_options(settings, request.options)
     return await get_test_execution_service().run_test(
         request.graph,
         request.test_case,
-        options=options,
+        options=request.options,
     )
 
 
 @router.post("/runs", response_model=TestRun)
 async def run_tests(request: RunTestsRequest) -> TestRun:
     """Run multiple test cases."""
-    settings = load_settings()
-    settings.apply_env()
-    options = _build_run_options(settings, request.options)
     return await get_test_execution_service().run_tests(
         request.graph,
         request.test_cases,
-        options=options,
+        options=request.options,
     )
 
 
@@ -1268,12 +1231,8 @@ async def replay_run(source_run_id: str) -> dict:
 
     _agent, graph = _load_agent_graph(source["agent_id"])
 
-    settings = load_settings()
-    settings.apply_env()
-    options = _build_run_options(settings, None)
-
     try:
-        return await run_svc.replay_run(source_run_id, graph, options)
+        return await run_svc.replay_run(source_run_id, graph)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
@@ -1314,16 +1273,10 @@ async def audio_eval_result(result_id: str) -> dict:
     run = session.get(RunModel, db_result.run_id)
     metrics_config = get_agent_service().get_metrics_config(run.agent_id) if run else None
 
-    settings = load_settings()
-    settings.apply_env()
-    judge_model = resolve_model(settings.models.judge)
-
     transformed, audio_metrics = await get_evaluation_service().audio_eval_result(
         transcript,
         test_case,
         metrics_config=metrics_config,
-        judge_model=judge_model,
-        settings=settings,
     )
 
     # Update stored result with audio eval data
@@ -1334,11 +1287,11 @@ async def audio_eval_result(result_id: str) -> dict:
     return run_svc._runs._result_to_dict(db_result)
 
 
-def _load_result_context(result_id: str) -> tuple[dict, "TestCase", AgentGraph, str]:
-    """Load result, test case, agent graph, and judge model for diagnosis endpoints.
+def _load_result_context(result_id: str) -> tuple[dict, "TestCase", AgentGraph]:
+    """Load result, test case, and agent graph for diagnosis endpoints.
 
     Returns:
-        Tuple of (result_dict, test_case, agent_graph, judge_model).
+        Tuple of (result_dict, test_case, agent_graph).
 
     Raises:
         HTTPException on missing data.
@@ -1370,12 +1323,7 @@ def _load_result_context(result_id: str) -> tuple[dict, "TestCase", AgentGraph, 
 
     _agent, graph = _load_agent_graph(run.agent_id)
 
-    # Resolve judge model
-    settings = load_settings()
-    settings.apply_env()
-    judge_model = resolve_model(settings.models.judge)
-
-    return result_dict, test_case, graph, judge_model
+    return result_dict, test_case, graph
 
 
 @router.post("/results/{result_id}/diagnose")
@@ -1387,15 +1335,12 @@ async def diagnose_result(result_id: str, request: Request) -> dict:
 
     Optional body: {"model": "provider/model-name"} to override the judge model.
     """
-    result_dict, test_case, graph, judge_model = _load_result_context(result_id)
+    result_dict, test_case, graph = _load_result_context(result_id)
 
     try:
         body = await request.json()
     except Exception:
         body = {}
-    model_override = body.get("model")
-    if model_override:
-        judge_model = model_override
 
     transcript_data = result_dict.get("transcript_json") or []
     transcript = [Message(**m) for m in transcript_data]
@@ -1410,7 +1355,7 @@ async def diagnose_result(result_id: str, request: Request) -> dict:
         nodes_visited=nodes_visited,
         failed_metrics=metric_results,
         test_scenario=test_case.user_prompt,
-        judge_model=judge_model,
+        judge_model=body.get("model"),
     )
 
     return diagnosis_result.model_dump()
@@ -1422,7 +1367,7 @@ async def apply_fix(result_id: str, body: dict) -> dict:
 
     Non-destructive: does not persist changes.
     """
-    result_dict, test_case, graph, judge_model = _load_result_context(result_id)
+    result_dict, test_case, graph = _load_result_context(result_id)
 
     changes = [PromptChangeModel.model_validate(c) for c in body.get("changes", [])]
     iteration = body.get("iteration", 1)
@@ -1436,15 +1381,12 @@ async def apply_fix(result_id: str, body: dict) -> dict:
     run = session.get(RunModel, db_result.run_id)
     metrics_config = get_agent_service().get_metrics_config(run.agent_id) if run else None
 
-    options = RunOptions(judge_model=judge_model)
-
     attempt_result = await get_diagnosis_service().apply_and_rerun(
         graph=graph,
         test_case=test_case,
         changes=changes,
         original_metrics=original_metrics,
         iteration=iteration,
-        options=options,
         metrics_config=metrics_config,
     )
 
@@ -1459,11 +1401,7 @@ async def revise_fix_endpoint(result_id: str, body: dict) -> dict:
 
     Optional body field: "model" to override the judge model.
     """
-    result_dict, test_case, graph, judge_model = _load_result_context(result_id)
-
-    model_override = body.get("model")
-    if model_override:
-        judge_model = model_override
+    result_dict, test_case, graph = _load_result_context(result_id)
 
     diagnosis = DiagnosisModel.model_validate(body["diagnosis"])
     prev_changes = [PromptChangeModel.model_validate(c) for c in body["previous_changes"]]
@@ -1474,7 +1412,7 @@ async def revise_fix_endpoint(result_id: str, body: dict) -> dict:
         diagnosis=diagnosis,
         prev_changes=prev_changes,
         new_metrics=new_metrics,
-        judge_model=judge_model,
+        judge_model=body.get("model"),
     )
 
     return fix.model_dump()
@@ -1508,14 +1446,10 @@ async def decompose_agent(agent_id: str, request: Request) -> dict:
     except Exception:
         body = {}
 
-    settings = get_settings_service().get_settings()
-    model = body.get("model") or resolve_model(settings.models.judge)
-    num_agents = body.get("num_agents", 0)
-
     result = await get_decompose_service().decompose(
         graph=graph,
-        model=model,
-        num_agents=num_agents,
+        model=body.get("model"),
+        num_agents=body.get("num_agents", 0),
     )
 
     return result.model_dump()
@@ -1874,9 +1808,7 @@ async def start_run(
         result_id = run_svc.create_pending_result(run["id"], test_record["id"], test_record["name"])
         result_ids[test_record["id"]] = result_id
 
-    settings = load_settings()
-    settings.apply_env()
-    options = _build_run_options(settings, request.options)
+    options = resolve_run_options(request.options, get_settings_service())
 
     # Set up active run tracking BEFORE background task starts
     # so WebSocket connections can register immediately
@@ -1956,10 +1888,6 @@ async def start_call(agent_id: str, request: StartCallRequest | None = None) -> 
     call_repo = get_call_repo()
     call_manager = get_call_manager()
 
-    settings = load_settings()
-    settings.apply_env()
-    agent_model = settings.models.agent
-
     dynamic_variables = request.dynamic_variables if request else {}
 
     try:
@@ -1967,7 +1895,6 @@ async def start_call(agent_id: str, request: StartCallRequest | None = None) -> 
             agent_id,
             graph,
             call_repo,
-            agent_model=agent_model,
             dynamic_variables=dynamic_variables or None,
         )
         return StartCallResponse(**call_info)
@@ -2053,12 +1980,9 @@ async def _save_call_as_run(call: dict) -> str | None:
     metric_results: list[MetricResult] = []
 
     if metrics_config and metrics_config.global_metrics:
-        settings = load_settings()
-        settings.apply_env()
-        judge_model = resolve_model(settings.models.judge)
         try:
             metric_results = await get_test_execution_service().evaluate_global_metrics(
-                transcript, metrics_config, judge_model=judge_model
+                transcript, metrics_config
             )
         except Exception:
             logging.getLogger(__name__).exception(
@@ -2150,10 +2074,6 @@ async def start_chat(agent_id: str, request: StartChatRequest | None = None) -> 
     call_repo = get_call_repo()
     chat_manager = get_chat_manager()
 
-    settings = load_settings()
-    settings.apply_env()
-    agent_model = settings.models.agent
-
     dynamic_variables = request.dynamic_variables if request else {}
 
     try:
@@ -2161,7 +2081,6 @@ async def start_chat(agent_id: str, request: StartChatRequest | None = None) -> 
             agent_id,
             graph,
             call_repo,
-            agent_model=agent_model,
             dynamic_variables=dynamic_variables or None,
         )
         return StartChatResponse(**chat_info)
@@ -2345,8 +2264,7 @@ async def sync_to_platform(agent_id: str, request: SyncToPlatformRequest) -> Syn
 
 def create_app() -> FastAPI:
     """Create the FastAPI app (for programmatic use)."""
-    settings = load_settings()
-    settings.apply_env()
+    settings = get_settings_service().get_settings()
     setup_cache_from_settings(settings.cache)
     return app
 

@@ -9,11 +9,12 @@ from voicetest.models.decompose import HandoffRule
 from voicetest.models.decompose import PromptSegment
 from voicetest.models.decompose import SubAgentSpec
 from voicetest.services.decompose import DecomposeService
+from voicetest.services.settings import SettingsService
 
 
 @pytest.fixture
 def service():
-    return DecomposeService()
+    return DecomposeService(SettingsService())
 
 
 @pytest.fixture

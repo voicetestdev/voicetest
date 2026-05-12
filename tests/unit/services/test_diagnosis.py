@@ -12,6 +12,7 @@ from voicetest.models.diagnosis import FixSuggestion
 from voicetest.models.diagnosis import PromptChange
 from voicetest.models.results import MetricResult
 from voicetest.services.diagnosis import DiagnosisService
+from voicetest.services.settings import SettingsService
 
 
 @pytest.fixture
@@ -59,7 +60,7 @@ def service():
     class StubExecution:
         pass
 
-    return DiagnosisService(StubExecution())
+    return DiagnosisService(StubExecution(), SettingsService())
 
 
 class TestApplyFixToGraph:
@@ -226,7 +227,7 @@ class TestDiagnoseFailure:
         class StubExec:
             pass
 
-        svc = DiagnosisService(StubExec())
+        svc = DiagnosisService(StubExec(), SettingsService())
 
         # Monkey-patch the judge creation to use mock mode
         from voicetest.judges.diagnosis import DiagnosisJudge

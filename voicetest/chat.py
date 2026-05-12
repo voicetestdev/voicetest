@@ -17,6 +17,8 @@ from voicetest.engine.conversation import ConversationEngine
 from voicetest.exceptions import QuotaExhaustedError
 from voicetest.models.agent import AgentGraph
 from voicetest.models.test_case import RunOptions
+from voicetest.services import get_settings_service
+from voicetest.services.settings import SettingsService
 from voicetest.settings import resolve_model
 
 
@@ -40,8 +42,9 @@ class ActiveChat:
 class ChatManager:
     """Manages text-based chat sessions with agents."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings_service: SettingsService | None = None) -> None:
         self._active_chats: dict[str, ActiveChat] = {}
+        self._settings = settings_service
 
     async def start_chat(
         self,
@@ -59,7 +62,7 @@ class ChatManager:
             agent_id: ID of the agent to chat with.
             graph: The agent graph configuration.
             call_repo: Repository for persisting call/chat records.
-            agent_model: LLM model from global settings.
+            agent_model: LLM model. Reads from settings if None.
             dynamic_variables: Variables for template substitution in prompts.
 
         Returns:
@@ -67,6 +70,9 @@ class ChatManager:
         """
         chat_id = str(uuid4())
         room_name = f"chat-{chat_id[:8]}"
+
+        if agent_model is None and self._settings is not None:
+            agent_model = self._settings.get_settings().models.agent
 
         # Resolve model: settings agent_model, then graph default, then fallback
         model = resolve_model(agent_model, graph.default_model)
@@ -250,5 +256,5 @@ def get_chat_manager() -> ChatManager:
     """Get or create the global ChatManager instance."""
     global _chat_manager
     if _chat_manager is None:
-        _chat_manager = ChatManager()
+        _chat_manager = ChatManager(get_settings_service())
     return _chat_manager
