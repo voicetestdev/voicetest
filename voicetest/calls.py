@@ -16,6 +16,8 @@ from uuid import uuid4
 from livekit import api as livekit_api
 
 from voicetest.models.agent import AgentGraph
+from voicetest.services import get_settings_service
+from voicetest.services.settings import SettingsService
 
 
 @dataclass
@@ -61,9 +63,14 @@ class ActiveCall:
 class CallManager:
     """Manages live voice calls."""
 
-    def __init__(self, config: LiveKitConfig | None = None):
+    def __init__(
+        self,
+        settings_service: SettingsService,
+        config: LiveKitConfig | None = None,
+    ):
         self.config = config or LiveKitConfig.from_env()
         self._active_calls: dict[str, ActiveCall] = {}
+        self._settings = settings_service
 
     async def create_room(self, room_name: str) -> None:
         """Create a LiveKit room."""
@@ -110,12 +117,16 @@ class CallManager:
             agent_id: ID of the agent to call.
             graph: The agent graph configuration.
             call_repo: Repository for persisting call records.
-            agent_model: LLM model from global settings (overrides graph.default_model).
+            agent_model: LLM model. Reads from settings if None.
             dynamic_variables: Variables for template substitution in prompts.
 
         Returns:
             Dict with call_id, room_name, livekit_url, token (for user)
         """
+        settings = self._settings.get_settings()
+        if agent_model is None:
+            agent_model = settings.models.agent
+
         call_id = str(uuid4())
         room_name = f"voicetest-{call_id[:8]}"
 
@@ -329,5 +340,5 @@ def get_call_manager() -> CallManager:
     """Get or create the global CallManager instance."""
     global _call_manager
     if _call_manager is None:
-        _call_manager = CallManager()
+        _call_manager = CallManager(get_settings_service())
     return _call_manager

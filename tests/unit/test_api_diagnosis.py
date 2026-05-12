@@ -8,10 +8,12 @@ from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.diagnosis import PromptChange
 from voicetest.services.diagnosis import DiagnosisService
+from voicetest.services.settings import SettingsService
 from voicetest.services.testing.execution import TestExecutionService
 
 
-_diag_svc = DiagnosisService(TestExecutionService())
+_settings_svc = SettingsService()
+_diag_svc = DiagnosisService(TestExecutionService(_settings_svc), _settings_svc)
 apply_fix_to_graph = _diag_svc.apply_fix_to_graph
 scores_improved = _diag_svc.scores_improved
 

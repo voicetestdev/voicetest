@@ -7,16 +7,21 @@ from voicetest.models.agent import MetricsConfig
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.test_case import TestCase
+from voicetest.services.settings import SettingsService
 from voicetest.services.testing.execution import TestExecutionService
-from voicetest.settings import Settings
 from voicetest.settings import resolve_model
 
 
 class EvaluationService:
     """Evaluates transcripts against metrics. Stateless."""
 
-    def __init__(self, test_execution_service: TestExecutionService):
+    def __init__(
+        self,
+        test_execution_service: TestExecutionService,
+        settings_service: SettingsService,
+    ):
         self._execution = test_execution_service
+        self._settings = settings_service
 
     async def evaluate_transcript(
         self,
@@ -30,13 +35,15 @@ class EvaluationService:
         Args:
             transcript: Conversation transcript to evaluate.
             metrics: List of metric criteria strings.
-            judge_model: LLM model for evaluation. Uses resolve_model() if None.
+            judge_model: LLM model for evaluation. Reads from settings if None.
             _mock_mode: If True, use mock responses (for testing).
 
         Returns:
             List of MetricResult objects.
         """
-        judge = MetricJudge(judge_model or resolve_model())
+        if judge_model is None:
+            judge_model = resolve_model(self._settings.get_settings().models.judge)
+        judge = MetricJudge(judge_model)
 
         if _mock_mode:
             judge._mock_mode = True
@@ -47,28 +54,12 @@ class EvaluationService:
 
         return await judge.evaluate_all(transcript, metrics)
 
-    async def evaluate_global_metrics(
-        self,
-        transcript: list[Message],
-        metrics_config: MetricsConfig,
-        judge_model: str,
-        **kwargs,
-    ) -> list[MetricResult]:
-        """Evaluate a transcript against an agent's global metrics.
-
-        Delegates to TestExecutionService.evaluate_global_metrics.
-        """
-        return await self._execution.evaluate_global_metrics(
-            transcript, metrics_config, judge_model, **kwargs
-        )
-
     async def audio_eval_result(
         self,
         transcript: list[Message],
         test_case: TestCase,
         metrics_config: MetricsConfig | None = None,
         judge_model: str | None = None,
-        settings: Settings | None = None,
     ) -> tuple[list[Message], list[MetricResult]]:
         """Run audio evaluation on an existing transcript.
 
@@ -79,19 +70,17 @@ class EvaluationService:
             transcript: Conversation transcript to evaluate.
             test_case: Test case with metrics/rules to evaluate against.
             metrics_config: Optional agent metrics config for global metrics.
-            judge_model: LLM model for evaluation.
-            settings: Settings for audio service URLs.
+            judge_model: LLM model for evaluation. Reads from settings if None.
 
         Returns:
             Tuple of (transformed transcript, audio metric results).
         """
-        if settings is None:
-            settings = Settings()
+        settings = self._settings.get_settings()
 
         audio_rt = AudioRoundTrip.from_settings(settings)
         transformed = await audio_rt.transform_transcript(transcript)
 
-        judge_model = judge_model or resolve_model()
+        judge_model = judge_model or resolve_model(settings.models.judge)
         test_type = test_case.effective_type
 
         threshold = metrics_config.threshold if metrics_config else 0.7

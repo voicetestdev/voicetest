@@ -13,9 +13,17 @@ from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services.testing.execution import TestExecutionService
 from voicetest.settings import DEFAULT_MODEL
+from voicetest.settings import Settings
 
 
-_exec_svc = TestExecutionService()
+class _EmptySettingsService:
+    """SettingsService stub: precedence tests assume no global config."""
+
+    def get_settings(self) -> Settings:
+        return Settings()
+
+
+_exec_svc = TestExecutionService(_EmptySettingsService())
 run_test = _exec_svc.run_test
 evaluate_global_metrics = _exec_svc.evaluate_global_metrics
 

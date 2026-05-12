@@ -5,13 +5,15 @@ import pytest
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.services.evaluation import EvaluationService
+from voicetest.services.settings import SettingsService
 from voicetest.services.testing.execution import TestExecutionService
 
 
 @pytest.fixture
 def svc():
     """EvaluationService with a real TestExecutionService."""
-    return EvaluationService(TestExecutionService())
+    settings_svc = SettingsService()
+    return EvaluationService(TestExecutionService(settings_svc), settings_svc)
 
 
 @pytest.fixture

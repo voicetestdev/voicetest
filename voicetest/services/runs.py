@@ -6,6 +6,8 @@ from voicetest.models.results import Message
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
+from voicetest.services.settings import SettingsService
+from voicetest.services.testing.execution import resolve_run_options
 from voicetest.simulator.scripted import ScriptedUserSimulator
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import RunRepository
@@ -20,10 +22,12 @@ class RunService:
         run_repo: RunRepository,
         agent_repo: AgentRepository,
         test_case_repo: TestCaseRepository,
+        settings_service: SettingsService,
     ):
         self._runs = run_repo
         self._agents = agent_repo
         self._tests = test_case_repo
+        self._settings = settings_service
 
     def create_run(self, agent_id: str) -> dict:
         """Create a new run."""
@@ -130,7 +134,7 @@ class RunService:
         self,
         source_run_id: str,
         graph: AgentGraph,
-        options: RunOptions,
+        options: RunOptions | None = None,
     ) -> dict:
         """Replay a source Run against the agent's current graph.
 
@@ -155,6 +159,7 @@ class RunService:
         if not source["results"]:
             raise ValueError(f"Source run has no results to replay: {source_run_id}")
 
+        options = resolve_run_options(options, self._settings)
         new_run = self.create_run(source["agent_id"])
 
         for source_result in source["results"]:
