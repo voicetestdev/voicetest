@@ -65,8 +65,8 @@ class CallManager:
 
     def __init__(
         self,
+        settings_service: SettingsService,
         config: LiveKitConfig | None = None,
-        settings_service: SettingsService | None = None,
     ):
         self.config = config or LiveKitConfig.from_env()
         self._active_calls: dict[str, ActiveCall] = {}
@@ -123,8 +123,9 @@ class CallManager:
         Returns:
             Dict with call_id, room_name, livekit_url, token (for user)
         """
-        if agent_model is None and self._settings is not None:
-            agent_model = self._settings.get_settings().models.agent
+        settings = self._settings.get_settings()
+        if agent_model is None:
+            agent_model = settings.models.agent
 
         call_id = str(uuid4())
         room_name = f"voicetest-{call_id[:8]}"
@@ -339,5 +340,5 @@ def get_call_manager() -> CallManager:
     """Get or create the global CallManager instance."""
     global _call_manager
     if _call_manager is None:
-        _call_manager = CallManager(settings_service=get_settings_service())
+        _call_manager = CallManager(get_settings_service())
     return _call_manager

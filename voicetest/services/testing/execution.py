@@ -77,9 +77,6 @@ class TestExecutionService:
     def __init__(self, settings_service: SettingsService):
         self._settings = settings_service
 
-    def _resolve_options(self, options: RunOptions | None) -> RunOptions:
-        return resolve_run_options(options, self._settings)
-
     async def evaluate_global_metrics(
         self,
         transcript: list[Message],
@@ -147,7 +144,7 @@ class TestExecutionService:
         Returns:
             TestResult with pass/fail status, transcript, and metrics.
         """
-        options = self._resolve_options(options)
+        options = resolve_run_options(options, self._settings)
         overrides: list[ModelOverride] = []
         tmp = options.test_model_precedence
 
@@ -406,7 +403,7 @@ class TestExecutionService:
         run_id = str(uuid.uuid4())
         started_at = datetime.now()
 
-        options = self._resolve_options(options)
+        options = resolve_run_options(options, self._settings)
         results = []
         for test_case in test_cases:
             result = await self.run_test(graph, test_case, options, _mock_mode=_mock_mode)

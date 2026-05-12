@@ -7,12 +7,20 @@ import pytest
 
 from voicetest.chat import ActiveChat
 from voicetest.chat import ChatManager
+from voicetest.settings import Settings
+
+
+class _EmptySettingsService:
+    """SettingsService stub: precedence tests assume no global config."""
+
+    def get_settings(self) -> Settings:
+        return Settings()
 
 
 @pytest.fixture
 def chat_manager():
     """Create a ChatManager instance."""
-    return ChatManager()
+    return ChatManager(_EmptySettingsService())
 
 
 @pytest.fixture

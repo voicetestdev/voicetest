@@ -219,8 +219,6 @@ INTERNAL_ONLY = {
     "TestCaseService.to_model": "Type conversion helper, not a user operation",
     "TestCaseService.find_linked_test": "Internal lookup used by other service methods",
     "TestCaseService.load_test_cases": "File loading helper for CLI/TUI runners",
-    # EvaluationService — called internally by test execution
-    "EvaluationService.evaluate_global_metrics": "Called by TestExecutionService.run_test",
     # DiscoveryService — REST-only, no CLI/TUI needed
     "DiscoveryService.list_platforms": "REST-only (platforms are a web UI feature)",
 }

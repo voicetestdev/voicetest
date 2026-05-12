@@ -42,7 +42,7 @@ class ActiveChat:
 class ChatManager:
     """Manages text-based chat sessions with agents."""
 
-    def __init__(self, settings_service: SettingsService | None = None) -> None:
+    def __init__(self, settings_service: SettingsService) -> None:
         self._active_chats: dict[str, ActiveChat] = {}
         self._settings = settings_service
 
@@ -71,8 +71,9 @@ class ChatManager:
         chat_id = str(uuid4())
         room_name = f"chat-{chat_id[:8]}"
 
-        if agent_model is None and self._settings is not None:
-            agent_model = self._settings.get_settings().models.agent
+        settings = self._settings.get_settings()
+        if agent_model is None:
+            agent_model = settings.models.agent
 
         # Resolve model: settings agent_model, then graph default, then fallback
         model = resolve_model(agent_model, graph.default_model)

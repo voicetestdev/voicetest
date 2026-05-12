@@ -54,21 +54,6 @@ class EvaluationService:
 
         return await judge.evaluate_all(transcript, metrics)
 
-    async def evaluate_global_metrics(
-        self,
-        transcript: list[Message],
-        metrics_config: MetricsConfig,
-        judge_model: str,
-        **kwargs,
-    ) -> list[MetricResult]:
-        """Evaluate a transcript against an agent's global metrics.
-
-        Delegates to TestExecutionService.evaluate_global_metrics.
-        """
-        return await self._execution.evaluate_global_metrics(
-            transcript, metrics_config, judge_model, **kwargs
-        )
-
     async def audio_eval_result(
         self,
         transcript: list[Message],
