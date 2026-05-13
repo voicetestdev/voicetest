@@ -71,8 +71,7 @@ class PlatformService:
                 settings.env[secret_keys[0]] = api_secret
 
         self._settings.update_settings(settings)
-        # Re-read so apply_env runs on the fresh values
-        self._settings.get_settings()
+        settings.apply_env()
 
         return {"configured": True, "platform": platform}
 

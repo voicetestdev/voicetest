@@ -53,8 +53,10 @@ def get_available_platforms() -> list[str]:
 
 @pytest.fixture
 def client():
-    """Create a test client."""
-    return TestClient(app)
+    """Create a test client. The `with` context fires FastAPI's lifespan,
+    which builds the DI container on app.state."""
+    with TestClient(app) as client:
+        yield client
 
 
 # sample_graph_dict_dict fixture is inherited from tests/conftest.py

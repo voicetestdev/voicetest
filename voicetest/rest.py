@@ -1740,14 +1740,11 @@ async def run_websocket(websocket: WebSocket, run_id: str):
             pass
         return
 
-    queued_messages = coordinator.register_websocket(run_id, websocket)
+    # attach() replays any queued messages before subscribing to broadcasts,
+    # under a per-run lock that blocks new broadcasts from interleaving.
+    await coordinator.attach(run_id, websocket)
 
     try:
-        # Replay any messages that were queued before connection
-        for msg in queued_messages:
-            await websocket.send_text(msg)
-
-        # Listen for commands
         while True:
             data = await websocket.receive_json()
             if data.get("type") == "cancel_test":
@@ -1762,7 +1759,7 @@ async def run_websocket(websocket: WebSocket, run_id: str):
     except Exception as e:
         print(f"[WS] Exception in websocket handler for run {run_id}: {type(e).__name__}: {e}")
     finally:
-        coordinator.unregister_websocket(run_id, websocket)
+        coordinator.detach(run_id, websocket)
 
 
 class BackgroundTaskExecutor:

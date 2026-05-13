@@ -1,7 +1,6 @@
-"""Run executor protocol and job dataclass."""
+"""Run-execution job dataclass."""
 
 from dataclasses import dataclass
-from typing import Protocol
 
 from voicetest.models.test_case import RunOptions
 
@@ -15,9 +14,3 @@ class RunJob:
     test_records: list[dict]
     result_ids: dict[str, str]
     options: RunOptions
-
-
-class RunExecutor(Protocol):
-    """Protocol for submitting test runs for execution."""
-
-    def submit(self, job: RunJob) -> None: ...

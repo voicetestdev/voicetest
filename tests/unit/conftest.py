@@ -11,13 +11,17 @@ import pytest
 def fresh_container():
     """Give each test its own DI container on the FastAPI app.state.
 
-    Replaces the old reset_container() pattern. Tests that need a custom
-    container can still mutate app.state.container in their setup.
+    Mirrors the work the FastAPI lifespan handler does (container + storage init)
+    so that bare `TestClient(app)` constructions in tests get the same state
+    they would in production — the lifespan only fires when the client is used
+    as a context manager.
     """
     from voicetest.container import create_container
     from voicetest.rest import app
+    from voicetest.rest import init_storage
 
     app.state.container = create_container()
+    init_storage(app.state.container)
     yield
 
 

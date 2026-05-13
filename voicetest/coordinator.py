@@ -7,6 +7,11 @@ broadcasts until a WebSocket connects, and the orphan-cleanup single-flight.
 
 Registered as a Punq singleton so the FastAPI app, the WebSocket handlers,
 and the background `_execute_run` task all share one instance per process.
+
+Threading contract: all `_runs` mutations and broadcasts happen on the
+FastAPI event loop. The `claim_orphan_cleanup` context manager is the only
+piece that may be entered from a sync request handler, and it has its own
+threading.Lock.
 """
 
 import asyncio
@@ -31,6 +36,9 @@ class RunCoordinator:
             "websockets": set(),
             "cancelled_tests": set(),
             "message_queue": [],
+            # Serializes attach() with broadcast() so a connecting client
+            # receives queued backlog before any newly-broadcast message.
+            "lock": asyncio.Lock(),
         }
 
     def end(self, run_id: str) -> None:
@@ -40,20 +48,27 @@ class RunCoordinator:
     def is_active(self, run_id: str) -> bool:
         return run_id in self._runs
 
-    def register_websocket(self, run_id: str, websocket: Any) -> list[str]:
-        """Register a WebSocket and return any queued messages to replay.
+    async def attach(self, run_id: str, websocket: Any) -> None:
+        """Drain any queued messages to this websocket, then subscribe it to broadcasts.
 
-        Returns an empty list if the run has already ended.
+        Holds the per-run lock for the entire drain + subscribe transition, so
+        a broadcast that fires during the drain blocks until the backlog is
+        replayed — preventing newer broadcasts from being delivered ahead of
+        older queued messages.
         """
         run = self._runs.get(run_id)
         if run is None:
-            return []
-        run["websockets"].add(websocket)
-        queued = run["message_queue"]
-        run["message_queue"] = []
-        return queued
+            return
+        async with run["lock"]:
+            for msg in run["message_queue"]:
+                try:
+                    await websocket.send_text(msg)
+                except Exception:
+                    return  # client gone mid-replay
+            run["message_queue"] = []
+            run["websockets"].add(websocket)
 
-    def unregister_websocket(self, run_id: str, websocket: Any) -> None:
+    def detach(self, run_id: str, websocket: Any) -> None:
         run = self._runs.get(run_id)
         if run is not None:
             run["websockets"].discard(websocket)
@@ -64,18 +79,23 @@ class RunCoordinator:
         if run is None:
             return
         message = json.dumps(data)
-        websockets = run["websockets"]
-        if not websockets:
-            run["message_queue"].append(message)
-            return
+        async with run["lock"]:
+            if not run["websockets"]:
+                run["message_queue"].append(message)
+                return
+            targets = list(run["websockets"])  # snapshot — set may mutate during sends
         dead = []
-        for ws in websockets:
+        for ws in targets:
             try:
                 await ws.send_text(message)
             except Exception:
                 dead.append(ws)
-        for ws in dead:
-            websockets.discard(ws)
+        if dead:
+            # Re-fetch in case the run ended between snapshot and cleanup.
+            run = self._runs.get(run_id)
+            if run is not None:
+                for ws in dead:
+                    run["websockets"].discard(ws)
 
     def cancel_run(self, run_id: str) -> None:
         run = self._runs.get(run_id)

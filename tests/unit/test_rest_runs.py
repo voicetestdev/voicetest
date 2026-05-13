@@ -43,19 +43,6 @@ class TestRunWebSocket:
 
         return {"agent_id": agent_id, "test_id": test_id}
 
-    def test_broadcast_test_started_includes_test_case_id(self):
-        """Verify test_started broadcast messages carry test_case_id."""
-        test_case_id = "test-case-456"
-        message = {
-            "type": "test_started",
-            "result_id": "result-789",
-            "test_case_id": test_case_id,
-            "test_name": "My Test",
-        }
-
-        assert "test_case_id" in message
-        assert message["test_case_id"] == test_case_id
-
     def test_execute_run_sends_test_case_id_in_test_started(
         self, db_client, agent_with_test, monkeypatch
     ):

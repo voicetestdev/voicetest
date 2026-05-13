@@ -44,8 +44,10 @@ pytestmark = pytest.mark.skipif(not livekit_available(), reason="LIVEKIT_API_KEY
 
 @pytest.fixture
 def client():
-    """Create a test client."""
-    return TestClient(app)
+    """Create a test client. The `with` context fires FastAPI's lifespan,
+    which builds the DI container on app.state."""
+    with TestClient(app) as client:
+        yield client
 
 
 @pytest.fixture
