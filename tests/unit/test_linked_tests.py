@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from voicetest.rest import app
+from voicetest.storage.repositories import AgentRepository
 
 
 @pytest.fixture
@@ -17,9 +18,7 @@ def client():
 @pytest.fixture
 def agent(client):
     """Create a test agent and return its record."""
-    from voicetest.rest import get_agent_repo
-
-    repo = get_agent_repo()
+    repo = app.state.container.resolve(AgentRepository)
     return repo.create(
         name="Test Agent",
         source_type="custom",

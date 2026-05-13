@@ -166,48 +166,12 @@ def create_container() -> punq.Container:
     container.register(PlatformService)
     container.register(SettingsService)
 
+    # Live call / chat managers hold per-process state (_active_calls,
+    # _active_chats), so they must be singletons.
+    from voicetest.calls import CallManager  # noqa: PLC0415
+    from voicetest.chat import ChatManager  # noqa: PLC0415
+
+    container.register(CallManager, scope=punq.Scope.singleton)
+    container.register(ChatManager, scope=punq.Scope.singleton)
+
     return container
-
-
-# Application container - initialized once at startup
-_container: punq.Container | None = None
-
-
-def get_container() -> punq.Container:
-    """Get the application container, creating it if needed."""
-    global _container
-    if _container is None:
-        _container = create_container()
-    return _container
-
-
-def reset_container() -> None:
-    """Reset the container (for testing).
-
-    This also resets the database connection since it's managed by the container.
-    """
-    global _container
-    _container = None
-
-
-def get_session() -> Session:
-    """Get a database session from the DI container.
-
-    For PostgreSQL, each call returns a fresh session (transient scope).
-    For DuckDB, returns the singleton session. If the singleton session
-    is in a failed transaction state, issues a rollback to recover it.
-    """
-    session = get_container().resolve(Session)
-    if not session.is_active:
-        session.rollback()
-    return session
-
-
-def get_importer_registry() -> ImporterRegistry:
-    """Get the importer registry from the DI container."""
-    return get_container().resolve(ImporterRegistry)
-
-
-def get_exporter_registry() -> ExporterRegistry:
-    """Get the exporter registry from the DI container."""
-    return get_container().resolve(ExporterRegistry)

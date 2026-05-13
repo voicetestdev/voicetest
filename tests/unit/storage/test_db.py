@@ -6,8 +6,7 @@ from sqlalchemy import Engine
 from sqlalchemy import inspect
 
 from voicetest.config import get_db_path
-from voicetest.container import get_container
-from voicetest.container import reset_container
+from voicetest.container import create_container
 from voicetest.storage.engine import create_db_engine
 
 
@@ -68,14 +67,12 @@ class TestGetEngine:
     def test_returns_same_engine(self, tmp_path, monkeypatch):
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))
-        reset_container()
 
-        container = get_container()
+        container = create_container()
         engine1 = container.resolve(Engine)
         engine2 = container.resolve(Engine)
 
         assert engine1 is engine2
-        reset_container()
 
 
 class TestSchema:

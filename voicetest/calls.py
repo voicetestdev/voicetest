@@ -16,7 +16,6 @@ from uuid import uuid4
 from livekit import api as livekit_api
 
 from voicetest.models.agent import AgentGraph
-from voicetest.services import get_settings_service
 from voicetest.services.settings import SettingsService
 
 
@@ -331,14 +330,3 @@ class CallManager:
         """Unregister a WebSocket from call updates."""
         if call_id in self._active_calls:
             self._active_calls[call_id].websockets.discard(websocket)
-
-
-_call_manager: CallManager | None = None
-
-
-def get_call_manager() -> CallManager:
-    """Get or create the global CallManager instance."""
-    global _call_manager
-    if _call_manager is None:
-        _call_manager = CallManager(get_settings_service())
-    return _call_manager

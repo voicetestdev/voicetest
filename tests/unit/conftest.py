@@ -8,13 +8,33 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def reset_di_container():
-    """Reset the DI container before each test to ensure isolation."""
-    from voicetest.container import reset_container
+def fresh_container():
+    """Give each test its own DI container on the FastAPI app.state.
 
-    reset_container()
+    Replaces the old reset_container() pattern. Tests that need a custom
+    container can still mutate app.state.container in their setup.
+    """
+    from voicetest.container import create_container
+    from voicetest.rest import app
+
+    app.state.container = create_container()
     yield
-    reset_container()
+
+
+@pytest.fixture
+def container():
+    """Resolve services directly for tests that construct things explicitly."""
+    from voicetest.container import create_container
+
+    return create_container()
+
+
+@pytest.fixture
+def app_services(container):
+    """AppServices bag built from the test container."""
+    from voicetest.services import build_app_services
+
+    return build_app_services(container)
 
 
 @pytest.fixture
@@ -22,10 +42,12 @@ def db_client(tmp_path, monkeypatch):
     """Create a test client with isolated database."""
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
+    from voicetest.container import create_container
     from voicetest.rest import app
     from voicetest.rest import init_storage
 
-    init_storage()
+    app.state.container = create_container()
+    init_storage(app.state.container)
 
     return TestClient(app)
 
@@ -43,10 +65,12 @@ def platform_client(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".voicetest").mkdir()
 
+    from voicetest.container import create_container
     from voicetest.rest import app
     from voicetest.rest import init_storage
 
-    init_storage()
+    app.state.container = create_container()
+    init_storage(app.state.container)
 
     return TestClient(app)
 

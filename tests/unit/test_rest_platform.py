@@ -2,6 +2,8 @@
 
 import pytest
 
+from voicetest.storage.repositories import AgentRepository
+
 
 class TestPlatformEndpoints:
     """Tests for platform integration endpoints."""
@@ -226,9 +228,7 @@ class TestSyncToPlatform:
 
     def _create_agent_with_graph(self, db_client, graph, name):
         """Helper to create an agent with a specific graph using the repository."""
-        from voicetest.rest import get_agent_repo
-
-        repo = get_agent_repo()
+        repo = db_client.app.state.container.resolve(AgentRepository)
         return repo.create(
             name=name,
             source_type=graph.source_type,

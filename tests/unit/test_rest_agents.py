@@ -2,6 +2,8 @@
 
 import pytest
 
+from voicetest.storage.repositories import AgentRepository
+
 
 class TestAgentsCRUD:
     """Tests for agent CRUD endpoints."""
@@ -254,9 +256,7 @@ class TestAgentVariablesEndpoint:
 
     def test_get_variables_from_dynamic_graph(self, db_client, graph_with_dynamic_variables):
         """Agent with {{var}} placeholders returns extracted variable names."""
-        from voicetest.rest import get_agent_repo
-
-        repo = get_agent_repo()
+        repo = db_client.app.state.container.resolve(AgentRepository)
         agent = repo.create(
             name="Vars Agent",
             source_type="custom",
@@ -396,9 +396,7 @@ class TestSnippetEndpoints:
 
     def _create_agent_with_graph(self, db_client, graph):
         """Helper to create an agent with a specific graph."""
-        from voicetest.rest import get_agent_repo
-
-        repo = get_agent_repo()
+        repo = db_client.app.state.container.resolve(AgentRepository)
         return repo.create(
             name="Snippet Test Agent",
             source_type=graph.source_type,

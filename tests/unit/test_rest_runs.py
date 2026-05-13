@@ -2,17 +2,16 @@
 
 import pytest
 
-from voicetest.container import get_container
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
 
 
-def _get_run_repo():
-    return get_container().resolve(RunRepository)
+def _get_run_repo(db_client):
+    return db_client.app.state.container.resolve(RunRepository)
 
 
-def _get_test_case_repo():
-    return get_container().resolve(TestCaseRepository)
+def _get_test_case_repo(db_client):
+    return db_client.app.state.container.resolve(TestCaseRepository)
 
 
 class TestRunWebSocket:
@@ -232,7 +231,7 @@ class TestOrphanedRunDetection:
         agent_id = agent_response.json()["id"]
 
         # Create run directly in DB (simulating a crashed run)
-        run_repo = _get_run_repo()
+        run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
@@ -283,7 +282,7 @@ class TestOrphanedRunDetection:
         agent_id = agent_response.json()["id"]
 
         # Create run
-        run_repo = _get_run_repo()
+        run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
@@ -316,7 +315,7 @@ class TestRunDeletion:
         )
         agent_id = agent_response.json()["id"]
 
-        run_repo = _get_run_repo()
+        run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
         run_repo.create_pending_result(run_id, "test-case-1", "Test Case 1")
@@ -346,7 +345,7 @@ class TestRunDeletion:
         )
         agent_id = agent_response.json()["id"]
 
-        run_repo = _get_run_repo()
+        run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
@@ -543,7 +542,7 @@ class TestDiagnosisEndpoints:
         agent_id = agent_response.json()["id"]
 
         # Create test case
-        test_case_repo = _get_test_case_repo()
+        test_case_repo = _get_test_case_repo(db_client)
         tc = TestCase(
             name="Billing test",
             user_prompt="Ask about a refund",
@@ -553,7 +552,7 @@ class TestDiagnosisEndpoints:
         tc_id = tc_record["id"]
 
         # Create run + result
-        run_repo = _get_run_repo()
+        run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
         result_id = run_repo.create_pending_result(run_id, tc_id, "Billing test")

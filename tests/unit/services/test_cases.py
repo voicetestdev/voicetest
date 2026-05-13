@@ -5,12 +5,12 @@ import json
 import pytest
 
 from voicetest.models.test_case import TestCase
-from voicetest.services import get_agent_service
-from voicetest.services import get_test_case_service
+from voicetest.services.agents import AgentService
+from voicetest.services.testing.cases import TestCaseService
 
 
 @pytest.fixture
-def setup(tmp_path, monkeypatch):
+def setup(tmp_path, monkeypatch, container):
     """Create agent + test case service with isolated DB. Returns (agent_id, svc)."""
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
@@ -27,9 +27,9 @@ def setup(tmp_path, monkeypatch):
         },
         "source_metadata": {},
     }
-    agent_svc = get_agent_service()
+    agent_svc = container.resolve(AgentService)
     created = agent_svc.create_agent(name="Test Agent", config=config)
-    svc = get_test_case_service()
+    svc = container.resolve(TestCaseService)
     return created["id"], svc
 
 

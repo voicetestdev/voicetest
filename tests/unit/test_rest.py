@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from voicetest.rest import app
+from voicetest.storage.repositories import AgentRepository
 
 
 @pytest.fixture
@@ -366,9 +367,7 @@ class TestUpdateMetadataEndpoint:
     """Tests for PUT /agents/{id}/metadata endpoint."""
 
     def test_update_metadata_merges_updates(self, db_client, sample_retell_config):
-        from voicetest.rest import get_agent_repo
-
-        repo = get_agent_repo()
+        repo = db_client.app.state.container.resolve(AgentRepository)
 
         from voicetest.importers.retell import RetellImporter
 

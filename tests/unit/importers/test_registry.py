@@ -231,28 +231,28 @@ class TestImporterRegistry:
 
 
 class TestGlobalRegistry:
-    """Tests for the global importer registry."""
+    """Tests for the container-scoped importer registry."""
 
-    def test_get_registry_returns_same_instance(self):
-        from voicetest.container import get_importer_registry
+    def test_registry_is_singleton(self, container):
+        from voicetest.importers.registry import ImporterRegistry
 
-        r1 = get_importer_registry()
-        r2 = get_importer_registry()
+        r1 = container.resolve(ImporterRegistry)
+        r2 = container.resolve(ImporterRegistry)
         assert r1 is r2
 
-    def test_builtin_importers_registered(self):
-        from voicetest.container import get_importer_registry
+    def test_builtin_importers_registered(self, container):
+        from voicetest.importers.registry import ImporterRegistry
 
-        registry = get_importer_registry()
+        registry = container.resolve(ImporterRegistry)
 
         # Retell and Custom should be registered
         assert registry.get("retell") is not None
         assert registry.get("custom") is not None
 
-    def test_can_import_retell_via_global_registry(self, sample_retell_config):
-        from voicetest.container import get_importer_registry
+    def test_can_import_retell_via_container_registry(self, container, sample_retell_config):
+        from voicetest.importers.registry import ImporterRegistry
 
-        registry = get_importer_registry()
+        registry = container.resolve(ImporterRegistry)
         graph = registry.import_agent(sample_retell_config)
 
         assert graph.source_type == "retell"

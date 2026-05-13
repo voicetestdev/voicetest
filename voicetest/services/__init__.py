@@ -1,10 +1,16 @@
 """Service layer for voicetest.
 
-Services own all business logic. CLI and REST are pure transport adapters
-that resolve services from the DI container.
+Services own all business logic. CLI, TUI, and REST are transport adapters
+that receive services from the composition root (entry-point container build).
+
+`AppServices` is the typed bag passed to CLI/TUI command code. REST endpoints
+resolve services per-request from `request.app.state.container`.
 """
 
-from voicetest.container import get_container
+from dataclasses import dataclass
+
+import punq
+
 from voicetest.services.agents import AgentService
 from voicetest.services.decompose import DecomposeService
 from voicetest.services.diagnosis import DiagnosisService
@@ -18,52 +24,43 @@ from voicetest.services.testing import TestCaseService
 from voicetest.services.testing import TestExecutionService
 
 
-def get_discovery_service() -> DiscoveryService:
-    return get_container().resolve(DiscoveryService)
+@dataclass(frozen=True)
+class AppServices:
+    """Application services resolved from the DI container."""
+
+    agents: AgentService
+    decompose: DecomposeService
+    diagnosis: DiagnosisService
+    discovery: DiscoveryService
+    eval: EvaluationService
+    platforms: PlatformService
+    runs: RunService
+    settings: SettingsService
+    snippets: SnippetService
+    test_cases: TestCaseService
+    test_execution: TestExecutionService
 
 
-def get_agent_service() -> AgentService:
-    return get_container().resolve(AgentService)
-
-
-def get_test_case_service() -> TestCaseService:
-    return get_container().resolve(TestCaseService)
-
-
-def get_test_execution_service() -> TestExecutionService:
-    return get_container().resolve(TestExecutionService)
-
-
-def get_evaluation_service() -> EvaluationService:
-    return get_container().resolve(EvaluationService)
-
-
-def get_decompose_service() -> DecomposeService:
-    return get_container().resolve(DecomposeService)
-
-
-def get_diagnosis_service() -> DiagnosisService:
-    return get_container().resolve(DiagnosisService)
-
-
-def get_snippet_service() -> SnippetService:
-    return get_container().resolve(SnippetService)
-
-
-def get_run_service() -> RunService:
-    return get_container().resolve(RunService)
-
-
-def get_platform_service() -> PlatformService:
-    return get_container().resolve(PlatformService)
-
-
-def get_settings_service() -> SettingsService:
-    return get_container().resolve(SettingsService)
+def build_app_services(container: punq.Container) -> AppServices:
+    """Resolve every application service from the container into a typed bag."""
+    return AppServices(
+        agents=container.resolve(AgentService),
+        decompose=container.resolve(DecomposeService),
+        diagnosis=container.resolve(DiagnosisService),
+        discovery=container.resolve(DiscoveryService),
+        eval=container.resolve(EvaluationService),
+        platforms=container.resolve(PlatformService),
+        runs=container.resolve(RunService),
+        settings=container.resolve(SettingsService),
+        snippets=container.resolve(SnippetService),
+        test_cases=container.resolve(TestCaseService),
+        test_execution=container.resolve(TestExecutionService),
+    )
 
 
 __all__ = [
     "AgentService",
+    "AppServices",
     "DecomposeService",
     "DiagnosisService",
     "DiscoveryService",
@@ -74,15 +71,5 @@ __all__ = [
     "SnippetService",
     "TestCaseService",
     "TestExecutionService",
-    "get_agent_service",
-    "get_decompose_service",
-    "get_diagnosis_service",
-    "get_discovery_service",
-    "get_evaluation_service",
-    "get_platform_service",
-    "get_run_service",
-    "get_settings_service",
-    "get_snippet_service",
-    "get_test_case_service",
-    "get_test_execution_service",
+    "build_app_services",
 ]

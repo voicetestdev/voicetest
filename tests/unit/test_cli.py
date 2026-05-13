@@ -6,6 +6,10 @@ import json
 from click.testing import CliRunner
 import pytest
 
+from voicetest.services import AgentService
+from voicetest.services import DiscoveryService
+from voicetest.services import RunService
+
 
 @pytest.fixture
 def cli_runner():
@@ -328,29 +332,32 @@ class TestCLIDown:
 class TestSyncGuards:
     """Verify CLI stays in sync with service registries."""
 
-    def test_export_choices_match_registry(self):
+    def test_export_choices_match_registry(self, container, app_services):
         """CLI export format choices must include every registered format."""
-        from voicetest.services import get_discovery_service
+        import click
 
-        registry_formats = {f["id"] for f in get_discovery_service().list_export_formats()}
+        registry_formats = {
+            f["id"] for f in container.resolve(DiscoveryService).list_export_formats()
+        }
         assert len(registry_formats) > 0, "Expected at least one export format in registry"
 
         from voicetest.cli import LazyExportChoice
+        from voicetest.cli import main
 
         choice = LazyExportChoice()
-        # LazyExportChoice defers to the registry at validation time
-        for fmt in registry_formats:
-            assert choice.convert(fmt, None, None) == fmt
+        # LazyExportChoice reads the registry through Click context — push one.
+        with click.Context(main, obj={"services": app_services}):
+            for fmt in registry_formats:
+                assert choice.convert(fmt, None, None) == fmt
 
-    def test_exporters_command_lists_all_formats(self, cli_runner):
+    def test_exporters_command_lists_all_formats(self, cli_runner, container):
         """The exporters command must list every registered export format."""
         from voicetest.cli import main
-        from voicetest.services import get_discovery_service
 
         result = cli_runner.invoke(main, ["exporters"])
         assert result.exit_code == 0
 
-        for fmt in get_discovery_service().list_export_formats():
+        for fmt in container.resolve(DiscoveryService).list_export_formats():
             assert fmt["id"] in result.output, f"Missing format '{fmt['id']}' in exporters output"
 
     def test_main_help_shows_exporters(self, cli_runner):
@@ -422,15 +429,14 @@ class TestCLIJsonOutput:
             assert "description" in item
             assert "file_patterns" in item
 
-    def test_importers_json_matches_registry(self, cli_runner):
+    def test_importers_json_matches_registry(self, cli_runner, container):
         """JSON output must contain the same data as the registry."""
         from voicetest.cli import main
-        from voicetest.services import get_discovery_service
 
         result = cli_runner.invoke(main, ["--json", "importers"])
         data = json.loads(result.output)
 
-        registry = get_discovery_service().list_importers()
+        registry = container.resolve(DiscoveryService).list_importers()
         expected = [dataclasses.asdict(imp) for imp in registry]
         assert data == expected
 
@@ -449,15 +455,14 @@ class TestCLIJsonOutput:
             assert "description" in item
             assert "ext" in item
 
-    def test_exporters_json_matches_registry(self, cli_runner):
+    def test_exporters_json_matches_registry(self, cli_runner, container):
         """JSON output must contain the same data as the registry."""
         from voicetest.cli import main
-        from voicetest.services import get_discovery_service
 
         result = cli_runner.invoke(main, ["--json", "exporters"])
         data = json.loads(result.output)
 
-        expected = get_discovery_service().list_export_formats()
+        expected = container.resolve(DiscoveryService).list_export_formats()
         assert data == expected
 
     def test_export_json_to_stdout(self, cli_runner, temp_agent_file, tmp_path, monkeypatch):
@@ -1091,11 +1096,11 @@ class TestCLIDecompose:
         assert "decompose" in result.output
 
 
-def _create_agent_for_cli(sample_retell_config) -> str:
+def _create_agent_for_cli(container, sample_retell_config) -> str:
     """Create an agent via the service and return its id (CLI-test helper)."""
-    from voicetest.services import get_agent_service
-
-    agent = get_agent_service().create_agent(name="CLI Test Agent", config=sample_retell_config)
+    agent = container.resolve(AgentService).create_agent(
+        name="CLI Test Agent", config=sample_retell_config
+    )
     return agent["id"]
 
 
@@ -1103,12 +1108,12 @@ class TestCLIImportCall:
     """Tests for the import-call CLI command."""
 
     def test_imports_single_call(
-        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call, container
     ):
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
-        agent_id = _create_agent_for_cli(sample_retell_config)
+        agent_id = _create_agent_for_cli(container, sample_retell_config)
 
         transcript_path = tmp_path / "call.json"
         transcript_path.write_text(json.dumps(retell_call()))
@@ -1122,12 +1127,12 @@ class TestCLIImportCall:
         assert "Imported 1 conversation" in result.output
 
     def test_imports_array_of_calls(
-        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call, container
     ):
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
-        agent_id = _create_agent_for_cli(sample_retell_config)
+        agent_id = _create_agent_for_cli(container, sample_retell_config)
 
         transcript_path = tmp_path / "calls.json"
         transcript_path.write_text(json.dumps([retell_call("call_a"), retell_call("call_b")]))
@@ -1141,12 +1146,12 @@ class TestCLIImportCall:
         assert "Imported 2 conversation" in result.output
 
     def test_json_mode_outputs_run_record(
-        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call, container
     ):
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
-        agent_id = _create_agent_for_cli(sample_retell_config)
+        agent_id = _create_agent_for_cli(container, sample_retell_config)
 
         transcript_path = tmp_path / "call.json"
         transcript_path.write_text(json.dumps(retell_call()))
@@ -1186,12 +1191,12 @@ class TestCLIImportCall:
         assert "Agent not found" in result.output
 
     def test_invalid_transcript_fails(
-        self, cli_runner, tmp_path, monkeypatch, sample_retell_config
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, container
     ):
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
-        agent_id = _create_agent_for_cli(sample_retell_config)
+        agent_id = _create_agent_for_cli(container, sample_retell_config)
 
         transcript_path = tmp_path / "garbage.json"
         transcript_path.write_text("not json at all")
@@ -1205,12 +1210,12 @@ class TestCLIImportCall:
         assert "Failed to parse transcript" in result.output
 
     def test_payload_with_no_calls_fails(
-        self, cli_runner, tmp_path, monkeypatch, sample_retell_config
+        self, cli_runner, tmp_path, monkeypatch, sample_retell_config, container
     ):
         from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
-        agent_id = _create_agent_for_cli(sample_retell_config)
+        agent_id = _create_agent_for_cli(container, sample_retell_config)
 
         transcript_path = tmp_path / "empty.json"
         transcript_path.write_text(json.dumps({"unrelated": "payload"}))
@@ -1246,18 +1251,18 @@ class TestCLIReplay:
         sample_retell_config,
         retell_call,
         stub_conversation_runner,
+        container,
     ):
         """End-to-end CLI: import a call to seed a source run, then replay it.
         The stub_conversation_runner fixture replaces the real runner."""
         from voicetest.cli import main
         from voicetest.importers.transcripts.retell import parse_retell
-        from voicetest.services import get_run_service
 
         monkeypatch.chdir(tmp_path)
-        agent_id = _create_agent_for_cli(sample_retell_config)
+        agent_id = _create_agent_for_cli(container, sample_retell_config)
 
         source_results = parse_retell(retell_call("src"))
-        source_run = get_run_service().import_calls(agent_id, source_results)
+        source_run = container.resolve(RunService).import_calls(agent_id, source_results)
 
         result = cli_runner.invoke(main, ["replay", source_run["id"]])
 

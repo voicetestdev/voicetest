@@ -2,11 +2,11 @@
 
 import pytest
 
-from voicetest.services import get_platform_service
+from voicetest.services.platforms import PlatformService
 
 
 @pytest.fixture
-def svc(tmp_path, monkeypatch):
+def svc(tmp_path, monkeypatch, container):
     """PlatformService backed by an isolated temp database."""
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
@@ -18,7 +18,7 @@ def svc(tmp_path, monkeypatch):
     monkeypatch.delenv("LIVEKIT_API_SECRET", raising=False)
     monkeypatch.delenv("BLAND_API_KEY", raising=False)
     monkeypatch.delenv("TELNYX_API_KEY", raising=False)
-    return get_platform_service()
+    return container.resolve(PlatformService)
 
 
 class TestListPlatforms:

@@ -17,7 +17,6 @@ from voicetest.engine.conversation import ConversationEngine
 from voicetest.exceptions import QuotaExhaustedError
 from voicetest.models.agent import AgentGraph
 from voicetest.models.test_case import RunOptions
-from voicetest.services import get_settings_service
 from voicetest.services.settings import SettingsService
 from voicetest.settings import resolve_model
 
@@ -248,14 +247,3 @@ class ChatManager:
 
         for ws in dead_sockets:
             active_chat.websockets.discard(ws)
-
-
-_chat_manager: ChatManager | None = None
-
-
-def get_chat_manager() -> ChatManager:
-    """Get or create the global ChatManager instance."""
-    global _chat_manager
-    if _chat_manager is None:
-        _chat_manager = ChatManager(get_settings_service())
-    return _chat_manager

@@ -36,14 +36,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import bindparam
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 from starlette.websockets import WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from voicetest.cache import setup_cache_from_settings
-from voicetest.calls import get_call_manager
-from voicetest.chat import get_chat_manager
-from voicetest.container import get_container
-from voicetest.container import get_session
+from voicetest.calls import CallManager
+from voicetest.chat import ChatManager
+from voicetest.container import create_container
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
 from voicetest.exceptions import QuotaExhaustedError
@@ -63,17 +63,17 @@ from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.pathutil import resolve_within
 from voicetest.retry import RetryError
-from voicetest.services import get_agent_service
-from voicetest.services import get_decompose_service
-from voicetest.services import get_diagnosis_service
-from voicetest.services import get_discovery_service
-from voicetest.services import get_evaluation_service
-from voicetest.services import get_platform_service
-from voicetest.services import get_run_service
-from voicetest.services import get_settings_service
-from voicetest.services import get_snippet_service
-from voicetest.services import get_test_case_service
-from voicetest.services import get_test_execution_service
+from voicetest.services.agents import AgentService
+from voicetest.services.decompose import DecomposeService
+from voicetest.services.diagnosis import DiagnosisService
+from voicetest.services.discovery import DiscoveryService
+from voicetest.services.evaluation import EvaluationService
+from voicetest.services.platforms import PlatformService
+from voicetest.services.runs import RunService
+from voicetest.services.settings import SettingsService
+from voicetest.services.snippets import SnippetService
+from voicetest.services.testing.cases import TestCaseService
+from voicetest.services.testing.execution import TestExecutionService
 from voicetest.services.testing.execution import resolve_run_options
 from voicetest.settings import Settings
 from voicetest.storage.models import Result as ResultModel
@@ -93,6 +93,28 @@ if not _vt_logger.handlers:
     _handler.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
     _vt_logger.addHandler(_handler)
 _vt_logger.info("voicetest logging configured at %s", _log_level)
+
+
+def _resolve[T](http_request: Request, cls: type[T]) -> T:
+    """Resolve a service/repo/manager from the request-scoped container.
+
+    `app.state.container` is set in `create_app()`. Endpoints use this helper
+    instead of holding services in module globals so per-request scoping (notably
+    Postgres Session) works.
+    """
+    return http_request.app.state.container.resolve(cls)
+
+
+def _db_session(http_request: Request) -> Session:
+    """Resolve the DB session and recover from a failed-transaction state.
+
+    DuckDB uses a singleton session; if its transaction failed, roll back so
+    the next query starts clean.
+    """
+    session = _resolve(http_request, Session)
+    if not session.is_active:
+        session.rollback()
+    return session
 
 
 # Active runs: run_id -> {"cancel": Event, "websockets": set[WebSocket], "message_queue": list}
@@ -121,8 +143,6 @@ _UPDATE_RESULTS_ORPHANED = text(
     "WHERE id IN :rids AND status = 'running'"
 ).bindparams(bindparam("rids", expanding=True))
 
-_initialized = False
-
 
 @contextlib.contextmanager
 def _orphan_cleanup_lock(run_id: str):
@@ -145,12 +165,9 @@ def _orphan_cleanup_lock(run_id: str):
                 _cleaning_orphans.discard(run_id)
 
 
-def init_storage() -> None:
-    """Initialize storage and register linked agents."""
-    global _initialized
-
-    get_session()
-    _initialized = True
+def init_storage(container) -> None:
+    """Initialize storage (touches Session to create engine) and register linked agents."""
+    container.resolve(Session)
 
     linked_agents = os.environ.get("VOICETEST_LINKED_AGENTS", "")
     linked_tests_raw = os.environ.get("VOICETEST_LINKED_TESTS", "")
@@ -169,16 +186,20 @@ def init_storage() -> None:
                 tests_by_agent[agent_path] = test_paths
 
     if linked_agents:
+        agent_repo = container.resolve(AgentRepository)
         for agent_path in linked_agents.split(","):
             agent_path = agent_path.strip()
             if agent_path:
                 tests_paths = tests_by_agent.get(agent_path)
-                _register_linked_agent(Path(agent_path), tests_paths=tests_paths)
+                _register_linked_agent(agent_repo, Path(agent_path), tests_paths=tests_paths)
 
 
-def _register_linked_agent(path: Path, tests_paths: list[str] | None = None) -> None:
+def _register_linked_agent(
+    repo: AgentRepository,
+    path: Path,
+    tests_paths: list[str] | None = None,
+) -> None:
     """Register a linked agent from filesystem if not already registered."""
-    repo = get_agent_repo()
     existing = repo.list_all()
     for agent in existing:
         if agent.get("source_path") == str(path):
@@ -196,28 +217,6 @@ def _register_linked_agent(path: Path, tests_paths: list[str] | None = None) -> 
     )
 
 
-def _get_repo[T](repo_type: type[T]) -> T:
-    """Resolve a repository from the DI container, initializing storage if needed."""
-    if not _initialized:
-        init_storage()
-    return get_container().resolve(repo_type)
-
-
-def get_agent_repo() -> AgentRepository:
-    """Get the agent repository from the DI container."""
-    return _get_repo(AgentRepository)
-
-
-def get_test_case_repo() -> TestCaseRepository:
-    """Get the test case repository from the DI container."""
-    return _get_repo(TestCaseRepository)
-
-
-def get_call_repo() -> CallRepository:
-    """Get the call repository from the DI container."""
-    return _get_repo(CallRepository)
-
-
 def _find_web_dist() -> Path | None:
     """Find the web dist folder relative to the package root."""
     dist = Path(__file__).parent.parent / "web" / "dist"
@@ -231,6 +230,7 @@ app = FastAPI(
     description="Voice agent test harness API",
     version=pkg_version("voicetest"),
 )
+app.state.container = create_container()
 
 # Add CORS middleware to allow cross-origin requests
 app.add_middleware(
@@ -525,9 +525,9 @@ class ExportFormatInfo(BaseModel):
 
 
 @router.get("/importers", response_model=list[ImporterInfo])
-async def list_importers() -> list[ImporterInfo]:
+async def list_importers(http_request: Request) -> list[ImporterInfo]:
     """List available importers."""
-    importers = get_discovery_service().list_importers()
+    importers = _resolve(http_request, DiscoveryService).list_importers()
     return [
         ImporterInfo(
             source_type=imp.source_type,
@@ -539,36 +539,42 @@ async def list_importers() -> list[ImporterInfo]:
 
 
 @router.get("/exporters", response_model=list[ExportFormatInfo])
-async def list_exporters() -> list[ExportFormatInfo]:
+async def list_exporters(http_request: Request) -> list[ExportFormatInfo]:
     """List available export formats."""
-    formats = get_discovery_service().list_export_formats()
+    formats = _resolve(http_request, DiscoveryService).list_export_formats()
     return [ExportFormatInfo(**f) for f in formats]
 
 
 @router.post("/agents/import", response_model=AgentGraph)
-async def import_agent(request: ImportRequest) -> AgentGraph:
+async def import_agent(request: ImportRequest, http_request: Request) -> AgentGraph:
     """Import an agent from config."""
     try:
-        return await get_agent_service().import_agent(request.config, source=request.source)
+        return await _resolve(http_request, AgentService).import_agent(
+            request.config, source=request.source
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 @router.post("/agents/import-file", response_model=AgentGraph)
-async def import_agent_file(file: UploadFile, source: str | None = None) -> AgentGraph:
+async def import_agent_file(
+    file: UploadFile,
+    http_request: Request,
+    source: str | None = None,
+) -> AgentGraph:
     """Import an agent from an uploaded file (XLSForm, JSON, etc.)."""
     try:
         async with _saved_upload(file) as tmp_path:
-            return await get_agent_service().import_agent(tmp_path, source=source)
+            return await _resolve(http_request, AgentService).import_agent(tmp_path, source=source)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 @router.post("/agents/export")
-async def export_agent(request: ExportRequest) -> dict[str, str]:
+async def export_agent(request: ExportRequest, http_request: Request) -> dict[str, str]:
     """Export an agent graph to a format."""
     try:
-        content = await get_agent_service().export_agent(
+        content = await _resolve(http_request, AgentService).export_agent(
             request.graph, format=request.format, expanded=request.expanded
         )
         return {"content": content, "format": request.format}
@@ -577,9 +583,9 @@ async def export_agent(request: ExportRequest) -> dict[str, str]:
 
 
 @router.post("/runs/single", response_model=TestResult)
-async def run_test(request: RunTestRequest) -> TestResult:
+async def run_test(request: RunTestRequest, http_request: Request) -> TestResult:
     """Run a single test case."""
-    return await get_test_execution_service().run_test(
+    return await _resolve(http_request, TestExecutionService).run_test(
         request.graph,
         request.test_case,
         options=request.options,
@@ -587,9 +593,9 @@ async def run_test(request: RunTestRequest) -> TestResult:
 
 
 @router.post("/runs", response_model=TestRun)
-async def run_tests(request: RunTestsRequest) -> TestRun:
+async def run_tests(request: RunTestsRequest, http_request: Request) -> TestRun:
     """Run multiple test cases."""
-    return await get_test_execution_service().run_tests(
+    return await _resolve(http_request, TestExecutionService).run_tests(
         request.graph,
         request.test_cases,
         options=request.options,
@@ -597,48 +603,51 @@ async def run_tests(request: RunTestsRequest) -> TestRun:
 
 
 @router.post("/evaluate", response_model=list[MetricResult])
-async def evaluate_transcript(request: EvaluateRequest) -> list[MetricResult]:
+async def evaluate_transcript(
+    request: EvaluateRequest, http_request: Request
+) -> list[MetricResult]:
     """Evaluate a transcript against metrics."""
-    return await get_evaluation_service().evaluate_transcript(
+    return await _resolve(http_request, EvaluationService).evaluate_transcript(
         request.transcript,
         request.metrics,
     )
 
 
 @router.get("/settings", response_model=Settings)
-async def get_settings() -> Settings:
+async def get_settings(http_request: Request) -> Settings:
     """Get current settings from .voicetest.toml."""
-    return get_settings_service().get_settings()
+    return _resolve(http_request, SettingsService).get_settings()
 
 
 @router.get("/settings/defaults", response_model=Settings)
-async def get_default_settings() -> Settings:
+async def get_default_settings(http_request: Request) -> Settings:
     """Get default settings (not from file)."""
-    return get_settings_service().get_defaults()
+    return _resolve(http_request, SettingsService).get_defaults()
 
 
 @router.put("/settings", response_model=Settings)
-async def update_settings(settings: Settings) -> Settings:
+async def update_settings(settings: Settings, http_request: Request) -> Settings:
     """Update settings in .voicetest.toml."""
-    return get_settings_service().update_settings(settings)
+    return _resolve(http_request, SettingsService).update_settings(settings)
 
 
 @router.get("/agents")
-async def list_agents() -> list[dict]:
+async def list_agents(http_request: Request) -> list[dict]:
     """List all agents."""
-    return get_agent_service().list_agents()
+    return _resolve(http_request, AgentService).list_agents()
 
 
 @router.get("/agents/{agent_id}")
-async def get_agent(agent_id: str) -> dict:
+async def get_agent(agent_id: str, http_request: Request) -> dict:
     """Get agent by ID."""
-    return _require_agent(agent_id)
+    return _require_agent(http_request, agent_id)
 
 
 @router.get("/agents/{agent_id}/graph", response_model=None)
 async def get_agent_graph(
     agent_id: str,
     response: Response,
+    http_request: Request,
     if_none_match: str | None = Header(default=None),
 ) -> AgentGraph | Response:
     """Get the AgentGraph for an agent.
@@ -646,7 +655,7 @@ async def get_agent_graph(
     For linked agents (source_path), uses file mtime for ETag-based caching.
     Returns 304 Not Modified if the file hasn't changed.
     """
-    svc = get_agent_service()
+    svc = _resolve(http_request, AgentService)
     try:
         graph, etag, not_modified = svc.get_graph_with_etag(agent_id, if_none_match)
     except ValueError as e:
@@ -665,13 +674,13 @@ async def get_agent_graph(
 
 
 @router.get("/agents/{agent_id}/variables")
-async def get_agent_variables(agent_id: str) -> dict:
+async def get_agent_variables(agent_id: str, http_request: Request) -> dict:
     """Extract dynamic variable names from agent prompts.
 
     Scans general_prompt and all node state_prompt values for {{var}} placeholders.
     Returns unique variable names in first-appearance order.
     """
-    svc = get_agent_service()
+    svc = _resolve(http_request, AgentService)
     try:
         variables = svc.get_variables(agent_id)
     except ValueError as e:
@@ -679,9 +688,9 @@ async def get_agent_variables(agent_id: str) -> dict:
     return {"variables": variables}
 
 
-def _require_agent(agent_id: str) -> dict:
+def _require_agent(http_request: Request, agent_id: str) -> dict:
     """Get agent or raise 404."""
-    agent = get_agent_service().get_agent(agent_id)
+    agent = _resolve(http_request, AgentService).get_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     return agent
@@ -706,10 +715,10 @@ async def _saved_upload(file: UploadFile) -> AsyncIterator[Path]:
         tmp_path.unlink(missing_ok=True)
 
 
-def _load_agent_graph(agent_id: str) -> tuple[dict, AgentGraph]:
+def _load_agent_graph(http_request: Request, agent_id: str) -> tuple[dict, AgentGraph]:
     """Load agent record and its graph. Raises HTTPException on failure."""
     try:
-        return get_agent_service().load_graph(agent_id)
+        return _resolve(http_request, AgentService).load_graph(agent_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except FileNotFoundError as e:
@@ -717,9 +726,9 @@ def _load_agent_graph(agent_id: str) -> tuple[dict, AgentGraph]:
 
 
 @router.get("/agents/{agent_id}/snippets")
-async def get_snippets(agent_id: str) -> dict:
+async def get_snippets(agent_id: str, http_request: Request) -> dict:
     """Get all snippets defined for an agent."""
-    svc = get_snippet_service()
+    svc = _resolve(http_request, SnippetService)
     try:
         return {"snippets": svc.get_snippets(agent_id)}
     except ValueError as e:
@@ -727,9 +736,9 @@ async def get_snippets(agent_id: str) -> dict:
 
 
 @router.put("/agents/{agent_id}/snippets")
-async def update_all_snippets(agent_id: str, body: dict) -> dict:
+async def update_all_snippets(agent_id: str, body: dict, http_request: Request) -> dict:
     """Replace all snippets for an agent."""
-    svc = get_snippet_service()
+    svc = _resolve(http_request, SnippetService)
     try:
         return {"snippets": svc.update_all_snippets(agent_id, body.get("snippets", {}))}
     except ValueError as e:
@@ -737,9 +746,11 @@ async def update_all_snippets(agent_id: str, body: dict) -> dict:
 
 
 @router.put("/agents/{agent_id}/snippets/{name}")
-async def update_snippet(agent_id: str, name: str, request: UpdateSnippetRequest) -> dict:
+async def update_snippet(
+    agent_id: str, name: str, request: UpdateSnippetRequest, http_request: Request
+) -> dict:
     """Create or update a single snippet."""
-    svc = get_snippet_service()
+    svc = _resolve(http_request, SnippetService)
     try:
         return {"snippets": svc.update_snippet(agent_id, name, request.text)}
     except ValueError as e:
@@ -747,9 +758,9 @@ async def update_snippet(agent_id: str, name: str, request: UpdateSnippetRequest
 
 
 @router.delete("/agents/{agent_id}/snippets/{name}")
-async def delete_snippet(agent_id: str, name: str) -> dict:
+async def delete_snippet(agent_id: str, name: str, http_request: Request) -> dict:
     """Delete a single snippet."""
-    svc = get_snippet_service()
+    svc = _resolve(http_request, SnippetService)
     try:
         return {"snippets": svc.delete_snippet(agent_id, name)}
     except ValueError as e:
@@ -757,9 +768,9 @@ async def delete_snippet(agent_id: str, name: str) -> dict:
 
 
 @router.post("/agents/{agent_id}/analyze-dry")
-async def analyze_dry(agent_id: str) -> dict:
+async def analyze_dry(agent_id: str, http_request: Request) -> dict:
     """Run auto-DRY analysis on an agent's prompts."""
-    svc = get_snippet_service()
+    svc = _resolve(http_request, SnippetService)
     try:
         return svc.analyze_dry(agent_id)
     except ValueError as e:
@@ -767,9 +778,11 @@ async def analyze_dry(agent_id: str) -> dict:
 
 
 @router.post("/agents/{agent_id}/apply-snippets", response_model=AgentGraph)
-async def apply_snippets(agent_id: str, request: ApplySnippetsRequest) -> AgentGraph:
+async def apply_snippets(
+    agent_id: str, request: ApplySnippetsRequest, http_request: Request
+) -> AgentGraph:
     """Apply snippets: add them to graph and replace occurrences in prompts with {%name%} refs."""
-    svc = get_snippet_service()
+    svc = _resolve(http_request, SnippetService)
     try:
         return svc.apply_snippets(agent_id, request.snippets)
     except ValueError as e:
@@ -783,6 +796,7 @@ _SUPPORTED_TRANSCRIPT_FORMATS = {"retell"}
 async def import_call(
     agent_id: str,
     file: UploadFile,
+    http_request: Request,
     format: str = "retell",
 ) -> dict:
     """Import call transcripts as a new Run with imported Results.
@@ -791,7 +805,7 @@ async def import_call(
     (currently Retell only). Each conversation in the file becomes one Result
     inside the created Run, with status="imported" and no test_case_id linkage.
     """
-    _require_agent(agent_id)
+    _require_agent(http_request, agent_id)
 
     if format not in _SUPPORTED_TRANSCRIPT_FORMATS:
         raise HTTPException(
@@ -811,13 +825,13 @@ async def import_call(
     if not results:
         raise HTTPException(status_code=400, detail="No conversations found in file")
 
-    return get_run_service().import_calls(agent_id, results)
+    return _resolve(http_request, RunService).import_calls(agent_id, results)
 
 
 @router.post("/agents")
-async def create_agent(request: CreateAgentRequest) -> dict:
+async def create_agent(request: CreateAgentRequest, http_request: Request) -> dict:
     """Create an agent from config dict or file path."""
-    svc = get_agent_service()
+    svc = _resolve(http_request, AgentService)
     try:
         return svc.create_agent(
             name=request.name,
@@ -838,6 +852,7 @@ async def create_agent(request: CreateAgentRequest) -> dict:
 @router.post("/agents/upload")
 async def create_agent_from_file(
     file: UploadFile,
+    http_request: Request,
     name: str | None = None,
     source: str | None = None,
 ) -> dict:
@@ -846,7 +861,7 @@ async def create_agent_from_file(
         raise HTTPException(status_code=400, detail="No filename provided")
 
     agent_name = name or Path(file.filename).stem
-    agent_svc = get_agent_service()
+    agent_svc = _resolve(http_request, AgentService)
 
     try:
         async with _saved_upload(file) as tmp_path:
@@ -854,7 +869,7 @@ async def create_agent_from_file(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
-    repo = get_agent_repo()
+    repo = _resolve(http_request, AgentRepository)
     return repo.create(
         name=agent_name,
         source_type=graph.source_type,
@@ -863,10 +878,10 @@ async def create_agent_from_file(
 
 
 @router.put("/agents/{agent_id}")
-async def update_agent(agent_id: str, request: UpdateAgentRequest) -> dict:
+async def update_agent(agent_id: str, request: UpdateAgentRequest, http_request: Request) -> dict:
     """Update an agent."""
     try:
-        return get_agent_service().update_agent(
+        return _resolve(http_request, AgentService).update_agent(
             agent_id,
             name=request.name,
             default_model=request.default_model,
@@ -877,7 +892,9 @@ async def update_agent(agent_id: str, request: UpdateAgentRequest) -> dict:
 
 
 @router.put("/agents/{agent_id}/prompts", response_model=AgentGraph)
-async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGraph:
+async def update_prompt(
+    agent_id: str, request: UpdatePromptRequest, http_request: Request
+) -> AgentGraph:
     """Update a general or node-specific prompt.
 
     When node_id is None, updates source_metadata.general_prompt.
@@ -885,7 +902,7 @@ async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGra
     For linked-file agents, writes back to the source file on disk.
     """
     try:
-        return get_agent_service().update_prompt(
+        return _resolve(http_request, AgentService).update_prompt(
             agent_id,
             prompt_text=request.prompt_text,
             node_id=request.node_id,
@@ -899,7 +916,10 @@ async def update_prompt(agent_id: str, request: UpdatePromptRequest) -> AgentGra
 
 @router.put("/agents/{agent_id}/nodes/{node_id}/global-setting", response_model=AgentGraph)
 async def update_global_node_setting(
-    agent_id: str, node_id: str, request: UpdateGlobalNodeSettingRequest
+    agent_id: str,
+    node_id: str,
+    request: UpdateGlobalNodeSettingRequest,
+    http_request: Request,
 ) -> AgentGraph:
     """Set a node's global_node_setting (entry condition + go-back conditions)."""
     setting = {
@@ -909,71 +929,83 @@ async def update_global_node_setting(
         ],
     }
     try:
-        return get_agent_service().update_global_node_setting(agent_id, node_id, setting)
+        return _resolve(http_request, AgentService).update_global_node_setting(
+            agent_id, node_id, setting
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.delete("/agents/{agent_id}/nodes/{node_id}/global-setting", response_model=AgentGraph)
-async def delete_global_node_setting(agent_id: str, node_id: str) -> AgentGraph:
+async def delete_global_node_setting(
+    agent_id: str, node_id: str, http_request: Request
+) -> AgentGraph:
     """Remove a node's global_node_setting."""
     try:
-        return get_agent_service().update_global_node_setting(agent_id, node_id, None)
+        return _resolve(http_request, AgentService).update_global_node_setting(
+            agent_id, node_id, None
+        )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.put("/agents/{agent_id}/metadata", response_model=AgentGraph)
-async def update_metadata(agent_id: str, request: UpdateMetadataRequest) -> AgentGraph:
+async def update_metadata(
+    agent_id: str, request: UpdateMetadataRequest, http_request: Request
+) -> AgentGraph:
     """Merge updates into an agent's source_metadata."""
     try:
-        return get_agent_service().update_metadata(agent_id, request.updates)
+        return _resolve(http_request, AgentService).update_metadata(agent_id, request.updates)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.delete("/agents/{agent_id}")
-async def delete_agent(agent_id: str) -> dict:
+async def delete_agent(agent_id: str, http_request: Request) -> dict:
     """Delete an agent."""
-    get_agent_service().delete_agent(agent_id)
+    _resolve(http_request, AgentService).delete_agent(agent_id)
     return {"status": "deleted", "id": agent_id}
 
 
 @router.get("/agents/{agent_id}/metrics-config")
-async def get_metrics_config(agent_id: str) -> dict:
+async def get_metrics_config(agent_id: str, http_request: Request) -> dict:
     """Get an agent's metrics configuration."""
-    _require_agent(agent_id)
-    config = get_agent_service().get_metrics_config(agent_id)
+    _require_agent(http_request, agent_id)
+    config = _resolve(http_request, AgentService).get_metrics_config(agent_id)
     return config.model_dump()
 
 
 @router.put("/agents/{agent_id}/metrics-config")
-async def update_metrics_config(agent_id: str, request: UpdateMetricsConfigRequest) -> dict:
+async def update_metrics_config(
+    agent_id: str, request: UpdateMetricsConfigRequest, http_request: Request
+) -> dict:
     """Update an agent's metrics configuration."""
-    _require_agent(agent_id)
+    _require_agent(http_request, agent_id)
     config = MetricsConfig(
         threshold=request.threshold,
         global_metrics=request.global_metrics,
     )
-    get_agent_service().update_metrics_config(agent_id, config)
+    _resolve(http_request, AgentService).update_metrics_config(agent_id, config)
     return config.model_dump()
 
 
 @router.get("/agents/{agent_id}/tests")
-async def list_tests_for_agent(agent_id: str) -> list[dict]:
+async def list_tests_for_agent(agent_id: str, http_request: Request) -> list[dict]:
     """List all test cases for an agent, including file-based linked tests."""
-    return get_test_case_service().list_tests(agent_id)
+    return _resolve(http_request, TestCaseService).list_tests(agent_id)
 
 
 @router.post("/agents/{agent_id}/tests-paths")
-async def link_test_file(agent_id: str, request: LinkTestFileRequest) -> dict:
+async def link_test_file(
+    agent_id: str, request: LinkTestFileRequest, http_request: Request
+) -> dict:
     """Link a JSON test file to an agent.
 
     The file must exist, contain valid JSON, and be a JSON array.
     Tests from the file will appear alongside DB tests via list_for_agent_with_linked.
     """
     try:
-        return get_test_case_service().link_test_file(agent_id, request.path)
+        return _resolve(http_request, TestCaseService).link_test_file(agent_id, request.path)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
     except ValueError as e:
@@ -983,28 +1015,34 @@ async def link_test_file(agent_id: str, request: LinkTestFileRequest) -> dict:
 
 
 @router.delete("/agents/{agent_id}/tests-paths")
-async def unlink_test_file(agent_id: str, path: str) -> dict:
+async def unlink_test_file(agent_id: str, path: str, http_request: Request) -> dict:
     """Unlink a test file from an agent.
 
     Removes the path from tests_paths. The file itself is not deleted.
     """
     try:
-        return get_test_case_service().unlink_test_file(agent_id, path)
+        return _resolve(http_request, TestCaseService).unlink_test_file(agent_id, path)
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.post("/agents/{agent_id}/tests/export")
-async def export_tests_for_agent(agent_id: str, request: ExportTestsRequest) -> list[dict]:
+async def export_tests_for_agent(
+    agent_id: str, request: ExportTestsRequest, http_request: Request
+) -> list[dict]:
     """Export test cases for an agent to a specified format."""
     try:
-        return get_test_case_service().export_tests(agent_id, request.test_ids, request.format)
+        return _resolve(http_request, TestCaseService).export_tests(
+            agent_id, request.test_ids, request.format
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
 
 
 @router.post("/agents/{agent_id}/tests")
-async def create_test_case(agent_id: str, request: CreateTestCaseRequest) -> dict:
+async def create_test_case(
+    agent_id: str, request: CreateTestCaseRequest, http_request: Request
+) -> dict:
     """Create a test case for an agent.
 
     If the agent has linked test files, the test is appended to the first file.
@@ -1023,11 +1061,13 @@ async def create_test_case(agent_id: str, request: CreateTestCaseRequest) -> dic
         patterns=request.patterns,
     )
 
-    return get_test_case_service().create_test(agent_id, test_case)
+    return _resolve(http_request, TestCaseService).create_test(agent_id, test_case)
 
 
 @router.put("/tests/{test_id}")
-async def update_test_case(test_id: str, request: CreateTestCaseRequest) -> dict:
+async def update_test_case(
+    test_id: str, request: CreateTestCaseRequest, http_request: Request
+) -> dict:
     """Update a test case (DB or linked file)."""
     test_case = TestCase(
         name=request.name,
@@ -1043,16 +1083,16 @@ async def update_test_case(test_id: str, request: CreateTestCaseRequest) -> dict
     )
 
     try:
-        return get_test_case_service().update_test(test_id, test_case)
+        return _resolve(http_request, TestCaseService).update_test(test_id, test_case)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.delete("/tests/{test_id}")
-async def delete_test_case(test_id: str) -> dict:
+async def delete_test_case(test_id: str, http_request: Request) -> dict:
     """Delete a test case (DB or linked file)."""
     try:
-        get_test_case_service().delete_test(test_id)
+        _resolve(http_request, TestCaseService).delete_test(test_id)
         return {"status": "deleted", "id": test_id}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
@@ -1068,7 +1108,7 @@ class LoadDemoResponse(BaseModel):
 
 
 @router.post("/demo", response_model=LoadDemoResponse)
-async def load_demo() -> LoadDemoResponse:
+async def load_demo(http_request: Request) -> LoadDemoResponse:
     """Load demo agent and tests into the database.
 
     If the demo agent already exists, returns its info without creating duplicates.
@@ -1076,10 +1116,10 @@ async def load_demo() -> LoadDemoResponse:
     demo_agent_config = get_demo_agent()
     demo_tests = get_demo_tests()
 
-    graph = await get_agent_service().import_agent(demo_agent_config)
+    graph = await _resolve(http_request, AgentService).import_agent(demo_agent_config)
 
-    agent_repo = get_agent_repo()
-    test_repo = get_test_case_repo()
+    agent_repo = _resolve(http_request, AgentRepository)
+    test_repo = _resolve(http_request, TestCaseRepository)
 
     existing = agent_repo.list_all()
     demo_agent = next((a for a in existing if a.get("name") == "Demo Healthcare Agent"), None)
@@ -1137,15 +1177,15 @@ async def list_gallery() -> list[dict]:
 
 
 @router.get("/agents/{agent_id}/runs")
-async def list_runs_for_agent(agent_id: str, limit: int = 50) -> list[dict]:
+async def list_runs_for_agent(agent_id: str, http_request: Request, limit: int = 50) -> list[dict]:
     """List all runs for an agent."""
-    return get_run_service().list_runs(agent_id, limit)
+    return _resolve(http_request, RunService).list_runs(agent_id, limit)
 
 
 @router.get("/runs/{run_id}")
-async def get_run(run_id: str) -> dict:
+async def get_run(run_id: str, http_request: Request) -> dict:
     """Get a run with all results."""
-    run_svc = get_run_service()
+    run_svc = _resolve(http_request, RunService)
     run = run_svc.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -1169,12 +1209,12 @@ async def get_run(run_id: str) -> dict:
 
         with _orphan_cleanup_lock(run_id) as owns:
             if owns:
-                _cleanup_orphaned_run(run_id, orphaned_result_ids)
+                _cleanup_orphaned_run(http_request, run_id, orphaned_result_ids)
 
     return run
 
 
-def _cleanup_orphaned_run(run_id: str, result_ids: list[str]) -> None:
+def _cleanup_orphaned_run(http_request: Request, run_id: str, result_ids: list[str]) -> None:
     """Persist orphan-cleanup state to DB using the singleton session.
 
     Issues 2 bulk UPDATEs (run + results) with guard clauses so they're
@@ -1185,7 +1225,7 @@ def _cleanup_orphaned_run(run_id: str, result_ids: list[str]) -> None:
     """
     _logger.info("orphan-cleanup start run=%s n_results=%d", run_id, len(result_ids))
     try:
-        session = get_session()
+        session = _db_session(http_request)
         session.execute(
             _UPDATE_RUN_COMPLETED,
             {"ts": datetime.now(UTC), "rid": run_id},
@@ -1202,9 +1242,9 @@ def _cleanup_orphaned_run(run_id: str, result_ids: list[str]) -> None:
 
 
 @router.delete("/runs/{run_id}")
-async def delete_run(run_id: str) -> dict:
+async def delete_run(run_id: str, http_request: Request) -> dict:
     """Delete a run and all its results."""
-    run = get_run_service().get_run(run_id)
+    run = _resolve(http_request, RunService).get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
@@ -1212,24 +1252,24 @@ async def delete_run(run_id: str) -> dict:
     if run_id in _active_runs:
         raise HTTPException(status_code=400, detail="Cannot delete an active run")
 
-    get_run_service().delete_run(run_id)
+    _resolve(http_request, RunService).delete_run(run_id)
     return {"status": "deleted", "id": run_id}
 
 
 @router.post("/runs/{source_run_id}/replay")
-async def replay_run(source_run_id: str) -> dict:
+async def replay_run(source_run_id: str, http_request: Request) -> dict:
     """Replay a source Run against the agent's current graph.
 
     Loads the source Run, drives a fresh conversation per source Result using
     the source's recorded user turns as a script, and persists the live
     conversations as a new Run.
     """
-    run_svc = get_run_service()
+    run_svc = _resolve(http_request, RunService)
     source = run_svc.get_run(source_run_id)
     if not source:
         raise HTTPException(status_code=404, detail="Source run not found")
 
-    _agent, graph = _load_agent_graph(source["agent_id"])
+    _agent, graph = _load_agent_graph(http_request, source["agent_id"])
 
     try:
         return await run_svc.replay_run(source_run_id, graph)
@@ -1238,16 +1278,16 @@ async def replay_run(source_run_id: str) -> dict:
 
 
 @router.post("/results/{result_id}/audio-eval")
-async def audio_eval_result(result_id: str) -> dict:
+async def audio_eval_result(result_id: str, http_request: Request) -> dict:
     """Run audio evaluation on an existing test result.
 
     Performs TTS->STT round-trip on assistant messages and re-evaluates
     metrics using the "heard" text.
     """
-    run_svc = get_run_service()
-    tc_svc = get_test_case_service()
+    run_svc = _resolve(http_request, RunService)
+    tc_svc = _resolve(http_request, TestCaseService)
 
-    session = get_session()
+    session = _db_session(http_request)
     db_result = session.get(ResultModel, result_id)
     if not db_result:
         raise HTTPException(status_code=404, detail="Result not found")
@@ -1271,9 +1311,11 @@ async def audio_eval_result(result_id: str) -> dict:
 
     # Load metrics config for global metrics
     run = session.get(RunModel, db_result.run_id)
-    metrics_config = get_agent_service().get_metrics_config(run.agent_id) if run else None
+    metrics_config = (
+        _resolve(http_request, AgentService).get_metrics_config(run.agent_id) if run else None
+    )
 
-    transformed, audio_metrics = await get_evaluation_service().audio_eval_result(
+    transformed, audio_metrics = await _resolve(http_request, EvaluationService).audio_eval_result(
         transcript,
         test_case,
         metrics_config=metrics_config,
@@ -1287,7 +1329,9 @@ async def audio_eval_result(result_id: str) -> dict:
     return run_svc._runs._result_to_dict(db_result)
 
 
-def _load_result_context(result_id: str) -> tuple[dict, "TestCase", AgentGraph]:
+def _load_result_context(
+    http_request: Request, result_id: str
+) -> tuple[dict, "TestCase", AgentGraph]:
     """Load result, test case, and agent graph for diagnosis endpoints.
 
     Returns:
@@ -1296,10 +1340,10 @@ def _load_result_context(result_id: str) -> tuple[dict, "TestCase", AgentGraph]:
     Raises:
         HTTPException on missing data.
     """
-    run_svc = get_run_service()
-    tc_svc = get_test_case_service()
+    run_svc = _resolve(http_request, RunService)
+    tc_svc = _resolve(http_request, TestCaseService)
 
-    session = get_session()
+    session = _db_session(http_request)
     db_result = session.get(ResultModel, result_id)
     if not db_result:
         raise HTTPException(status_code=404, detail="Result not found")
@@ -1321,13 +1365,13 @@ def _load_result_context(result_id: str) -> tuple[dict, "TestCase", AgentGraph]:
     if not run:
         raise HTTPException(status_code=400, detail="Run not found for result")
 
-    _agent, graph = _load_agent_graph(run.agent_id)
+    _agent, graph = _load_agent_graph(http_request, run.agent_id)
 
     return result_dict, test_case, graph
 
 
 @router.post("/results/{result_id}/diagnose")
-async def diagnose_result(result_id: str, request: Request) -> dict:
+async def diagnose_result(result_id: str, http_request: Request) -> dict:
     """Diagnose why a test result failed and suggest a fix.
 
     Analyzes the graph structure, transcript, and failed metrics to identify
@@ -1335,10 +1379,10 @@ async def diagnose_result(result_id: str, request: Request) -> dict:
 
     Optional body: {"model": "provider/model-name"} to override the judge model.
     """
-    result_dict, test_case, graph = _load_result_context(result_id)
+    result_dict, test_case, graph = _load_result_context(http_request, result_id)
 
     try:
-        body = await request.json()
+        body = await http_request.json()
     except Exception:
         body = {}
 
@@ -1349,7 +1393,7 @@ async def diagnose_result(result_id: str, request: Request) -> dict:
     metric_results = [MetricResult(**m) for m in metrics_data]
     nodes_visited = result_dict.get("nodes_visited") or []
 
-    diagnosis_result = await get_diagnosis_service().diagnose_failure(
+    diagnosis_result = await _resolve(http_request, DiagnosisService).diagnose_failure(
         graph=graph,
         transcript=transcript,
         nodes_visited=nodes_visited,
@@ -1362,12 +1406,12 @@ async def diagnose_result(result_id: str, request: Request) -> dict:
 
 
 @router.post("/results/{result_id}/apply-fix")
-async def apply_fix(result_id: str, body: dict) -> dict:
+async def apply_fix(result_id: str, body: dict, http_request: Request) -> dict:
     """Apply proposed changes to a copy of the graph and rerun the test.
 
     Non-destructive: does not persist changes.
     """
-    result_dict, test_case, graph = _load_result_context(result_id)
+    result_dict, test_case, graph = _load_result_context(http_request, result_id)
 
     changes = [PromptChangeModel.model_validate(c) for c in body.get("changes", [])]
     iteration = body.get("iteration", 1)
@@ -1376,12 +1420,14 @@ async def apply_fix(result_id: str, body: dict) -> dict:
     original_metrics = [MetricResult(**m) for m in metrics_data]
 
     # Load metrics config for global metrics
-    session = get_session()
+    session = _db_session(http_request)
     db_result = session.get(ResultModel, result_id)
     run = session.get(RunModel, db_result.run_id)
-    metrics_config = get_agent_service().get_metrics_config(run.agent_id) if run else None
+    metrics_config = (
+        _resolve(http_request, AgentService).get_metrics_config(run.agent_id) if run else None
+    )
 
-    attempt_result = await get_diagnosis_service().apply_and_rerun(
+    attempt_result = await _resolve(http_request, DiagnosisService).apply_and_rerun(
         graph=graph,
         test_case=test_case,
         changes=changes,
@@ -1394,20 +1440,20 @@ async def apply_fix(result_id: str, body: dict) -> dict:
 
 
 @router.post("/results/{result_id}/revise-fix")
-async def revise_fix_endpoint(result_id: str, body: dict) -> dict:
+async def revise_fix_endpoint(result_id: str, body: dict, http_request: Request) -> dict:
     """Revise a previous fix attempt based on new metric results.
 
     Given the original diagnosis and previous changes, produce a revised fix.
 
     Optional body field: "model" to override the judge model.
     """
-    result_dict, test_case, graph = _load_result_context(result_id)
+    result_dict, test_case, graph = _load_result_context(http_request, result_id)
 
     diagnosis = DiagnosisModel.model_validate(body["diagnosis"])
     prev_changes = [PromptChangeModel.model_validate(c) for c in body["previous_changes"]]
     new_metrics = [MetricResult.model_validate(m) for m in body["new_metric_results"]]
 
-    fix = await get_diagnosis_service().revise_fix(
+    fix = await _resolve(http_request, DiagnosisService).revise_fix(
         graph=graph,
         diagnosis=diagnosis,
         prev_changes=prev_changes,
@@ -1419,34 +1465,34 @@ async def revise_fix_endpoint(result_id: str, body: dict) -> dict:
 
 
 @router.post("/agents/{agent_id}/save-fix")
-async def save_fix(agent_id: str, body: dict) -> dict:
+async def save_fix(agent_id: str, body: dict, http_request: Request) -> dict:
     """Persist proposed changes to the agent graph.
 
     Applies changes and saves the modified graph.
     """
-    agent, graph = _load_agent_graph(agent_id)
+    agent, graph = _load_agent_graph(http_request, agent_id)
     changes = [PromptChangeModel.model_validate(c) for c in body.get("changes", [])]
 
-    modified_graph = get_diagnosis_service().apply_fix_to_graph(graph, changes)
-    get_agent_service().save_graph(agent_id, agent, modified_graph)
+    modified_graph = _resolve(http_request, DiagnosisService).apply_fix_to_graph(graph, changes)
+    _resolve(http_request, AgentService).save_graph(agent_id, agent, modified_graph)
 
     return modified_graph.model_dump()
 
 
 @router.post("/agents/{agent_id}/decompose")
-async def decompose_agent(agent_id: str, request: Request) -> dict:
+async def decompose_agent(agent_id: str, http_request: Request) -> dict:
     """Decompose an agent into sub-agents with orchestrator manifest.
 
     Optional body: {"model": "provider/model-name", "num_agents": 0}
     """
-    _agent, graph = _load_agent_graph(agent_id)
+    _agent, graph = _load_agent_graph(http_request, agent_id)
 
     try:
-        body = await request.json()
+        body = await http_request.json()
     except Exception:
         body = {}
 
-    result = await get_decompose_service().decompose(
+    result = await _resolve(http_request, DecomposeService).decompose(
         graph=graph,
         model=body.get("model"),
         num_agents=body.get("num_agents", 0),
@@ -1486,18 +1532,23 @@ def _is_run_cancelled(run_id: str, result_id: str | None = None) -> bool:
 
 
 async def _execute_run(
+    container,
     run_id: str,
     agent_id: str,
     test_records: list[dict],
     result_ids: dict[str, str],
     options: RunOptions,
 ) -> None:
-    """Execute tests for a run in the background."""
+    """Execute tests for a run in the background.
+
+    Background tasks have no request scope; the caller passes the container
+    directly so services can be resolved without the FastAPI layer.
+    """
     # _active_runs[run_id] is set up in start_run() before this task starts
 
-    agent_svc = get_agent_service()
-    tc_svc = get_test_case_service()
-    run_svc = get_run_service()
+    agent_svc = container.resolve(AgentService)
+    tc_svc = container.resolve(TestCaseService)
+    run_svc = container.resolve(RunService)
 
     try:
         _agent, graph = agent_svc.load_graph(agent_id)
@@ -1603,7 +1654,7 @@ async def _execute_run(
             last_transcript: list[Message] = []
 
             try:
-                result = await get_test_execution_service().run_test(
+                result = await container.resolve(TestExecutionService).run_test(
                     graph,
                     test_case,
                     options=options,
@@ -1701,7 +1752,7 @@ async def run_websocket(websocket: WebSocket, run_id: str):
     # Send current state BEFORE registering for broadcasts to avoid race condition
     # where test_started arrives before state and then state overwrites it
     try:
-        run = get_run_service().get_run(run_id)
+        run = websocket.app.state.container.resolve(RunService).get_run(run_id)
         if not run:
             # Run not found - send error and close
             await websocket.send_json({"type": "error", "message": "Run not found"})
@@ -1762,13 +1813,15 @@ async def run_websocket(websocket: WebSocket, run_id: str):
 class BackgroundTaskExecutor:
     """Default executor using FastAPI BackgroundTasks."""
 
-    def __init__(self, background_tasks: BackgroundTasks):
+    def __init__(self, background_tasks: BackgroundTasks, container):
         self.background_tasks = background_tasks
+        self.container = container
 
     def submit(self, job: RunJob) -> None:
         """Submit job to run in background."""
         self.background_tasks.add_task(
             _execute_run,
+            self.container,
             job.run_id,
             job.agent_id,
             job.test_records,
@@ -1782,11 +1835,12 @@ async def start_run(
     agent_id: str,
     request: StartRunRequest,
     background_tasks: BackgroundTasks,
+    http_request: Request,
 ) -> dict:
     """Start a new test run. Tests execute in background, poll GET /runs/{id} for results."""
-    _require_agent(agent_id)
+    _require_agent(http_request, agent_id)
 
-    tc_svc = get_test_case_service()
+    tc_svc = _resolve(http_request, TestCaseService)
     all_tests = tc_svc.list_tests(agent_id)
 
     if request.test_ids:
@@ -1798,7 +1852,7 @@ async def start_run(
     if not test_records:
         raise HTTPException(status_code=400, detail="No test cases to run")
 
-    run_svc = get_run_service()
+    run_svc = _resolve(http_request, RunService)
     run = run_svc.create_run(agent_id)
 
     # Create all pending results upfront so they appear immediately in UI
@@ -1808,7 +1862,7 @@ async def start_run(
         result_id = run_svc.create_pending_result(run["id"], test_record["id"], test_record["name"])
         result_ids[test_record["id"]] = result_id
 
-    options = resolve_run_options(request.options, get_settings_service())
+    options = resolve_run_options(request.options, _resolve(http_request, SettingsService))
 
     # Set up active run tracking BEFORE background task starts
     # so WebSocket connections can register immediately
@@ -1829,12 +1883,13 @@ async def start_run(
     )
 
     # Use custom executor if configured, otherwise default to BackgroundTasks
+    container = http_request.app.state.container
     executor_factory = get_executor_factory()
     if executor_factory:
         executor = executor_factory()
         executor.submit(job)
     else:
-        executor = BackgroundTaskExecutor(background_tasks)
+        executor = BackgroundTaskExecutor(background_tasks, container)
         executor.submit(job)
 
     return {
@@ -1856,9 +1911,9 @@ class LiveKitStatusResponse(BaseModel):
 
 
 @router.get("/livekit/status", response_model=LiveKitStatusResponse)
-async def get_livekit_status() -> LiveKitStatusResponse:
+async def get_livekit_status(http_request: Request) -> LiveKitStatusResponse:
     """Check if LiveKit server is reachable."""
-    call_manager = get_call_manager()
+    call_manager = _resolve(http_request, CallManager)
 
     try:
         # Try to create and immediately delete a test room
@@ -1874,19 +1929,23 @@ async def get_livekit_status() -> LiveKitStatusResponse:
 
 
 @router.post("/agents/{agent_id}/calls/start", response_model=StartCallResponse)
-async def start_call(agent_id: str, request: StartCallRequest | None = None) -> StartCallResponse:
+async def start_call(
+    agent_id: str,
+    http_request: Request,
+    request: StartCallRequest | None = None,
+) -> StartCallResponse:
     """Start a live voice call with an agent.
 
     Creates a LiveKit room and spawns an agent worker subprocess.
     Returns connection info including a token for the browser to join.
     """
     try:
-        _agent, graph = get_agent_service().load_graph(agent_id)
+        _agent, graph = _resolve(http_request, AgentService).load_graph(agent_id)
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
 
-    call_repo = get_call_repo()
-    call_manager = get_call_manager()
+    call_repo = _resolve(http_request, CallRepository)
+    call_manager = _resolve(http_request, CallManager)
 
     dynamic_variables = request.dynamic_variables if request else {}
 
@@ -1903,14 +1962,14 @@ async def start_call(agent_id: str, request: StartCallRequest | None = None) -> 
 
 
 @router.get("/calls/{call_id}", response_model=CallStatusResponse)
-async def get_call(call_id: str) -> CallStatusResponse:
+async def get_call(call_id: str, http_request: Request) -> CallStatusResponse:
     """Get call status and transcript."""
-    call_repo = get_call_repo()
+    call_repo = _resolve(http_request, CallRepository)
     call = call_repo.get(call_id)
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
 
-    call_manager = get_call_manager()
+    call_manager = _resolve(http_request, CallManager)
     active_call = call_manager.get_active_call(call_id)
 
     transcript = call.get("transcript_json", [])
@@ -1929,14 +1988,14 @@ async def get_call(call_id: str) -> CallStatusResponse:
 
 
 @router.post("/calls/{call_id}/end")
-async def end_call(call_id: str) -> dict:
+async def end_call(call_id: str, http_request: Request) -> dict:
     """End a live call and save the transcript as a run."""
-    call_repo = get_call_repo()
+    call_repo = _resolve(http_request, CallRepository)
     call = call_repo.get(call_id)
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
 
-    call_manager = get_call_manager()
+    call_manager = _resolve(http_request, CallManager)
 
     try:
         await call_manager.end_call(call_id, call_repo)
@@ -1945,12 +2004,12 @@ async def end_call(call_id: str) -> dict:
 
     # Re-fetch call to get final transcript and timestamps
     call = call_repo.get(call_id)
-    run_id = await _save_call_as_run(call)
+    run_id = await _save_call_as_run(http_request, call)
 
     return {"status": "ended", "call_id": call_id, "run_id": run_id}
 
 
-async def _save_call_as_run(call: dict) -> str | None:
+async def _save_call_as_run(http_request: Request, call: dict) -> str | None:
     """Convert a completed call into a Run with a single Result.
 
     Evaluates global metrics against the transcript if the agent has any configured.
@@ -1976,14 +2035,14 @@ async def _save_call_as_run(call: dict) -> str | None:
     turn_count = len(transcript) // 2
 
     # Evaluate global metrics if agent has them configured
-    metrics_config = get_agent_service().get_metrics_config(agent_id)
+    metrics_config = _resolve(http_request, AgentService).get_metrics_config(agent_id)
     metric_results: list[MetricResult] = []
 
     if metrics_config and metrics_config.global_metrics:
         try:
-            metric_results = await get_test_execution_service().evaluate_global_metrics(
-                transcript, metrics_config
-            )
+            metric_results = await _resolve(
+                http_request, TestExecutionService
+            ).evaluate_global_metrics(transcript, metrics_config)
         except Exception:
             logging.getLogger(__name__).exception(
                 "Failed to evaluate global metrics for call %s", call_id
@@ -2002,7 +2061,7 @@ async def _save_call_as_run(call: dict) -> str | None:
         end_reason="user_ended",
     )
 
-    run_svc = get_run_service()
+    run_svc = _resolve(http_request, RunService)
     run = run_svc.create_run(agent_id)
     run_svc.add_result_from_call(run["id"], call_id, test_result)
     run_svc.complete(run["id"])
@@ -2018,14 +2077,15 @@ async def call_websocket(websocket: WebSocket, call_id: str):
     except Exception:
         return
 
-    call_repo = get_call_repo()
+    container = websocket.app.state.container
+    call_repo = container.resolve(CallRepository)
     call = call_repo.get(call_id)
     if not call:
         await websocket.send_json({"type": "error", "message": "Call not found"})
         await websocket.close(code=1008)
         return
 
-    call_manager = get_call_manager()
+    call_manager = container.resolve(CallManager)
 
     try:
         state_msg = {
@@ -2060,19 +2120,23 @@ async def call_websocket(websocket: WebSocket, call_id: str):
 
 
 @router.post("/agents/{agent_id}/chats/start", response_model=StartChatResponse)
-async def start_chat(agent_id: str, request: StartChatRequest | None = None) -> StartChatResponse:
+async def start_chat(
+    agent_id: str,
+    http_request: Request,
+    request: StartChatRequest | None = None,
+) -> StartChatResponse:
     """Start a text chat session with an agent.
 
     Creates a ConversationEngine in-process (no LiveKit or subprocess needed).
     Returns a chat_id for WebSocket connection.
     """
     try:
-        _agent, graph = get_agent_service().load_graph(agent_id)
+        _agent, graph = _resolve(http_request, AgentService).load_graph(agent_id)
     except (FileNotFoundError, ValueError) as e:
         raise HTTPException(status_code=400, detail=f"Cannot load agent graph: {e}") from None
 
-    call_repo = get_call_repo()
-    chat_manager = get_chat_manager()
+    call_repo = _resolve(http_request, CallRepository)
+    chat_manager = _resolve(http_request, ChatManager)
 
     dynamic_variables = request.dynamic_variables if request else {}
 
@@ -2089,14 +2153,14 @@ async def start_chat(agent_id: str, request: StartChatRequest | None = None) -> 
 
 
 @router.post("/chats/{chat_id}/end")
-async def end_chat_session(chat_id: str) -> dict:
+async def end_chat_session(chat_id: str, http_request: Request) -> dict:
     """End a text chat session and save the transcript as a run."""
-    call_repo = get_call_repo()
+    call_repo = _resolve(http_request, CallRepository)
     call = call_repo.get(chat_id)
     if not call:
         raise HTTPException(status_code=404, detail="Chat not found")
 
-    chat_manager = get_chat_manager()
+    chat_manager = _resolve(http_request, ChatManager)
 
     try:
         await chat_manager.end_chat(chat_id, call_repo)
@@ -2105,7 +2169,7 @@ async def end_chat_session(chat_id: str) -> dict:
 
     # Re-fetch call to get final transcript and timestamps
     call = call_repo.get(chat_id)
-    run_id = await _save_call_as_run(call)
+    run_id = await _save_call_as_run(http_request, call)
 
     return {"status": "ended", "chat_id": chat_id, "run_id": run_id}
 
@@ -2118,14 +2182,15 @@ async def chat_websocket(websocket: WebSocket, chat_id: str):
     except Exception:
         return
 
-    call_repo = get_call_repo()
+    container = websocket.app.state.container
+    call_repo = container.resolve(CallRepository)
     call = call_repo.get(chat_id)
     if not call:
         await websocket.send_json({"type": "error", "message": "Chat not found"})
         await websocket.close(code=1008)
         return
 
-    chat_manager = get_chat_manager()
+    chat_manager = container.resolve(ChatManager)
 
     try:
         # Send initial state
@@ -2168,17 +2233,17 @@ async def chat_websocket(websocket: WebSocket, chat_id: str):
 
 
 @router.get("/platforms", response_model=list[PlatformInfo])
-async def list_platforms() -> list[PlatformInfo]:
+async def list_platforms(http_request: Request) -> list[PlatformInfo]:
     """List all available platforms and their configuration status."""
-    platforms = get_platform_service().list_platforms()
+    platforms = _resolve(http_request, PlatformService).list_platforms()
     return [PlatformInfo(**p) for p in platforms]
 
 
 @router.get("/platforms/{platform}/status", response_model=PlatformStatusResponse)
-async def get_platform_status(platform: str) -> PlatformStatusResponse:
+async def get_platform_status(platform: str, http_request: Request) -> PlatformStatusResponse:
     """Check if a platform API key is configured."""
     try:
-        result = get_platform_service().get_status(platform)
+        result = _resolve(http_request, PlatformService).get_status(platform)
         return PlatformStatusResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -2186,11 +2251,13 @@ async def get_platform_status(platform: str) -> PlatformStatusResponse:
 
 @router.post("/platforms/{platform}/configure", response_model=PlatformStatusResponse)
 async def configure_platform(
-    platform: str, request: ConfigurePlatformRequest
+    platform: str, request: ConfigurePlatformRequest, http_request: Request
 ) -> PlatformStatusResponse:
     """Configure platform credentials. Returns 409 if already configured."""
     try:
-        result = get_platform_service().configure(platform, request.api_key, request.api_secret)
+        result = _resolve(http_request, PlatformService).configure(
+            platform, request.api_key, request.api_secret
+        )
         return PlatformStatusResponse(**result)
     except ValueError as e:
         detail = str(e)
@@ -2199,10 +2266,10 @@ async def configure_platform(
 
 
 @router.get("/platforms/{platform}/agents", response_model=list[RemoteAgentInfo])
-async def list_platform_agents(platform: str) -> list[RemoteAgentInfo]:
+async def list_platform_agents(platform: str, http_request: Request) -> list[RemoteAgentInfo]:
     """List agents from any supported platform."""
     try:
-        agents = get_platform_service().list_remote_agents(platform)
+        agents = _resolve(http_request, PlatformService).list_remote_agents(platform)
         return [RemoteAgentInfo(**a) for a in agents]
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -2213,10 +2280,10 @@ async def list_platform_agents(platform: str) -> list[RemoteAgentInfo]:
 
 
 @router.post("/platforms/{platform}/agents/{agent_id}/import", response_model=AgentGraph)
-async def import_platform_agent(platform: str, agent_id: str) -> AgentGraph:
+async def import_platform_agent(platform: str, agent_id: str, http_request: Request) -> AgentGraph:
     """Import an agent from any supported platform by ID."""
     try:
-        return get_platform_service().import_from_platform(platform, agent_id)
+        return _resolve(http_request, PlatformService).import_from_platform(platform, agent_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
@@ -2227,11 +2294,13 @@ async def import_platform_agent(platform: str, agent_id: str) -> AgentGraph:
 
 @router.post("/platforms/{platform}/export", response_model=ExportToPlatformResponse)
 async def export_to_platform(
-    platform: str, request: ExportToPlatformRequest
+    platform: str, request: ExportToPlatformRequest, http_request: Request
 ) -> ExportToPlatformResponse:
     """Export an agent graph to any supported platform."""
     try:
-        result = get_platform_service().export_to_platform(platform, request.graph, request.name)
+        result = _resolve(http_request, PlatformService).export_to_platform(
+            platform, request.graph, request.name
+        )
         return ExportToPlatformResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -2242,19 +2311,21 @@ async def export_to_platform(
 
 
 @router.get("/agents/{agent_id}/sync-status", response_model=SyncStatusResponse)
-async def get_sync_status(agent_id: str) -> SyncStatusResponse:
+async def get_sync_status(agent_id: str, http_request: Request) -> SyncStatusResponse:
     """Check if an agent can be synced to its source platform."""
-    _require_agent(agent_id)
-    result = get_platform_service().get_sync_status(agent_id)
+    _require_agent(http_request, agent_id)
+    result = _resolve(http_request, PlatformService).get_sync_status(agent_id)
     return SyncStatusResponse(**result)
 
 
 @router.post("/agents/{agent_id}/sync", response_model=SyncToPlatformResponse)
-async def sync_to_platform(agent_id: str, request: SyncToPlatformRequest) -> SyncToPlatformResponse:
+async def sync_to_platform(
+    agent_id: str, request: SyncToPlatformRequest, http_request: Request
+) -> SyncToPlatformResponse:
     """Sync an agent to its source platform."""
-    _require_agent(agent_id)
+    _require_agent(http_request, agent_id)
     try:
-        result = get_platform_service().sync_to_platform(agent_id, request.graph)
+        result = _resolve(http_request, PlatformService).sync_to_platform(agent_id, request.graph)
         return SyncToPlatformResponse(**result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
@@ -2263,8 +2334,13 @@ async def sync_to_platform(agent_id: str, request: SyncToPlatformRequest) -> Syn
 
 
 def create_app() -> FastAPI:
-    """Create the FastAPI app (for programmatic use)."""
-    settings = get_settings_service().get_settings()
+    """Run app startup (storage init, cache setup) and return the configured app.
+
+    The container is built at module load and lives on `app.state.container`.
+    """
+    container = app.state.container
+    init_storage(container)
+    settings = container.resolve(SettingsService).get_settings()
     setup_cache_from_settings(settings.cache)
     return app
 

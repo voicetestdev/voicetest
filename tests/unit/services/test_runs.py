@@ -3,20 +3,20 @@
 import pytest
 
 from voicetest.models.results import Message
-from voicetest.services import get_agent_service
-from voicetest.services import get_run_service
+from voicetest.services.agents import AgentService
+from voicetest.services.runs import RunService
 
 
 @pytest.fixture
-def svc(tmp_path, monkeypatch):
+def svc(tmp_path, monkeypatch, container):
     """RunService backed by an isolated temp database."""
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
-    return get_run_service()
+    return container.resolve(RunService)
 
 
 @pytest.fixture
-def agent_id(tmp_path, monkeypatch):
+def agent_id(tmp_path, monkeypatch, container):
     """Create a temp agent and return its ID."""
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
@@ -33,40 +33,35 @@ def agent_id(tmp_path, monkeypatch):
         },
         "source_metadata": {},
     }
-    agent_svc = get_agent_service()
+    agent_svc = container.resolve(AgentService)
     created = agent_svc.create_agent(name="Run Agent", config=config)
     return created["id"]
 
 
 class TestCreateRun:
-    def test_creates_run(self, agent_id):
-        svc = get_run_service()
+    def test_creates_run(self, agent_id, svc):
         run = svc.create_run(agent_id)
         assert "id" in run
         assert run["agent_id"] == agent_id
 
-    def test_run_has_started_at(self, agent_id):
-        svc = get_run_service()
+    def test_run_has_started_at(self, agent_id, svc):
         run = svc.create_run(agent_id)
         assert run["started_at"] is not None
         assert run["completed_at"] is None
 
 
 class TestListRuns:
-    def test_empty(self, agent_id):
-        svc = get_run_service()
+    def test_empty(self, agent_id, svc):
         assert svc.list_runs(agent_id) == []
 
-    def test_lists_after_create(self, agent_id):
-        svc = get_run_service()
+    def test_lists_after_create(self, agent_id, svc):
         svc.create_run(agent_id)
         runs = svc.list_runs(agent_id)
         assert len(runs) == 1
 
 
 class TestGetRun:
-    def test_get_existing(self, agent_id):
-        svc = get_run_service()
+    def test_get_existing(self, agent_id, svc):
         created = svc.create_run(agent_id)
         run = svc.get_run(created["id"])
         assert run is not None
@@ -77,16 +72,14 @@ class TestGetRun:
 
 
 class TestDeleteRun:
-    def test_delete(self, agent_id):
-        svc = get_run_service()
+    def test_delete(self, agent_id, svc):
         created = svc.create_run(agent_id)
         svc.delete_run(created["id"])
         assert svc.get_run(created["id"]) is None
 
 
 class TestCompleteRun:
-    def test_complete(self, agent_id):
-        svc = get_run_service()
+    def test_complete(self, agent_id, svc):
         created = svc.create_run(agent_id)
         svc.complete(created["id"])
         run = svc.get_run(created["id"])
@@ -102,8 +95,7 @@ _FOUR_TURN_TRANSCRIPT = [
 
 
 class TestImportCalls:
-    def test_imports_one_call(self, agent_id, imported_test_result):
-        svc = get_run_service()
+    def test_imports_one_call(self, agent_id, imported_test_result, svc):
         run = svc.import_calls(agent_id, [imported_test_result("call_001")])
 
         assert run is not None
@@ -115,8 +107,7 @@ class TestImportCalls:
         assert run["results"][0]["test_case_id"] is None
         assert run["results"][0]["call_id"] is None
 
-    def test_imports_multiple_calls_into_one_run(self, agent_id, imported_test_result):
-        svc = get_run_service()
+    def test_imports_multiple_calls_into_one_run(self, agent_id, imported_test_result, svc):
         run = svc.import_calls(
             agent_id,
             [
@@ -130,13 +121,12 @@ class TestImportCalls:
         assert {r["test_name"] for r in run["results"]} == {"call_a", "call_b", "call_c"}
         assert all(r["status"] == "imported" for r in run["results"])
 
-    def test_empty_results_creates_empty_run(self, agent_id):
+    def test_empty_results_creates_empty_run(self, agent_id, svc):
         """Edge case: importing zero conversations still creates a (complete) Run.
 
         Worth keeping rather than raising, because the adapter might be the
         place that rejects empty payloads — the service shouldn't second-guess.
         """
-        svc = get_run_service()
         run = svc.import_calls(agent_id, [])
 
         assert run is not None
@@ -152,19 +142,16 @@ def _empty_graph():
 
 class TestReplayRun:
     @pytest.mark.asyncio
-    async def test_raises_when_source_not_found(self, agent_id):
+    async def test_raises_when_source_not_found(self, agent_id, svc):
         from voicetest.models.test_case import RunOptions
-
-        svc = get_run_service()
 
         with pytest.raises(ValueError, match="Source run not found"):
             await svc.replay_run("nonexistent", _empty_graph(), RunOptions())
 
     @pytest.mark.asyncio
-    async def test_raises_when_source_has_no_results(self, agent_id):
+    async def test_raises_when_source_has_no_results(self, agent_id, svc):
         from voicetest.models.test_case import RunOptions
 
-        svc = get_run_service()
         # Empty source run
         empty_source = svc.create_run(agent_id)
         svc.complete(empty_source["id"])
@@ -174,14 +161,13 @@ class TestReplayRun:
 
     @pytest.mark.asyncio
     async def test_replay_drives_scripted_simulator(
-        self, agent_id, imported_test_result, stub_conversation_runner
+        self, agent_id, imported_test_result, stub_conversation_runner, svc
     ):
         """Replay creates a new Run linked to the source's agent, with one
         replay Result per source Result. The runner is invoked with a
         ScriptedUserSimulator carrying the source's recorded user turns."""
         from voicetest.models.test_case import RunOptions
 
-        svc = get_run_service()
         source = svc.import_calls(
             agent_id,
             [

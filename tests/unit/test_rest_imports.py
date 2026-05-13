@@ -2,6 +2,8 @@
 
 import json
 
+from voicetest.services import RunService
+
 
 def _create_agent(client, sample_retell_config) -> str:
     """Create an agent and return its id."""
@@ -118,11 +120,9 @@ class TestReplayEndpoint:
 
     def test_replay_source_with_no_results_returns_400(self, db_client, sample_retell_config):
         """An empty source run can't be replayed — service should reject."""
-        from voicetest.services import get_run_service
-
         agent_id = _create_agent(db_client, sample_retell_config)
         # Create an empty run via the service (no results)
-        empty_run = get_run_service().create_run(agent_id)
+        empty_run = db_client.app.state.container.resolve(RunService).create_run(agent_id)
 
         response = db_client.post(f"/api/runs/{empty_run['id']}/replay")
         assert response.status_code == 400
