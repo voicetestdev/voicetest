@@ -155,6 +155,7 @@ def create_container() -> punq.Container:
     from voicetest.services.discovery import DiscoveryService  # noqa: PLC0415
     from voicetest.services.evaluation import EvaluationService  # noqa: PLC0415
     from voicetest.services.platforms import PlatformService  # noqa: PLC0415
+    from voicetest.services.run_runner import RunRunner  # noqa: PLC0415
     from voicetest.services.runs import RunService  # noqa: PLC0415
     from voicetest.services.snippets import SnippetService  # noqa: PLC0415
     from voicetest.services.testing.cases import TestCaseService  # noqa: PLC0415
@@ -169,13 +170,13 @@ def create_container() -> punq.Container:
     container.register(DiagnosisService)
     container.register(SnippetService)
     container.register(RunService)
+    container.register(RunRunner)
     container.register(PlatformService)
 
-    # Live call / chat managers hold per-process state (_active_calls,
-    # _active_chats), so they must be singletons.
-    from voicetest.calls import CallManager  # noqa: PLC0415
-    from voicetest.chat import ChatManager  # noqa: PLC0415
-    from voicetest.coordinator import RunCoordinator  # noqa: PLC0415
+    # Live call / chat managers hold per-process session state, so they must be singletons.
+    from voicetest.web.calls import CallManager  # noqa: PLC0415
+    from voicetest.web.chat import ChatManager  # noqa: PLC0415
+    from voicetest.web.coordinator import RunCoordinator  # noqa: PLC0415
 
     container.register(CallManager, scope=punq.Scope.singleton)
     container.register(ChatManager, scope=punq.Scope.singleton)

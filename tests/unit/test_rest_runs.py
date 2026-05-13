@@ -2,9 +2,9 @@
 
 import pytest
 
-from voicetest.coordinator import RunCoordinator
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
+from voicetest.web.coordinator import RunCoordinator
 
 
 def _get_run_repo(db_client):

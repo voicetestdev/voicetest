@@ -11,8 +11,8 @@ import logging
 
 import httpx
 
+from voicetest.core.settings import Settings
 from voicetest.models.results import Message
-from voicetest.settings import Settings
 
 
 logger = logging.getLogger(__name__)

@@ -5,20 +5,19 @@ No LiveKit or audio infrastructure required.
 """
 
 import asyncio
-import contextlib
 from dataclasses import dataclass
 from dataclasses import field
 import logging
 from typing import Any
 from uuid import uuid4
 
-from voicetest.broadcast import BroadcastBus
+from voicetest.core.exceptions import QuotaExhaustedError
+from voicetest.core.settings import resolve_model
 from voicetest.engine.conversation import ConversationEngine
-from voicetest.exceptions import QuotaExhaustedError
 from voicetest.models.agent import AgentGraph
 from voicetest.models.test_case import RunOptions
 from voicetest.services.settings import SettingsService
-from voicetest.settings import resolve_model
+from voicetest.web.broadcast import SessionRegistry
 
 
 logger = logging.getLogger(__name__)
@@ -40,8 +39,7 @@ class ChatManager:
     """Manages text-based chat sessions with agents."""
 
     def __init__(self, settings_service: SettingsService) -> None:
-        self._active_chats: dict[str, ActiveChat] = {}
-        self._bus = BroadcastBus()
+        self._sessions: SessionRegistry[ActiveChat] = SessionRegistry()
         self._settings = settings_service
 
     async def start_chat(
@@ -87,8 +85,7 @@ class ChatManager:
             agent_id=agent_id,
             engine=engine,
         )
-        self._active_chats[call_record["id"]] = active_chat
-        self._bus.start(call_record["id"])
+        self._sessions.register(call_record["id"], active_chat)
 
         return {"chat_id": call_record["id"]}
 
@@ -105,10 +102,9 @@ class ChatManager:
             content: The user's message text.
             call_repo: Repository for persisting transcript updates.
         """
-        if chat_id not in self._active_chats:
+        active_chat = self._sessions.get(chat_id)
+        if active_chat is None:
             return
-
-        active_chat = self._active_chats[chat_id]
         if active_chat.cancel_event.is_set():
             return
 
@@ -123,7 +119,7 @@ class ChatManager:
             call_repo.update_transcript(chat_id, active_chat.transcript)
 
             # Broadcast user message in transcript
-            await self._broadcast_update(
+            await self._sessions.broadcast(
                 chat_id,
                 {
                     "type": "transcript_update",
@@ -133,7 +129,7 @@ class ChatManager:
 
             # Define streaming token callback
             async def on_token(token: str, source: str) -> None:
-                await self._broadcast_update(
+                await self._sessions.broadcast(
                     chat_id,
                     {"type": "token", "content": token},
                 )
@@ -148,7 +144,7 @@ class ChatManager:
             call_repo.update_transcript(chat_id, active_chat.transcript)
 
             # Broadcast full transcript update
-            await self._broadcast_update(
+            await self._sessions.broadcast(
                 chat_id,
                 {
                     "type": "transcript_update",
@@ -158,17 +154,15 @@ class ChatManager:
 
             # If agent ended the call, broadcast and clean up the session
             if turn_result.end_call_invoked:
-                await self._broadcast_update(
+                call_repo.end_call(chat_id)
+                await self._sessions.close(
                     chat_id,
                     {"type": "chat_ended", "reason": "agent_ended"},
                 )
-                call_repo.end_call(chat_id)
-                del self._active_chats[chat_id]
-                self._bus.end(chat_id)
 
         except QuotaExhaustedError as e:
             logger.warning("Quota exhausted during chat %s: %s", chat_id, e)
-            await self._broadcast_update(
+            await self._sessions.broadcast(
                 chat_id,
                 {
                     "type": "quota_exhausted",
@@ -178,7 +172,7 @@ class ChatManager:
             )
         except Exception as e:
             logger.exception("Error processing chat message for %s", chat_id)
-            await self._broadcast_update(
+            await self._sessions.broadcast(
                 chat_id,
                 {"type": "error", "message": str(e)},
             )
@@ -187,33 +181,22 @@ class ChatManager:
 
     async def end_chat(self, chat_id: str, call_repo: Any) -> dict | None:
         """End a chat session and clean up resources."""
-        if chat_id not in self._active_chats:
+        active_chat = self._sessions.get(chat_id)
+        if active_chat is None:
             return call_repo.end_call(chat_id)
 
-        active_chat = self._active_chats[chat_id]
         active_chat.cancel_event.set()
-
-        await self._broadcast_update(chat_id, {"type": "chat_ended"})
-
-        for ws in list(self._bus.subscribers(chat_id)):
-            with contextlib.suppress(Exception):
-                await ws.close()
-
-        del self._active_chats[chat_id]
-        self._bus.end(chat_id)
+        await self._sessions.close(chat_id, {"type": "chat_ended"})
 
         return call_repo.end_call(chat_id)
 
     def get_active_chat(self, chat_id: str) -> ActiveChat | None:
         """Get active chat state."""
-        return self._active_chats.get(chat_id)
+        return self._sessions.get(chat_id)
 
     async def attach_websocket(self, chat_id: str, websocket: Any) -> None:
         """Subscribe a WebSocket to chat updates (after replaying any backlog)."""
-        await self._bus.attach(chat_id, websocket)
+        await self._sessions.attach(chat_id, websocket)
 
     def detach_websocket(self, chat_id: str, websocket: Any) -> None:
-        self._bus.detach(chat_id, websocket)
-
-    async def _broadcast_update(self, chat_id: str, data: dict) -> None:
-        await self._bus.broadcast(chat_id, data)
+        self._sessions.detach(chat_id, websocket)

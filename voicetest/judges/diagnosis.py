@@ -13,7 +13,7 @@ from voicetest.models.diagnosis import FixSuggestion
 from voicetest.models.diagnosis import PromptChange
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
-from voicetest.retry import OnErrorCallback
+from voicetest.util.retry import OnErrorCallback
 
 
 logger = logging.getLogger(__name__)

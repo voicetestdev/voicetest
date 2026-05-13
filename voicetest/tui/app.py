@@ -12,7 +12,7 @@ from textual.widgets import Header
 from textual.widgets import Static
 
 from voicetest.models.test_case import RunOptions
-from voicetest.runner import TestRunContext
+from voicetest.runtime.runner import TestRunContext
 from voicetest.services import AppServices
 from voicetest.tui.widgets import ResultsPanel
 from voicetest.tui.widgets import TestList

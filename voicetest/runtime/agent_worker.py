@@ -7,8 +7,8 @@ IMPORTANT: This uses the same ConversationEngine as the test runner to
 ensure tests and live calls behave identically.
 
 Usage:
-    python -m voicetest.agent_worker --room ROOM --url URL --token TOKEN
-    python -m voicetest.agent_worker --room ROOM --url URL --token TOKEN --backend local
+    python -m voicetest.runtime.agent_worker --room ROOM --url URL --token TOKEN
+    python -m voicetest.runtime.agent_worker --room ROOM --url URL --token TOKEN --backend local
     # AgentGraph JSON is read from stdin
 """
 
@@ -25,10 +25,10 @@ from livekit.agents.voice import AgentSession
 from livekit.plugins import openai
 from livekit.plugins import silero
 
+from voicetest.core.settings import resolve_model
 from voicetest.engine.conversation import ConversationEngine
 from voicetest.engine.livekit_llm import VoicetestLLM
 from voicetest.models.agent import AgentGraph
-from voicetest.settings import resolve_model
 
 
 try:

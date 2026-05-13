@@ -13,7 +13,7 @@ import pytest
 from voicetest.llm import _invoke_callback
 from voicetest.llm import call_llm
 from voicetest.llm.base import _create_lm
-from voicetest.retry import RetryError
+from voicetest.util.retry import RetryError
 
 
 # ---------------------------------------------------------------------------

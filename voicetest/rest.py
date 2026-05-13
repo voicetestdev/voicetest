@@ -7,7 +7,6 @@ Run with: voicetest serve
 Or: uvicorn voicetest.rest:app --reload
 """
 
-import asyncio
 from collections.abc import AsyncIterator
 import contextlib
 from datetime import UTC
@@ -39,15 +38,10 @@ from sqlalchemy.orm import Session
 from starlette.websockets import WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from voicetest.cache import setup_cache_from_settings
-from voicetest.calls import CallManager
-from voicetest.chat import ChatManager
 from voicetest.container import create_container
-from voicetest.coordinator import RunCoordinator
+from voicetest.core.settings import Settings
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
-from voicetest.exceptions import QuotaExhaustedError
-from voicetest.executor import RunJob
 from voicetest.importers.transcripts.retell import parse_retell_file
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import GlobalMetric
@@ -60,26 +54,30 @@ from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
-from voicetest.pathutil import resolve_within
-from voicetest.retry import RetryError
 from voicetest.services.agents import AgentService
 from voicetest.services.decompose import DecomposeService
 from voicetest.services.diagnosis import DiagnosisService
 from voicetest.services.discovery import DiscoveryService
 from voicetest.services.evaluation import EvaluationService
 from voicetest.services.platforms import PlatformService
+from voicetest.services.run_runner import RunJob
+from voicetest.services.run_runner import RunRunner
 from voicetest.services.runs import RunService
 from voicetest.services.settings import SettingsService
 from voicetest.services.snippets import SnippetService
 from voicetest.services.testing.cases import TestCaseService
 from voicetest.services.testing.execution import TestExecutionService
 from voicetest.services.testing.execution import resolve_run_options
-from voicetest.settings import Settings
 from voicetest.storage.models import Result as ResultModel
 from voicetest.storage.models import Run as RunModel
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import CallRepository
 from voicetest.storage.repositories import TestCaseRepository
+from voicetest.util.cache import setup_cache_from_settings
+from voicetest.util.pathutil import resolve_within
+from voicetest.web.calls import CallManager
+from voicetest.web.chat import ChatManager
+from voicetest.web.coordinator import RunCoordinator
 
 
 # Configure logging from env var set by CLI (carries across uvicorn --reload workers).
@@ -1487,216 +1485,6 @@ async def decompose_agent(agent_id: str, http_request: Request) -> dict:
     return result.model_dump()
 
 
-async def _execute_run(
-    container,
-    run_id: str,
-    agent_id: str,
-    test_records: list[dict],
-    result_ids: dict[str, str],
-    options: RunOptions,
-) -> None:
-    """Execute tests for a run in the background.
-
-    Background tasks have no request scope; the caller passes the container
-    directly so services can be resolved without the FastAPI layer.
-    """
-    # The coordinator's entry for run_id is set up by start_run() before this
-    # task is scheduled, so WebSocket clients can register immediately.
-    agent_svc = container.resolve(AgentService)
-    tc_svc = container.resolve(TestCaseService)
-    run_svc = container.resolve(RunService)
-    coordinator = container.resolve(RunCoordinator)
-
-    try:
-        _agent, graph = agent_svc.load_graph(agent_id)
-    except (FileNotFoundError, ValueError):
-        return
-
-    # Load metrics config for global metrics
-    metrics_config = agent_svc.get_metrics_config(agent_id)
-
-    try:
-        for test_record in test_records:
-            # Get pre-created result ID
-            result_id = result_ids[test_record["id"]]
-
-            # Check if this specific test was cancelled before it started
-            if coordinator.is_test_cancelled(run_id, result_id):
-                run_svc.mark_result_cancelled(result_id)
-                await coordinator.broadcast(
-                    run_id,
-                    {"type": "test_cancelled", "result_id": result_id},
-                )
-                continue
-
-            # Check if entire run is cancelled
-            if coordinator.is_cancelled(run_id):
-                # Mark ALL remaining tests (including current) as cancelled
-                remaining_idx = test_records.index(test_record)
-                for remaining_record in test_records[remaining_idx:]:
-                    remaining_result_id = result_ids[remaining_record["id"]]
-                    run_svc.mark_result_cancelled(remaining_result_id)
-                    await coordinator.broadcast(
-                        run_id,
-                        {"type": "test_cancelled", "result_id": remaining_result_id},
-                    )
-                break
-
-            test_case = tc_svc.to_model(test_record)
-
-            # Broadcast that test is now actively running
-            await coordinator.broadcast(
-                run_id,
-                {
-                    "type": "test_started",
-                    "result_id": result_id,
-                    "test_case_id": test_record["id"],
-                    "test_name": test_case.name,
-                },
-            )
-
-            async def make_on_turn(rid: str, transcript_ref: list[Message]):
-                async def on_turn(transcript: list) -> None:
-                    nonlocal transcript_ref
-                    # Check for cancellation
-                    if coordinator.is_cancelled(run_id, rid):
-                        raise asyncio.CancelledError("Test cancelled by user")
-                    # Track transcript for error recovery
-                    transcript_ref.clear()
-                    transcript_ref.extend(transcript)
-                    run_svc.update_transcript(rid, transcript)
-                    await coordinator.broadcast(
-                        run_id,
-                        {
-                            "type": "transcript_update",
-                            "result_id": rid,
-                            "transcript": [m.model_dump() for m in transcript],
-                        },
-                    )
-
-                return on_turn
-
-            def make_on_token(rid: str):
-                async def on_token(token: str, source: str) -> None:
-                    await coordinator.broadcast(
-                        run_id,
-                        {
-                            "type": "token_update",
-                            "result_id": rid,
-                            "token": token,
-                            "source": source,
-                        },
-                    )
-
-                return on_token
-
-            def make_on_error(rid: str):
-                async def on_error(error: RetryError) -> None:
-                    await coordinator.broadcast(
-                        run_id,
-                        {
-                            "type": "retry_error",
-                            "result_id": rid,
-                            "error_type": error.error_type,
-                            "message": error.message,
-                            "attempt": error.attempt,
-                            "max_attempts": error.max_attempts,
-                            "retry_after": error.retry_after,
-                        },
-                    )
-
-                return on_error
-
-            # Track transcript for error cases
-            last_transcript: list[Message] = []
-
-            try:
-                result = await container.resolve(TestExecutionService).run_test(
-                    graph,
-                    test_case,
-                    options=options,
-                    metrics_config=metrics_config,
-                    on_turn=await make_on_turn(result_id, last_transcript),
-                    on_token=make_on_token(result_id) if options.streaming else None,
-                    on_error=make_on_error(result_id),
-                )
-                run_svc.complete_result(result_id, result)
-                await coordinator.broadcast(
-                    run_id,
-                    {
-                        "type": "test_completed",
-                        "result_id": result_id,
-                        "status": result.status,
-                    },
-                )
-            except asyncio.CancelledError:
-                cancelled_result = TestResult(
-                    test_name=test_case.name,
-                    status="error",
-                    transcript=last_transcript,
-                    error_message="Cancelled by user",
-                )
-                run_svc.complete_result(result_id, cancelled_result)
-                await coordinator.broadcast(
-                    run_id,
-                    {
-                        "type": "test_cancelled",
-                        "result_id": result_id,
-                    },
-                )
-            except QuotaExhaustedError as e:
-                error_result = TestResult(
-                    test_name=test_case.name,
-                    status="error",
-                    transcript=last_transcript,
-                    error_message=str(e),
-                )
-                run_svc.complete_result(result_id, error_result)
-                await coordinator.broadcast(
-                    run_id,
-                    {
-                        "type": "quota_exhausted",
-                        "result_id": result_id,
-                        "message": str(e),
-                        "reset_message": e.reset_message,
-                    },
-                )
-                # Abort remaining tests — quota won't reset for hours,
-                # no point burning through retry backoff on each one.
-                remaining_idx = test_records.index(test_record) + 1
-                for remaining_record in test_records[remaining_idx:]:
-                    remaining_result_id = result_ids[remaining_record["id"]]
-                    run_svc.mark_result_cancelled(remaining_result_id)
-                    await coordinator.broadcast(
-                        run_id,
-                        {"type": "test_cancelled", "result_id": remaining_result_id},
-                    )
-                break
-            except Exception as e:
-                error_result = TestResult(
-                    test_name=test_case.name,
-                    status="error",
-                    transcript=last_transcript,
-                    error_message=str(e),
-                )
-                run_svc.complete_result(result_id, error_result)
-                await coordinator.broadcast(
-                    run_id,
-                    {
-                        "type": "test_error",
-                        "result_id": result_id,
-                        "error": str(e),
-                    },
-                )
-
-        run_svc.complete(run_id)
-        await coordinator.broadcast(run_id, {"type": "run_completed"})
-    finally:
-        # Clean up after a delay to allow final messages
-        await asyncio.sleep(1)
-        coordinator.end(run_id)
-
-
 @router.websocket("/runs/{run_id}/ws")
 async def run_websocket(websocket: WebSocket, run_id: str):
     """WebSocket for streaming run updates and receiving cancel commands."""
@@ -1761,26 +1549,6 @@ async def run_websocket(websocket: WebSocket, run_id: str):
         coordinator.detach(run_id, websocket)
 
 
-class BackgroundTaskExecutor:
-    """Default executor using FastAPI BackgroundTasks."""
-
-    def __init__(self, background_tasks: BackgroundTasks, container):
-        self.background_tasks = background_tasks
-        self.container = container
-
-    def submit(self, job: RunJob) -> None:
-        """Submit job to run in background."""
-        self.background_tasks.add_task(
-            _execute_run,
-            self.container,
-            job.run_id,
-            job.agent_id,
-            job.test_records,
-            job.result_ids,
-            job.options,
-        )
-
-
 @router.post("/agents/{agent_id}/runs")
 async def start_run(
     agent_id: str,
@@ -1828,8 +1596,7 @@ async def start_run(
         options=options,
     )
 
-    container = http_request.app.state.container
-    BackgroundTaskExecutor(background_tasks, container).submit(job)
+    background_tasks.add_task(_resolve(http_request, RunRunner).execute, job)
 
     return {
         "id": run["id"],

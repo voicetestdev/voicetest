@@ -13,8 +13,8 @@ import os
 from fastapi.testclient import TestClient
 import pytest
 
+from voicetest.core.settings import load_settings
 from voicetest.rest import app
-from voicetest.settings import load_settings
 
 
 # Load settings and apply to environment before tests

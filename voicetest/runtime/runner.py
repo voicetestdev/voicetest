@@ -17,8 +17,8 @@ from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
-from voicetest.retry import OnErrorCallback
 from voicetest.services import AppServices
+from voicetest.util.retry import OnErrorCallback
 
 
 async def load_agent(

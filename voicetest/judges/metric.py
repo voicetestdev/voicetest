@@ -5,7 +5,7 @@ import dspy
 from voicetest.llm import call_llm
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
-from voicetest.retry import OnErrorCallback
+from voicetest.util.retry import OnErrorCallback
 
 
 DEFAULT_THRESHOLD = 0.7

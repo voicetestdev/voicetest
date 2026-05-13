@@ -2,12 +2,12 @@
 
 import pytest
 
+from voicetest.core.settings import DEFAULT_MODEL
+from voicetest.core.settings import load_settings
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
-from voicetest.settings import DEFAULT_MODEL
-from voicetest.settings import load_settings
 
 
 # Load settings and apply env vars for API keys

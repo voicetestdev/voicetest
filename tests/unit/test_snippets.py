@@ -1,10 +1,10 @@
-"""Tests for voicetest.snippets auto-DRY analysis module."""
+"""Tests for voicetest.util.snippets auto-DRY analysis module."""
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
-from voicetest.snippets import find_repeated_text
-from voicetest.snippets import find_similar_text
-from voicetest.snippets import suggest_snippets
+from voicetest.util.snippets import find_repeated_text
+from voicetest.util.snippets import find_similar_text
+from voicetest.util.snippets import suggest_snippets
 
 
 def _make_graph(**node_prompts: str) -> AgentGraph:

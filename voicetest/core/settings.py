@@ -11,7 +11,7 @@ import tomllib
 from pydantic import BaseModel
 from pydantic import Field
 
-from voicetest.config import get_settings_path
+from voicetest.core.config import get_settings_path
 
 
 # Default model used when settings are not configured

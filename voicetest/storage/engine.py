@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import NullPool
 
-from voicetest.config import get_db_path
+from voicetest.core.config import get_db_path
 from voicetest.storage.duckdb import DuckDBSessionMaker
 from voicetest.storage.models import Base
 

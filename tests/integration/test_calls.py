@@ -56,7 +56,7 @@ class TestAgentWorkerSubprocess:
         cmd = [
             sys.executable,
             "-m",
-            "voicetest.agent_worker",
+            "voicetest.runtime.agent_worker",
             "--room",
             "test-room",
             "--url",
@@ -97,7 +97,7 @@ class TestAgentWorkerSubprocess:
         cmd = [
             sys.executable,
             "-m",
-            "voicetest.agent_worker",
+            "voicetest.runtime.agent_worker",
             "--room",
             "test-room",
             "--url",
@@ -129,7 +129,7 @@ class TestAgentWorkerSubprocess:
         cmd = [
             sys.executable,
             "-m",
-            "voicetest.agent_worker",
+            "voicetest.runtime.agent_worker",
             "--room",
             "test-room",
             "--url",
@@ -184,7 +184,7 @@ class TestAgentWorkerWithLiveKit:
         cmd = [
             sys.executable,
             "-m",
-            "voicetest.agent_worker",
+            "voicetest.runtime.agent_worker",
             "--room",
             "test-room-integration",
             "--url",
@@ -267,8 +267,8 @@ class TestCallManager:
     @pytest.fixture
     def call_manager(self):
         """Create a CallManager for testing."""
-        from voicetest.calls import CallManager
-        from voicetest.calls import LiveKitConfig
+        from voicetest.web.calls import CallManager
+        from voicetest.web.calls import LiveKitConfig
 
         config = LiveKitConfig(
             url="ws://localhost:7880",

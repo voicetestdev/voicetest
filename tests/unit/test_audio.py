@@ -2,12 +2,12 @@
 
 import pytest
 
-from voicetest.audio import AudioRoundTrip
+from voicetest.core.settings import AudioSettings
+from voicetest.core.settings import Settings
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.test_case import RunOptions
-from voicetest.settings import AudioSettings
-from voicetest.settings import Settings
+from voicetest.util.audio import AudioRoundTrip
 
 
 class TestAudioRoundTrip:
@@ -184,8 +184,8 @@ class TestAudioSettings:
         assert settings.run.audio_eval is True
 
     def test_save_and_load_audio_settings(self, tmp_path):
-        from voicetest.settings import load_settings
-        from voicetest.settings import save_settings
+        from voicetest.core.settings import load_settings
+        from voicetest.core.settings import save_settings
 
         settings_file = tmp_path / ".voicetest.toml"
 
@@ -204,7 +204,7 @@ class TestAudioSettings:
         assert loaded.audio.stt_url == "http://custom:8001/v1"
 
     def test_toml_contains_audio_section(self, tmp_path):
-        from voicetest.settings import save_settings
+        from voicetest.core.settings import save_settings
 
         settings_file = tmp_path / ".voicetest.toml"
 

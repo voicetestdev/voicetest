@@ -2,11 +2,11 @@
 
 import os
 
-from voicetest.settings import DEFAULT_MODEL
-from voicetest.settings import Settings
-from voicetest.settings import load_settings
-from voicetest.settings import resolve_model
-from voicetest.settings import save_settings
+from voicetest.core.settings import DEFAULT_MODEL
+from voicetest.core.settings import Settings
+from voicetest.core.settings import load_settings
+from voicetest.core.settings import resolve_model
+from voicetest.core.settings import save_settings
 
 
 class TestSettings:

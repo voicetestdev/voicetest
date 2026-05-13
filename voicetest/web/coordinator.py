@@ -12,7 +12,7 @@ import contextlib
 import threading
 from typing import Any
 
-from voicetest.broadcast import BroadcastBus
+from voicetest.web.broadcast import BroadcastBus
 
 
 class RunCoordinator:

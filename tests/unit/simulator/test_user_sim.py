@@ -237,8 +237,8 @@ class TestUserSimulatorGenerate:
     async def test_llm_none_message_retries_then_raises(self):
         """If the LLM returns None for `message`, retry once with a random salt
         and no_cache=True; if still None, raise EmptyLLMOutputError."""
-        from voicetest.retry import EmptyLLMOutputError
         from voicetest.simulator.user_sim import UserSimulator
+        from voicetest.util.retry import EmptyLLMOutputError
 
         simulator = UserSimulator(
             "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",

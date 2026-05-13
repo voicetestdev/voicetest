@@ -5,9 +5,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from voicetest.chat import ActiveChat
-from voicetest.chat import ChatManager
-from voicetest.settings import Settings
+from voicetest.core.settings import Settings
+from voicetest.web.chat import ActiveChat
+from voicetest.web.chat import ChatManager
 
 
 class _EmptySettingsService:
@@ -199,7 +199,7 @@ class TestChatManagerWebSocket:
         await chat_manager.attach_websocket(chat_id, ws)
 
         # Empty queue means no replay; the websocket is subscribed for future broadcasts.
-        await chat_manager._broadcast_update(chat_id, {"type": "ping"})
+        await chat_manager._sessions.broadcast(chat_id, {"type": "ping"})
         ws.send_text.assert_called_once()
 
     @pytest.mark.asyncio
@@ -214,7 +214,7 @@ class TestChatManagerWebSocket:
         chat_manager.detach_websocket(chat_id, ws)
 
         # After detach the websocket should not receive broadcasts.
-        await chat_manager._broadcast_update(chat_id, {"type": "ping"})
+        await chat_manager._sessions.broadcast(chat_id, {"type": "ping"})
         ws.send_text.assert_not_called()
 
     @pytest.mark.asyncio
@@ -225,7 +225,7 @@ class TestChatManagerWebSocket:
         chat_id = result["chat_id"]
 
         # Broadcast while no WebSocket connected (queues messages)
-        await chat_manager._broadcast_update(chat_id, {"type": "test"})
+        await chat_manager._sessions.broadcast(chat_id, {"type": "test"})
 
         ws = AsyncMock()
         await chat_manager.attach_websocket(chat_id, ws)
@@ -245,7 +245,7 @@ class TestChatManagerWebSocket:
         ws = AsyncMock()
         await chat_manager.attach_websocket(chat_id, ws)
 
-        await chat_manager._broadcast_update(chat_id, {"type": "test_msg"})
+        await chat_manager._sessions.broadcast(chat_id, {"type": "test_msg"})
 
         ws.send_text.assert_called_once()
 
@@ -260,12 +260,12 @@ class TestChatManagerWebSocket:
         ws.send_text.side_effect = Exception("Connection closed")
         await chat_manager.attach_websocket(chat_id, ws)
 
-        await chat_manager._broadcast_update(chat_id, {"type": "test_msg"})
+        await chat_manager._sessions.broadcast(chat_id, {"type": "test_msg"})
 
         # A second broadcast should not try to send to the dead socket again.
         ws.send_text.reset_mock()
         ws.send_text.side_effect = None
-        await chat_manager._broadcast_update(chat_id, {"type": "test_msg2"})
+        await chat_manager._sessions.broadcast(chat_id, {"type": "test_msg2"})
         ws.send_text.assert_not_called()
 
     @pytest.mark.asyncio
@@ -309,7 +309,7 @@ class TestChatManagerQuotaExhausted:
         self, chat_manager, call_repo, single_node_graph
     ):
         """QuotaExhaustedError should broadcast a 'quota_exhausted' message, not a generic error."""
-        from voicetest.exceptions import QuotaExhaustedError
+        from voicetest.core.exceptions import QuotaExhaustedError
 
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
@@ -348,7 +348,7 @@ class TestChatManagerQuotaExhausted:
         self, chat_manager, call_repo, single_node_graph
     ):
         """QuotaExhaustedError should not send a generic 'error' message type."""
-        from voicetest.exceptions import QuotaExhaustedError
+        from voicetest.core.exceptions import QuotaExhaustedError
 
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"

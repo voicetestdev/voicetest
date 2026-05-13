@@ -12,8 +12,8 @@ from voicetest.platforms.base import PlatformClient
 
 
 if TYPE_CHECKING:
+    from voicetest.core.settings import Settings
     from voicetest.models.agent import AgentGraph
-    from voicetest.settings import Settings
 
 
 class PlatformRegistry:

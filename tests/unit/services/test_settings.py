@@ -1,7 +1,7 @@
 """Tests for voicetest.services.settings module."""
 
+from voicetest.core.settings import Settings
 from voicetest.services.settings import SettingsService
-from voicetest.settings import Settings
 
 
 class TestGetDefaults:

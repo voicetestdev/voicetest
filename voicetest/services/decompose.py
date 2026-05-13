@@ -1,5 +1,6 @@
 """Decompose service: split agent graphs into sub-agents."""
 
+from voicetest.core.settings import resolve_model
 from voicetest.judges.decompose import DecomposeJudge
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
@@ -9,7 +10,6 @@ from voicetest.models.decompose import OrchestratorManifest
 from voicetest.models.decompose import SubAgentManifestEntry
 from voicetest.models.decompose import SubAgentSpec
 from voicetest.services.settings import SettingsService
-from voicetest.settings import resolve_model
 
 
 class DecomposeService:

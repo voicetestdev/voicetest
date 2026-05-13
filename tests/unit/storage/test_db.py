@@ -5,8 +5,8 @@ from pathlib import Path
 from sqlalchemy import Engine
 from sqlalchemy import inspect
 
-from voicetest.config import get_db_path
 from voicetest.container import create_container
+from voicetest.core.config import get_db_path
 from voicetest.storage.engine import create_db_engine
 
 

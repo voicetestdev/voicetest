@@ -1,10 +1,10 @@
-"""Tests for voicetest.templating module."""
+"""Tests for voicetest.util.templating module."""
 
-from voicetest.templating import expand_graph_snippets
-from voicetest.templating import expand_snippets
-from voicetest.templating import extract_snippet_refs
-from voicetest.templating import extract_variables
-from voicetest.templating import substitute_variables
+from voicetest.util.templating import expand_graph_snippets
+from voicetest.util.templating import expand_snippets
+from voicetest.util.templating import extract_snippet_refs
+from voicetest.util.templating import extract_variables
+from voicetest.util.templating import substitute_variables
 
 
 class TestSubstituteVariables:

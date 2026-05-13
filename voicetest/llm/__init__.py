@@ -9,7 +9,7 @@ from voicetest.llm.base import _call_llm_streaming
 from voicetest.llm.base import _call_llm_sync
 from voicetest.llm.base import _invoke_callback
 from voicetest.llm.base import call_llm
-from voicetest.retry import OnErrorCallback
+from voicetest.util.retry import OnErrorCallback
 
 
 __all__ = [

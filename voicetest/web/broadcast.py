@@ -1,8 +1,11 @@
-"""Reusable in-process WebSocket broadcast bus.
+"""In-process WebSocket broadcast primitives.
 
-Shared by `RunCoordinator`, `CallManager`, and `ChatManager`. Each consumer
-owns its own bus instance; channels are keyed by an opaque id (run_id /
-call_id / chat_id) the consumer chooses.
+`BroadcastBus` is the low-level pub/sub primitive (per-channel WebSocket
+set + replay queue). `SessionRegistry` composes it with a typed session
+dict for `CallManager`/`ChatManager`-style managers that track per-id
+state alongside the broadcast channel. `RunCoordinator` uses `BroadcastBus`
+directly because its per-run state is bespoke (cancel flags + orphan
+cleanup).
 
 Threading contract: all bus operations run on the FastAPI event loop. Each
 channel has its own `asyncio.Lock` to serialize `attach()` (drain queue
@@ -12,6 +15,7 @@ message.
 """
 
 import asyncio
+import contextlib
 import json
 from typing import Any
 
@@ -88,3 +92,47 @@ class BroadcastBus:
             if ch is not None:
                 for ws in dead:
                     ch["websockets"].discard(ws)
+
+
+class SessionRegistry[TSession]:
+    """Per-id session dict + BroadcastBus, the shared shape behind CallManager / ChatManager.
+
+    Owns the lifecycle pair (`register` / `close`) plus the trivial bus
+    delegations (`broadcast` / `attach` / `detach`). Subscribers are closed
+    inside `close()` so callers don't have to remember the order.
+    """
+
+    def __init__(self) -> None:
+        self._sessions: dict[str, TSession] = {}
+        self._bus = BroadcastBus()
+
+    def register(self, session_id: str, session: TSession) -> None:
+        self._sessions[session_id] = session
+        self._bus.start(session_id)
+
+    def get(self, session_id: str) -> TSession | None:
+        return self._sessions.get(session_id)
+
+    def __contains__(self, session_id: str) -> bool:
+        return session_id in self._sessions
+
+    async def close(self, session_id: str, final_message: dict | None = None) -> None:
+        """Broadcast `final_message` (if any), kick subscribers, drop the session."""
+        if session_id not in self._sessions:
+            return
+        if final_message is not None:
+            await self._bus.broadcast(session_id, final_message)
+        for ws in list(self._bus.subscribers(session_id)):
+            with contextlib.suppress(Exception):
+                await ws.close()
+        self._sessions.pop(session_id, None)
+        self._bus.end(session_id)
+
+    async def broadcast(self, session_id: str, data: dict) -> None:
+        await self._bus.broadcast(session_id, data)
+
+    async def attach(self, session_id: str, websocket: Any) -> None:
+        await self._bus.attach(session_id, websocket)
+
+    def detach(self, session_id: str, websocket: Any) -> None:
+        self._bus.detach(session_id, websocket)

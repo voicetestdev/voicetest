@@ -17,13 +17,13 @@ from textual.widgets import Input
 from textual.widgets import RichLog
 from textual.widgets import Static
 
-from voicetest.config import get_settings_path
+from voicetest.core.config import get_settings_path
+from voicetest.core.settings import Settings
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
-from voicetest.runner import load_test_cases
+from voicetest.runtime.runner import load_test_cases
 from voicetest.services import AppServices
 from voicetest.services.settings import SettingsService
-from voicetest.settings import Settings
 
 
 COMMANDS = [

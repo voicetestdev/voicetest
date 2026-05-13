@@ -11,14 +11,14 @@ from voicetest.models.agent import GlobalNodeSetting
 from voicetest.models.agent import GoBackCondition
 from voicetest.models.agent import MetricsConfig
 from voicetest.models.agent import TransitionCondition
-from voicetest.pathutil import resolve_file
-from voicetest.pathutil import resolve_path
 from voicetest.storage.linked_file import check_file
 from voicetest.storage.linked_file import compute_etag
 from voicetest.storage.linked_file import write_json
 from voicetest.storage.repositories import AgentRepository
-from voicetest.templating import expand_graph_snippets
-from voicetest.templating import extract_variables
+from voicetest.util.pathutil import resolve_file
+from voicetest.util.pathutil import resolve_path
+from voicetest.util.templating import expand_graph_snippets
+from voicetest.util.templating import extract_variables
 
 
 class AgentService:

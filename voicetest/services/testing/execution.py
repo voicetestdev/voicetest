@@ -6,7 +6,7 @@ from datetime import datetime
 import logging
 import uuid
 
-from voicetest.audio import AudioRoundTrip
+from voicetest.core.settings import resolve_model
 from voicetest.engine.session import ConversationRunner
 from voicetest.judges.flow import FlowJudge
 from voicetest.judges.flow import FlowResult
@@ -22,12 +22,12 @@ from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
-from voicetest.retry import OnErrorCallback
 from voicetest.services.settings import SettingsService
-from voicetest.settings import resolve_model
 from voicetest.simulator.user_sim import SimulatorResponse
 from voicetest.simulator.user_sim import UserSimulator
-from voicetest.templating import substitute_variables
+from voicetest.util.audio import AudioRoundTrip
+from voicetest.util.retry import OnErrorCallback
+from voicetest.util.templating import substitute_variables
 
 
 # Callback type for turn updates
