@@ -1,7 +1,6 @@
 """Tests for voicetest.exporters.retell_cf module."""
 
 import json
-from unittest.mock import patch
 
 import pytest
 
@@ -14,7 +13,7 @@ from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
-from voicetest.settings import Settings
+from voicetest.services.settings import SettingsService
 
 
 def _find_node(nodes: list[dict], node_id: str) -> dict | None:
@@ -854,7 +853,7 @@ class TestRetellCFExporter:
 
     def test_exporter_produces_retell_ui_agent_wrapper(self, three_node_graph):
         """RetellCFExporter.export() wraps CF in agent envelope for Retell UI import."""
-        exporter = RetellCFExporter()
+        exporter = RetellCFExporter(SettingsService())
         raw = json.loads(exporter.export(three_node_graph))
 
         assert raw["response_engine"]["type"] == "conversation-flow"
@@ -866,8 +865,10 @@ class TestRetellCFExporter:
 
     def test_exporter_wrapper_cf_matches_bare_export(self, three_node_graph):
         """The conversationFlow inside the wrapper matches export_retell_cf output."""
-        bare = export_retell_cf(three_node_graph)
-        wrapped = json.loads(RetellCFExporter().export(three_node_graph))
+        settings_service = SettingsService()
+        layout_enabled = settings_service.get_settings().export.layout
+        bare = export_retell_cf(three_node_graph, layout_enabled=layout_enabled)
+        wrapped = json.loads(RetellCFExporter(settings_service).export(three_node_graph))
         cf = wrapped["conversationFlow"]
 
         assert cf["nodes"] == bare["nodes"]
@@ -906,7 +907,7 @@ class TestRetellCFExporter:
         assert len(bare["tools"]) == 1
         assert bare["tools"][0]["name"] == "lookup"
 
-        wrapped = json.loads(RetellCFExporter().export(graph))
+        wrapped = json.loads(RetellCFExporter(SettingsService()).export(graph))
         cf_tools = wrapped["conversationFlow"]["tools"]
         assert len(cf_tools) == 1
         assert cf_tools[0]["name"] == "lookup"
@@ -936,7 +937,7 @@ class TestRetellCFExporter:
         importer = RetellLLMImporter()
         graph = importer.import_agent(llm_json)
 
-        exporter = RetellCFExporter()
+        exporter = RetellCFExporter(SettingsService())
         wrapped = json.loads(exporter.export(graph))
 
         assert wrapped["voice_id"] == "voice_abc123"
@@ -977,12 +978,6 @@ class TestRetellCFExporter:
 class TestDisplayPosition:
     """Tests for display_position on exported nodes."""
 
-    _PATCH_TARGET = "voicetest.exporters.retell_cf.load_settings"
-
-    def _patch_layout(self, enabled: bool):
-        settings = Settings(export={"layout": enabled})
-        return patch(self._PATCH_TARGET, return_value=settings)
-
     def test_nodes_have_display_position(self):
         """Every exported node has display_position with x and y."""
         graph = AgentGraph(
@@ -1003,8 +998,7 @@ class TestDisplayPosition:
             source_type="test",
         )
 
-        with self._patch_layout(True):
-            result = export_retell_cf(graph)
+        result = export_retell_cf(graph, layout_enabled=True)
 
         for node in result["nodes"]:
             assert "display_position" in node, f"Node {node['id']} missing display_position"
@@ -1045,8 +1039,7 @@ class TestDisplayPosition:
             source_type="test",
         )
 
-        with self._patch_layout(True):
-            result = export_retell_cf(graph)
+        result = export_retell_cf(graph, layout_enabled=True)
 
         positions = {n["id"]: n["display_position"] for n in result["nodes"]}
         entry_x = positions["start"]["x"]
@@ -1071,8 +1064,7 @@ class TestDisplayPosition:
             source_type="retell",
         )
 
-        with self._patch_layout(True):
-            result = export_retell_cf(graph)
+        result = export_retell_cf(graph, layout_enabled=True)
 
         node_a = next(n for n in result["nodes"] if n["id"] == "a")
         assert node_a["display_position"]["x"] == 999
@@ -1088,8 +1080,7 @@ class TestDisplayPosition:
             source_type="test",
         )
 
-        with self._patch_layout(True):
-            result = export_retell_cf(graph)
+        result = export_retell_cf(graph, layout_enabled=True)
 
         assert "begin_tag_display_position" in result
         assert "x" in result["begin_tag_display_position"]
@@ -1108,8 +1099,7 @@ class TestDisplayPosition:
             },
         )
 
-        with self._patch_layout(True):
-            result = export_retell_cf(graph)
+        result = export_retell_cf(graph, layout_enabled=True)
 
         assert result["begin_tag_display_position"]["x"] == -200
         assert result["begin_tag_display_position"]["y"] == 50
@@ -1135,8 +1125,7 @@ class TestDisplayPosition:
             source_type="test",
         )
 
-        with self._patch_layout(True):
-            result = export_retell_cf(graph)
+        result = export_retell_cf(graph, layout_enabled=True)
 
         synth_nodes = [n for n in result["nodes"] if n["id"].startswith("synth_")]
         assert len(synth_nodes) >= 1
@@ -1153,8 +1142,7 @@ class TestDisplayPosition:
             source_type="test",
         )
 
-        with self._patch_layout(False):
-            result = export_retell_cf(graph)
+        result = export_retell_cf(graph, layout_enabled=False)
 
         for node in result["nodes"]:
             assert "display_position" not in node
@@ -1496,11 +1484,7 @@ class TestExportLogicalOperator:
 class TestRetellCFExporterGlobalNodes:
     """Tests for exporting global_node_setting back to Retell CF format."""
 
-    @patch("voicetest.exporters.retell_cf.load_settings")
-    def test_global_node_setting_round_trips(
-        self, mock_settings, sample_retell_config_global_nodes
-    ):
-        mock_settings.return_value = Settings()
+    def test_global_node_setting_round_trips(self, sample_retell_config_global_nodes):
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_global_nodes)
 
@@ -1510,9 +1494,7 @@ class TestRetellCFExporterGlobalNodes:
         assert "global_node_setting" in cancel
         assert "cancel" in cancel["global_node_setting"]["condition"].lower()
 
-    @patch("voicetest.exporters.retell_cf.load_settings")
-    def test_go_back_conditions_exported(self, mock_settings, sample_retell_config_global_nodes):
-        mock_settings.return_value = Settings()
+    def test_go_back_conditions_exported(self, sample_retell_config_global_nodes):
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_global_nodes)
 
@@ -1525,11 +1507,7 @@ class TestRetellCFExporterGlobalNodes:
         assert gbs[0]["transition_condition"]["type"] == "prompt"
         assert "continue" in gbs[0]["transition_condition"]["prompt"].lower()
 
-    @patch("voicetest.exporters.retell_cf.load_settings")
-    def test_multiple_go_back_conditions_exported(
-        self, mock_settings, sample_retell_config_global_nodes
-    ):
-        mock_settings.return_value = Settings()
+    def test_multiple_go_back_conditions_exported(self, sample_retell_config_global_nodes):
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_global_nodes)
 
@@ -1541,11 +1519,7 @@ class TestRetellCFExporterGlobalNodes:
         gb_ids = {gb["id"] for gb in gbs}
         assert gb_ids == {"go-back-specials-1", "go-back-specials-2"}
 
-    @patch("voicetest.exporters.retell_cf.load_settings")
-    def test_node_without_global_setting_has_no_field(
-        self, mock_settings, sample_retell_config_global_nodes
-    ):
-        mock_settings.return_value = Settings()
+    def test_node_without_global_setting_has_no_field(self, sample_retell_config_global_nodes):
         importer = RetellImporter()
         graph = importer.import_agent(sample_retell_config_global_nodes)
 
@@ -1553,9 +1527,7 @@ class TestRetellCFExporterGlobalNodes:
         greeting = _find_node(result["nodes"], "greeting")
         assert "global_node_setting" not in greeting
 
-    @patch("voicetest.exporters.retell_cf.load_settings")
-    def test_global_node_with_empty_go_backs(self, mock_settings):
-        mock_settings.return_value = Settings()
+    def test_global_node_with_empty_go_backs(self):
         from voicetest.models.agent import GlobalNodeSetting
 
         graph = AgentGraph(

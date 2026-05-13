@@ -2,6 +2,7 @@
 
 import pytest
 
+from voicetest.coordinator import RunCoordinator
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
 
@@ -12,6 +13,10 @@ def _get_run_repo(db_client):
 
 def _get_test_case_repo(db_client):
     return db_client.app.state.container.resolve(TestCaseRepository)
+
+
+def _get_coordinator(db_client) -> RunCoordinator:
+    return db_client.app.state.container.resolve(RunCoordinator)
 
 
 class TestRunWebSocket:
@@ -39,32 +44,17 @@ class TestRunWebSocket:
         return {"agent_id": agent_id, "test_id": test_id}
 
     def test_broadcast_test_started_includes_test_case_id(self):
-        """Verify _broadcast_run_update sends test_case_id in test_started messages."""
-        import asyncio
-
-        from voicetest.rest import _active_runs
-
-        run_id = "test-run-123"
+        """Verify test_started broadcast messages carry test_case_id."""
         test_case_id = "test-case-456"
-        result_id = "result-789"
-
-        _active_runs[run_id] = {
-            "cancel": asyncio.Event(),
-            "websockets": set(),
-            "cancelled_tests": set(),
-        }
-
         message = {
             "type": "test_started",
-            "result_id": result_id,
+            "result_id": "result-789",
             "test_case_id": test_case_id,
             "test_name": "My Test",
         }
 
         assert "test_case_id" in message
         assert message["test_case_id"] == test_case_id
-
-        del _active_runs[run_id]
 
     def test_execute_run_sends_test_case_id_in_test_started(
         self, db_client, agent_with_test, monkeypatch
@@ -76,16 +66,18 @@ class TestRunWebSocket:
         test_id = agent_with_test["test_id"]
 
         broadcast_calls = []
+        coordinator = _get_coordinator(db_client)
+        original_broadcast = coordinator.broadcast
 
-        async def mock_broadcast(run_id, data):
+        async def spy_broadcast(run_id, data):
             broadcast_calls.append(data)
+            await original_broadcast(run_id, data)
 
-        with (
-            patch("voicetest.rest._broadcast_run_update", mock_broadcast),
-            patch(
-                "voicetest.services.testing.execution.TestExecutionService.run_test"
-            ) as mock_run_test,
-        ):
+        monkeypatch.setattr(coordinator, "broadcast", spy_broadcast)
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test"
+        ) as mock_run_test:
             from voicetest.models.results import TestResult
 
             mock_run_test.return_value = TestResult(
@@ -138,7 +130,7 @@ class TestTimeoutEnforcement:
         return {"agent_id": agent_id, "test_id": test_id}
 
     def test_turn_timeout_reports_completed_with_turn_timeout_reason(
-        self, db_client, agent_with_test
+        self, db_client, agent_with_test, monkeypatch
     ):
         """When a turn exceeds turn_timeout_seconds, run completes with end_reason=turn_timeout."""
         import asyncio
@@ -149,9 +141,14 @@ class TestTimeoutEnforcement:
         test_id = agent_with_test["test_id"]
 
         broadcast_calls = []
+        coordinator = _get_coordinator(db_client)
+        original_broadcast = coordinator.broadcast
 
-        async def mock_broadcast(run_id, data):
+        async def spy_broadcast(run_id, data):
             broadcast_calls.append(data)
+            await original_broadcast(run_id, data)
+
+        monkeypatch.setattr(coordinator, "broadcast", spy_broadcast)
 
         call_count = 0
 
@@ -168,10 +165,7 @@ class TestTimeoutEnforcement:
 
             return MockResult()
 
-        with (
-            patch("voicetest.rest._broadcast_run_update", mock_broadcast),
-            patch("voicetest.engine.conversation.call_llm", side_effect=slow_llm),
-        ):
+        with patch("voicetest.engine.conversation.call_llm", side_effect=slow_llm):
             response = db_client.post(
                 f"/api/agents/{agent_id}/runs",
                 json={
@@ -220,9 +214,7 @@ class TestOrphanedRunDetection:
 
     @pytest.fixture
     def orphaned_run(self, db_client, sample_retell_config):
-        """Create an orphaned run (not in _active_runs, not completed)."""
-        from voicetest.rest import _active_runs
-
+        """Create an orphaned run (not registered with coordinator, not completed)."""
         # Create agent
         agent_response = db_client.post(
             "/api/agents",
@@ -238,8 +230,8 @@ class TestOrphanedRunDetection:
         # Add a "running" result
         result_id = run_repo.create_pending_result(run_id, "test-case-1", "Test Case 1")
 
-        # Ensure run is NOT in _active_runs (simulating backend restart)
-        _active_runs.pop(run_id, None)
+        # Ensure coordinator has no entry (simulating backend restart)
+        _get_coordinator(db_client).end(run_id)
 
         return {"run_id": run_id, "result_id": result_id, "agent_id": agent_id}
 
@@ -270,10 +262,6 @@ class TestOrphanedRunDetection:
 
     def test_active_run_not_marked_orphaned(self, db_client, sample_retell_config):
         """GET /runs/{id} should NOT mark active runs as orphaned."""
-        import asyncio
-
-        from voicetest.rest import _active_runs
-
         # Create agent
         agent_response = db_client.post(
             "/api/agents",
@@ -286,13 +274,9 @@ class TestOrphanedRunDetection:
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
-        # Add run to _active_runs (simulating active run)
-        _active_runs[run_id] = {
-            "cancel": asyncio.Event(),
-            "websockets": set(),
-            "cancelled_tests": set(),
-            "message_queue": [],
-        }
+        # Mark the run active via the coordinator (simulating active run)
+        coordinator = _get_coordinator(db_client)
+        coordinator.start(run_id)
 
         try:
             response = db_client.get(f"/api/runs/{run_id}")
@@ -301,7 +285,7 @@ class TestOrphanedRunDetection:
             run_data = response.json()
             assert run_data["completed_at"] is None, "Active run should NOT be marked complete"
         finally:
-            _active_runs.pop(run_id, None)
+            coordinator.end(run_id)
 
 
 class TestRunDeletion:
@@ -335,10 +319,6 @@ class TestRunDeletion:
 
     def test_delete_active_run_fails(self, db_client, sample_retell_config):
         """DELETE /runs/{id} should not allow deleting an active run."""
-        import asyncio
-
-        from voicetest.rest import _active_runs
-
         agent_response = db_client.post(
             "/api/agents",
             json={"name": "Test Agent", "config": sample_retell_config},
@@ -349,19 +329,15 @@ class TestRunDeletion:
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
-        _active_runs[run_id] = {
-            "cancel": asyncio.Event(),
-            "websockets": set(),
-            "cancelled_tests": set(),
-            "message_queue": [],
-        }
+        coordinator = _get_coordinator(db_client)
+        coordinator.start(run_id)
 
         try:
             response = db_client.delete(f"/api/runs/{run_id}")
             assert response.status_code == 400
             assert "active" in response.json()["detail"].lower()
         finally:
-            _active_runs.pop(run_id, None)
+            coordinator.end(run_id)
 
 
 class TestWebSocketStateMessage:
@@ -491,8 +467,6 @@ class TestWebSocketStateMessage:
         """WebSocket connection to completed run should receive state and run_completed."""
         import time
 
-        from voicetest.rest import _active_runs
-
         agent_id = agent_with_tests["agent_id"]
         test_ids = agent_with_tests["test_ids"]
 
@@ -503,9 +477,10 @@ class TestWebSocketStateMessage:
         )
         run_id = run_response.json()["id"]
 
-        # Wait for run to complete and be removed from _active_runs
+        # Wait for the coordinator to drop the run (signaling completion)
+        coordinator = _get_coordinator(db_client)
         max_wait = 10
-        while run_id in _active_runs and max_wait > 0:
+        while coordinator.is_active(run_id) and max_wait > 0:
             time.sleep(0.5)
             max_wait -= 1
 

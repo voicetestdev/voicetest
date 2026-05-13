@@ -36,7 +36,6 @@ from voicetest.runner import TestRunContext
 from voicetest.services import AppServices
 from voicetest.services import build_app_services
 from voicetest.settings import Settings
-from voicetest.settings import load_settings
 from voicetest.snippets import suggest_snippets
 from voicetest.tui import VoicetestApp
 from voicetest.tui import VoicetestShell
@@ -178,8 +177,7 @@ def _run_tui(
     verbose: bool,
 ) -> None:
     """Launch interactive TUI."""
-    settings = load_settings()
-    settings.apply_env()
+    settings = _services().settings.get_settings()
     setup_cache_from_settings(settings.cache)
     options = RunOptions(
         agent_model=settings.models.agent,
@@ -214,8 +212,7 @@ async def _run_cli(
     agent_id: str | None = None,
 ) -> None:
     """Run tests in CLI mode."""
-    settings = load_settings()
-    settings.apply_env()
+    settings = _services().settings.get_settings()
     setup_cache_from_settings(settings.cache)
     options = RunOptions(
         agent_model=settings.models.agent,
@@ -541,8 +538,7 @@ def smoke_test(ctx, max_turns: int):
 
 async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
     """Run smoke test with bundled demo data."""
-    settings = load_settings()
-    settings.apply_env()
+    settings = _services().settings.get_settings()
     setup_cache_from_settings(settings.cache)
 
     _echo("[bold]Running smoke test...[/bold]")
@@ -827,8 +823,7 @@ def replay(ctx, source_run_id: str):
     """
     json_mode = ctx.obj.get("json", False)
 
-    settings = load_settings()
-    settings.apply_env()
+    settings = _services().settings.get_settings()
     setup_cache_from_settings(settings.cache)
 
     run_svc = _services().runs
@@ -1848,8 +1843,7 @@ async def _diagnose(
     json_mode: bool = False,
 ) -> None:
     """Async implementation of diagnose command."""
-    settings = load_settings()
-    settings.apply_env()
+    settings = _services().settings.get_settings()
 
     agent_svc = _services().agents
     exec_svc = _services().test_execution
@@ -2029,8 +2023,7 @@ async def _decompose(
     json_mode: bool = False,
 ) -> None:
     """Async implementation of decompose command."""
-    settings = load_settings()
-    settings.apply_env()
+    settings = _services().settings.get_settings()
 
     agent_svc = _services().agents
     decompose_svc = _services().decompose
@@ -2091,8 +2084,7 @@ async def _chat(
     json_mode: bool = False,
 ) -> None:
     """Async implementation of chat command."""
-    settings = load_settings()
-    settings.apply_env()
+    settings = _services().settings.get_settings()
 
     agent_svc = _services().agents
     graph = await agent_svc.import_agent(agent_path)

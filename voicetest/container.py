@@ -33,6 +33,7 @@ from voicetest.platforms.registry import PlatformRegistry
 from voicetest.platforms.retell import RetellPlatformClient
 from voicetest.platforms.telnyx import TelnyxPlatformClient
 from voicetest.platforms.vapi import VapiPlatformClient
+from voicetest.services.settings import SettingsService
 from voicetest.storage.engine import create_db_engine
 from voicetest.storage.engine import get_session_factory
 from voicetest.storage.repositories import AgentRepository
@@ -56,13 +57,13 @@ def _create_importer_registry() -> ImporterRegistry:
     return registry
 
 
-def _create_exporter_registry() -> ExporterRegistry:
+def _create_exporter_registry(settings_service: SettingsService) -> ExporterRegistry:
     """Create and configure the exporter registry."""
     registry = ExporterRegistry()
     registry.register(MermaidExporter())
     registry.register(LiveKitExporter())
     registry.register(RetellLLMExporter())
-    registry.register(RetellCFExporter())
+    registry.register(RetellCFExporter(settings_service))
     registry.register(VAPIAssistantExporter())
     registry.register(VAPISquadExporter())
     registry.register(BlandExporter())
@@ -124,12 +125,17 @@ def create_container() -> punq.Container:
         scope=session_scope,
     )
 
+    # SettingsService registered early — exporter registry factory depends on it.
+    container.register(SettingsService)
+
     # Registries (singletons)
     container.register(
         ImporterRegistry, factory=_create_importer_registry, scope=punq.Scope.singleton
     )
     container.register(
-        ExporterRegistry, factory=_create_exporter_registry, scope=punq.Scope.singleton
+        ExporterRegistry,
+        factory=lambda: _create_exporter_registry(container.resolve(SettingsService)),
+        scope=punq.Scope.singleton,
     )
     container.register(
         PlatformRegistry, factory=_create_platform_registry, scope=punq.Scope.singleton
@@ -149,7 +155,6 @@ def create_container() -> punq.Container:
     from voicetest.services.evaluation import EvaluationService  # noqa: PLC0415
     from voicetest.services.platforms import PlatformService  # noqa: PLC0415
     from voicetest.services.runs import RunService  # noqa: PLC0415
-    from voicetest.services.settings import SettingsService  # noqa: PLC0415
     from voicetest.services.snippets import SnippetService  # noqa: PLC0415
     from voicetest.services.testing.cases import TestCaseService  # noqa: PLC0415
     from voicetest.services.testing.execution import TestExecutionService  # noqa: PLC0415
@@ -164,14 +169,15 @@ def create_container() -> punq.Container:
     container.register(SnippetService)
     container.register(RunService)
     container.register(PlatformService)
-    container.register(SettingsService)
 
     # Live call / chat managers hold per-process state (_active_calls,
     # _active_chats), so they must be singletons.
     from voicetest.calls import CallManager  # noqa: PLC0415
     from voicetest.chat import ChatManager  # noqa: PLC0415
+    from voicetest.coordinator import RunCoordinator  # noqa: PLC0415
 
     container.register(CallManager, scope=punq.Scope.singleton)
     container.register(ChatManager, scope=punq.Scope.singleton)
+    container.register(RunCoordinator, scope=punq.Scope.singleton)
 
     return container

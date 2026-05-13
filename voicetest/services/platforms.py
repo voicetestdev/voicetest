@@ -5,8 +5,7 @@ from typing import Any
 from voicetest.models.agent import AgentGraph
 from voicetest.platforms.registry import PlatformRegistry
 from voicetest.services.agents import AgentService
-from voicetest.settings import load_settings
-from voicetest.settings import save_settings
+from voicetest.services.settings import SettingsService
 
 
 class PlatformService:
@@ -16,13 +15,15 @@ class PlatformService:
         self,
         platform_registry: PlatformRegistry,
         agent_service: AgentService,
+        settings_service: SettingsService,
     ):
         self._registry = platform_registry
         self._agents = agent_service
+        self._settings = settings_service
 
     def list_platforms(self) -> list[dict]:
         """List all platforms with configuration status."""
-        settings = load_settings()
+        settings = self._settings.get_settings()
         return [
             {
                 "name": name,
@@ -59,7 +60,7 @@ class PlatformService:
             )
 
         required_keys = self._registry.get_required_env_keys(platform)
-        settings = load_settings()
+        settings = self._settings.get_settings()
 
         env_key = self._registry.get_env_key(platform)
         settings.env[env_key] = api_key
@@ -69,8 +70,9 @@ class PlatformService:
             if secret_keys:
                 settings.env[secret_keys[0]] = api_secret
 
-        save_settings(settings)
-        settings.apply_env()
+        self._settings.update_settings(settings)
+        # Re-read so apply_env runs on the fresh values
+        self._settings.get_settings()
 
         return {"configured": True, "platform": platform}
 
@@ -212,7 +214,7 @@ class PlatformService:
 
     def _is_configured(self, platform: str) -> bool:
         """Check if a platform is configured."""
-        settings = load_settings()
+        settings = self._settings.get_settings()
         return self._registry.is_configured(platform, settings)
 
     def _get_configured_client(self, platform: str) -> tuple[Any, Any]:
@@ -225,7 +227,7 @@ class PlatformService:
         if not self._is_configured(platform):
             raise ValueError(f"{platform} API key not configured")
 
-        settings = load_settings()
+        settings = self._settings.get_settings()
         api_key = self._registry.get_api_key(platform, settings)
         platform_client = self._registry.get(platform)
         client = platform_client.get_client(api_key)

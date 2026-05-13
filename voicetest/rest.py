@@ -18,7 +18,6 @@ import logging
 import os
 from pathlib import Path
 import tempfile
-import threading
 from typing import Any
 
 from fastapi import APIRouter
@@ -44,11 +43,11 @@ from voicetest.cache import setup_cache_from_settings
 from voicetest.calls import CallManager
 from voicetest.chat import ChatManager
 from voicetest.container import create_container
+from voicetest.coordinator import RunCoordinator
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
 from voicetest.exceptions import QuotaExhaustedError
 from voicetest.executor import RunJob
-from voicetest.executor import get_executor_factory
 from voicetest.importers.transcripts.retell import parse_retell_file
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import GlobalMetric
@@ -98,7 +97,7 @@ _vt_logger.info("voicetest logging configured at %s", _log_level)
 def _resolve[T](http_request: Request, cls: type[T]) -> T:
     """Resolve a service/repo/manager from the request-scoped container.
 
-    `app.state.container` is set in `create_app()`. Endpoints use this helper
+    `app.state.container` is set by the lifespan handler. Endpoints use this helper
     instead of holding services in module globals so per-request scoping (notably
     Postgres Session) works.
     """
@@ -117,15 +116,6 @@ def _db_session(http_request: Request) -> Session:
     return session
 
 
-# Active runs: run_id -> {"cancel": Event, "websockets": set[WebSocket], "message_queue": list}
-_active_runs: dict[str, dict[str, Any]] = {}
-
-# Orphan-cleanup guard: run_ids currently being cleaned up. Prevents N
-# concurrent GETs for the same orphaned run from each firing a cleanup
-# at once. Use _orphan_cleanup_lock(run_id) to claim/release a slot.
-_cleaning_orphans: set[str] = set()
-_cleaning_orphans_lock = threading.Lock()
-
 _logger = logging.getLogger("voicetest.rest")
 
 _ORPHAN_ERROR_MESSAGE = "Run orphaned - backend stopped"
@@ -142,27 +132,6 @@ _UPDATE_RESULTS_ORPHANED = text(
     "SET status = 'error', error_message = :msg "
     "WHERE id IN :rids AND status = 'running'"
 ).bindparams(bindparam("rids", expanding=True))
-
-
-@contextlib.contextmanager
-def _orphan_cleanup_lock(run_id: str):
-    """Claim the orphan-cleanup slot for a run.
-
-    Yields True if this caller owns the cleanup; False if another caller
-    already claimed it. The slot is released on exit either way.
-    """
-    with _cleaning_orphans_lock:
-        if run_id in _cleaning_orphans:
-            owns = False
-        else:
-            _cleaning_orphans.add(run_id)
-            owns = True
-    try:
-        yield owns
-    finally:
-        if owns:
-            with _cleaning_orphans_lock:
-                _cleaning_orphans.discard(run_id)
 
 
 def init_storage(container) -> None:
@@ -225,12 +194,29 @@ def _find_web_dist() -> Path | None:
 
 WEB_DIST = _find_web_dist()
 
+
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Build the DI container and wire startup work on first request.
+
+    Tests that need to override services pre-populate ``app.state.container``
+    before the lifespan runs; in that case we respect their container and
+    just run the dependent startup steps against it.
+    """
+    if not hasattr(app.state, "container"):
+        app.state.container = create_container()
+    init_storage(app.state.container)
+    settings = app.state.container.resolve(SettingsService).get_settings()
+    setup_cache_from_settings(settings.cache)
+    yield
+
+
 app = FastAPI(
     title="voicetest",
     description="Voice agent test harness API",
     version=pkg_version("voicetest"),
+    lifespan=_lifespan,
 )
-app.state.container = create_container()
 
 # Add CORS middleware to allow cross-origin requests
 app.add_middleware(
@@ -1197,7 +1183,8 @@ async def get_run(run_id: str, http_request: Request) -> dict:
     # session would deadlock waiting for that slot). The cleanup slot is
     # single-flighted per run_id; concurrent clicks see owns=False and skip
     # straight to the response while the writes happen exactly once.
-    if run["completed_at"] is None and run_id not in _active_runs:
+    coordinator = _resolve(http_request, RunCoordinator)
+    if run["completed_at"] is None and not coordinator.is_active(run_id):
         run["completed_at"] = datetime.now(UTC).isoformat()
 
         orphaned_result_ids: list[str] = []
@@ -1207,7 +1194,7 @@ async def get_run(run_id: str, http_request: Request) -> dict:
                 result["status"] = "error"
                 result["error_message"] = _ORPHAN_ERROR_MESSAGE
 
-        with _orphan_cleanup_lock(run_id) as owns:
+        with coordinator.claim_orphan_cleanup(run_id) as owns:
             if owns:
                 _cleanup_orphaned_run(http_request, run_id, orphaned_result_ids)
 
@@ -1249,7 +1236,7 @@ async def delete_run(run_id: str, http_request: Request) -> dict:
         raise HTTPException(status_code=404, detail="Run not found")
 
     # Don't allow deleting active runs
-    if run_id in _active_runs:
+    if _resolve(http_request, RunCoordinator).is_active(run_id):
         raise HTTPException(status_code=400, detail="Cannot delete an active run")
 
     _resolve(http_request, RunService).delete_run(run_id)
@@ -1501,36 +1488,6 @@ async def decompose_agent(agent_id: str, http_request: Request) -> dict:
     return result.model_dump()
 
 
-async def _broadcast_run_update(run_id: str, data: dict) -> None:
-    """Broadcast update to all WebSocket clients watching this run."""
-    if run_id not in _active_runs:
-        return
-    message = json.dumps(data)
-    websockets = _active_runs[run_id]["websockets"]
-    if not websockets:
-        # Queue message for replay when WebSocket connects
-        _active_runs[run_id]["message_queue"].append(message)
-        return
-    dead_sockets = []
-    for ws in websockets:
-        try:
-            await ws.send_text(message)
-        except Exception:
-            dead_sockets.append(ws)
-    for ws in dead_sockets:
-        _active_runs[run_id]["websockets"].discard(ws)
-
-
-def _is_run_cancelled(run_id: str, result_id: str | None = None) -> bool:
-    """Check if run or specific test is cancelled."""
-    if run_id not in _active_runs:
-        return False
-    cancelled = _active_runs[run_id].get("cancelled_tests", set())
-    if result_id and result_id in cancelled:
-        return True
-    return _active_runs[run_id]["cancel"].is_set()
-
-
 async def _execute_run(
     container,
     run_id: str,
@@ -1544,11 +1501,12 @@ async def _execute_run(
     Background tasks have no request scope; the caller passes the container
     directly so services can be resolved without the FastAPI layer.
     """
-    # _active_runs[run_id] is set up in start_run() before this task starts
-
+    # The coordinator's entry for run_id is set up by start_run() before this
+    # task is scheduled, so WebSocket clients can register immediately.
     agent_svc = container.resolve(AgentService)
     tc_svc = container.resolve(TestCaseService)
     run_svc = container.resolve(RunService)
+    coordinator = container.resolve(RunCoordinator)
 
     try:
         _agent, graph = agent_svc.load_graph(agent_id)
@@ -1564,22 +1522,22 @@ async def _execute_run(
             result_id = result_ids[test_record["id"]]
 
             # Check if this specific test was cancelled before it started
-            if run_id in _active_runs and result_id in _active_runs[run_id]["cancelled_tests"]:
+            if coordinator.is_test_cancelled(run_id, result_id):
                 run_svc.mark_result_cancelled(result_id)
-                await _broadcast_run_update(
+                await coordinator.broadcast(
                     run_id,
                     {"type": "test_cancelled", "result_id": result_id},
                 )
                 continue
 
             # Check if entire run is cancelled
-            if _is_run_cancelled(run_id):
+            if coordinator.is_cancelled(run_id):
                 # Mark ALL remaining tests (including current) as cancelled
                 remaining_idx = test_records.index(test_record)
                 for remaining_record in test_records[remaining_idx:]:
                     remaining_result_id = result_ids[remaining_record["id"]]
                     run_svc.mark_result_cancelled(remaining_result_id)
-                    await _broadcast_run_update(
+                    await coordinator.broadcast(
                         run_id,
                         {"type": "test_cancelled", "result_id": remaining_result_id},
                     )
@@ -1588,7 +1546,7 @@ async def _execute_run(
             test_case = tc_svc.to_model(test_record)
 
             # Broadcast that test is now actively running
-            await _broadcast_run_update(
+            await coordinator.broadcast(
                 run_id,
                 {
                     "type": "test_started",
@@ -1602,13 +1560,13 @@ async def _execute_run(
                 async def on_turn(transcript: list) -> None:
                     nonlocal transcript_ref
                     # Check for cancellation
-                    if _is_run_cancelled(run_id, rid):
+                    if coordinator.is_cancelled(run_id, rid):
                         raise asyncio.CancelledError("Test cancelled by user")
                     # Track transcript for error recovery
                     transcript_ref.clear()
                     transcript_ref.extend(transcript)
                     run_svc.update_transcript(rid, transcript)
-                    await _broadcast_run_update(
+                    await coordinator.broadcast(
                         run_id,
                         {
                             "type": "transcript_update",
@@ -1621,7 +1579,7 @@ async def _execute_run(
 
             def make_on_token(rid: str):
                 async def on_token(token: str, source: str) -> None:
-                    await _broadcast_run_update(
+                    await coordinator.broadcast(
                         run_id,
                         {
                             "type": "token_update",
@@ -1635,7 +1593,7 @@ async def _execute_run(
 
             def make_on_error(rid: str):
                 async def on_error(error: RetryError) -> None:
-                    await _broadcast_run_update(
+                    await coordinator.broadcast(
                         run_id,
                         {
                             "type": "retry_error",
@@ -1664,7 +1622,7 @@ async def _execute_run(
                     on_error=make_on_error(result_id),
                 )
                 run_svc.complete_result(result_id, result)
-                await _broadcast_run_update(
+                await coordinator.broadcast(
                     run_id,
                     {
                         "type": "test_completed",
@@ -1680,7 +1638,7 @@ async def _execute_run(
                     error_message="Cancelled by user",
                 )
                 run_svc.complete_result(result_id, cancelled_result)
-                await _broadcast_run_update(
+                await coordinator.broadcast(
                     run_id,
                     {
                         "type": "test_cancelled",
@@ -1695,7 +1653,7 @@ async def _execute_run(
                     error_message=str(e),
                 )
                 run_svc.complete_result(result_id, error_result)
-                await _broadcast_run_update(
+                await coordinator.broadcast(
                     run_id,
                     {
                         "type": "quota_exhausted",
@@ -1710,7 +1668,7 @@ async def _execute_run(
                 for remaining_record in test_records[remaining_idx:]:
                     remaining_result_id = result_ids[remaining_record["id"]]
                     run_svc.mark_result_cancelled(remaining_result_id)
-                    await _broadcast_run_update(
+                    await coordinator.broadcast(
                         run_id,
                         {"type": "test_cancelled", "result_id": remaining_result_id},
                     )
@@ -1723,7 +1681,7 @@ async def _execute_run(
                     error_message=str(e),
                 )
                 run_svc.complete_result(result_id, error_result)
-                await _broadcast_run_update(
+                await coordinator.broadcast(
                     run_id,
                     {
                         "type": "test_error",
@@ -1733,16 +1691,19 @@ async def _execute_run(
                 )
 
         run_svc.complete(run_id)
-        await _broadcast_run_update(run_id, {"type": "run_completed"})
+        await coordinator.broadcast(run_id, {"type": "run_completed"})
     finally:
         # Clean up after a delay to allow final messages
         await asyncio.sleep(1)
-        _active_runs.pop(run_id, None)
+        coordinator.end(run_id)
 
 
 @router.websocket("/runs/{run_id}/ws")
 async def run_websocket(websocket: WebSocket, run_id: str):
     """WebSocket for streaming run updates and receiving cancel commands."""
+    container = websocket.app.state.container
+    coordinator = container.resolve(RunCoordinator)
+
     try:
         await websocket.accept()
     except Exception as e:
@@ -1752,7 +1713,7 @@ async def run_websocket(websocket: WebSocket, run_id: str):
     # Send current state BEFORE registering for broadcasts to avoid race condition
     # where test_started arrives before state and then state overwrites it
     try:
-        run = websocket.app.state.container.resolve(RunService).get_run(run_id)
+        run = container.resolve(RunService).get_run(run_id)
         if not run:
             # Run not found - send error and close
             await websocket.send_json({"type": "error", "message": "Run not found"})
@@ -1761,8 +1722,8 @@ async def run_websocket(websocket: WebSocket, run_id: str):
         msg = json.dumps({"type": "state", "run": run})
         await websocket.send_text(msg)
 
-        # If run is already complete (not in _active_runs), send run_completed and close
-        if run.get("completed_at") and run_id not in _active_runs:
+        # If run is already complete, send run_completed and close
+        if run.get("completed_at") and not coordinator.is_active(run_id):
             await websocket.send_json({"type": "run_completed"})
             await websocket.close(code=1000)  # Normal closure
             return
@@ -1779,12 +1740,7 @@ async def run_websocket(websocket: WebSocket, run_id: str):
             pass
         return
 
-    # Now register this WebSocket and get any queued messages
-    queued_messages = []
-    if run_id in _active_runs:
-        _active_runs[run_id]["websockets"].add(websocket)
-        queued_messages = _active_runs[run_id]["message_queue"]
-        _active_runs[run_id]["message_queue"] = []
+    queued_messages = coordinator.register_websocket(run_id, websocket)
 
     try:
         # Replay any messages that were queued before connection
@@ -1794,20 +1750,19 @@ async def run_websocket(websocket: WebSocket, run_id: str):
         # Listen for commands
         while True:
             data = await websocket.receive_json()
-            if data.get("type") == "cancel_test" and run_id in _active_runs:
+            if data.get("type") == "cancel_test":
                 result_id = data.get("result_id")
                 if result_id:
-                    _active_runs[run_id]["cancelled_tests"].add(result_id)
-            elif data.get("type") == "cancel_run" and run_id in _active_runs:
-                _active_runs[run_id]["cancel"].set()
+                    coordinator.cancel_test(run_id, result_id)
+            elif data.get("type") == "cancel_run":
+                coordinator.cancel_run(run_id)
     except WebSocketDisconnect:
         # Normal disconnect - client closed connection
         pass
     except Exception as e:
         print(f"[WS] Exception in websocket handler for run {run_id}: {type(e).__name__}: {e}")
     finally:
-        if run_id in _active_runs:
-            _active_runs[run_id]["websockets"].discard(websocket)
+        coordinator.unregister_websocket(run_id, websocket)
 
 
 class BackgroundTaskExecutor:
@@ -1864,14 +1819,9 @@ async def start_run(
 
     options = resolve_run_options(request.options, _resolve(http_request, SettingsService))
 
-    # Set up active run tracking BEFORE background task starts
-    # so WebSocket connections can register immediately
-    _active_runs[run["id"]] = {
-        "cancel": asyncio.Event(),
-        "websockets": set(),
-        "cancelled_tests": set(),
-        "message_queue": [],
-    }
+    # Register the run with the coordinator BEFORE the background task starts
+    # so WebSocket connections can register immediately.
+    _resolve(http_request, RunCoordinator).start(run["id"])
 
     # Create job and submit to executor
     job = RunJob(
@@ -1882,15 +1832,8 @@ async def start_run(
         options=options,
     )
 
-    # Use custom executor if configured, otherwise default to BackgroundTasks
     container = http_request.app.state.container
-    executor_factory = get_executor_factory()
-    if executor_factory:
-        executor = executor_factory()
-        executor.submit(job)
-    else:
-        executor = BackgroundTaskExecutor(background_tasks, container)
-        executor.submit(job)
+    BackgroundTaskExecutor(background_tasks, container).submit(job)
 
     return {
         "id": run["id"],
@@ -2331,18 +2274,6 @@ async def sync_to_platform(
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to sync: {e}") from None
-
-
-def create_app() -> FastAPI:
-    """Run app startup (storage init, cache setup) and return the configured app.
-
-    The container is built at module load and lives on `app.state.container`.
-    """
-    container = app.state.container
-    init_storage(container)
-    settings = container.resolve(SettingsService).get_settings()
-    setup_cache_from_settings(settings.cache)
-    return app
 
 
 # Include API router

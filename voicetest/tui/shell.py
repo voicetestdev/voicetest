@@ -22,9 +22,8 @@ from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.runner import load_test_cases
 from voicetest.services import AppServices
+from voicetest.services.settings import SettingsService
 from voicetest.settings import Settings
-from voicetest.settings import load_settings
-from voicetest.settings import save_settings
 
 
 COMMANDS = [
@@ -55,12 +54,13 @@ API_KEY_NAMES = [
 class ConfigPanel(Static):
     """Panel showing current configuration."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, settings_service: SettingsService, **kwargs):
         super().__init__("", **kwargs)
         self._agent: Path | None = None
         self._tests: Path | None = None
         self._test_cases: list[TestCase] = []
-        self._settings = load_settings()
+        self._settings_service = settings_service
+        self._settings = settings_service.get_settings()
         self._options = self._options_from_settings(self._settings)
         self._update_display()
 
@@ -107,7 +107,7 @@ class ConfigPanel(Static):
             self._settings.run.verbose = val
         else:
             return False
-        save_settings(self._settings)
+        self._settings_service.update_settings(self._settings)
         self._update_display()
         return True
 
@@ -210,7 +210,7 @@ class VoicetestShell(App):
         yield Header()
         with Horizontal(id="main"):
             with Vertical(id="left-panel"):
-                yield ConfigPanel(id="config-panel")
+                yield ConfigPanel(self.services.settings, id="config-panel")
                 yield Static(
                     "\n[bold]Commands[/bold]\n"
                     "  agent [path]     Show graph / set agent\n"
