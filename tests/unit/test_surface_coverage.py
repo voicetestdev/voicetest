@@ -208,7 +208,9 @@ INTERNAL_ONLY = {
     "RunService.complete": "Called by REST _execute_run background task",
     "RunService.update_transcript": "Called by call WebSocket handler",
     "RunService.update_audio_eval": "Called by REST audio_eval_result handler",
-    "RunService.add_result_from_call": "Called by REST _save_call_as_run handler",
+    "RunService.add_result_from_call": "Called by RunService.save_call_as_run internally",
+    "RunService.result_to_dict": "ORM-to-dict helper called by REST result/diagnosis handlers",
+    "RunService.save_call_as_run": "Called by REST end_call/end_chat handlers",
     # DecomposeService — helpers called by decompose pipeline
     "DecomposeService.build_sub_graph": "Called by decompose internally for each sub-agent",
     "DecomposeService.build_manifest": "Called by decompose internally to build manifest",

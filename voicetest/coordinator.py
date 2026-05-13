@@ -1,31 +1,26 @@
 """In-process coordination state for in-flight test runs.
 
-Owns the per-process state that backed the previous module-level globals in
-`voicetest.rest`: which runs are currently executing, their cancel/cancelled-
-test flags, the WebSocket subscriber sets, the message queues that buffer
-broadcasts until a WebSocket connects, and the orphan-cleanup single-flight.
+Owns the per-run cancellation flags + orphan-cleanup single-flight, and
+delegates WebSocket pub/sub to a `BroadcastBus`.
 
 Registered as a Punq singleton so the FastAPI app, the WebSocket handlers,
 and the background `_execute_run` task all share one instance per process.
-
-Threading contract: all `_runs` mutations and broadcasts happen on the
-FastAPI event loop. The `claim_orphan_cleanup` context manager is the only
-piece that may be entered from a sync request handler, and it has its own
-threading.Lock.
 """
 
 import asyncio
 import contextlib
-import json
 import threading
 from typing import Any
 
+from voicetest.broadcast import BroadcastBus
+
 
 class RunCoordinator:
-    """Coordinates in-flight run state: cancellation, broadcasts, orphan cleanup."""
+    """Per-run cancellation + orphan-cleanup + broadcast surface."""
 
     def __init__(self) -> None:
         self._runs: dict[str, dict[str, Any]] = {}
+        self._bus = BroadcastBus()
         self._cleaning_orphans: set[str] = set()
         self._cleaning_orphans_lock = threading.Lock()
 
@@ -33,69 +28,26 @@ class RunCoordinator:
         """Register a run as active. Called by start_run before submitting the job."""
         self._runs[run_id] = {
             "cancel": asyncio.Event(),
-            "websockets": set(),
             "cancelled_tests": set(),
-            "message_queue": [],
-            # Serializes attach() with broadcast() so a connecting client
-            # receives queued backlog before any newly-broadcast message.
-            "lock": asyncio.Lock(),
         }
+        self._bus.start(run_id)
 
     def end(self, run_id: str) -> None:
         """Drop a run's coordination state. Called from _execute_run's finally."""
         self._runs.pop(run_id, None)
+        self._bus.end(run_id)
 
     def is_active(self, run_id: str) -> bool:
         return run_id in self._runs
 
     async def attach(self, run_id: str, websocket: Any) -> None:
-        """Drain any queued messages to this websocket, then subscribe it to broadcasts.
-
-        Holds the per-run lock for the entire drain + subscribe transition, so
-        a broadcast that fires during the drain blocks until the backlog is
-        replayed — preventing newer broadcasts from being delivered ahead of
-        older queued messages.
-        """
-        run = self._runs.get(run_id)
-        if run is None:
-            return
-        async with run["lock"]:
-            for msg in run["message_queue"]:
-                try:
-                    await websocket.send_text(msg)
-                except Exception:
-                    return  # client gone mid-replay
-            run["message_queue"] = []
-            run["websockets"].add(websocket)
+        await self._bus.attach(run_id, websocket)
 
     def detach(self, run_id: str, websocket: Any) -> None:
-        run = self._runs.get(run_id)
-        if run is not None:
-            run["websockets"].discard(websocket)
+        self._bus.detach(run_id, websocket)
 
     async def broadcast(self, run_id: str, data: dict) -> None:
-        """Send a message to all subscribers; queue it if none are connected yet."""
-        run = self._runs.get(run_id)
-        if run is None:
-            return
-        message = json.dumps(data)
-        async with run["lock"]:
-            if not run["websockets"]:
-                run["message_queue"].append(message)
-                return
-            targets = list(run["websockets"])  # snapshot — set may mutate during sends
-        dead = []
-        for ws in targets:
-            try:
-                await ws.send_text(message)
-            except Exception:
-                dead.append(ws)
-        if dead:
-            # Re-fetch in case the run ended between snapshot and cleanup.
-            run = self._runs.get(run_id)
-            if run is not None:
-                for ws in dead:
-                    run["websockets"].discard(ws)
+        await self._bus.broadcast(run_id, data)
 
     def cancel_run(self, run_id: str) -> None:
         run = self._runs.get(run_id)

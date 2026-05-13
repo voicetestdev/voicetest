@@ -126,7 +126,8 @@ def create_container() -> punq.Container:
     )
 
     # SettingsService registered early — exporter registry factory depends on it.
-    container.register(SettingsService)
+    # Singleton scope: its cache (mtime-guarded) only helps if the instance survives.
+    container.register(SettingsService, scope=punq.Scope.singleton)
 
     # Registries (singletons)
     container.register(

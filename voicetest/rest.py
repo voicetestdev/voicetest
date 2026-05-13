@@ -1231,15 +1231,14 @@ def _cleanup_orphaned_run(http_request: Request, run_id: str, result_ids: list[s
 @router.delete("/runs/{run_id}")
 async def delete_run(run_id: str, http_request: Request) -> dict:
     """Delete a run and all its results."""
-    run = _resolve(http_request, RunService).get_run(run_id)
-    if not run:
+    run_svc = _resolve(http_request, RunService)
+    if not run_svc.get_run(run_id):
         raise HTTPException(status_code=404, detail="Run not found")
 
-    # Don't allow deleting active runs
     if _resolve(http_request, RunCoordinator).is_active(run_id):
         raise HTTPException(status_code=400, detail="Cannot delete an active run")
 
-    _resolve(http_request, RunService).delete_run(run_id)
+    run_svc.delete_run(run_id)
     return {"status": "deleted", "id": run_id}
 
 
@@ -1279,7 +1278,7 @@ async def audio_eval_result(result_id: str, http_request: Request) -> dict:
     if not db_result:
         raise HTTPException(status_code=404, detail="Result not found")
 
-    result_dict = run_svc._runs._result_to_dict(db_result)
+    result_dict = run_svc.result_to_dict(db_result)
     transcript_data = result_dict.get("transcript_json") or []
     if not transcript_data:
         raise HTTPException(status_code=400, detail="Result has no transcript")
@@ -1313,7 +1312,7 @@ async def audio_eval_result(result_id: str, http_request: Request) -> dict:
 
     # Return updated result
     session.refresh(db_result)
-    return run_svc._runs._result_to_dict(db_result)
+    return run_svc.result_to_dict(db_result)
 
 
 def _load_result_context(
@@ -1335,7 +1334,7 @@ def _load_result_context(
     if not db_result:
         raise HTTPException(status_code=404, detail="Result not found")
 
-    result_dict = run_svc._runs._result_to_dict(db_result)
+    result_dict = run_svc.result_to_dict(db_result)
 
     # Find test case
     test_case_id = result_dict.get("test_case_id")
@@ -1944,69 +1943,9 @@ async def end_call(call_id: str, http_request: Request) -> dict:
 
     # Re-fetch call to get final transcript and timestamps
     call = call_repo.get(call_id)
-    run_id = await _save_call_as_run(http_request, call)
+    run_id = await _resolve(http_request, RunService).save_call_as_run(call)
 
     return {"status": "ended", "call_id": call_id, "run_id": run_id}
-
-
-async def _save_call_as_run(http_request: Request, call: dict) -> str | None:
-    """Convert a completed call into a Run with a single Result.
-
-    Evaluates global metrics against the transcript if the agent has any configured.
-    Returns the run_id, or None if the call has no transcript.
-    """
-    transcript_data = call.get("transcript_json") or []
-    if not transcript_data:
-        return None
-
-    agent_id = call["agent_id"]
-    call_id = call["id"]
-
-    # Convert raw transcript dicts to Message objects
-    transcript = [Message(**m) for m in transcript_data]
-
-    # Compute duration from call timestamps
-    duration_ms = None
-    if call.get("started_at") and call.get("ended_at"):
-        started = datetime.fromisoformat(call["started_at"])
-        ended = datetime.fromisoformat(call["ended_at"])
-        duration_ms = int((ended - started).total_seconds() * 1000)
-
-    turn_count = len(transcript) // 2
-
-    # Evaluate global metrics if agent has them configured
-    metrics_config = _resolve(http_request, AgentService).get_metrics_config(agent_id)
-    metric_results: list[MetricResult] = []
-
-    if metrics_config and metrics_config.global_metrics:
-        try:
-            metric_results = await _resolve(
-                http_request, TestExecutionService
-            ).evaluate_global_metrics(transcript, metrics_config)
-        except Exception:
-            logging.getLogger(__name__).exception(
-                "Failed to evaluate global metrics for call %s", call_id
-            )
-
-    metrics_passed = all(r.passed for r in metric_results)
-    status = "pass" if metrics_passed else "fail"
-
-    test_result = TestResult(
-        test_name="Live Call",
-        status=status,
-        transcript=transcript,
-        metric_results=metric_results,
-        turn_count=turn_count,
-        duration_ms=duration_ms,
-        end_reason="user_ended",
-    )
-
-    run_svc = _resolve(http_request, RunService)
-    run = run_svc.create_run(agent_id)
-    run_svc.add_result_from_call(run["id"], call_id, test_result)
-    run_svc.complete(run["id"])
-
-    return run["id"]
 
 
 @router.websocket("/calls/{call_id}/ws")
@@ -2038,10 +1977,7 @@ async def call_websocket(websocket: WebSocket, call_id: str):
         }
         await websocket.send_json(state_msg)
 
-        queued_messages = call_manager.register_websocket(call_id, websocket)
-
-        for msg in queued_messages:
-            await websocket.send_text(msg)
+        await call_manager.attach_websocket(call_id, websocket)
 
         while True:
             data = await websocket.receive_json()
@@ -2053,7 +1989,7 @@ async def call_websocket(websocket: WebSocket, call_id: str):
     except Exception:
         _vt_logger.exception("Error in call websocket for %s", call_id)
     finally:
-        call_manager.unregister_websocket(call_id, websocket)
+        call_manager.detach_websocket(call_id, websocket)
 
 
 # Text chat endpoints
@@ -2109,7 +2045,7 @@ async def end_chat_session(chat_id: str, http_request: Request) -> dict:
 
     # Re-fetch call to get final transcript and timestamps
     call = call_repo.get(chat_id)
-    run_id = await _save_call_as_run(http_request, call)
+    run_id = await _resolve(http_request, RunService).save_call_as_run(call)
 
     return {"status": "ended", "chat_id": chat_id, "run_id": run_id}
 
@@ -2146,10 +2082,8 @@ async def chat_websocket(websocket: WebSocket, chat_id: str):
         }
         await websocket.send_json(state_msg)
 
-        # Register for broadcasts and replay queued messages
-        queued_messages = chat_manager.register_websocket(chat_id, websocket)
-        for msg in queued_messages:
-            await websocket.send_text(msg)
+        # Subscribe to broadcasts (replays any queued backlog atomically)
+        await chat_manager.attach_websocket(chat_id, websocket)
 
         # Listen for messages from client
         while True:
@@ -2166,7 +2100,7 @@ async def chat_websocket(websocket: WebSocket, chat_id: str):
     except Exception:
         _vt_logger.exception("Error in chat websocket for %s", chat_id)
     finally:
-        chat_manager.unregister_websocket(chat_id, websocket)
+        chat_manager.detach_websocket(chat_id, websocket)
 
 
 # Platform integration endpoints

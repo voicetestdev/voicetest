@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from livekit import api as livekit_api
 
+from voicetest.broadcast import BroadcastBus
 from voicetest.models.agent import AgentGraph
 from voicetest.services.settings import SettingsService
 
@@ -53,10 +54,8 @@ class ActiveCall:
     call_id: str
     room_name: str
     process: subprocess.Popen | None = None
-    websockets: set = field(default_factory=set)
     transcript: list = field(default_factory=list)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
-    message_queue: list = field(default_factory=list)
 
 
 class CallManager:
@@ -69,6 +68,7 @@ class CallManager:
     ):
         self.config = config or LiveKitConfig.from_env()
         self._active_calls: dict[str, ActiveCall] = {}
+        self._bus = BroadcastBus()
         self._settings = settings_service
 
     async def create_room(self, room_name: str) -> None:
@@ -141,6 +141,7 @@ class CallManager:
             room_name=room_name,
         )
         self._active_calls[call_record["id"]] = active_call
+        self._bus.start(call_record["id"])
 
         graph_json = graph.model_dump_json()
         agent_token = self.generate_token(room_name, "agent", is_agent=True)
@@ -261,26 +262,7 @@ class CallManager:
                     process.kill()
 
     async def _broadcast_update(self, call_id: str, data: dict) -> None:
-        """Broadcast update to all WebSocket clients watching this call."""
-        if call_id not in self._active_calls:
-            return
-
-        active_call = self._active_calls[call_id]
-        message = json.dumps(data)
-
-        if not active_call.websockets:
-            active_call.message_queue.append(message)
-            return
-
-        dead_sockets = []
-        for ws in active_call.websockets:
-            try:
-                await ws.send_text(message)
-            except Exception:
-                dead_sockets.append(ws)
-
-        for ws in dead_sockets:
-            active_call.websockets.discard(ws)
+        await self._bus.broadcast(call_id, data)
 
     async def end_call(self, call_id: str, call_repo: Any) -> dict | None:
         """End a call and clean up resources."""
@@ -299,11 +281,12 @@ class CallManager:
 
         await self._broadcast_update(call_id, {"type": "call_ended"})
 
-        for ws in list(active_call.websockets):
+        for ws in list(self._bus.subscribers(call_id)):
             with contextlib.suppress(Exception):
                 await ws.close()
 
         del self._active_calls[call_id]
+        self._bus.end(call_id)
 
         return call_repo.end_call(call_id)
 
@@ -311,22 +294,9 @@ class CallManager:
         """Get active call state."""
         return self._active_calls.get(call_id)
 
-    def register_websocket(self, call_id: str, websocket: Any) -> list[str]:
-        """Register a WebSocket for call updates.
+    async def attach_websocket(self, call_id: str, websocket: Any) -> None:
+        """Subscribe a WebSocket to call updates (after replaying any backlog)."""
+        await self._bus.attach(call_id, websocket)
 
-        Returns queued messages for replay.
-        """
-        if call_id not in self._active_calls:
-            return []
-
-        active_call = self._active_calls[call_id]
-        active_call.websockets.add(websocket)
-
-        queued = active_call.message_queue
-        active_call.message_queue = []
-        return queued
-
-    def unregister_websocket(self, call_id: str, websocket: Any) -> None:
-        """Unregister a WebSocket from call updates."""
-        if call_id in self._active_calls:
-            self._active_calls[call_id].websockets.discard(websocket)
+    def detach_websocket(self, call_id: str, websocket: Any) -> None:
+        self._bus.detach(call_id, websocket)

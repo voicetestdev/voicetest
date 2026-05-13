@@ -57,6 +57,48 @@ def db_client(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def resolved(db_client):
+    """Resolve a service/repository from the db_client's container.
+
+    Shorthand for `db_client.app.state.container.resolve(X)`.
+    """
+
+    def _resolve(cls):
+        return db_client.app.state.container.resolve(cls)
+
+    return _resolve
+
+
+@pytest.fixture
+def make_agent(db_client):
+    """Factory: create an agent in the db_client's DB and return its record.
+
+    Modes (mutually exclusive):
+      - `config=...` — POST /api/agents (covers Retell/Vapi/etc. configs)
+      - `graph=...`  — write directly via AgentRepository (covers AgentGraph)
+    Returns the created agent dict (has "id" key).
+    """
+    from voicetest.storage.repositories import AgentRepository
+
+    def _make(name: str = "Test Agent", *, config: dict | None = None, graph=None) -> dict:
+        if graph is not None:
+            repo = db_client.app.state.container.resolve(AgentRepository)
+            return repo.create(
+                name=name,
+                source_type=graph.source_type,
+                graph_json=graph.model_dump_json(),
+            )
+        if config is not None:
+            return db_client.post(
+                "/api/agents",
+                json={"name": name, "config": config},
+            ).json()
+        raise ValueError("make_agent requires either config= or graph=")
+
+    return _make
+
+
+@pytest.fixture
 def platform_client(tmp_path, monkeypatch):
     """Create a test client with isolated database, cleared API keys, and temp settings dir."""
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")

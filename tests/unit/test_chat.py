@@ -189,37 +189,36 @@ class TestChatManagerWebSocket:
     """Tests for WebSocket management."""
 
     @pytest.mark.asyncio
-    async def test_register_websocket(self, chat_manager, call_repo, single_node_graph):
+    async def test_attach_websocket(self, chat_manager, call_repo, single_node_graph):
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
         )
         chat_id = result["chat_id"]
-        ws = MagicMock()
+        ws = AsyncMock()
 
-        queued = chat_manager.register_websocket(chat_id, ws)
+        await chat_manager.attach_websocket(chat_id, ws)
 
-        assert queued == []
-        active = chat_manager.get_active_chat(chat_id)
-        assert ws in active.websockets
+        # Empty queue means no replay; the websocket is subscribed for future broadcasts.
+        await chat_manager._broadcast_update(chat_id, {"type": "ping"})
+        ws.send_text.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_unregister_websocket(self, chat_manager, call_repo, single_node_graph):
+    async def test_detach_websocket(self, chat_manager, call_repo, single_node_graph):
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
         )
         chat_id = result["chat_id"]
-        ws = MagicMock()
-        chat_manager.register_websocket(chat_id, ws)
+        ws = AsyncMock()
+        await chat_manager.attach_websocket(chat_id, ws)
 
-        chat_manager.unregister_websocket(chat_id, ws)
+        chat_manager.detach_websocket(chat_id, ws)
 
-        active = chat_manager.get_active_chat(chat_id)
-        assert ws not in active.websockets
+        # After detach the websocket should not receive broadcasts.
+        await chat_manager._broadcast_update(chat_id, {"type": "ping"})
+        ws.send_text.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_register_returns_queued_messages(
-        self, chat_manager, call_repo, single_node_graph
-    ):
+    async def test_attach_replays_queued_messages(self, chat_manager, call_repo, single_node_graph):
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
         )
@@ -228,11 +227,11 @@ class TestChatManagerWebSocket:
         # Broadcast while no WebSocket connected (queues messages)
         await chat_manager._broadcast_update(chat_id, {"type": "test"})
 
-        ws = MagicMock()
-        queued = chat_manager.register_websocket(chat_id, ws)
+        ws = AsyncMock()
+        await chat_manager.attach_websocket(chat_id, ws)
 
-        assert len(queued) == 1
-        assert '"type": "test"' in queued[0]
+        ws.send_text.assert_called_once()
+        assert '"type": "test"' in ws.send_text.call_args.args[0]
 
     @pytest.mark.asyncio
     async def test_broadcast_sends_to_connected_websockets(
@@ -244,7 +243,7 @@ class TestChatManagerWebSocket:
         chat_id = result["chat_id"]
 
         ws = AsyncMock()
-        chat_manager.register_websocket(chat_id, ws)
+        await chat_manager.attach_websocket(chat_id, ws)
 
         await chat_manager._broadcast_update(chat_id, {"type": "test_msg"})
 
@@ -259,18 +258,21 @@ class TestChatManagerWebSocket:
 
         ws = AsyncMock()
         ws.send_text.side_effect = Exception("Connection closed")
-        chat_manager.register_websocket(chat_id, ws)
+        await chat_manager.attach_websocket(chat_id, ws)
 
         await chat_manager._broadcast_update(chat_id, {"type": "test_msg"})
 
-        active = chat_manager.get_active_chat(chat_id)
-        assert ws not in active.websockets
+        # A second broadcast should not try to send to the dead socket again.
+        ws.send_text.reset_mock()
+        ws.send_text.side_effect = None
+        await chat_manager._broadcast_update(chat_id, {"type": "test_msg2"})
+        ws.send_text.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_register_for_nonexistent_chat_returns_empty(self, chat_manager):
-        ws = MagicMock()
-        queued = chat_manager.register_websocket("nonexistent", ws)
-        assert queued == []
+    async def test_attach_to_nonexistent_chat_is_noop(self, chat_manager):
+        ws = AsyncMock()
+        await chat_manager.attach_websocket("nonexistent", ws)
+        ws.send_text.assert_not_called()
 
 
 class TestChatManagerProcessMessage:
@@ -315,7 +317,7 @@ class TestChatManagerQuotaExhausted:
         chat_id = result["chat_id"]
 
         ws = AsyncMock()
-        chat_manager.register_websocket(chat_id, ws)
+        await chat_manager.attach_websocket(chat_id, ws)
 
         active = chat_manager.get_active_chat(chat_id)
         # Replace engine with a fully mocked version
@@ -354,7 +356,7 @@ class TestChatManagerQuotaExhausted:
         chat_id = result["chat_id"]
 
         ws = AsyncMock()
-        chat_manager.register_websocket(chat_id, ws)
+        await chat_manager.attach_websocket(chat_id, ws)
 
         active = chat_manager.get_active_chat(chat_id)
         mock_engine = MagicMock()
@@ -382,8 +384,6 @@ class TestActiveChatDataclass:
             agent_id="agent-1",
             engine=MagicMock(),
         )
-        assert chat.websockets == set()
         assert chat.transcript == []
-        assert chat.message_queue == []
         assert not chat.cancel_event.is_set()
         assert chat.processing is False

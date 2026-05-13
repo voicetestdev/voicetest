@@ -177,7 +177,8 @@ def _run_tui(
     verbose: bool,
 ) -> None:
     """Launch interactive TUI."""
-    settings = _services().settings.get_settings()
+    svc = _services()
+    settings = svc.settings.get_settings()
     setup_cache_from_settings(settings.cache)
     options = RunOptions(
         agent_model=settings.models.agent,
@@ -187,7 +188,7 @@ def _run_tui(
         verbose=verbose or settings.run.verbose,
     )
     app = VoicetestApp(
-        services=_services(),
+        services=svc,
         agent_path=agent,
         tests_path=tests,
         source=source,
@@ -212,7 +213,8 @@ async def _run_cli(
     agent_id: str | None = None,
 ) -> None:
     """Run tests in CLI mode."""
-    settings = _services().settings.get_settings()
+    svc = _services()
+    settings = svc.settings.get_settings()
     setup_cache_from_settings(settings.cache)
     options = RunOptions(
         agent_model=settings.models.agent,
@@ -222,7 +224,7 @@ async def _run_cli(
         verbose=verbose or settings.run.verbose,
     )
     run_ctx = TestRunContext(
-        services=_services(),
+        services=svc,
         agent_path=agent,
         tests_path=tests,
         source=source,
@@ -258,7 +260,7 @@ async def _run_cli(
 
     # Save to database if requested
     if save_run and agent_id:
-        run_svc = _services().runs
+        run_svc = svc.runs
         db_run = run_svc.create_run(agent_id)
         for result in run_result.results:
             run_svc.add_result(db_run["id"], result)
@@ -471,10 +473,11 @@ def demo(serve: bool, host: str, port: int):
 
     demo_agent_config = get_demo_agent()
     demo_tests = get_demo_tests()
+    svc = _services()
 
     if serve:
-        agent_svc = _services().agents
-        test_svc = _services().test_cases
+        agent_svc = svc.agents
+        test_svc = svc.test_cases
 
         asyncio.run(agent_svc.import_agent(demo_agent_config))
 
@@ -516,7 +519,7 @@ def demo(serve: bool, host: str, port: int):
         console.print(f"  Tests: {tests_path}")
         console.print()
 
-        app = VoicetestShell(_services(), agent_path=agent_path, tests_path=tests_path)
+        app = VoicetestShell(svc, agent_path=agent_path, tests_path=tests_path)
         app.run()
 
 
@@ -538,7 +541,8 @@ def smoke_test(ctx, max_turns: int):
 
 async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
     """Run smoke test with bundled demo data."""
-    settings = _services().settings.get_settings()
+    svc = _services()
+    settings = svc.settings.get_settings()
     setup_cache_from_settings(settings.cache)
 
     _echo("[bold]Running smoke test...[/bold]")
@@ -552,8 +556,8 @@ async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
     _echo(f"  Max turns: {max_turns}")
     _echo("")
 
-    agent_svc = _services().agents
-    exec_svc = _services().test_execution
+    agent_svc = svc.agents
+    exec_svc = svc.test_execution
 
     graph = await agent_svc.import_agent(demo_agent)
     test_case = TestCase.model_validate(first_test)
@@ -786,13 +790,12 @@ def import_call(ctx, agent_id: str, transcript: Path, format_: str):
         _echo("[red]No conversations found in transcript file.[/red]")
         raise SystemExit(1)
 
-    agent_svc = _services().agents
-    if not agent_svc.get_agent(agent_id):
+    svc = _services()
+    if not svc.agents.get_agent(agent_id):
         _echo(f"[red]Agent not found: {agent_id}[/red]")
         raise SystemExit(1)
 
-    run_svc = _services().runs
-    run = run_svc.import_calls(agent_id, results)
+    run = svc.runs.import_calls(agent_id, results)
 
     if json_mode:
         click.echo(json.dumps(run, default=str))
@@ -823,16 +826,17 @@ def replay(ctx, source_run_id: str):
     """
     json_mode = ctx.obj.get("json", False)
 
-    settings = _services().settings.get_settings()
+    svc = _services()
+    settings = svc.settings.get_settings()
     setup_cache_from_settings(settings.cache)
 
-    run_svc = _services().runs
+    run_svc = svc.runs
     source = run_svc.get_run(source_run_id)
     if not source:
         _echo(f"[red]Source run not found: {source_run_id}[/red]")
         raise SystemExit(1)
 
-    agent_svc = _services().agents
+    agent_svc = svc.agents
     try:
         _agent, graph = agent_svc.load_graph(source["agent_id"])
     except (ValueError, FileNotFoundError) as e:
@@ -1675,12 +1679,11 @@ def platform_list_agents(ctx, name):
 @click.pass_context
 def platform_import(ctx, name, agent_id, output):
     """Import an agent from a remote platform."""
-    svc = _services().platforms
-    graph = svc.import_from_platform(name, agent_id)
+    services = _services()
+    graph = services.platforms.import_from_platform(name, agent_id)
 
     if output:
-        agent_svc = _services().agents
-        asyncio.run(agent_svc.export_agent(graph, format=graph.source_type, output=output))
+        asyncio.run(services.agents.export_agent(graph, format=graph.source_type, output=output))
         if ctx.find_root().obj.get("json"):
             click.echo(json.dumps({"file": str(output)}))
         else:
@@ -1703,11 +1706,9 @@ def platform_import(ctx, name, agent_id, output):
 @click.pass_context
 def platform_push(ctx, name, agent_path, agent_name):
     """Push an agent to a remote platform."""
-    agent_svc = _services().agents
-    graph = asyncio.run(agent_svc.import_agent(agent_path))
-
-    svc = _services().platforms
-    result = svc.export_to_platform(name, graph, agent_name)
+    services = _services()
+    graph = asyncio.run(services.agents.import_agent(agent_path))
+    result = services.platforms.export_to_platform(name, graph, agent_name)
 
     if ctx.find_root().obj.get("json"):
         click.echo(json.dumps(result, indent=2))
@@ -1843,14 +1844,15 @@ async def _diagnose(
     json_mode: bool = False,
 ) -> None:
     """Async implementation of diagnose command."""
-    settings = _services().settings.get_settings()
+    svc = _services()
+    settings = svc.settings.get_settings()
 
-    agent_svc = _services().agents
-    exec_svc = _services().test_execution
-    diag_svc = _services().diagnosis
+    agent_svc = svc.agents
+    exec_svc = svc.test_execution
+    diag_svc = svc.diagnosis
 
     graph = await agent_svc.import_agent(agent_path)
-    test_cases = _services().test_cases.load_test_cases(tests_path)
+    test_cases = svc.test_cases.load_test_cases(tests_path)
 
     options = RunOptions(
         agent_model=settings.models.agent,
@@ -2023,10 +2025,11 @@ async def _decompose(
     json_mode: bool = False,
 ) -> None:
     """Async implementation of decompose command."""
-    settings = _services().settings.get_settings()
+    svc = _services()
+    settings = svc.settings.get_settings()
 
-    agent_svc = _services().agents
-    decompose_svc = _services().decompose
+    agent_svc = svc.agents
+    decompose_svc = svc.decompose
 
     graph = await agent_svc.import_agent(agent_path)
 
@@ -2084,9 +2087,10 @@ async def _chat(
     json_mode: bool = False,
 ) -> None:
     """Async implementation of chat command."""
-    settings = _services().settings.get_settings()
+    svc = _services()
+    settings = svc.settings.get_settings()
 
-    agent_svc = _services().agents
+    agent_svc = svc.agents
     graph = await agent_svc.import_agent(agent_path)
 
     agent_model = model or settings.models.agent or "groq/llama-3.1-8b-instant"

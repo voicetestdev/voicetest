@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 import pytest
 
 from voicetest.rest import app
-from voicetest.storage.repositories import AgentRepository
 
 
 @pytest.fixture
@@ -366,19 +365,11 @@ class TestLiveKitImportExport:
 class TestUpdateMetadataEndpoint:
     """Tests for PUT /agents/{id}/metadata endpoint."""
 
-    def test_update_metadata_merges_updates(self, db_client, sample_retell_config):
-        repo = db_client.app.state.container.resolve(AgentRepository)
-
+    def test_update_metadata_merges_updates(self, db_client, make_agent, sample_retell_config):
         from voicetest.importers.retell import RetellImporter
 
-        importer = RetellImporter()
-        graph = importer.import_agent(sample_retell_config)
-        agent = repo.create(
-            name="Meta Agent",
-            source_type="retell",
-            graph_json=graph.model_dump_json(),
-        )
-        agent_id = agent["id"]
+        graph = RetellImporter().import_agent(sample_retell_config)
+        agent_id = make_agent(name="Meta Agent", graph=graph)["id"]
 
         response = db_client.put(
             f"/api/agents/{agent_id}/metadata",
