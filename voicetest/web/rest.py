@@ -185,8 +185,11 @@ def _register_linked_agent(
 
 
 def _find_web_dist() -> Path | None:
-    """Find the web dist folder relative to the package root."""
-    dist = Path(__file__).parent.parent / "web" / "dist"
+    """Find the web dist folder at <repo-root>/web/dist.
+
+    This file lives at voicetest/web/rest.py, so the repo root is two parents up.
+    """
+    dist = Path(__file__).parent.parent.parent / "web" / "dist"
     return dist if dist.exists() else None
 
 
