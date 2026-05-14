@@ -2,6 +2,8 @@
 
 import pytest
 
+from voicetest.exporters.retell_llm import export_retell_llm
+from voicetest.importers.retell_llm import RetellLLMImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import ToolDefinition
@@ -81,21 +83,15 @@ class TestRetellLLMExporter:
     """Tests for Retell LLM exporter."""
 
     def test_export_returns_dict(self, three_node_graph):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(three_node_graph)
         assert isinstance(result, dict)
 
     def test_export_has_required_fields(self, three_node_graph):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(three_node_graph)
         assert "general_prompt" in result
         assert "states" in result
 
     def test_export_creates_states_from_nodes(self, three_node_graph):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(three_node_graph)
         assert len(result["states"]) == 3
 
@@ -105,21 +101,15 @@ class TestRetellLLMExporter:
         assert "closing" in state_names
 
     def test_export_entry_node_is_first_state(self, three_node_graph):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(three_node_graph)
         assert result["states"][0]["name"] == "greeting"
 
     def test_export_state_prompt_contains_instructions(self, three_node_graph):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(three_node_graph)
         greeting_state = next(s for s in result["states"] if s["name"] == "greeting")
         assert "Greet the user warmly" in greeting_state["state_prompt"]
 
     def test_export_transitions_become_edges(self, three_node_graph):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(three_node_graph)
         greeting_state = next(s for s in result["states"] if s["name"] == "greeting")
         assert len(greeting_state["edges"]) == 1
@@ -127,8 +117,6 @@ class TestRetellLLMExporter:
         assert "needs help" in greeting_state["edges"][0]["description"]
 
     def test_export_tools_become_state_tools(self, graph_with_tools):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(graph_with_tools)
         lookup_state = next(s for s in result["states"] if s["name"] == "lookup")
         assert len(lookup_state["tools"]) == 1
@@ -137,8 +125,6 @@ class TestRetellLLMExporter:
         assert "lookup_user" in tool_names
 
     def test_export_tool_parameters_preserved(self, graph_with_tools):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(graph_with_tools)
         lookup_state = next(s for s in result["states"] if s["name"] == "lookup")
         lookup_tool = next(t for t in lookup_state["tools"] if t["name"] == "lookup_user")
@@ -147,31 +133,22 @@ class TestRetellLLMExporter:
         assert "user_id" in lookup_tool["parameters"]["properties"]
 
     def test_export_preserves_metadata(self, graph_with_metadata):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(graph_with_metadata)
         assert result["llm_id"] == "llm_test123"
         assert result["model"] == "gpt-4o"
         assert result["begin_message"] == "Hello! How can I help?"
 
     def test_export_single_node_no_states(self, graph_with_metadata):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(graph_with_metadata)
         assert len(result["states"]) == 1
         assert result["states"][0]["name"] == "main"
 
     def test_export_general_tools_extracted(self, graph_with_tools):
-        from voicetest.exporters.retell_llm import export_retell_llm
-
         result = export_retell_llm(graph_with_tools)
         general_tool_names = [t["name"] for t in result.get("general_tools", [])]
         assert "end_call" in general_tool_names
 
     def test_roundtrip_import_export(self, sample_retell_llm_config):
-        from voicetest.exporters.retell_llm import export_retell_llm
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_config)
         exported = export_retell_llm(graph)

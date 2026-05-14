@@ -1,9 +1,30 @@
 """Tests for WebSocket, run management, orphan detection, and diagnosis endpoints."""
 
 import asyncio
+import json
+import time
+import time as _t
+from unittest.mock import AsyncMock
+from unittest.mock import patch
 
 import pytest
 
+from voicetest.exceptions import QuotaExhaustedError
+from voicetest.models.diagnosis import Diagnosis
+from voicetest.models.diagnosis import DiagnosisResult
+from voicetest.models.diagnosis import FaultLocation
+from voicetest.models.diagnosis import FixAttemptResult
+from voicetest.models.diagnosis import FixSuggestion
+from voicetest.models.diagnosis import PromptChange
+from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
+from voicetest.models.results import TestResult
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
+from voicetest.services.run_runner import RunJob
+from voicetest.services.run_runner import RunRunner
+from voicetest.services.runs import RunService
+from voicetest.services.testing.cases import TestCaseService
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
 from voicetest.web.coordinator import RunCoordinator
@@ -49,7 +70,6 @@ class TestRunWebSocket:
         self, db_client, agent_with_test, monkeypatch
     ):
         """Verify _execute_run includes test_case_id when broadcasting test_started."""
-        from unittest.mock import patch
 
         agent_id = agent_with_test["agent_id"]
         test_id = agent_with_test["test_id"]
@@ -67,8 +87,6 @@ class TestRunWebSocket:
         with patch(
             "voicetest.services.testing.execution.TestExecutionService.run_test"
         ) as mock_run_test:
-            from voicetest.models.results import TestResult
-
             mock_run_test.return_value = TestResult(
                 test_id="test",
                 test_name="WebSocket Test",
@@ -81,8 +99,6 @@ class TestRunWebSocket:
                 json={"test_ids": [test_id]},
             )
             assert response.status_code == 200
-
-            import time
 
             time.sleep(0.5)
 
@@ -122,9 +138,6 @@ class TestTimeoutEnforcement:
         self, db_client, agent_with_test, monkeypatch
     ):
         """When a turn exceeds turn_timeout_seconds, run completes with end_reason=turn_timeout."""
-        import asyncio
-        import time
-        from unittest.mock import patch
 
         agent_id = agent_with_test["agent_id"]
         test_id = agent_with_test["test_id"]
@@ -177,7 +190,6 @@ class TestTranscriptUpdate:
 
     def test_transcript_update_message_format(self):
         """Verify transcript_update message has correct structure."""
-        from voicetest.models.results import Message
 
         transcript = [
             Message(role="assistant", content="Hello!"),
@@ -413,7 +425,6 @@ class TestWebSocketStateMessage:
 
         Regression test for: TypeError: Object of type datetime is not JSON serializable
         """
-        import json
 
         agent_id = agent_with_tests["agent_id"]
         test_ids = agent_with_tests["test_ids"]
@@ -454,7 +465,6 @@ class TestWebSocketStateMessage:
 
     def test_websocket_completed_run_sends_state_and_closes(self, db_client, agent_with_tests):
         """WebSocket connection to completed run should receive state and run_completed."""
-        import time
 
         agent_id = agent_with_tests["agent_id"]
         test_ids = agent_with_tests["test_ids"]
@@ -494,9 +504,6 @@ class TestDiagnosisEndpoints:
     @pytest.fixture
     def failed_result(self, db_client, sample_retell_config):
         """Create an agent, test case, run, and failed result for testing."""
-        from voicetest.models.results import MetricResult
-        from voicetest.models.results import TestResult
-        from voicetest.models.test_case import TestCase
 
         # Create agent with graph
         agent_response = db_client.post(
@@ -557,15 +564,6 @@ class TestDiagnosisEndpoints:
         }
 
     def test_diagnose_returns_200(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import Diagnosis
-        from voicetest.models.diagnosis import DiagnosisResult
-        from voicetest.models.diagnosis import FaultLocation
-        from voicetest.models.diagnosis import FixSuggestion
-        from voicetest.models.diagnosis import PromptChange
-
         mock_result = DiagnosisResult(
             diagnosis=Diagnosis(
                 fault_locations=[
@@ -612,11 +610,6 @@ class TestDiagnosisEndpoints:
         assert response.status_code == 404
 
     def test_apply_fix_returns_200(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import FixAttemptResult
-
         mock_attempt = FixAttemptResult(
             iteration=1,
             changes_applied=[],
@@ -653,12 +646,6 @@ class TestDiagnosisEndpoints:
         assert data["improved"] is True
 
     def test_revise_fix_returns_200(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import FixSuggestion
-        from voicetest.models.diagnosis import PromptChange
-
         mock_fix = FixSuggestion(
             changes=[
                 PromptChange(
@@ -730,13 +717,6 @@ class TestDiagnosisEndpoints:
         assert "nodes" in data
 
     def test_diagnose_with_model_override(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import Diagnosis
-        from voicetest.models.diagnosis import DiagnosisResult
-        from voicetest.models.diagnosis import FixSuggestion
-
         mock_result = DiagnosisResult(
             diagnosis=Diagnosis(
                 fault_locations=[],
@@ -766,13 +746,6 @@ class TestDiagnosisEndpoints:
         assert call_kwargs["judge_model"] == "openai/gpt-4o"
 
     def test_diagnose_without_model_uses_default(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import Diagnosis
-        from voicetest.models.diagnosis import DiagnosisResult
-        from voicetest.models.diagnosis import FixSuggestion
-
         mock_result = DiagnosisResult(
             diagnosis=Diagnosis(
                 fault_locations=[],
@@ -802,11 +775,6 @@ class TestDiagnosisEndpoints:
         assert call_kwargs["judge_model"] != "openai/gpt-4o"
 
     def test_revise_fix_with_model_override(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import FixSuggestion
-
         mock_fix = FixSuggestion(
             changes=[],
             summary="Revised",
@@ -891,10 +859,6 @@ class TestRunRunnerLifecycle:
         self, db_client, two_tests_agent, monkeypatch
     ):
         """A run with N tests broadcasts test_started + test_completed, then run_completed."""
-        import time
-        from unittest.mock import patch
-
-        from voicetest.models.results import TestResult
 
         broadcasts = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
 
@@ -936,10 +900,6 @@ class TestRunRunnerLifecycle:
     @staticmethod
     def _prepare_job(db_client, agent_id: str, test_ids: list[str]):
         """Mirror start_run: create the Run, pending results, and a RunJob."""
-        from voicetest.models.test_case import RunOptions
-        from voicetest.services.run_runner import RunJob
-        from voicetest.services.runs import RunService
-        from voicetest.services.testing.cases import TestCaseService
 
         container = db_client.app.state.container
         run_svc = container.resolve(RunService)
@@ -965,10 +925,6 @@ class TestRunRunnerLifecycle:
 
     def test_runrunner_skips_cancelled_test(self, db_client, two_tests_agent, monkeypatch):
         """A test cancelled before the loop reaches it → test_cancelled; run_test is skipped."""
-        from unittest.mock import patch
-
-        from voicetest.models.results import TestResult
-        from voicetest.services.run_runner import RunRunner
 
         coordinator = _get_coordinator(db_client)
         broadcasts = self._spy_broadcasts(coordinator, monkeypatch)
@@ -998,9 +954,6 @@ class TestRunRunnerLifecycle:
 
     def test_runrunner_cancel_run_aborts_remaining(self, db_client, two_tests_agent, monkeypatch):
         """coordinator.cancel_run() before execute() → all tests cancelled."""
-        from unittest.mock import patch
-
-        from voicetest.services.run_runner import RunRunner
 
         coordinator = _get_coordinator(db_client)
         broadcasts = self._spy_broadcasts(coordinator, monkeypatch)
@@ -1030,9 +983,6 @@ class TestRunRunnerLifecycle:
         Sets up the run via the repo + coordinator manually so the WS endpoint
         has something to attach to, avoiding TestClient + BackgroundTask races.
         """
-        from unittest.mock import patch
-
-        from voicetest.storage.repositories import RunRepository
 
         agent_resp = db_client.post(
             "/api/agents",
@@ -1053,7 +1003,6 @@ class TestRunRunnerLifecycle:
             ):
                 ws.receive_json()  # state
                 ws.send_json({"type": "cancel_run"})
-                import time as _t
 
                 _t.sleep(0.2)
 
@@ -1063,10 +1012,6 @@ class TestRunRunnerLifecycle:
 
     def test_quota_exhausted_aborts_remaining_tests(self, db_client, two_tests_agent, monkeypatch):
         """When run_test raises QuotaExhaustedError, remaining tests are marked cancelled."""
-        import time
-        from unittest.mock import patch
-
-        from voicetest.exceptions import QuotaExhaustedError
 
         broadcasts = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
         agent_id = two_tests_agent["agent_id"]

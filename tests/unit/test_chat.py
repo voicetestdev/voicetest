@@ -1,10 +1,12 @@
 """Tests for voicetest text chat manager."""
 
+import json
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
 
+from voicetest.exceptions import QuotaExhaustedError
 from voicetest.settings import Settings
 from voicetest.web.chat import ActiveChat
 from voicetest.web.chat import ChatManager
@@ -309,7 +311,6 @@ class TestChatManagerQuotaExhausted:
         self, chat_manager, call_repo, single_node_graph
     ):
         """QuotaExhaustedError should broadcast a 'quota_exhausted' message, not a generic error."""
-        from voicetest.exceptions import QuotaExhaustedError
 
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
@@ -335,7 +336,6 @@ class TestChatManagerQuotaExhausted:
         await chat_manager.process_message(chat_id, "hello", call_repo)
 
         # Find the rate_limit message among broadcasts
-        import json
 
         sent_messages = [json.loads(call.args[0]) for call in ws.send_text.call_args_list]
         rate_limit_msgs = [m for m in sent_messages if m.get("type") == "quota_exhausted"]
@@ -348,7 +348,6 @@ class TestChatManagerQuotaExhausted:
         self, chat_manager, call_repo, single_node_graph
     ):
         """QuotaExhaustedError should not send a generic 'error' message type."""
-        from voicetest.exceptions import QuotaExhaustedError
 
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
@@ -366,8 +365,6 @@ class TestChatManagerQuotaExhausted:
         active.engine = mock_engine
 
         await chat_manager.process_message(chat_id, "hello", call_repo)
-
-        import json
 
         sent_messages = [json.loads(call.args[0]) for call in ws.send_text.call_args_list]
         error_msgs = [m for m in sent_messages if m.get("type") == "error"]

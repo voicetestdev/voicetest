@@ -6,6 +6,23 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 import pytest
 
+from voicetest.container import create_container
+from voicetest.engine.session import ConversationState
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.models.agent import GlobalNodeSetting
+from voicetest.models.agent import GoBackCondition
+from voicetest.models.agent import NodeType
+from voicetest.models.agent import ToolDefinition
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
+from voicetest.models.results import Message
+from voicetest.models.results import TestResult
+from voicetest.services import build_app_services
+from voicetest.storage.repositories import AgentRepository
+from voicetest.web.rest import app
+from voicetest.web.rest import init_storage
+
 
 @pytest.fixture(autouse=True)
 def fresh_container():
@@ -16,9 +33,6 @@ def fresh_container():
     they would in production — the lifespan only fires when the client is used
     as a context manager.
     """
-    from voicetest.container import create_container
-    from voicetest.web.rest import app
-    from voicetest.web.rest import init_storage
 
     app.state.container = create_container()
     init_storage(app.state.container)
@@ -28,7 +42,6 @@ def fresh_container():
 @pytest.fixture
 def container():
     """Resolve services directly for tests that construct things explicitly."""
-    from voicetest.container import create_container
 
     return create_container()
 
@@ -36,7 +49,6 @@ def container():
 @pytest.fixture
 def app_services(container):
     """AppServices bag built from the test container."""
-    from voicetest.services import build_app_services
 
     return build_app_services(container)
 
@@ -45,10 +57,6 @@ def app_services(container):
 def db_client(tmp_path, monkeypatch):
     """Create a test client with isolated database."""
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
-
-    from voicetest.container import create_container
-    from voicetest.web.rest import app
-    from voicetest.web.rest import init_storage
 
     app.state.container = create_container()
     init_storage(app.state.container)
@@ -78,7 +86,6 @@ def make_agent(db_client):
       - `graph=...`  — write directly via AgentRepository (covers AgentGraph)
     Returns the created agent dict (has "id" key).
     """
-    from voicetest.storage.repositories import AgentRepository
 
     def _make(name: str = "Test Agent", *, config: dict | None = None, graph=None) -> dict:
         if graph is not None:
@@ -110,10 +117,6 @@ def platform_client(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".voicetest").mkdir()
-
-    from voicetest.container import create_container
-    from voicetest.web.rest import app
-    from voicetest.web.rest import init_storage
 
     app.state.container = create_container()
     init_storage(app.state.container)
@@ -181,8 +184,6 @@ def retell_call():
 @pytest.fixture
 def imported_test_result():
     """Factory fixture: build a TestResult with status='imported'."""
-    from voicetest.models.results import Message
-    from voicetest.models.results import TestResult
 
     def _build(name: str = "call_001", *, transcript: list | None = None) -> TestResult:
         return TestResult(
@@ -210,8 +211,6 @@ def stub_conversation_runner(monkeypatch):
     Returns a list that captures each simulator instance the runner was invoked
     with — useful for asserting the right scripted simulator was constructed.
     """
-    from voicetest.engine.session import ConversationState
-    from voicetest.models.results import Message
 
     captured_simulators: list = []
 
@@ -382,10 +381,6 @@ def sample_livekit_simple_code(sample_livekit_simple_path: Path) -> str:
 @pytest.fixture
 def simple_graph():
     """Simple two-node graph with greeting and farewell nodes."""
-    from voicetest.models.agent import AgentGraph
-    from voicetest.models.agent import AgentNode
-    from voicetest.models.agent import Transition
-    from voicetest.models.agent import TransitionCondition
 
     return AgentGraph(
         nodes={
@@ -415,8 +410,6 @@ def simple_graph():
 @pytest.fixture
 def single_node_graph():
     """Single-node graph for basic testing."""
-    from voicetest.models.agent import AgentGraph
-    from voicetest.models.agent import AgentNode
 
     return AgentGraph(
         nodes={
@@ -434,11 +427,6 @@ def single_node_graph():
 @pytest.fixture
 def graph_with_tools():
     """Graph with tools attached to nodes."""
-    from voicetest.models.agent import AgentGraph
-    from voicetest.models.agent import AgentNode
-    from voicetest.models.agent import ToolDefinition
-    from voicetest.models.agent import Transition
-    from voicetest.models.agent import TransitionCondition
 
     lookup_tool = ToolDefinition(
         name="lookup_user",
@@ -487,10 +475,6 @@ def graph_with_tools():
 @pytest.fixture
 def multi_node_graph():
     """Multi-node graph with branching transitions."""
-    from voicetest.models.agent import AgentGraph
-    from voicetest.models.agent import AgentNode
-    from voicetest.models.agent import Transition
-    from voicetest.models.agent import TransitionCondition
 
     return AgentGraph(
         nodes={
@@ -547,8 +531,6 @@ def multi_node_graph():
 @pytest.fixture
 def graph_with_metadata():
     """Graph with source metadata set."""
-    from voicetest.models.agent import AgentGraph
-    from voicetest.models.agent import AgentNode
 
     return AgentGraph(
         nodes={
@@ -571,12 +553,6 @@ def graph_with_metadata():
 @pytest.fixture
 def graph_with_global_node():
     """Graph with a single global node (cancel request)."""
-    from voicetest.models.agent import AgentGraph
-    from voicetest.models.agent import AgentNode
-    from voicetest.models.agent import GlobalNodeSetting
-    from voicetest.models.agent import GoBackCondition
-    from voicetest.models.agent import Transition
-    from voicetest.models.agent import TransitionCondition
 
     return AgentGraph(
         nodes={
@@ -636,12 +612,6 @@ def graph_with_global_node():
 @pytest.fixture
 def graph_with_multiple_global_nodes():
     """Graph with two global nodes (cancel + specials)."""
-    from voicetest.models.agent import AgentGraph
-    from voicetest.models.agent import AgentNode
-    from voicetest.models.agent import GlobalNodeSetting
-    from voicetest.models.agent import GoBackCondition
-    from voicetest.models.agent import Transition
-    from voicetest.models.agent import TransitionCondition
 
     return AgentGraph(
         nodes={
@@ -706,12 +676,6 @@ def graph_with_multiple_global_nodes():
 @pytest.fixture
 def graph_with_global_no_go_back():
     """Graph where the global node has no go-back conditions (forward only)."""
-    from voicetest.models.agent import AgentGraph
-    from voicetest.models.agent import AgentNode
-    from voicetest.models.agent import GlobalNodeSetting
-    from voicetest.models.agent import NodeType
-    from voicetest.models.agent import Transition
-    from voicetest.models.agent import TransitionCondition
 
     return AgentGraph(
         nodes={
@@ -749,7 +713,6 @@ def graph_with_global_no_go_back():
 @pytest.fixture
 def graph_with_dynamic_variables(fixtures_dir: Path):
     """Graph with {{variable}} placeholders in prompts."""
-    from voicetest.models.agent import AgentGraph
 
     config_path = fixtures_dir / "graphs" / "graph_with_dynamic_variables.json"
     return AgentGraph.model_validate_json(config_path.read_text())
@@ -758,7 +721,6 @@ def graph_with_dynamic_variables(fixtures_dir: Path):
 @pytest.fixture
 def graph_dry_analysis(fixtures_dir: Path):
     """Graph with repeated and similar prompts for DRY analysis testing."""
-    from voicetest.models.agent import AgentGraph
 
     config_path = fixtures_dir / "graphs" / "graph_dry_analysis.json"
     return AgentGraph.model_validate_json(config_path.read_text())

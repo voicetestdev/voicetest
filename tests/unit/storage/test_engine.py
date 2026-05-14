@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import Engine
@@ -28,7 +29,6 @@ class TestNeonPoolSelection:
         """Neon URLs should use NullPool to avoid stale pooled connections."""
         # Use SQLite as a stand-in for PostgreSQL (avoids needing a real Neon DB)
         # but verify pool selection logic by inspecting the URL-based branch.
-        from unittest.mock import patch
 
         with patch("voicetest.storage.engine.create_engine") as mock_create:
             mock_engine = mock_create.return_value
@@ -55,7 +55,6 @@ class TestNeonPoolSelection:
 
     def test_pooler_mode_url_uses_nullpool(self, tmp_path):
         """URLs with pooler_mode should use NullPool."""
-        from unittest.mock import patch
 
         with patch("voicetest.storage.engine.create_engine") as mock_create:
             mock_engine = mock_create.return_value

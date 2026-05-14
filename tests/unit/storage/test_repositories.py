@@ -3,6 +3,7 @@
 from datetime import UTC
 from datetime import datetime
 import json
+from pathlib import Path
 from uuid import NAMESPACE_URL
 from uuid import uuid5
 
@@ -12,6 +13,8 @@ from sqlalchemy.orm import Session
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import GlobalMetric
+from voicetest.models.agent import MetricsConfig
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
@@ -210,7 +213,6 @@ class TestAgentRepository:
 
     def test_load_graph_linked_returns_path(self, agent_repo, sample_graph, tmp_path):
         """Linked files always return Path for import via registry."""
-        from pathlib import Path
 
         agent_file = tmp_path / "agent.json"
         agent_file.write_text(sample_graph.model_dump_json())
@@ -239,9 +241,6 @@ class TestAgentRepository:
             agent_repo.load_graph(record)
 
     def test_create_agent_with_metrics_config(self, agent_repo):
-        from voicetest.models.agent import GlobalMetric
-        from voicetest.models.agent import MetricsConfig
-
         metrics_config = MetricsConfig(
             threshold=0.8,
             global_metrics=[
@@ -263,9 +262,6 @@ class TestAgentRepository:
         assert loaded.global_metrics[0].name == "HIPAA"
 
     def test_update_metrics_config(self, agent_repo):
-        from voicetest.models.agent import GlobalMetric
-        from voicetest.models.agent import MetricsConfig
-
         record = agent_repo.create(
             name="Agent",
             source_type="test",
@@ -289,9 +285,6 @@ class TestAgentRepository:
         assert loaded.global_metrics[0].name == "PCI"
 
     def test_get_metrics_config(self, agent_repo):
-        from voicetest.models.agent import GlobalMetric
-        from voicetest.models.agent import MetricsConfig
-
         metrics_config = MetricsConfig(
             threshold=0.75,
             global_metrics=[
@@ -589,8 +582,6 @@ class TestAgentRepositoryEdgeCases:
         assert result is None
 
     def test_update_metrics_config_nonexistent_agent(self, agent_repo):
-        from voicetest.models.agent import MetricsConfig
-
         result = agent_repo.update_metrics_config("nonexistent-id", MetricsConfig())
         assert result is None
 

@@ -9,14 +9,15 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from voicetest.container import create_container
+from voicetest.web import rest as rest_module
+
 
 def test_lifespan_initializes_container_when_absent(monkeypatch, tmp_path):
     """Without a pre-set container, the lifespan creates one and runs init_storage + cache setup."""
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".voicetest").mkdir()
-
-    from voicetest.web import rest as rest_module
 
     # Strip any prior container the autouse fixture set up.
     if hasattr(rest_module.app.state, "container"):
@@ -41,9 +42,6 @@ def test_lifespan_reuses_preset_container(monkeypatch, tmp_path):
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".voicetest").mkdir()
-
-    from voicetest.container import create_container
-    from voicetest.web import rest as rest_module
 
     preset = create_container()
     rest_module.app.state.container = preset

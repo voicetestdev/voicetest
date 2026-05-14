@@ -2,16 +2,16 @@
 
 import pytest
 
+from voicetest.importers.base import ImporterInfo
+from voicetest.importers.registry import ImporterRegistry
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+
 
 class TestImporterRegistry:
     """Tests for ImporterRegistry."""
 
     def test_register_and_get_importer(self):
-        from voicetest.importers.base import ImporterInfo
-        from voicetest.importers.registry import ImporterRegistry
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         registry = ImporterRegistry()
 
         class MockImporter:
@@ -39,11 +39,6 @@ class TestImporterRegistry:
         assert registry.get("nonexistent") is None
 
     def test_auto_detect(self):
-        from voicetest.importers.base import ImporterInfo
-        from voicetest.importers.registry import ImporterRegistry
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         registry = ImporterRegistry()
 
         class Importer1:
@@ -99,11 +94,6 @@ class TestImporterRegistry:
         assert registry.auto_detect({"unknown": True}) is None
 
     def test_import_agent_with_explicit_source(self):
-        from voicetest.importers.base import ImporterInfo
-        from voicetest.importers.registry import ImporterRegistry
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         registry = ImporterRegistry()
 
         class TestImporter:
@@ -130,11 +120,6 @@ class TestImporterRegistry:
         assert graph.source_type == "test"
 
     def test_import_agent_with_auto_detect(self):
-        from voicetest.importers.base import ImporterInfo
-        from voicetest.importers.registry import ImporterRegistry
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         registry = ImporterRegistry()
 
         class AutoImporter:
@@ -161,27 +146,18 @@ class TestImporterRegistry:
         assert graph.source_type == "auto"
 
     def test_import_agent_unknown_source_raises(self):
-        from voicetest.importers.registry import ImporterRegistry
-
         registry = ImporterRegistry()
 
         with pytest.raises(ValueError, match="Unknown importer"):
             registry.import_agent({}, source_type="nonexistent")
 
     def test_import_agent_no_match_raises(self):
-        from voicetest.importers.registry import ImporterRegistry
-
         registry = ImporterRegistry()
 
         with pytest.raises(ValueError, match="Could not auto-detect"):
             registry.import_agent({"unknown": "config"})
 
     def test_list_importers(self):
-        from voicetest.importers.base import ImporterInfo
-        from voicetest.importers.registry import ImporterRegistry
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         registry = ImporterRegistry()
 
         class Imp1:
@@ -234,15 +210,11 @@ class TestGlobalRegistry:
     """Tests for the container-scoped importer registry."""
 
     def test_registry_is_singleton(self, container):
-        from voicetest.importers.registry import ImporterRegistry
-
         r1 = container.resolve(ImporterRegistry)
         r2 = container.resolve(ImporterRegistry)
         assert r1 is r2
 
     def test_builtin_importers_registered(self, container):
-        from voicetest.importers.registry import ImporterRegistry
-
         registry = container.resolve(ImporterRegistry)
 
         # Retell and Custom should be registered
@@ -250,8 +222,6 @@ class TestGlobalRegistry:
         assert registry.get("custom") is not None
 
     def test_can_import_retell_via_container_registry(self, container, sample_retell_config):
-        from voicetest.importers.registry import ImporterRegistry
-
         registry = container.resolve(ImporterRegistry)
         graph = registry.import_agent(sample_retell_config)
 

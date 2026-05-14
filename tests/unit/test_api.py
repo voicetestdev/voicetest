@@ -1,5 +1,8 @@
 """Tests for model precedence logic in run_test."""
 
+from unittest.mock import AsyncMock
+from unittest.mock import patch
+
 import pytest
 
 from voicetest.models.agent import AgentGraph
@@ -9,6 +12,7 @@ from voicetest.models.agent import MetricsConfig
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services.testing.execution import TestExecutionService
@@ -323,10 +327,6 @@ class TestEvaluateGlobalMetrics:
     @pytest.mark.asyncio
     async def test_enabled_metric_is_evaluated(self):
         """Enabled global metric produces a result."""
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.results import MetricResult
 
         transcript = [
             Message(role="user", content="Hello"),
@@ -362,10 +362,6 @@ class TestEvaluateGlobalMetrics:
     @pytest.mark.asyncio
     async def test_metric_uses_own_threshold_over_global(self):
         """Per-metric threshold overrides the global threshold."""
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.results import MetricResult
 
         transcript = [Message(role="user", content="Hello")]
         config = MetricsConfig(

@@ -1,10 +1,15 @@
 """Tests for dependency injection container."""
 
+from unittest.mock import patch
+
 import pytest
 from sqlalchemy import Engine
+from sqlalchemy import create_engine as sa_create_engine
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
+from voicetest.container import _is_postgres_url
 from voicetest.container import create_container
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import RunRepository
@@ -26,8 +31,6 @@ class TestContainerEngine:
         assert engine1 is engine2
 
     def test_engine_creates_schema(self, fresh_container):
-        from sqlalchemy import inspect
-
         engine = fresh_container.resolve(Engine)
         inspector = inspect(engine)
         tables = inspector.get_table_names()
@@ -91,7 +94,6 @@ class TestSessionScopeByBackend:
 
     def test_is_postgres_url_detection(self):
         """_is_postgres_url correctly identifies PostgreSQL connection strings."""
-        from voicetest.container import _is_postgres_url
 
         assert _is_postgres_url("postgresql://user:pass@host/db")
         assert _is_postgres_url("postgres://user:pass@host/db")
@@ -111,12 +113,8 @@ class TestSessionScopeByBackend:
         """PostgreSQL DATABASE_URL produces transient (non-shared) sessions."""
         monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost/testdb")
 
-        from unittest.mock import patch
-
         # Keep mock active through resolution — engine factory is lazy.
         with patch("voicetest.container.create_db_engine") as mock_engine_fn:
-            from sqlalchemy import create_engine as sa_create_engine
-
             sqlite_engine = sa_create_engine("sqlite:///:memory:")
             mock_engine_fn.return_value = sqlite_engine
 
@@ -131,11 +129,7 @@ class TestSessionScopeByBackend:
         """With PostgreSQL, each repository gets its own session."""
         monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost/testdb")
 
-        from unittest.mock import patch
-
         with patch("voicetest.container.create_db_engine") as mock_engine_fn:
-            from sqlalchemy import create_engine as sa_create_engine
-
             sqlite_engine = sa_create_engine("sqlite:///:memory:")
             mock_engine_fn.return_value = sqlite_engine
 

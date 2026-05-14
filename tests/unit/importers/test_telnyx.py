@@ -4,38 +4,30 @@ import json
 
 import pytest
 
+from voicetest.importers.telnyx import TelnyxImporter
+
 
 class TestTelnyxImporter:
     """Tests for Telnyx AI assistant importer."""
 
     def test_source_type(self):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         assert importer.source_type == "telnyx"
 
     def test_can_import_basic_assistant(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         assert importer.can_import(sample_telnyx_config) is True
 
     def test_can_import_with_handoff(self, sample_telnyx_handoff_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         assert importer.can_import(sample_telnyx_handoff_config) is True
 
     def test_can_import_file_path(self, sample_telnyx_config_path):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         assert importer.can_import(sample_telnyx_config_path) is True
         assert importer.can_import(str(sample_telnyx_config_path)) is True
 
     def test_can_import_rejects_non_telnyx(self):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
 
         # VAPI config (model is a dict)
@@ -62,8 +54,6 @@ class TestTelnyxImporter:
         assert importer.can_import({"instructions": "Hello", "model": "gpt-4"}) is False
 
     def test_can_import_minimal_telnyx(self):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         config = {
             "instructions": "You are helpful",
@@ -73,8 +63,6 @@ class TestTelnyxImporter:
         assert importer.can_import(config) is True
 
     def test_can_import_with_voice_settings(self):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         config = {
             "instructions": "You are helpful",
@@ -84,8 +72,6 @@ class TestTelnyxImporter:
         assert importer.can_import(config) is True
 
     def test_import_agent_from_dict(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -95,8 +81,6 @@ class TestTelnyxImporter:
         assert "main" in graph.nodes
 
     def test_import_agent_from_path(self, sample_telnyx_config_path):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config_path)
 
@@ -104,8 +88,6 @@ class TestTelnyxImporter:
         assert graph.entry_node_id == "main"
 
     def test_node_instructions_from_instructions_field(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -113,8 +95,6 @@ class TestTelnyxImporter:
         assert node.state_prompt == sample_telnyx_config["instructions"]
 
     def test_webhook_tools_imported(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -126,8 +106,6 @@ class TestTelnyxImporter:
         assert webhook_tools[0].url == "https://api.example.com/orders/{order_id}"
 
     def test_transfer_tool_imported(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -137,8 +115,6 @@ class TestTelnyxImporter:
         assert transfer_tools[0].name == "transfer"
 
     def test_hangup_tool_imported(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -148,8 +124,6 @@ class TestTelnyxImporter:
         assert hangup_tools[0].name == "hangup"
 
     def test_handoff_creates_transitions(self, sample_telnyx_handoff_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_handoff_config)
 
@@ -162,8 +136,6 @@ class TestTelnyxImporter:
         assert node.transitions[1].condition.value == "Technical Support"
 
     def test_source_metadata_captured(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -174,16 +146,12 @@ class TestTelnyxImporter:
         assert meta["greeting"] == "Hello! Welcome to Pizza Palace. What can I get for you today?"
 
     def test_default_model_set(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
         assert graph.default_model == "openai/gpt-4o"
 
     def test_greeting_in_node_metadata(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -194,8 +162,6 @@ class TestTelnyxImporter:
         )
 
     def test_voice_settings_in_source_metadata(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -206,8 +172,6 @@ class TestTelnyxImporter:
         }
 
     def test_transcription_in_source_metadata(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -215,8 +179,6 @@ class TestTelnyxImporter:
         assert meta["transcription"] == {"model": "deepgram/nova-3", "language": "en"}
 
     def test_telephony_settings_in_source_metadata(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -225,8 +187,6 @@ class TestTelnyxImporter:
         assert meta["telephony_settings"]["time_limit_secs"] == 600
 
     def test_dynamic_variables_in_source_metadata(self, sample_telnyx_config):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
 
@@ -234,8 +194,6 @@ class TestTelnyxImporter:
         assert meta["dynamic_variables"]["store_name"] == "Pizza Palace"
 
     def test_get_info(self):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         info = importer.get_info()
 
@@ -248,8 +206,6 @@ class TestTelnyxImporterEdgeCases:
     """Tests for edge cases and error handling."""
 
     def test_minimal_config(self):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         config = {
             "instructions": "Hello",
             "model": "openai/gpt-4o",
@@ -264,8 +220,6 @@ class TestTelnyxImporterEdgeCases:
         assert graph.nodes["main"].tools == []
 
     def test_no_tools(self):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         config = {
             "instructions": "You are helpful",
             "model": "openai/gpt-4o",
@@ -279,8 +233,6 @@ class TestTelnyxImporterEdgeCases:
         assert graph.nodes["main"].transitions == []
 
     def test_webhook_tool_parameters_merged(self):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         config = {
             "instructions": "Hello",
             "model": "openai/gpt-4o",
@@ -315,8 +267,6 @@ class TestTelnyxImporterEdgeCases:
         assert "query" in tool.parameters.get("properties", {})
 
     def test_handoff_with_no_other_tools(self):
-        from voicetest.importers.telnyx import TelnyxImporter
-
         config = {
             "instructions": "Route calls",
             "model": "openai/gpt-4o",

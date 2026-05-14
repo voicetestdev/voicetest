@@ -1,6 +1,12 @@
 """Tests for agent CRUD, variables, test cases, gallery, and snippet endpoints."""
 
+import json
+import os
+
 import pytest
+
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
 
 
 class TestAgentsCRUD:
@@ -27,8 +33,6 @@ class TestAgentsCRUD:
         assert agent["source_type"] == "retell"
 
     def test_create_agent_from_path(self, db_client, tmp_path, sample_retell_config):
-        import json
-
         agent_file = tmp_path / "agent.json"
         agent_file.write_text(json.dumps(sample_retell_config))
 
@@ -49,9 +53,6 @@ class TestAgentsCRUD:
     def test_create_agent_relative_path_stored_as_absolute(
         self, db_client, tmp_path, sample_retell_config, monkeypatch
     ):
-        import json
-        import os
-
         agent_file = tmp_path / "agent.json"
         agent_file.write_text(json.dumps(sample_retell_config))
 
@@ -109,8 +110,6 @@ class TestAgentsCRUD:
         assert "Could not auto-detect" in response.json()["detail"]
 
     def test_create_agent_invalid_config_json(self, db_client, tmp_path, sample_retell_config):
-        import json
-
         # Valid JSON but missing required fields
         bad_config = {"nodes": []}
         bad_file = tmp_path / "bad_config.json"
@@ -389,9 +388,6 @@ class TestSnippetEndpoints:
     """Tests for snippet CRUD and DRY analysis endpoints."""
 
     def _make_graph(self, snippets=None, **node_prompts):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         nodes = {}
         first_id = None
         for node_id, prompt in node_prompts.items():

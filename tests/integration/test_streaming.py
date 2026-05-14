@@ -1,11 +1,18 @@
 """Integration tests for token streaming with real LLM calls."""
 
+import warnings
+
+import dspy
+from dspy.streaming import StreamListener
+from dspy.streaming import streamify
 import pytest
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
+from voicetest.services.settings import SettingsService
+from voicetest.services.testing.execution import TestExecutionService
 from voicetest.settings import DEFAULT_MODEL
 from voicetest.settings import load_settings
 
@@ -49,8 +56,6 @@ class TestStreamingWithLLM:
     @pytest.mark.asyncio
     async def test_streaming_with_real_llm(self, simple_graph, simple_test_case):
         """Test streaming with actual LLM call."""
-        from voicetest.services.settings import SettingsService
-        from voicetest.services.testing.execution import TestExecutionService
 
         tokens_received: list[tuple[str, str]] = []
 
@@ -75,8 +80,6 @@ class TestStreamingWithLLM:
         # Handle rate limit errors gracefully - external API issue, not our code
         err = (result.error_message or "").lower()
         if result.status == "error" and "rate" in err and "limit" in err:
-            import warnings
-
             warnings.warn(
                 f"RATE LIMITED - Test skipped: {result.error_message[:100]}",
                 UserWarning,
@@ -98,9 +101,6 @@ class TestStreamifyIntegration:
     @pytest.mark.asyncio
     async def test_streamify_basic(self):
         """Test basic DSPy streamify functionality."""
-        import dspy
-        from dspy.streaming import StreamListener
-        from dspy.streaming import streamify
 
         lm = dspy.LM(DEFAULT_MODEL)
 

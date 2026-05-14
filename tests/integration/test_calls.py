@@ -5,20 +5,26 @@ Tests the agent worker subprocess and call management.
 Run with: uv run pytest tests/integration/test_calls.py -v
 """
 
+import base64
 import json
 import select
+import socket
 import subprocess
 import sys
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+from livekit import api as livekit_api
 import pytest
 
 from voicetest.models.agent import AgentGraph
+from voicetest.settings import Settings
+from voicetest.web.calls import CallManager
+from voicetest.web.calls import LiveKitConfig
 
 
 def livekit_server_available() -> bool:
     """Check if LiveKit server is reachable at localhost:7880."""
-    import socket
 
     try:
         with socket.create_connection(("localhost", 7880), timeout=1):
@@ -163,7 +169,6 @@ class TestAgentWorkerWithLiveKit:
 
     def test_agent_worker_connects_to_livekit(self, simple_graph):
         """Agent worker connects to LiveKit and becomes active."""
-        from livekit import api as livekit_api
 
         # Generate a valid token
         grant = livekit_api.VideoGrants(
@@ -267,9 +272,6 @@ class TestCallManager:
     @pytest.fixture
     def call_manager(self):
         """Create a CallManager for testing."""
-        from voicetest.settings import Settings
-        from voicetest.web.calls import CallManager
-        from voicetest.web.calls import LiveKitConfig
 
         class _EmptySettings:
             def get_settings(self) -> Settings:
@@ -317,7 +319,6 @@ class TestCallManager:
 
         assert token
         # Decode and verify (without verification since we don't have the secret here)
-        import base64
 
         payload = token.split(".")[1]
         # Add padding if needed
@@ -386,8 +387,6 @@ class TestCallManager:
         self, call_manager, mock_call_repo, simple_graph
     ):
         """end-to-end: start_call → attach mock WS → broadcast via SessionRegistry → WS receives."""
-        from unittest.mock import AsyncMock
-
         call_info = await call_manager.start_call(
             agent_id="test-agent",
             graph=simple_graph,

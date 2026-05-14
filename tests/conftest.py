@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from voicetest.models.agent import AgentGraph
+
 
 @pytest.fixture(autouse=True)
 def _isolate_db(tmp_path, monkeypatch):
@@ -37,7 +39,6 @@ def sample_graph_dict(fixtures_dir: Path) -> dict:
 @pytest.fixture
 def sample_graph(sample_graph_dict: dict):
     """Load sample graph as a Pydantic model."""
-    from voicetest.models.agent import AgentGraph
 
     return AgentGraph.model_validate(sample_graph_dict)
 
@@ -55,6 +56,5 @@ def logic_split_graph(logic_split_graph_dict: dict):
     Contains: greeting → router (logic split) → premium | standard → farewell.
     The router node has equation transitions and an always (else) fallback.
     """
-    from voicetest.models.agent import AgentGraph
 
     return AgentGraph.model_validate(logic_split_graph_dict)

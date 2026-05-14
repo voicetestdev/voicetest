@@ -11,6 +11,7 @@ from unittest.mock import patch
 from voicetest.engine.conversation import ConversationEngine
 from voicetest.engine.conversation import TurnResult
 from voicetest.models.results import Message
+from voicetest.web.chat import ChatManager
 
 
 def _build_agent(db_client, sample_retell_config) -> str:
@@ -83,8 +84,6 @@ class TestChatWebSocket:
 
     def test_chat_ws_end_chat_closes_session(self, db_client, sample_retell_config):
         """Sending `end_chat` removes the session from ChatManager and closes the WS."""
-        from voicetest.web.chat import ChatManager
-
         agent_id = _build_agent(db_client, sample_retell_config)
         chat_id = _start_chat(db_client, agent_id)
 

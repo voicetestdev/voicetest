@@ -6,21 +6,21 @@ import dspy
 import pytest
 
 from voicetest.models.results import Message
+from voicetest.simulator.user_sim import SimulatorResponse
+from voicetest.simulator.user_sim import UserSimSignature
+from voicetest.simulator.user_sim import UserSimulator
+from voicetest.util.retry import EmptyLLMOutputError
 
 
 class TestSimulatorResponse:
     """Tests for SimulatorResponse."""
 
     def test_create_response(self):
-        from voicetest.simulator.user_sim import SimulatorResponse
-
         response = SimulatorResponse(message="I need help with my bill")
 
         assert response.message == "I need help with my bill"
 
     def test_no_should_end_field(self):
-        from voicetest.simulator.user_sim import SimulatorResponse
-
         response = SimulatorResponse(message="test")
         assert not hasattr(response, "should_end")
 
@@ -30,20 +30,15 @@ class TestUserSimSignature:
 
     def test_only_message_output_field(self):
         """UserSimSignature should only produce a message — no end detection."""
-        from voicetest.simulator.user_sim import UserSimSignature
 
         output_fields = {k for k, v in UserSimSignature.output_fields.items()}
         assert output_fields == {"message"}
 
     def test_no_should_continue_field(self):
-        from voicetest.simulator.user_sim import UserSimSignature
-
         assert "should_continue" not in UserSimSignature.output_fields
         assert "should_continue" not in UserSimSignature.input_fields
 
     def test_no_reasoning_field(self):
-        from voicetest.simulator.user_sim import UserSimSignature
-
         assert "reasoning" not in UserSimSignature.output_fields
 
 
@@ -51,8 +46,6 @@ class TestUserSimulator:
     """Tests for UserSimulator."""
 
     def test_create_simulator(self):
-        from voicetest.simulator.user_sim import UserSimulator
-
         user_prompt = """
 ## Identity
 Your name is John.
@@ -68,16 +61,12 @@ Polite but impatient.
         assert simulator.user_prompt == user_prompt
 
     def test_format_transcript_empty(self):
-        from voicetest.simulator.user_sim import UserSimulator
-
         simulator = UserSimulator("test prompt", "openai/gpt-4o-mini")
         result = simulator._format_transcript([])
 
         assert "(conversation not started)" in result.lower() or result == ""
 
     def test_format_transcript_with_messages(self):
-        from voicetest.simulator.user_sim import UserSimulator
-
         simulator = UserSimulator("test prompt", "openai/gpt-4o-mini")
         messages = [
             Message(role="user", content="Hello"),
@@ -92,8 +81,6 @@ Polite but impatient.
         assert "USER: I need help" in result
 
     def test_parse_persona_extracts_identity(self):
-        from voicetest.simulator.user_sim import UserSimulator
-
         user_prompt = """
 ## Identity
 Your name is Sarah. Your account number is 12345.
@@ -111,8 +98,6 @@ Friendly.
         assert "12345" in persona.get("identity", "")
 
     def test_parse_persona_extracts_goal(self):
-        from voicetest.simulator.user_sim import UserSimulator
-
         user_prompt = """
 ## Identity
 John
@@ -129,8 +114,6 @@ Frustrated.
         assert "refund" in persona.get("goal", "").lower()
 
     def test_parse_persona_extracts_personality(self):
-        from voicetest.simulator.user_sim import UserSimulator
-
         user_prompt = """
 ## Identity
 Jane
@@ -152,9 +135,6 @@ class TestUserSimulatorGenerate:
 
     @pytest.mark.asyncio
     async def test_generate_returns_response(self):
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
-
         simulator = UserSimulator(
             "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",
             "openai/gpt-4o-mini",
@@ -170,9 +150,6 @@ class TestUserSimulatorGenerate:
 
     @pytest.mark.asyncio
     async def test_generate_with_transcript_context(self):
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
-
         simulator = UserSimulator(
             "## Identity\nJohn\n\n## Goal\nGet refund\n\n## Personality\nPolite",
             "openai/gpt-4o-mini",
@@ -193,8 +170,6 @@ class TestUserSimulatorGenerate:
     @pytest.mark.asyncio
     async def test_mock_returns_none_when_exhausted(self):
         """Mock mode returns None when all responses have been consumed."""
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator(
             "## Identity\nJohn\n\n## Goal\nSay bye\n\n## Personality\nBrief",
@@ -214,7 +189,6 @@ class TestUserSimulatorGenerate:
     @pytest.mark.asyncio
     async def test_llm_path_returns_message(self):
         """The LLM path returns a SimulatorResponse with just the message."""
-        from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator(
             "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",
@@ -237,8 +211,6 @@ class TestUserSimulatorGenerate:
     async def test_llm_none_message_retries_then_raises(self):
         """If the LLM returns None for `message`, retry once with a random salt
         and no_cache=True; if still None, raise EmptyLLMOutputError."""
-        from voicetest.simulator.user_sim import UserSimulator
-        from voicetest.util.retry import EmptyLLMOutputError
 
         simulator = UserSimulator(
             "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",
@@ -273,7 +245,6 @@ class TestUserSimulatorGenerate:
     async def test_llm_none_then_recovers_on_retry(self):
         """If the first call returns None but the retry returns a valid message,
         the simulator succeeds without raising."""
-        from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator(
             "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",
@@ -297,7 +268,6 @@ class TestUserSimulatorGenerate:
 
         The LM used for each call is attached to the returned Prediction as
         `_voicetest_lm` — the simulator reads it to pass to try_evict_last_call."""
-        from voicetest.simulator.user_sim import UserSimulator
 
         simulator = UserSimulator(
             "## Identity\nJohn\n\n## Goal\nSay hello\n\n## Personality\nFriendly",

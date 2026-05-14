@@ -1,12 +1,13 @@
 """Tests for voicetest.models.test_case module."""
 
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
+
 
 class TestRunOptions:
     """Tests for RunOptions model."""
 
     def test_default_options(self):
-        from voicetest.models.test_case import RunOptions
-
         options = RunOptions()
         assert options.max_turns == 50
         assert options.turn_timeout_seconds == 60.0
@@ -18,8 +19,6 @@ class TestRunOptions:
         assert options.judge_model is None
 
     def test_custom_options(self):
-        from voicetest.models.test_case import RunOptions
-
         options = RunOptions(
             max_turns=10,
             turn_timeout_seconds=120.0,
@@ -40,8 +39,6 @@ class TestTestCase:
     """Tests for TestCase model matching Retell export format."""
 
     def test_create_basic_test_case(self):
-        from voicetest.models.test_case import TestCase
-
         test = TestCase(
             name="Basic greeting test",
             user_prompt="When asked for name, say John. Your goal is to say hello.",
@@ -58,8 +55,6 @@ class TestTestCase:
         assert test.patterns == []
 
     def test_create_full_test_case(self):
-        from voicetest.models.test_case import TestCase
-
         test = TestCase(
             name="Billing inquiry test",
             user_prompt="When asked for name, say Jane. Ask about your bill.",
@@ -79,8 +74,6 @@ class TestTestCase:
         assert test.creation_timestamp == 1761074675536
 
     def test_test_case_json_serialization(self):
-        from voicetest.models.test_case import TestCase
-
         test = TestCase(name="Test", user_prompt="Prompt", metrics=["Criteria for success."])
 
         json_str = test.model_dump_json()
@@ -90,7 +83,6 @@ class TestTestCase:
 
     def test_retell_export_format_compatibility(self):
         """Verify compatibility with actual Retell export format."""
-        from voicetest.models.test_case import TestCase
 
         retell_export = {
             "name": "Refill Declined wants 6 week callback",
@@ -118,7 +110,6 @@ class TestTestCase:
 
     def test_create_rule_test_case(self):
         """Test creating a rule-based test case."""
-        from voicetest.models.test_case import TestCase
 
         test = TestCase(
             name="Greeting check",
@@ -136,7 +127,6 @@ class TestTestCase:
 
     def test_effective_type_normalizes_legacy_values(self):
         """Test that effective_type normalizes legacy type values."""
-        from voicetest.models.test_case import TestCase
 
         simulation_test = TestCase(name="Test", user_prompt="Prompt", type="simulation")
         assert simulation_test.effective_type == "llm"

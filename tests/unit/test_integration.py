@@ -8,6 +8,8 @@ from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
+from voicetest.models.results import TestResult
+from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services.agents import AgentService
@@ -78,8 +80,6 @@ class TestEndToEndFlow:
 
     @pytest.mark.asyncio
     async def test_run_test_returns_result(self, simple_agent_graph, simple_test_case, container):
-        from voicetest.models.results import TestResult
-
         options = RunOptions(max_turns=2)
 
         result = await container.resolve(TestExecutionService).run_test(
@@ -92,8 +92,6 @@ class TestEndToEndFlow:
 
     @pytest.mark.asyncio
     async def test_run_tests_returns_run(self, simple_agent_graph, container):
-        from voicetest.models.results import TestRun
-
         test_cases = [
             TestCase(
                 name="Test 1",

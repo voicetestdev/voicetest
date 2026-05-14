@@ -1,8 +1,13 @@
 """Tests for voicetest REST API."""
 
+import json
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 import pytest
 
+from voicetest.importers.retell import RetellImporter
+from voicetest.models.results import MetricResult
 from voicetest.web.rest import app
 
 
@@ -146,7 +151,6 @@ class TestExportEndpoint:
 
         result = response.json()
         assert result["format"] == "retell-llm"
-        import json
 
         content = json.loads(result["content"])
         assert "states" in content
@@ -161,7 +165,6 @@ class TestExportEndpoint:
 
         result = response.json()
         assert result["format"] == "retell-cf"
-        import json
 
         content = json.loads(result["content"])
         assert content["response_engine"]["type"] == "conversation-flow"
@@ -223,10 +226,6 @@ class TestEvaluateEndpoint:
     """Tests for transcript evaluation endpoint."""
 
     def test_evaluate_transcript(self, client):
-        from unittest.mock import patch
-
-        from voicetest.models.results import MetricResult
-
         async def mock_evaluate_with_llm(
             self, transcript, criterion, threshold, on_error=None, use_heard=False
         ):
@@ -366,8 +365,6 @@ class TestUpdateMetadataEndpoint:
     """Tests for PUT /agents/{id}/metadata endpoint."""
 
     def test_update_metadata_merges_updates(self, db_client, make_agent, sample_retell_config):
-        from voicetest.importers.retell import RetellImporter
-
         graph = RetellImporter().import_agent(sample_retell_config)
         agent_id = make_agent(name="Meta Agent", graph=graph)["id"]
 

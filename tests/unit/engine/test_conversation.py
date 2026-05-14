@@ -6,9 +6,12 @@ from unittest.mock import patch
 import pytest
 
 from voicetest.engine.conversation import ConversationEngine
+from voicetest.engine.conversation import TurnResult
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import EquationClause
+from voicetest.models.agent import GlobalNodeSetting
+from voicetest.models.agent import GoBackCondition
 from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
@@ -20,8 +23,6 @@ class TestConversationEngine:
     """Tests for ConversationEngine."""
 
     def test_create_engine(self, simple_graph):
-        from voicetest.engine.conversation import ConversationEngine
-
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
         assert engine.graph is simple_graph
@@ -29,8 +30,6 @@ class TestConversationEngine:
         assert engine.current_node == "greeting"
 
     def test_engine_initial_state(self, simple_graph):
-        from voicetest.engine.conversation import ConversationEngine
-
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
         assert engine.current_node == "greeting"
@@ -41,8 +40,6 @@ class TestConversationEngine:
 
     @pytest.mark.asyncio
     async def test_add_user_message(self, simple_graph):
-        from voicetest.engine.conversation import ConversationEngine
-
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
         await engine.add_user_message("Hello!")
 
@@ -53,8 +50,6 @@ class TestConversationEngine:
 
     @pytest.mark.asyncio
     async def test_reset_engine(self, simple_graph):
-        from voicetest.engine.conversation import ConversationEngine
-
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
         await engine.add_user_message("Hello!")
         engine._current_node = "farewell"
@@ -68,8 +63,6 @@ class TestConversationEngine:
 
     @pytest.mark.asyncio
     async def test_transcript_returns_copy(self, simple_graph):
-        from voicetest.engine.conversation import ConversationEngine
-
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
         await engine.add_user_message("Hello!")
 
@@ -79,8 +72,6 @@ class TestConversationEngine:
         assert len(engine.transcript) == 1  # Original unchanged
 
     def test_nodes_visited_returns_copy(self, simple_graph):
-        from voicetest.engine.conversation import ConversationEngine
-
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
         nodes = engine.nodes_visited
@@ -93,8 +84,6 @@ class TestTurnResult:
     """Tests for TurnResult dataclass."""
 
     def test_create_turn_result(self):
-        from voicetest.engine.conversation import TurnResult
-
         result = TurnResult(response="Hello there!")
 
         assert result.response == "Hello there!"
@@ -103,16 +92,12 @@ class TestTurnResult:
         assert result.end_call_invoked is False
 
     def test_turn_result_with_transition(self):
-        from voicetest.engine.conversation import TurnResult
-
         result = TurnResult(response="Goodbye!", transitioned_to="farewell")
 
         assert result.response == "Goodbye!"
         assert result.transitioned_to == "farewell"
 
     def test_turn_result_with_end_call(self):
-        from voicetest.engine.conversation import TurnResult
-
         result = TurnResult(response="Ending call.", end_call_invoked=True)
 
         assert result.end_call_invoked is True
@@ -124,9 +109,6 @@ class TestProcessTurn:
     @pytest.mark.asyncio
     async def test_advance_calls_llm(self, simple_graph):
         """Test that advance calls the LLM with correct parameters."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
@@ -155,9 +137,6 @@ class TestProcessTurn:
     @pytest.mark.asyncio
     async def test_advance_records_response(self, simple_graph):
         """Test that advance records the response in transcript."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
@@ -181,9 +160,6 @@ class TestProcessTurn:
     @pytest.mark.asyncio
     async def test_advance_handles_transition(self, simple_graph):
         """Test that advance handles node transitions."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
@@ -211,9 +187,6 @@ class TestProcessTurn:
         talks. The conversation ends via max_turns or an explicit end_call
         tool — not by having zero edges.
         """
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
         # Move to farewell node which has no transitions
@@ -238,9 +211,6 @@ class TestProcessTurn:
     @pytest.mark.asyncio
     async def test_advance_with_dynamic_variables(self, graph_with_dynamic_variables):
         """Test that dynamic variables are substituted in prompts."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         dynamic_vars = {
             "customer_name": "Alice",
@@ -350,9 +320,6 @@ class TestLogicNodeHandling:
     @pytest.mark.asyncio
     async def test_logic_node_transitions_to_matching_target(self, logic_graph):
         """Logic node with matching variable transitions without LLM call."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(
             logic_graph,
@@ -385,9 +352,6 @@ class TestLogicNodeHandling:
     @pytest.mark.asyncio
     async def test_logic_node_no_match_stays_put(self, logic_graph):
         """Logic node with no matching variable does not transition."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(
             logic_graph,
@@ -407,9 +371,6 @@ class TestLogicNodeHandling:
     @pytest.mark.asyncio
     async def test_logic_node_produces_empty_response(self, logic_graph):
         """Logic node produces an empty string response."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(
             logic_graph,
@@ -427,9 +388,6 @@ class TestLogicNodeHandling:
     @pytest.mark.asyncio
     async def test_logic_node_transition_recorded(self, logic_graph):
         """Logic node transition is recorded in nodes_visited and tool_calls."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(
             logic_graph,
@@ -498,9 +456,6 @@ class TestLogicNodeHandling:
     @pytest.mark.asyncio
     async def test_logic_node_with_always_fallback(self, logic_graph_with_fallback):
         """When no equation matches, the always transition fires."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(
             logic_graph_with_fallback,
@@ -518,9 +473,6 @@ class TestLogicNodeHandling:
     @pytest.mark.asyncio
     async def test_logic_node_equation_takes_priority_over_always(self, logic_graph_with_fallback):
         """When an equation matches, it fires instead of the always fallback."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(
             logic_graph_with_fallback,
@@ -537,9 +489,6 @@ class TestLogicNodeHandling:
     @pytest.mark.asyncio
     async def test_non_logic_node_still_calls_llm(self, logic_graph):
         """Regular conversation nodes still go through LLM as normal."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         engine = ConversationEngine(
             logic_graph,
@@ -1057,7 +1006,6 @@ class TestToolMessagesInTranscript:
     @pytest.mark.asyncio
     async def test_apply_transition_adds_tool_message(self, logic_graph_with_fallback):
         """_apply_transition should append a tool message to the transcript."""
-        from voicetest.engine.conversation import TurnResult
 
         engine = ConversationEngine(
             logic_graph_with_fallback,
@@ -1458,7 +1406,6 @@ class TestOnTurnCallback:
     @pytest.mark.asyncio
     async def test_on_turn_fires_on_transition(self, simple_graph):
         """on_turn should fire when a transition appends a tool message mid-advance."""
-        from unittest.mock import patch
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
@@ -1493,7 +1440,6 @@ class TestOnTurnCallback:
     @pytest.mark.asyncio
     async def test_on_turn_fires_on_response_without_transition(self, simple_graph):
         """on_turn should fire when response is appended even without transition."""
-        from unittest.mock import patch
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
@@ -1524,7 +1470,6 @@ class TestOnTurnCallback:
     @pytest.mark.asyncio
     async def test_no_callback_when_on_turn_not_set(self, simple_graph):
         """Engine works fine without on_turn set (default None)."""
-        from unittest.mock import patch
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
@@ -1671,12 +1616,6 @@ class TestGlobalNodeConversation:
     @pytest.mark.asyncio
     async def test_forward_from_global_node_pops_originator(self):
         """Taking a regular edge from a global node (not go-back) cleans up the stack."""
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import GlobalNodeSetting
-        from voicetest.models.agent import GoBackCondition
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
 
         graph = AgentGraph(
             nodes={

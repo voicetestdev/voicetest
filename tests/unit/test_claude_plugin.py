@@ -7,6 +7,8 @@ from click.testing import CliRunner
 import pytest
 import yaml
 
+from voicetest.cli import main
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_DIR = REPO_ROOT / "claude-plugin"
@@ -125,16 +127,12 @@ class TestInitClaudeCommand:
     """Tests for the init-claude CLI command."""
 
     def test_init_claude_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["init-claude", "--help"])
 
         assert result.exit_code == 0
         assert "Claude Code" in result.output
 
     def test_init_claude_creates_files(self, cli_runner, tmp_path, monkeypatch):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(main, ["init-claude"])
 
@@ -154,15 +152,11 @@ class TestClaudePluginPathCommand:
     """Tests for the claude-plugin-path CLI command."""
 
     def test_claude_plugin_path_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["claude-plugin-path", "--help"])
 
         assert result.exit_code == 0
 
     def test_claude_plugin_path_prints_path(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["claude-plugin-path"])
 
         assert result.exit_code == 0

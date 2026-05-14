@@ -2,13 +2,17 @@
 
 from datetime import datetime
 
+from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
+from voicetest.models.results import TestResult
+from voicetest.models.results import TestRun
+from voicetest.models.results import ToolCall
+
 
 class TestMessage:
     """Tests for Message model."""
 
     def test_create_user_message(self):
-        from voicetest.models.results import Message
-
         msg = Message(role="user", content="Hello, I need help.")
         assert msg.role == "user"
         assert msg.content == "Hello, I need help."
@@ -16,16 +20,12 @@ class TestMessage:
         assert msg.metadata == {}
 
     def test_create_agent_message_with_timestamp(self):
-        from voicetest.models.results import Message
-
         now = datetime.now()
         msg = Message(role="assistant", content="How can I help?", timestamp=now)
         assert msg.role == "assistant"
         assert msg.timestamp == now
 
     def test_create_message_with_metadata(self):
-        from voicetest.models.results import Message
-
         msg = Message(
             role="tool",
             content="Account balance: $100",
@@ -39,8 +39,6 @@ class TestToolCall:
     """Tests for ToolCall model."""
 
     def test_create_tool_call(self):
-        from voicetest.models.results import ToolCall
-
         call = ToolCall(
             name="lookup_account",
             arguments={"account_id": "12345"},
@@ -51,8 +49,6 @@ class TestToolCall:
         assert call.result == "Account found: John Doe"
 
     def test_create_tool_call_without_result(self):
-        from voicetest.models.results import ToolCall
-
         call = ToolCall(name="send_notification", arguments={"message": "Hello"})
         assert call.result is None
 
@@ -61,8 +57,6 @@ class TestMetricResult:
     """Tests for MetricResult model."""
 
     def test_create_passed_metric(self):
-        from voicetest.models.results import MetricResult
-
         result = MetricResult(
             metric="Agent greeted the customer",
             passed=True,
@@ -75,8 +69,6 @@ class TestMetricResult:
         assert result.confidence == 0.95
 
     def test_create_failed_metric(self):
-        from voicetest.models.results import MetricResult
-
         result = MetricResult(
             metric="Agent resolved the issue",
             passed=False,
@@ -86,8 +78,6 @@ class TestMetricResult:
         assert result.confidence is None
 
     def test_create_metric_with_score(self):
-        from voicetest.models.results import MetricResult
-
         result = MetricResult(
             metric="HIPAA compliance",
             score=0.85,
@@ -102,8 +92,6 @@ class TestMetricResult:
         assert result.confidence == 0.92
 
     def test_metric_score_defaults(self):
-        from voicetest.models.results import MetricResult
-
         result = MetricResult(
             metric="Test metric",
             passed=True,
@@ -117,10 +105,6 @@ class TestTestResult:
     """Tests for TestResult model."""
 
     def test_create_passed_result(self):
-        from voicetest.models.results import Message
-        from voicetest.models.results import MetricResult
-        from voicetest.models.results import TestResult
-
         result = TestResult(
             test_id="test-001",
             test_name="Greeting test",
@@ -144,8 +128,6 @@ class TestTestResult:
         assert result.error_message is None
 
     def test_create_error_result(self):
-        from voicetest.models.results import TestResult
-
         result = TestResult(
             test_id="test-002",
             test_name="Failed test",
@@ -158,9 +140,6 @@ class TestTestResult:
         assert result.transcript == []
 
     def test_result_json_serialization(self):
-        from voicetest.models.results import Message
-        from voicetest.models.results import TestResult
-
         result = TestResult(
             test_id="t1",
             test_name="Test",
@@ -181,9 +160,6 @@ class TestTestRun:
     """Tests for TestRun model."""
 
     def test_create_test_run(self):
-        from voicetest.models.results import TestResult
-        from voicetest.models.results import TestRun
-
         now = datetime.now()
         run = TestRun(
             run_id="run-001",
@@ -219,9 +195,6 @@ class TestTestRun:
         assert len(run.results) == 3
 
     def test_passed_count(self):
-        from voicetest.models.results import TestResult
-        from voicetest.models.results import TestRun
-
         run = TestRun(
             run_id="run-002",
             started_at=datetime.now(),
@@ -255,9 +228,6 @@ class TestTestRun:
         assert run.passed_count == 2
 
     def test_failed_count(self):
-        from voicetest.models.results import TestResult
-        from voicetest.models.results import TestRun
-
         run = TestRun(
             run_id="run-003",
             started_at=datetime.now(),
@@ -291,8 +261,6 @@ class TestTestRun:
         assert run.failed_count == 1  # only "fail", not "error"
 
     def test_empty_run(self):
-        from voicetest.models.results import TestRun
-
         run = TestRun(run_id="empty", started_at=datetime.now())
         assert run.passed_count == 0
         assert run.failed_count == 0

@@ -2,6 +2,7 @@
 
 import pytest
 
+from voicetest.judges.diagnosis import DiagnosisJudge
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import Transition
@@ -230,7 +231,6 @@ class TestDiagnoseFailure:
         svc = DiagnosisService(StubExec(), SettingsService())
 
         # Monkey-patch the judge creation to use mock mode
-        from voicetest.judges.diagnosis import DiagnosisJudge
 
         original_init = DiagnosisJudge.__init__
 

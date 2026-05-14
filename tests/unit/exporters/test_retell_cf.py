@@ -7,12 +7,16 @@ import pytest
 from voicetest.exporters.retell_cf import RetellCFExporter
 from voicetest.exporters.retell_cf import export_retell_cf
 from voicetest.importers.retell import RetellImporter
+from voicetest.importers.retell_llm import RetellLLMImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import EquationClause
+from voicetest.models.agent import GlobalNodeSetting
 from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
+from voicetest.models.agent import VariableExtraction
 from voicetest.services.settings import SettingsService
 
 
@@ -346,7 +350,6 @@ class TestTerminalToolSynthesis:
 
     def test_transfer_destination_preserved_from_llm_json(self):
         """Import LLM JSON with transfer_destination → export CF → number on node."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         llm_json = {
             "general_prompt": "You are a vet clinic receptionist.",
@@ -389,7 +392,6 @@ class TestTerminalToolSynthesis:
 
     def test_transfer_destination_falls_back_without_source(self):
         """LLM JSON without transfer_destination gets placeholder number."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         llm_json = {
             "general_prompt": "You are a bakery assistant.",
@@ -423,7 +425,6 @@ class TestTerminalToolSynthesis:
 
     def test_multiple_transfer_destinations_from_llm_json(self):
         """Multiple transfer tools each get their own node with their own number."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         llm_json = {
             "general_prompt": "You are a hospital switchboard.",
@@ -915,7 +916,6 @@ class TestRetellCFExporter:
 
     def test_agent_envelope_preserved_through_export(self):
         """LLM JSON with voice_id -> import -> CF export -> voice_id in wrapper."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         llm_json = {
             "voice_id": "voice_abc123",
@@ -1261,7 +1261,6 @@ class TestExportAlwaysEdge:
 
     def test_always_edge_not_on_logic_nodes(self):
         """Logic nodes use else_edge, not always_edge."""
-        from voicetest.models.agent import EquationClause
 
         graph = AgentGraph(
             nodes={
@@ -1301,9 +1300,6 @@ class TestExportExtractNodes:
 
     @pytest.fixture
     def extract_graph(self):
-        from voicetest.models.agent import EquationClause
-        from voicetest.models.agent import VariableExtraction
-
         return AgentGraph(
             nodes={
                 "ask_dob": AgentNode(
@@ -1401,8 +1397,6 @@ class TestExportLogicalOperator:
 
     @pytest.fixture
     def graph_with_or(self):
-        from voicetest.models.agent import EquationClause
-
         return AgentGraph(
             nodes={
                 "router": AgentNode(
@@ -1442,8 +1436,6 @@ class TestExportLogicalOperator:
         assert tc["operator"] == "||"
 
     def test_and_operator_exported(self):
-        from voicetest.models.agent import EquationClause
-
         graph = AgentGraph(
             nodes={
                 "router": AgentNode(
@@ -1528,8 +1520,6 @@ class TestRetellCFExporterGlobalNodes:
         assert "global_node_setting" not in greeting
 
     def test_global_node_with_empty_go_backs(self):
-        from voicetest.models.agent import GlobalNodeSetting
-
         graph = AgentGraph(
             nodes={
                 "main": AgentNode(id="main", state_prompt="Main."),

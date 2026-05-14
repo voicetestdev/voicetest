@@ -1,15 +1,28 @@
 """Tests for voicetest.models.agent module."""
 
+import json
+
 from pydantic import ValidationError
 import pytest
+
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.models.agent import EquationClause
+from voicetest.models.agent import GlobalMetric
+from voicetest.models.agent import GlobalNodeSetting
+from voicetest.models.agent import GoBackCondition
+from voicetest.models.agent import MetricsConfig
+from voicetest.models.agent import NodeType
+from voicetest.models.agent import ToolDefinition
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
+from voicetest.models.agent import VariableExtraction
 
 
 class TestTransitionCondition:
     """Tests for TransitionCondition model."""
 
     def test_create_llm_prompt_condition(self):
-        from voicetest.models.agent import TransitionCondition
-
         condition = TransitionCondition(
             type="llm_prompt", value="Customer wants to check their balance"
         )
@@ -17,27 +30,19 @@ class TestTransitionCondition:
         assert condition.value == "Customer wants to check their balance"
 
     def test_create_equation_condition(self):
-        from voicetest.models.agent import TransitionCondition
-
         condition = TransitionCondition(type="equation", value="{{user_age}} > 18")
         assert condition.type == "equation"
         assert condition.value == "{{user_age}} > 18"
 
     def test_create_tool_call_condition(self):
-        from voicetest.models.agent import TransitionCondition
-
         condition = TransitionCondition(type="tool_call", value="transfer_to_agent")
         assert condition.type == "tool_call"
 
     def test_create_always_condition(self):
-        from voicetest.models.agent import TransitionCondition
-
         condition = TransitionCondition(type="always", value="")
         assert condition.type == "always"
 
     def test_invalid_condition_type(self):
-        from voicetest.models.agent import TransitionCondition
-
         with pytest.raises(ValidationError):
             TransitionCondition(type="invalid_type", value="test")
 
@@ -46,9 +51,6 @@ class TestTransition:
     """Tests for Transition model."""
 
     def test_create_transition(self):
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-
         transition = Transition(
             target_node_id="billing",
             condition=TransitionCondition(type="llm_prompt", value="Customer needs billing help"),
@@ -59,9 +61,6 @@ class TestTransition:
         assert transition.description == "Route to billing department"
 
     def test_transition_without_description(self):
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-
         transition = Transition(
             target_node_id="support", condition=TransitionCondition(type="always", value="")
         )
@@ -72,8 +71,6 @@ class TestToolDefinition:
     """Tests for ToolDefinition model."""
 
     def test_create_tool_definition(self):
-        from voicetest.models.agent import ToolDefinition
-
         tool = ToolDefinition(
             name="lookup_account",
             description="Look up customer account by ID",
@@ -92,8 +89,6 @@ class TestAgentNode:
     """Tests for AgentNode model."""
 
     def test_create_basic_node(self):
-        from voicetest.models.agent import AgentNode
-
         node = AgentNode(id="greeting", state_prompt="Greet the customer warmly.")
         assert node.id == "greeting"
         assert node.state_prompt == "Greet the customer warmly."
@@ -102,10 +97,6 @@ class TestAgentNode:
         assert node.metadata == {}
 
     def test_create_node_with_transitions(self):
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-
         node = AgentNode(
             id="greeting",
             state_prompt="Greet the customer.",
@@ -129,9 +120,6 @@ class TestAgentNode:
         assert node.transitions[1].target_node_id == "support"
 
     def test_create_node_with_tools(self):
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import ToolDefinition
-
         node = AgentNode(
             id="lookup",
             state_prompt="Look up the customer's information.",
@@ -147,8 +135,6 @@ class TestAgentNode:
         assert node.tools[0].name == "get_account"
 
     def test_create_node_with_metadata(self):
-        from voicetest.models.agent import AgentNode
-
         node = AgentNode(
             id="greeting",
             state_prompt="Greet",
@@ -162,9 +148,6 @@ class TestAgentGraph:
     """Tests for AgentGraph model."""
 
     def test_create_simple_graph(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         nodes = {
             "greeting": AgentNode(id="greeting", state_prompt="Hello!"),
             "end": AgentNode(id="end", state_prompt="Goodbye!"),
@@ -176,9 +159,6 @@ class TestAgentGraph:
         assert graph.source_metadata == {}
 
     def test_get_entry_node(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         nodes = {
             "start": AgentNode(id="start", state_prompt="Start here"),
             "end": AgentNode(id="end", state_prompt="End here"),
@@ -189,9 +169,6 @@ class TestAgentGraph:
         assert entry.state_prompt == "Start here"
 
     def test_get_node(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         nodes = {
             "a": AgentNode(id="a", state_prompt="Node A"),
             "b": AgentNode(id="b", state_prompt="Node B"),
@@ -203,9 +180,6 @@ class TestAgentGraph:
         assert graph.get_node("nonexistent") is None
 
     def test_graph_with_source_metadata(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         graph = AgentGraph(
             nodes={"n": AgentNode(id="n", state_prompt="Test")},
             entry_node_id="n",
@@ -216,11 +190,6 @@ class TestAgentGraph:
         assert graph.source_metadata["version"] == 2
 
     def test_graph_json_serialization(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-
         graph = AgentGraph(
             nodes={
                 "start": AgentNode(
@@ -253,8 +222,6 @@ class TestVariableExtraction:
     """Tests for VariableExtraction model."""
 
     def test_create_variable_extraction(self):
-        from voicetest.models.agent import VariableExtraction
-
         var = VariableExtraction(
             name="dob_month",
             description="The month of birth",
@@ -267,8 +234,6 @@ class TestVariableExtraction:
         assert var.choices == ["January", "February", "March"]
 
     def test_variable_extraction_defaults(self):
-        from voicetest.models.agent import VariableExtraction
-
         var = VariableExtraction(name="age", description="Patient age")
         assert var.type == "string"
         assert var.choices == []
@@ -278,14 +243,10 @@ class TestTransitionConditionLogicalOperator:
     """Tests for logical_operator field on TransitionCondition."""
 
     def test_logical_operator_defaults_to_and(self):
-        from voicetest.models.agent import TransitionCondition
-
         condition = TransitionCondition(type="equation", value="x == 1")
         assert condition.logical_operator == "and"
 
     def test_logical_operator_set_to_or(self):
-        from voicetest.models.agent import TransitionCondition
-
         condition = TransitionCondition(type="equation", value="x == 1", logical_operator="or")
         assert condition.logical_operator == "or"
 
@@ -294,19 +255,10 @@ class TestNodeType:
     """Tests for NodeType enum and model_post_init inference."""
 
     def test_default_is_conversation(self):
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import NodeType
-
         node = AgentNode(id="greeting", state_prompt="Hello")
         assert node.node_type == NodeType.CONVERSATION
 
     def test_infers_logic_from_equation_transitions(self):
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import EquationClause
-        from voicetest.models.agent import NodeType
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-
         node = AgentNode(
             id="router",
             state_prompt="",
@@ -328,13 +280,6 @@ class TestNodeType:
         assert node.node_type == NodeType.LOGIC
 
     def test_infers_extract_from_variables_and_equations(self):
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import EquationClause
-        from voicetest.models.agent import NodeType
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-        from voicetest.models.agent import VariableExtraction
-
         node = AgentNode(
             id="extract",
             state_prompt="",
@@ -359,12 +304,6 @@ class TestNodeType:
         assert node.node_type == NodeType.EXTRACT
 
     def test_variables_without_equations_stays_conversation(self):
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import NodeType
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-        from voicetest.models.agent import VariableExtraction
-
         node = AgentNode(
             id="extract",
             state_prompt="",
@@ -383,9 +322,6 @@ class TestNodeType:
     def test_end_call_tool_does_not_infer_end_type(self):
         """Nodes with end_call tools are NOT end nodes — they're conversation nodes
         that have an end_call tool available. Only explicitly typed nodes are END."""
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import NodeType
-        from voicetest.models.agent import ToolDefinition
 
         node = AgentNode(
             id="main",
@@ -396,9 +332,6 @@ class TestNodeType:
 
     def test_transfer_tool_does_not_infer_transfer_type(self):
         """Same as end_call: transfer tools don't make a node a TRANSFER node."""
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import NodeType
-        from voicetest.models.agent import ToolDefinition
 
         node = AgentNode(
             id="main",
@@ -408,9 +341,6 @@ class TestNodeType:
         assert node.node_type == NodeType.CONVERSATION
 
     def test_explicit_type_overrides_inference(self):
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import NodeType
-
         node = AgentNode(
             id="special",
             state_prompt="Has a prompt but is an end node",
@@ -419,9 +349,6 @@ class TestNodeType:
         assert node.node_type == NodeType.END
 
     def test_json_round_trip(self):
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import NodeType
-
         node = AgentNode(id="end", state_prompt="", node_type=NodeType.END)
         json_str = node.model_dump_json()
         assert '"end"' in json_str
@@ -431,10 +358,6 @@ class TestNodeType:
 
     def test_backward_compat_json_without_node_type(self):
         """Old JSON without node_type field should infer logic/extract from structure."""
-        import json
-
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import NodeType
 
         old_json = json.dumps(
             {
@@ -452,16 +375,11 @@ class TestNodeType:
         assert node.node_type == NodeType.LOGIC
 
     def test_model_copy_preserves_node_type(self):
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import NodeType
-
         node = AgentNode(id="end", state_prompt="", node_type=NodeType.END)
         copied = node.model_copy(update={"state_prompt": "Goodbye"})
         assert copied.node_type == NodeType.END
 
     def test_enum_serializes_as_string(self):
-        from voicetest.models.agent import NodeType
-
         assert str(NodeType.CONVERSATION) == "conversation"
         assert str(NodeType.LOGIC) == "logic"
         assert str(NodeType.EXTRACT) == "extract"
@@ -473,9 +391,6 @@ class TestGlobalNodeSetting:
     """Tests for GlobalNodeSetting and GoBackCondition models."""
 
     def test_create_go_back_condition(self):
-        from voicetest.models.agent import GoBackCondition
-        from voicetest.models.agent import TransitionCondition
-
         gb = GoBackCondition(
             id="go-back-1",
             condition=TransitionCondition(
@@ -488,10 +403,6 @@ class TestGlobalNodeSetting:
         assert gb.condition.value == "User wants to continue ordering"
 
     def test_create_global_node_setting(self):
-        from voicetest.models.agent import GlobalNodeSetting
-        from voicetest.models.agent import GoBackCondition
-        from voicetest.models.agent import TransitionCondition
-
         setting = GlobalNodeSetting(
             condition="User wants to cancel their order",
             go_back_conditions=[
@@ -509,23 +420,16 @@ class TestGlobalNodeSetting:
         assert setting.go_back_conditions[0].id == "go-back-1"
 
     def test_global_node_setting_empty_go_backs(self):
-        from voicetest.models.agent import GlobalNodeSetting
-
         setting = GlobalNodeSetting(
             condition="User asks about specials",
         )
         assert setting.go_back_conditions == []
 
     def test_agent_node_global_setting_none_by_default(self):
-        from voicetest.models.agent import AgentNode
-
         node = AgentNode(id="main", state_prompt="Help.")
         assert node.global_node_setting is None
 
     def test_agent_node_with_global_setting(self):
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import GlobalNodeSetting
-
         node = AgentNode(
             id="cancel",
             state_prompt="Ask if they want to cancel.",
@@ -537,9 +441,6 @@ class TestGlobalNodeSetting:
         assert node.global_node_setting.condition == "User wants to cancel"
 
     def test_agent_graph_global_nodes_empty(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         graph = AgentGraph(
             nodes={
                 "a": AgentNode(id="a", state_prompt="A."),
@@ -551,10 +452,6 @@ class TestGlobalNodeSetting:
         assert graph.global_nodes == []
 
     def test_agent_graph_global_nodes_returns_marked_nodes(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import GlobalNodeSetting
-
         graph = AgentGraph(
             nodes={
                 "a": AgentNode(id="a", state_prompt="A."),
@@ -580,12 +477,6 @@ class TestGlobalNodeSetting:
         assert global_ids == {"cancel", "faq"}
 
     def test_global_node_setting_json_round_trip(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import GlobalNodeSetting
-        from voicetest.models.agent import GoBackCondition
-        from voicetest.models.agent import TransitionCondition
-
         graph = AgentGraph(
             nodes={
                 "main": AgentNode(id="main", state_prompt="Main."),
@@ -624,8 +515,6 @@ class TestGlobalMetric:
     """Tests for GlobalMetric model."""
 
     def test_create_global_metric(self):
-        from voicetest.models.agent import GlobalMetric
-
         metric = GlobalMetric(
             name="HIPAA",
             criteria="Agent confirmed patient name AND DOB before sharing PHI",
@@ -636,8 +525,6 @@ class TestGlobalMetric:
         assert metric.enabled is True
 
     def test_create_global_metric_with_threshold(self):
-        from voicetest.models.agent import GlobalMetric
-
         metric = GlobalMetric(
             name="compliance",
             criteria="Agent follows compliance rules",
@@ -646,8 +533,6 @@ class TestGlobalMetric:
         assert metric.threshold == 0.9
 
     def test_create_disabled_global_metric(self):
-        from voicetest.models.agent import GlobalMetric
-
         metric = GlobalMetric(
             name="test",
             criteria="Test criteria",
@@ -660,22 +545,15 @@ class TestMetricsConfig:
     """Tests for MetricsConfig model."""
 
     def test_create_empty_metrics_config(self):
-        from voicetest.models.agent import MetricsConfig
-
         config = MetricsConfig()
         assert config.threshold == 0.7
         assert config.global_metrics == []
 
     def test_create_metrics_config_with_threshold(self):
-        from voicetest.models.agent import MetricsConfig
-
         config = MetricsConfig(threshold=0.8)
         assert config.threshold == 0.8
 
     def test_create_metrics_config_with_global_metrics(self):
-        from voicetest.models.agent import GlobalMetric
-        from voicetest.models.agent import MetricsConfig
-
         config = MetricsConfig(
             threshold=0.75,
             global_metrics=[
@@ -689,9 +567,6 @@ class TestMetricsConfig:
         assert config.global_metrics[1].threshold == 0.9
 
     def test_metrics_config_json_serialization(self):
-        from voicetest.models.agent import GlobalMetric
-        from voicetest.models.agent import MetricsConfig
-
         config = MetricsConfig(
             threshold=0.8,
             global_metrics=[

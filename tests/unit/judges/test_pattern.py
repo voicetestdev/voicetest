@@ -1,5 +1,7 @@
 """Tests for voicetest.judges.pattern module."""
 
+import importlib
+
 import pytest
 
 from voicetest.judges.pattern import compile_pattern
@@ -73,7 +75,6 @@ class TestRe2ImportError:
 
     def test_import_error_message(self, monkeypatch):
         """Attempting re2 engine without the package gives a clear error."""
-        import importlib
 
         # Force re2 to be unavailable
         original_import = __builtins__.__import__ if hasattr(__builtins__, "__import__") else None

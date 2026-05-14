@@ -42,8 +42,17 @@ from voicetest.util.snippets import suggest_snippets
 
 
 def _services() -> AppServices:
-    """Read the AppServices bag from the current Click context."""
-    return click.get_current_context().obj["services"]
+    """Lazily build (and cache) the AppServices bag on the current Click context.
+
+    Lazy so that subcommands like `serve` — which delegate DB work to a uvicorn
+    worker process — don't open the DuckDB file in the CLI process. Otherwise
+    the CLI and the uvicorn worker both grab a write lock and the worker fails
+    its lifespan with `Conflicting lock is held in ... (PID N)`.
+    """
+    ctx = click.get_current_context()
+    if "services" not in ctx.obj:
+        ctx.obj["services"] = build_app_services(create_container())
+    return ctx.obj["services"]
 
 
 console = Console()
@@ -98,10 +107,9 @@ def main(ctx, json_mode):
     """
     ctx.ensure_object(dict)
     ctx.obj["json"] = json_mode
-    ctx.obj["services"] = build_app_services(create_container())
     if ctx.invoked_subcommand is None:
         # No subcommand - launch interactive shell
-        app = VoicetestShell(ctx.obj["services"])
+        app = VoicetestShell(_services())
         app.run()
 
 

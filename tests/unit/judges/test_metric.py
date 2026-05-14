@@ -2,31 +2,26 @@
 
 import pytest
 
+from voicetest.judges.metric import MetricJudge
 from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
 
 
 class TestMetricJudge:
     """Tests for MetricJudge."""
 
     def test_create_judge(self):
-        from voicetest.judges.metric import MetricJudge
-
         judge = MetricJudge("openai/gpt-4o-mini")
 
         assert judge is not None
 
     def test_create_judge_with_custom_model(self):
-        from voicetest.judges.metric import MetricJudge
-
         judge = MetricJudge(model="openai/gpt-4o")
 
         assert judge.model == "openai/gpt-4o"
 
     @pytest.mark.asyncio
     async def test_evaluate_returns_metric_result(self):
-        from voicetest.judges.metric import MetricJudge
-        from voicetest.models.results import MetricResult
-
         judge = MetricJudge("openai/gpt-4o-mini")
 
         transcript = [
@@ -55,9 +50,6 @@ class TestMetricJudge:
 
     @pytest.mark.asyncio
     async def test_evaluate_all_returns_list(self):
-        from voicetest.judges.metric import MetricJudge
-        from voicetest.models.results import MetricResult
-
         judge = MetricJudge("openai/gpt-4o-mini")
 
         transcript = [
@@ -82,8 +74,6 @@ class TestMetricJudge:
         assert all(isinstance(r, MetricResult) for r in results)
 
     def test_format_transcript(self):
-        from voicetest.judges.metric import MetricJudge
-
         judge = MetricJudge("openai/gpt-4o-mini")
 
         transcript = [
@@ -99,7 +89,6 @@ class TestMetricJudge:
     def test_format_transcript_filters_tool_messages(self):
         """Tool messages (transitions, extractions) are filtered out to keep
         the judge focused on the actual user/assistant conversation."""
-        from voicetest.judges.metric import MetricJudge
 
         judge = MetricJudge("openai/gpt-4o-mini")
 
@@ -126,9 +115,6 @@ class TestMetricJudge:
 
     @pytest.mark.asyncio
     async def test_evaluate_with_score_and_threshold(self):
-        from voicetest.judges.metric import MetricJudge
-        from voicetest.models.results import MetricResult
-
         judge = MetricJudge("openai/gpt-4o-mini")
         judge._mock_mode = True
         judge._mock_results = [
@@ -151,9 +137,6 @@ class TestMetricJudge:
 
     @pytest.mark.asyncio
     async def test_evaluate_score_below_threshold_fails(self):
-        from voicetest.judges.metric import MetricJudge
-        from voicetest.models.results import MetricResult
-
         judge = MetricJudge("openai/gpt-4o-mini")
         judge._mock_mode = True
         judge._mock_results = [
@@ -176,9 +159,6 @@ class TestMetricJudge:
 
     @pytest.mark.asyncio
     async def test_evaluate_all_with_threshold(self):
-        from voicetest.judges.metric import MetricJudge
-        from voicetest.models.results import MetricResult
-
         judge = MetricJudge("openai/gpt-4o-mini")
         judge._mock_mode = True
         judge._mock_results = [

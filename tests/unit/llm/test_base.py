@@ -10,9 +10,16 @@ import dspy
 import litellm
 import pytest
 
+from voicetest.engine.conversation import ConversationEngine
+from voicetest.llm import _call_llm_sync
 from voicetest.llm import _invoke_callback
 from voicetest.llm import call_llm
 from voicetest.llm.base import _create_lm
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
+from voicetest.models.test_case import RunOptions
 from voicetest.util.retry import RetryError
 
 
@@ -53,7 +60,6 @@ class TestCallLlmRetryCallback:
     @pytest.mark.asyncio
     async def test_on_error_called_on_rate_limit_non_streaming(self):
         """on_error callback should be invoked when RateLimitError occurs (non-streaming)."""
-        from voicetest.llm import _call_llm_sync
 
         class DummySignature(dspy.Signature):
             input: str = dspy.InputField()
@@ -100,7 +106,6 @@ class TestCallLlmRetryIntegration:
     @pytest.mark.asyncio
     async def test_on_error_called_with_async_callback(self):
         """on_error should work with async callbacks in non-streaming mode."""
-        from voicetest.llm import _call_llm_sync
 
         class DummySignature(dspy.Signature):
             input: str = dspy.InputField()
@@ -262,11 +267,6 @@ class TestConversationEngineCacheSalt:
     @pytest.mark.asyncio
     async def test_response_call_includes_cache_salt(self):
         """Response call should include transitions fingerprint as cache_salt."""
-        from voicetest.engine.conversation import ConversationEngine
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
 
         graph = AgentGraph(
             nodes={
@@ -313,11 +313,6 @@ class TestConversationEngineCacheSalt:
     @pytest.mark.asyncio
     async def test_salt_changes_when_edges_change(self):
         """Different outbound edges should produce different cache_salt values."""
-        from voicetest.engine.conversation import ConversationEngine
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
 
         def make_engine(targets: list[str]) -> ConversationEngine:
             graph = AgentGraph(
@@ -378,10 +373,6 @@ class TestConversationEngineNoCache:
     @pytest.mark.asyncio
     async def test_no_cache_option_passed_to_call_llm(self):
         """RunOptions(no_cache=True) should pass no_cache=True to call_llm."""
-        from voicetest.engine.conversation import ConversationEngine
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.test_case import RunOptions
 
         graph = AgentGraph(
             nodes={
@@ -412,9 +403,6 @@ class TestConversationEngineNoCache:
     @pytest.mark.asyncio
     async def test_no_cache_default_false(self):
         """Default RunOptions should pass no_cache=False to call_llm."""
-        from voicetest.engine.conversation import ConversationEngine
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={

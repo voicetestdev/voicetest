@@ -1,6 +1,7 @@
 """Tests for LinkedFile utility functions."""
 
 import json
+import time
 
 import pytest
 
@@ -54,8 +55,6 @@ class TestCheckFile:
             check_file(str(missing), "res-1")
 
     def test_etag_changes_when_file_changes(self, tmp_path):
-        import time
-
         f = tmp_path / "test.json"
         f.write_text('{"v": 1}')
         _, etag1 = check_file(str(f), "res-1")

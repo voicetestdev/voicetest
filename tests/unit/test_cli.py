@@ -2,10 +2,17 @@
 
 import dataclasses
 import json
+from unittest.mock import patch
 
+import click
 from click.testing import CliRunner
 import pytest
+import yaml
 
+from voicetest.cli import LazyExportChoice
+from voicetest.cli import main
+from voicetest.compose import get_compose_path
+from voicetest.importers.transcripts.retell import parse_retell
 from voicetest.services import AgentService
 from voicetest.services import DiscoveryService
 from voicetest.services import RunService
@@ -37,8 +44,6 @@ class TestCLIVersion:
     """Tests for CLI version command."""
 
     def test_version(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--version"])
 
         assert result.exit_code == 0
@@ -49,8 +54,6 @@ class TestCLIImporters:
     """Tests for the importers command."""
 
     def test_importers_lists_available(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["importers"])
 
         assert result.exit_code == 0
@@ -62,8 +65,6 @@ class TestCLIExport:
     """Tests for the export command."""
 
     def test_export_mermaid(self, cli_runner, temp_agent_file, tmp_path, monkeypatch):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(
             main, ["export", "--agent", str(temp_agent_file), "--format", "mermaid"]
@@ -76,8 +77,6 @@ class TestCLIExport:
         assert "flowchart" in output_file.read_text().lower()
 
     def test_export_livekit(self, cli_runner, temp_agent_file, tmp_path, monkeypatch):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(
             main, ["export", "--agent", str(temp_agent_file), "--format", "livekit"]
@@ -90,8 +89,6 @@ class TestCLIExport:
         assert "class Agent_greeting" in output_file.read_text()
 
     def test_export_to_file(self, cli_runner, temp_agent_file, tmp_path):
-        from voicetest.cli import main
-
         output_path = tmp_path / "output.md"
 
         result = cli_runner.invoke(
@@ -116,8 +113,6 @@ class TestCLIRun:
     """Tests for the run command."""
 
     def test_run_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["run", "--help"])
 
         assert result.exit_code == 0
@@ -125,8 +120,6 @@ class TestCLIRun:
         assert "--tests" in result.output
 
     def test_run_missing_agent(self, cli_runner, temp_tests_file):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(
             main, ["run", "--agent", "/nonexistent/agent.json", "--tests", str(temp_tests_file)]
         )
@@ -134,8 +127,6 @@ class TestCLIRun:
         assert result.exit_code != 0
 
     def test_run_missing_tests(self, cli_runner, temp_agent_file):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(
             main, ["run", "--agent", str(temp_agent_file), "--tests", "/nonexistent/tests.json"]
         )
@@ -147,24 +138,18 @@ class TestCLIRunSaveOption:
     """Tests for the --save-run option on the run command."""
 
     def test_run_help_shows_save_run(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["run", "--help"])
 
         assert result.exit_code == 0
         assert "--save-run" in result.output
 
     def test_run_help_shows_agent_id(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["run", "--help"])
 
         assert result.exit_code == 0
         assert "--agent-id" in result.output
 
     def test_save_run_requires_agent_id(self, cli_runner, temp_agent_file, temp_tests_file):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(
             main,
             [
@@ -186,8 +171,6 @@ class TestCLIMain:
     """Tests for main entry point."""
 
     def test_main_help_shows_commands(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -201,8 +184,6 @@ class TestCLIServe:
     """Tests for the serve command."""
 
     def test_serve_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["serve", "--help"])
 
         assert result.exit_code == 0
@@ -211,8 +192,6 @@ class TestCLIServe:
         assert "--port" in result.output
 
     def test_serve_agent_flag_accepts_path(self, cli_runner, temp_agent_file):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["serve", "--help"])
 
         assert result.exit_code == 0
@@ -220,19 +199,34 @@ class TestCLIServe:
         assert "-a" in result.output
 
     def test_serve_agent_nonexistent_file_fails(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["serve", "--agent", "/nonexistent/agent.json"])
 
         assert result.exit_code != 0
+
+    def test_serve_does_not_open_db_in_cli_process(self, cli_runner):
+        """`voicetest serve` must not build services (open the DB) in the CLI process.
+
+        Regression: when the CLI eagerly built services in the `main()` group
+        callback, the CLI process acquired a DuckDB write lock; then uvicorn's
+        spawned worker tried to open the same DB in its lifespan and crashed
+        with `Conflicting lock is held in /usr/local/bin/python3.12 (PID N)`.
+        The fix made `_services()` lazy — this test pins that behavior.
+        """
+        with (
+            patch("voicetest.cli.build_app_services") as build_services,
+            patch("voicetest.cli._start_server") as start_server,
+        ):
+            result = cli_runner.invoke(main, ["serve"])
+
+        assert result.exit_code == 0, result.output
+        start_server.assert_called_once()
+        build_services.assert_not_called()
 
 
 class TestCLIUp:
     """Tests for the up command."""
 
     def test_up_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["up", "--help"])
 
         assert result.exit_code == 0
@@ -242,8 +236,6 @@ class TestCLIUp:
         assert "--verbose" in result.output
 
     def test_up_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -251,8 +243,6 @@ class TestCLIUp:
         assert "down" in result.output
 
     def test_up_fails_without_docker(self, cli_runner, monkeypatch):
-        from voicetest.cli import main
-
         monkeypatch.setattr(
             "voicetest.cli.subprocess.run",
             lambda *a, **kw: type("Result", (), {"returncode": 1, "stdout": b"", "stderr": b""})(),
@@ -264,8 +254,6 @@ class TestCLIUp:
         assert "docker compose" in result.output.lower()
 
     def test_up_detach_starts_infra_only(self, cli_runner, monkeypatch):
-        from voicetest.cli import main
-
         calls = []
 
         def mock_run(cmd, **kwargs):
@@ -289,16 +277,12 @@ class TestCLIDown:
     """Tests for the down command."""
 
     def test_down_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["down", "--help"])
 
         assert result.exit_code == 0
         assert "Stop infrastructure" in result.output
 
     def test_down_fails_without_docker(self, cli_runner, monkeypatch):
-        from voicetest.cli import main
-
         monkeypatch.setattr(
             "voicetest.cli.subprocess.run",
             lambda *a, **kw: type("Result", (), {"returncode": 1, "stdout": b"", "stderr": b""})(),
@@ -310,8 +294,6 @@ class TestCLIDown:
         assert "docker compose" in result.output.lower()
 
     def test_down_calls_docker_compose_down(self, cli_runner, monkeypatch):
-        from voicetest.cli import main
-
         calls = []
 
         def mock_run(cmd, **kwargs):
@@ -334,15 +316,11 @@ class TestSyncGuards:
 
     def test_export_choices_match_registry(self, container, app_services):
         """CLI export format choices must include every registered format."""
-        import click
 
         registry_formats = {
             f["id"] for f in container.resolve(DiscoveryService).list_export_formats()
         }
         assert len(registry_formats) > 0, "Expected at least one export format in registry"
-
-        from voicetest.cli import LazyExportChoice
-        from voicetest.cli import main
 
         choice = LazyExportChoice()
         # LazyExportChoice reads the registry through Click context — push one.
@@ -352,7 +330,6 @@ class TestSyncGuards:
 
     def test_exporters_command_lists_all_formats(self, cli_runner, container):
         """The exporters command must list every registered export format."""
-        from voicetest.cli import main
 
         result = cli_runner.invoke(main, ["exporters"])
         assert result.exit_code == 0
@@ -362,7 +339,6 @@ class TestSyncGuards:
 
     def test_main_help_shows_exporters(self, cli_runner):
         """The --help output must include the exporters command."""
-        from voicetest.cli import main
 
         result = cli_runner.invoke(main, ["--help"])
         assert result.exit_code == 0
@@ -373,17 +349,11 @@ class TestCompose:
     """Tests for the compose module."""
 
     def test_get_compose_path_returns_valid_path(self):
-        from voicetest.compose import get_compose_path
-
         with get_compose_path() as path:
             assert path.exists()
             assert path.name == "docker-compose.yml"
 
     def test_compose_file_has_expected_services(self):
-        import yaml
-
-        from voicetest.compose import get_compose_path
-
         with get_compose_path() as path:
             content = yaml.safe_load(path.read_text())
 
@@ -393,10 +363,6 @@ class TestCompose:
         assert "kokoro" in content["services"]
 
     def test_compose_file_does_not_include_backend(self):
-        import yaml
-
-        from voicetest.compose import get_compose_path
-
         with get_compose_path() as path:
             content = yaml.safe_load(path.read_text())
 
@@ -408,16 +374,12 @@ class TestCLIJsonOutput:
     """Tests for --json flag output."""
 
     def test_json_flag_in_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
         assert "--json" in result.output
 
     def test_importers_json(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--json", "importers"])
 
         assert result.exit_code == 0
@@ -431,7 +393,6 @@ class TestCLIJsonOutput:
 
     def test_importers_json_matches_registry(self, cli_runner, container):
         """JSON output must contain the same data as the registry."""
-        from voicetest.cli import main
 
         result = cli_runner.invoke(main, ["--json", "importers"])
         data = json.loads(result.output)
@@ -441,8 +402,6 @@ class TestCLIJsonOutput:
         assert data == expected
 
     def test_exporters_json(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--json", "exporters"])
 
         assert result.exit_code == 0
@@ -457,7 +416,6 @@ class TestCLIJsonOutput:
 
     def test_exporters_json_matches_registry(self, cli_runner, container):
         """JSON output must contain the same data as the registry."""
-        from voicetest.cli import main
 
         result = cli_runner.invoke(main, ["--json", "exporters"])
         data = json.loads(result.output)
@@ -467,7 +425,6 @@ class TestCLIJsonOutput:
 
     def test_export_json_to_stdout(self, cli_runner, temp_agent_file, tmp_path, monkeypatch):
         """--json export without -o writes content to stdout (no file created)."""
-        from voicetest.cli import main
 
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(
@@ -484,7 +441,6 @@ class TestCLIJsonOutput:
 
     def test_export_json_with_output_file(self, cli_runner, temp_agent_file, tmp_path):
         """--json export with -o writes file and outputs JSON metadata."""
-        from voicetest.cli import main
 
         output_path = tmp_path / "out.md"
         result = cli_runner.invoke(
@@ -514,7 +470,6 @@ class TestCLIExitCodes:
 
     def test_run_no_tests_selected_exits_zero(self, cli_runner, temp_agent_file, temp_tests_file):
         """run without --all or --test exits 0 (warning, not error)."""
-        from voicetest.cli import main
 
         result = cli_runner.invoke(
             main,
@@ -528,8 +483,6 @@ class TestCLIAgent:
     """Tests for the agent subgroup commands."""
 
     def test_agent_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["agent", "--help"])
 
         assert result.exit_code == 0
@@ -541,31 +494,23 @@ class TestCLIAgent:
         assert "graph" in result.output
 
     def test_agent_list_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["agent", "list", "--help"])
 
         assert result.exit_code == 0
 
     def test_agent_get_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["agent", "get", "--help"])
 
         assert result.exit_code == 0
         assert "AGENT_ID" in result.output
 
     def test_agent_create_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["agent", "create", "--help"])
 
         assert result.exit_code == 0
         assert "--agent" in result.output or "-a" in result.output
 
     def test_agent_update_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["agent", "update", "--help"])
 
         assert result.exit_code == 0
@@ -574,8 +519,6 @@ class TestCLIAgent:
         assert "--model" in result.output
 
     def test_agent_delete_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["agent", "delete", "--help"])
 
         assert result.exit_code == 0
@@ -583,16 +526,12 @@ class TestCLIAgent:
         assert "--yes" in result.output
 
     def test_agent_graph_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["agent", "graph", "--help"])
 
         assert result.exit_code == 0
         assert "AGENT_ID" in result.output
 
     def test_agent_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -603,8 +542,6 @@ class TestCLITest:
     """Tests for the test subgroup commands."""
 
     def test_test_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["test", "--help"])
 
         assert result.exit_code == 0
@@ -618,24 +555,18 @@ class TestCLITest:
         assert "export" in result.output
 
     def test_test_list_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["test", "list", "--help"])
 
         assert result.exit_code == 0
         assert "AGENT_ID" in result.output
 
     def test_test_get_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["test", "get", "--help"])
 
         assert result.exit_code == 0
         assert "TEST_ID" in result.output
 
     def test_test_create_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["test", "create", "--help"])
 
         assert result.exit_code == 0
@@ -643,8 +574,6 @@ class TestCLITest:
         assert "-f" in result.output
 
     def test_test_update_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["test", "update", "--help"])
 
         assert result.exit_code == 0
@@ -652,8 +581,6 @@ class TestCLITest:
         assert "-f" in result.output
 
     def test_test_delete_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["test", "delete", "--help"])
 
         assert result.exit_code == 0
@@ -661,8 +588,6 @@ class TestCLITest:
         assert "--yes" in result.output
 
     def test_test_link_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["test", "link", "--help"])
 
         assert result.exit_code == 0
@@ -670,8 +595,6 @@ class TestCLITest:
         assert "PATH" in result.output
 
     def test_test_unlink_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["test", "unlink", "--help"])
 
         assert result.exit_code == 0
@@ -679,8 +602,6 @@ class TestCLITest:
         assert "PATH" in result.output
 
     def test_test_export_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["test", "export", "--help"])
 
         assert result.exit_code == 0
@@ -688,8 +609,6 @@ class TestCLITest:
         assert "--ids" in result.output
 
     def test_test_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -700,8 +619,6 @@ class TestCLIRuns:
     """Tests for the runs subgroup commands."""
 
     def test_runs_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["runs", "--help"])
 
         assert result.exit_code == 0
@@ -710,8 +627,6 @@ class TestCLIRuns:
         assert "delete" in result.output
 
     def test_runs_list_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["runs", "list", "--help"])
 
         assert result.exit_code == 0
@@ -719,16 +634,12 @@ class TestCLIRuns:
         assert "--limit" in result.output
 
     def test_runs_get_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["runs", "get", "--help"])
 
         assert result.exit_code == 0
         assert "RUN_ID" in result.output
 
     def test_runs_delete_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["runs", "delete", "--help"])
 
         assert result.exit_code == 0
@@ -736,8 +647,6 @@ class TestCLIRuns:
         assert "--yes" in result.output
 
     def test_runs_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -748,8 +657,6 @@ class TestCLISnippet:
     """Tests for the snippet subgroup commands."""
 
     def test_snippet_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["snippet", "--help"])
 
         assert result.exit_code == 0
@@ -760,8 +667,6 @@ class TestCLISnippet:
         assert "apply" in result.output
 
     def test_snippet_list_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["snippet", "list", "--help"])
 
         assert result.exit_code == 0
@@ -769,8 +674,6 @@ class TestCLISnippet:
         assert "--agent" in result.output or "-a" in result.output
 
     def test_snippet_set_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["snippet", "set", "--help"])
 
         assert result.exit_code == 0
@@ -778,8 +681,6 @@ class TestCLISnippet:
         assert "TEXT" in result.output
 
     def test_snippet_delete_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["snippet", "delete", "--help"])
 
         assert result.exit_code == 0
@@ -787,8 +688,6 @@ class TestCLISnippet:
         assert "--yes" in result.output
 
     def test_snippet_analyze_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["snippet", "analyze", "--help"])
 
         assert result.exit_code == 0
@@ -796,8 +695,6 @@ class TestCLISnippet:
         assert "--min-length" in result.output
 
     def test_snippet_apply_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["snippet", "apply", "--help"])
 
         assert result.exit_code == 0
@@ -805,7 +702,6 @@ class TestCLISnippet:
 
     def test_snippet_analyze_file_mode(self, cli_runner, temp_agent_file):
         """snippet analyze with --agent PATH loads from file."""
-        from voicetest.cli import main
 
         result = cli_runner.invoke(
             main,
@@ -819,7 +715,6 @@ class TestCLISnippet:
 
     def test_snippet_list_file_mode(self, cli_runner, temp_agent_file):
         """snippet list with --agent PATH loads from file."""
-        from voicetest.cli import main
 
         result = cli_runner.invoke(
             main,
@@ -831,8 +726,6 @@ class TestCLISnippet:
         assert isinstance(data, dict)
 
     def test_snippet_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -843,8 +736,6 @@ class TestCLISettings:
     """Tests for the settings command."""
 
     def test_settings_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["settings", "--help"])
 
         assert result.exit_code == 0
@@ -852,8 +743,6 @@ class TestCLISettings:
         assert "--defaults" in result.output
 
     def test_settings_json(self, cli_runner, tmp_path, monkeypatch):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(main, ["--json", "settings"])
 
@@ -863,8 +752,6 @@ class TestCLISettings:
         assert "run" in data
 
     def test_settings_defaults(self, cli_runner, tmp_path, monkeypatch):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(main, ["--json", "settings", "--defaults"])
 
@@ -874,8 +761,6 @@ class TestCLISettings:
         assert "run" in data
 
     def test_settings_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -886,15 +771,11 @@ class TestCLIPlatforms:
     """Tests for the platforms command."""
 
     def test_platforms_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["platforms", "--help"])
 
         assert result.exit_code == 0
 
     def test_platforms_json(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--json", "platforms"])
 
         assert result.exit_code == 0
@@ -902,8 +783,6 @@ class TestCLIPlatforms:
         assert isinstance(data, list)
 
     def test_platforms_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -914,8 +793,6 @@ class TestCLIPlatform:
     """Tests for the platform subgroup commands."""
 
     def test_platform_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["platform", "--help"])
 
         assert result.exit_code == 0
@@ -923,8 +800,6 @@ class TestCLIPlatform:
         assert "list-agents" in result.output
 
     def test_platform_configure_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["platform", "configure", "--help"])
 
         assert result.exit_code == 0
@@ -932,16 +807,12 @@ class TestCLIPlatform:
         assert "--api-key" in result.output
 
     def test_platform_list_agents_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["platform", "list-agents", "--help"])
 
         assert result.exit_code == 0
         assert "NAME" in result.output
 
     def test_platform_import_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["platform", "import", "--help"])
 
         assert result.exit_code == 0
@@ -949,16 +820,12 @@ class TestCLIPlatform:
         assert "AGENT_ID" in result.output
 
     def test_platform_push_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["platform", "push", "--help"])
 
         assert result.exit_code == 0
         assert "--agent" in result.output or "-a" in result.output
 
     def test_platform_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -969,8 +836,6 @@ class TestCLIEvaluate:
     """Tests for the evaluate command."""
 
     def test_evaluate_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["evaluate", "--help"])
 
         assert result.exit_code == 0
@@ -979,8 +844,6 @@ class TestCLIEvaluate:
         assert "--judge-model" in result.output
 
     def test_evaluate_missing_transcript(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(
             main,
             ["evaluate", "--transcript", "/nonexistent/transcript.json", "-m", "polite"],
@@ -989,8 +852,6 @@ class TestCLIEvaluate:
         assert result.exit_code != 0
 
     def test_evaluate_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -1001,8 +862,6 @@ class TestCLIDiagnose:
     """Tests for the diagnose command."""
 
     def test_diagnose_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["diagnose", "--help"])
 
         assert result.exit_code == 0
@@ -1013,8 +872,6 @@ class TestCLIDiagnose:
         assert "--save" in result.output
 
     def test_diagnose_missing_agent(self, cli_runner, temp_tests_file):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(
             main,
             ["diagnose", "-a", "/nonexistent/agent.json", "-t", str(temp_tests_file)],
@@ -1023,8 +880,6 @@ class TestCLIDiagnose:
         assert result.exit_code != 0
 
     def test_diagnose_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -1035,8 +890,6 @@ class TestCLIChat:
     """Tests for the chat command."""
 
     def test_chat_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["chat", "--help"])
 
         assert result.exit_code == 0
@@ -1045,8 +898,6 @@ class TestCLIChat:
         assert "--var" in result.output
 
     def test_chat_missing_agent(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(
             main,
             ["chat", "-a", "/nonexistent/agent.json"],
@@ -1055,8 +906,6 @@ class TestCLIChat:
         assert result.exit_code != 0
 
     def test_chat_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -1067,8 +916,6 @@ class TestCLIDecompose:
     """Tests for the decompose command."""
 
     def test_decompose_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["decompose", "--help"])
 
         assert result.exit_code == 0
@@ -1078,8 +925,6 @@ class TestCLIDecompose:
         assert "--model" in result.output or "-m" in result.output
 
     def test_decompose_missing_agent(self, cli_runner, tmp_path):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(
             main,
             ["decompose", "-a", "/nonexistent/agent.json", "-o", str(tmp_path / "out")],
@@ -1088,8 +933,6 @@ class TestCLIDecompose:
         assert result.exit_code != 0
 
     def test_decompose_shown_in_main_help(self, cli_runner):
-        from voicetest.cli import main
-
         result = cli_runner.invoke(main, ["--help"])
 
         assert result.exit_code == 0
@@ -1110,8 +953,6 @@ class TestCLIImportCall:
     def test_imports_single_call(
         self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call, container
     ):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         agent_id = _create_agent_for_cli(container, sample_retell_config)
 
@@ -1129,8 +970,6 @@ class TestCLIImportCall:
     def test_imports_array_of_calls(
         self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call, container
     ):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         agent_id = _create_agent_for_cli(container, sample_retell_config)
 
@@ -1148,8 +987,6 @@ class TestCLIImportCall:
     def test_json_mode_outputs_run_record(
         self, cli_runner, tmp_path, monkeypatch, sample_retell_config, retell_call, container
     ):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         agent_id = _create_agent_for_cli(container, sample_retell_config)
 
@@ -1175,8 +1012,6 @@ class TestCLIImportCall:
         assert run["results"][0]["status"] == "imported"
 
     def test_unknown_agent_fails(self, cli_runner, tmp_path, monkeypatch, retell_call):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
 
         transcript_path = tmp_path / "call.json"
@@ -1193,8 +1028,6 @@ class TestCLIImportCall:
     def test_invalid_transcript_fails(
         self, cli_runner, tmp_path, monkeypatch, sample_retell_config, container
     ):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         agent_id = _create_agent_for_cli(container, sample_retell_config)
 
@@ -1212,8 +1045,6 @@ class TestCLIImportCall:
     def test_payload_with_no_calls_fails(
         self, cli_runner, tmp_path, monkeypatch, sample_retell_config, container
     ):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         agent_id = _create_agent_for_cli(container, sample_retell_config)
 
@@ -1235,8 +1066,6 @@ class TestCLIReplay:
     """Tests for the replay CLI command."""
 
     def test_unknown_source_run_fails(self, cli_runner, tmp_path, monkeypatch):
-        from voicetest.cli import main
-
         monkeypatch.chdir(tmp_path)
         result = cli_runner.invoke(main, ["replay", "nonexistent-run"])
 
@@ -1255,8 +1084,6 @@ class TestCLIReplay:
     ):
         """End-to-end CLI: import a call to seed a source run, then replay it.
         The stub_conversation_runner fixture replaces the real runner."""
-        from voicetest.cli import main
-        from voicetest.importers.transcripts.retell import parse_retell
 
         monkeypatch.chdir(tmp_path)
         agent_id = _create_agent_for_cli(container, sample_retell_config)

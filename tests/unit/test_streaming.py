@@ -2,10 +2,13 @@
 
 import pytest
 
+from voicetest.engine.session import ConversationRunner
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
+from voicetest.simulator.user_sim import SimulatorResponse
+from voicetest.simulator.user_sim import UserSimulator
 
 
 @pytest.fixture
@@ -31,9 +34,6 @@ class TestStreamingPredictor:
     @pytest.mark.asyncio
     async def test_streaming_session_with_callback(self, simple_graph):
         """Test that streaming session calls on_token callback."""
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         options = RunOptions(streaming=True, simulator_model="openai/gpt-4o-mini")
         runner = ConversationRunner(simple_graph, options, mock_mode=True)

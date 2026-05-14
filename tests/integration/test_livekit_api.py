@@ -20,6 +20,7 @@ import shutil
 from fastapi.testclient import TestClient
 import pytest
 
+from voicetest.platforms.livekit import LiveKitPlatformClient
 from voicetest.settings import load_settings
 from voicetest.web.rest import app
 
@@ -233,7 +234,6 @@ class TestLiveKitExportToPlatform:
             assert data["name"] is not None
 
             # Clean up - delete the deployed agent
-            from voicetest.platforms.livekit import LiveKitPlatformClient
 
             try:
                 lk = LiveKitPlatformClient()

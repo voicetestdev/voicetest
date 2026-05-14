@@ -14,12 +14,16 @@ Requires: docker compose -f docker-compose.dev.yml up -d
 import asyncio
 import io
 import json
+import math
 import struct
 import subprocess
 import time
 import wave
 
+import httpx
+from livekit import rtc
 import pytest
+import websockets
 
 
 def docker_compose_running() -> bool:
@@ -42,8 +46,6 @@ def docker_compose_running() -> bool:
 def ollama_available() -> bool:
     """Check if Ollama is running on localhost."""
     try:
-        import httpx
-
         response = httpx.get("http://localhost:11434/api/tags", timeout=5)
         return response.status_code == 200
     except Exception:
@@ -68,7 +70,6 @@ def generate_sine_wave_audio(
     sample_rate: int = 48000,
 ) -> bytes:
     """Generate a sine wave audio as raw PCM bytes."""
-    import math
 
     num_samples = int(sample_rate * duration)
     samples = []
@@ -100,7 +101,6 @@ class TestWhisperSTT:
 
     def test_whisper_health(self):
         """Whisper service is healthy."""
-        import httpx
 
         # Whisper is on port 8001 (mapped from container's 8000)
         response = httpx.get("http://localhost:8001/health", timeout=10)
@@ -108,7 +108,6 @@ class TestWhisperSTT:
 
     def test_whisper_transcribes_audio(self):
         """Whisper can transcribe audio (even if it's just silence/tone)."""
-        import httpx
 
         # Generate a simple audio file
         audio_data = generate_test_audio_wav()
@@ -134,7 +133,6 @@ class TestKokoroTTS:
 
     def test_kokoro_health(self):
         """Kokoro TTS service is available."""
-        import httpx
 
         # Kokoro is on port 8002 (mapped from container's 8880)
         # Check the OpenAI-compatible endpoint
@@ -148,7 +146,6 @@ class TestKokoroTTS:
 
     def test_kokoro_synthesizes_speech(self):
         """Kokoro can synthesize speech from text."""
-        import httpx
 
         response = httpx.post(
             "http://localhost:8002/v1/audio/speech",
@@ -172,7 +169,6 @@ class TestOllamaLLM:
 
     def test_ollama_chat_completion(self):
         """Ollama can generate chat completions."""
-        import httpx
 
         response = httpx.post(
             "http://localhost:11434/v1/chat/completions",
@@ -206,7 +202,6 @@ class TestFullCallPipeline:
         4. Waits for transcript updates
         5. Verifies agent responded
         """
-        from livekit import rtc
 
         # Create demo agent (auto-cleaned by api_client fixture)
         demo_data = await api_client.create_demo_agent()
@@ -267,7 +262,6 @@ class TestFullCallPipeline:
             print("Audio frames sent")
 
             # Connect to WebSocket for transcript updates
-            import websockets
 
             ws_url = f"ws://localhost:8000/api/calls/{call_id}/ws"
 
@@ -322,8 +316,6 @@ class TestFullCallPipeline:
         This test uses Kokoro TTS to generate speech, then sends it to the agent.
         The agent should transcribe it and generate a response.
         """
-        import httpx
-        from livekit import rtc
 
         # First, generate speech audio using Kokoro
         async with httpx.AsyncClient() as http:
@@ -402,7 +394,6 @@ class TestFullCallPipeline:
             await asyncio.sleep(3)
 
             # Check for transcripts via WebSocket
-            import websockets
 
             ws_url = f"ws://localhost:8000/api/calls/{call_id}/ws"
 
@@ -463,7 +454,6 @@ class TestFullCallPipeline:
     @pytest.mark.asyncio
     async def test_call_websocket_receives_status(self, api_client):
         """WebSocket receives call status updates."""
-        import websockets
 
         # Create demo agent (auto-cleaned by api_client fixture)
         demo_data = await api_client.create_demo_agent()

@@ -1,8 +1,23 @@
 """Tests for voicetest.engine.session module."""
 
 import asyncio
+from unittest.mock import patch
 
 import pytest
+
+from voicetest.engine.conversation import ConversationEngine
+from voicetest.engine.session import ConversationRunner
+from voicetest.engine.session import ConversationState
+from voicetest.engine.session import NodeTracker
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.models.agent import EquationClause
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
+from voicetest.simulator.user_sim import SimulatorResponse
+from voicetest.simulator.user_sim import UserSimulator
 
 
 # simple_graph fixture is imported from conftest.py
@@ -12,8 +27,6 @@ class TestConversationState:
     """Tests for ConversationState."""
 
     def test_create_empty_state(self):
-        from voicetest.engine.session import ConversationState
-
         state = ConversationState()
 
         assert state.transcript == []
@@ -23,8 +36,6 @@ class TestConversationState:
         assert state.end_reason == ""
 
     def test_state_tracks_nodes(self):
-        from voicetest.engine.session import ConversationState
-
         state = ConversationState()
         state.nodes_visited.append("greeting")
         state.nodes_visited.append("billing")
@@ -32,8 +43,6 @@ class TestConversationState:
         assert state.nodes_visited == ["greeting", "billing"]
 
     def test_state_tracks_turn_count(self):
-        from voicetest.engine.session import ConversationState
-
         state = ConversationState()
         state.turn_count = 5
 
@@ -44,25 +53,18 @@ class TestConversationRunner:
     """Tests for ConversationRunner."""
 
     def test_create_runner(self, simple_graph):
-        from voicetest.engine.session import ConversationRunner
-
         runner = ConversationRunner(simple_graph)
 
         assert runner.graph is simple_graph
         assert runner.options is not None
 
     def test_runner_has_engine(self, simple_graph):
-        from voicetest.engine.session import ConversationRunner
-
         runner = ConversationRunner(simple_graph)
 
         assert runner._engine is not None
         assert runner._engine.current_node == simple_graph.entry_node_id
 
     def test_runner_with_custom_options(self, simple_graph):
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.test_case import RunOptions
-
         options = RunOptions(max_turns=5, verbose=True)
         runner = ConversationRunner(simple_graph, options=options)
 
@@ -74,16 +76,12 @@ class TestNodeTracker:
     """Tests for NodeTracker utility."""
 
     def test_create_tracker(self):
-        from voicetest.engine.session import NodeTracker
-
         tracker = NodeTracker()
 
         assert tracker.visited == []
         assert tracker.current_node is None
 
     def test_record_node(self):
-        from voicetest.engine.session import NodeTracker
-
         tracker = NodeTracker()
         tracker.record("greeting")
         tracker.record("billing")
@@ -92,8 +90,6 @@ class TestNodeTracker:
         assert tracker.current_node == "billing"
 
     def test_record_same_node_twice(self):
-        from voicetest.engine.session import NodeTracker
-
         tracker = NodeTracker()
         tracker.record("greeting")
         tracker.record("greeting")  # Same node again
@@ -106,16 +102,12 @@ class TestConversationRunnerWithDynamicVariables:
     """Tests for ConversationRunner with dynamic variables."""
 
     def test_runner_accepts_dynamic_variables(self, simple_graph):
-        from voicetest.engine.session import ConversationRunner
-
         variables = {"name": "Alice", "age": 30}
         runner = ConversationRunner(simple_graph, dynamic_variables=variables)
 
         assert runner._dynamic_variables == variables
 
     def test_runner_default_empty_dynamic_variables(self, simple_graph):
-        from voicetest.engine.session import ConversationRunner
-
         runner = ConversationRunner(simple_graph)
 
         assert runner._dynamic_variables == {}
@@ -127,10 +119,6 @@ class TestMessageNodeMetadata:
     @pytest.mark.asyncio
     async def test_messages_include_node_id_metadata(self, simple_graph):
         """Test that messages include node_id in their metadata."""
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         runner = ConversationRunner(simple_graph, mock_mode=True)
         test_case = TestCase(name="test", user_prompt="Say hello")
@@ -156,12 +144,6 @@ class TestResponseNodeMetadata:
     @pytest.mark.asyncio
     async def test_response_metadata_reflects_generating_node(self, simple_graph):
         """Response should be labeled with the node that generated it, not the transition target."""
-        from unittest.mock import patch
-
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         runner = ConversationRunner(simple_graph)
         test_case = TestCase(name="test", user_prompt="Say hello")
@@ -197,9 +179,6 @@ class TestDynamicVariableSubstitution:
     @pytest.mark.asyncio
     async def test_dynamic_variables_substituted_in_prompts(self, graph_with_dynamic_variables):
         """Dynamic variables are substituted in both general and state prompts."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         dynamic_vars = {
             "customer_name": "Alice",
@@ -247,9 +226,6 @@ class TestDynamicVariableSubstitution:
     @pytest.mark.asyncio
     async def test_unknown_variables_remain_unchanged(self, graph_with_dynamic_variables):
         """Unknown variables are left as-is (graceful degradation)."""
-        from unittest.mock import patch
-
-        from voicetest.engine.conversation import ConversationEngine
 
         # Only provide some variables, not all
         dynamic_vars = {
@@ -296,12 +272,6 @@ class TestToolMessagePropagation:
 
     @pytest.fixture
     def logic_graph(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import EquationClause
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-
         return AgentGraph(
             nodes={
                 "router": AgentNode(
@@ -340,12 +310,6 @@ class TestToolMessagePropagation:
     @pytest.mark.asyncio
     async def test_tool_messages_appear_in_run_transcript(self, logic_graph):
         """Tool messages from logic node auto-fire appear in run() state transcript."""
-        from unittest.mock import patch
-
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         runner = ConversationRunner(logic_graph, dynamic_variables={"tier": "vip"})
         test_case = TestCase(name="test", user_prompt="Say hello")
@@ -379,11 +343,6 @@ class TestAutoProcessLogicNodes:
     @pytest.fixture
     def graph_with_logic_entry(self):
         """Graph where entry node is a logic split routing to conversation nodes."""
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import EquationClause
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
 
         return AgentGraph(
             nodes={
@@ -425,12 +384,6 @@ class TestAutoProcessLogicNodes:
     @pytest.mark.asyncio
     async def test_logic_entry_node_auto_fires(self, graph_with_logic_entry):
         """Logic split entry node should auto-fire before first user sim turn."""
-        from unittest.mock import patch
-
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         runner = ConversationRunner(
             graph_with_logic_entry,
@@ -466,12 +419,6 @@ class TestAutoProcessLogicNodes:
     @pytest.mark.asyncio
     async def test_logic_entry_node_fallback_route(self, graph_with_logic_entry):
         """Logic split entry node uses always fallback when no equation matches."""
-        from unittest.mock import patch
-
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         runner = ConversationRunner(
             graph_with_logic_entry,
@@ -505,11 +452,6 @@ class TestAutoProcessLogicNodes:
     @pytest.fixture
     def graph_with_chained_logic(self):
         """Graph with two chained logic splits before a conversation node."""
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import EquationClause
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
 
         return AgentGraph(
             nodes={
@@ -574,12 +516,6 @@ class TestAutoProcessLogicNodes:
     @pytest.mark.asyncio
     async def test_chained_logic_nodes_all_auto_fire(self, graph_with_chained_logic):
         """Multiple chained logic splits should all auto-fire before user input."""
-        from unittest.mock import patch
-
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         runner = ConversationRunner(
             graph_with_chained_logic,
@@ -616,11 +552,6 @@ class TestAutoProcessLogicNodes:
     @pytest.fixture
     def graph_with_mid_conversation_logic(self):
         """Graph where a conversation node transitions to a logic node mid-flow."""
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import EquationClause
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
 
         return AgentGraph(
             nodes={
@@ -672,12 +603,6 @@ class TestAutoProcessLogicNodes:
         self, graph_with_mid_conversation_logic
     ):
         """When conversation node transitions to logic node, logic auto-fires."""
-        from unittest.mock import patch
-
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         runner = ConversationRunner(
             graph_with_mid_conversation_logic,
@@ -720,17 +645,6 @@ class TestNoEmptyUserMessages:
     @pytest.mark.asyncio
     async def test_no_empty_user_messages_with_logic_entry(self):
         """Logic entry node should not produce empty user messages in transcript."""
-        from unittest.mock import patch
-
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.models.agent import EquationClause
-        from voicetest.models.agent import Transition
-        from voicetest.models.agent import TransitionCondition
-        from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         graph = AgentGraph(
             nodes={
@@ -792,13 +706,6 @@ class TestPerTurnTimeout:
     @pytest.mark.asyncio
     async def test_slow_turn_raises_timeout(self, simple_graph):
         """A single slow turn should raise TimeoutError per-turn, not wait for full run."""
-        from unittest.mock import patch
-
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.test_case import RunOptions
-        from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         options = RunOptions(turn_timeout_seconds=0.1, max_turns=50)
         runner = ConversationRunner(simple_graph, options=options)
@@ -835,13 +742,6 @@ class TestPerTurnTimeout:
     @pytest.mark.asyncio
     async def test_max_turns_catches_loop(self, simple_graph):
         """Conversation that never ends should be stopped by max_turns."""
-        from unittest.mock import patch
-
-        from voicetest.engine.session import ConversationRunner
-        from voicetest.models.test_case import RunOptions
-        from voicetest.models.test_case import TestCase
-        from voicetest.simulator.user_sim import SimulatorResponse
-        from voicetest.simulator.user_sim import UserSimulator
 
         options = RunOptions(max_turns=3)
         runner = ConversationRunner(simple_graph, options=options)

@@ -2,7 +2,9 @@
 
 import pytest
 
+from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message
+from voicetest.models.test_case import RunOptions
 from voicetest.services.agents import AgentService
 from voicetest.services.runs import RunService
 
@@ -135,23 +137,17 @@ class TestImportCalls:
 
 
 def _empty_graph():
-    from voicetest.models.agent import AgentGraph
-
     return AgentGraph(entry_node_id="x", nodes={}, source_type="test", source_metadata={})
 
 
 class TestReplayRun:
     @pytest.mark.asyncio
     async def test_raises_when_source_not_found(self, agent_id, svc):
-        from voicetest.models.test_case import RunOptions
-
         with pytest.raises(ValueError, match="Source run not found"):
             await svc.replay_run("nonexistent", _empty_graph(), RunOptions())
 
     @pytest.mark.asyncio
     async def test_raises_when_source_has_no_results(self, agent_id, svc):
-        from voicetest.models.test_case import RunOptions
-
         # Empty source run
         empty_source = svc.create_run(agent_id)
         svc.complete(empty_source["id"])
@@ -166,7 +162,6 @@ class TestReplayRun:
         """Replay creates a new Run linked to the source's agent, with one
         replay Result per source Result. The runner is invoked with a
         ScriptedUserSimulator carrying the source's recorded user turns."""
-        from voicetest.models.test_case import RunOptions
 
         source = svc.import_calls(
             agent_id,

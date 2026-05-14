@@ -4,10 +4,15 @@ from pathlib import Path
 
 from sqlalchemy import Engine
 from sqlalchemy import inspect
+from sqlalchemy import text
 
 from voicetest.config import get_db_path
 from voicetest.container import create_container
 from voicetest.storage.engine import create_db_engine
+from voicetest.storage.models import Agent
+from voicetest.storage.models import Result
+from voicetest.storage.models import Run
+from voicetest.storage.models import TestCase as TestCaseModel
 
 
 class TestGetDbPath:
@@ -108,12 +113,6 @@ class TestSchema:
 
         This catches mismatches between models.py and db.py schema definitions.
         """
-        from sqlalchemy import text
-
-        from voicetest.storage.models import Agent
-        from voicetest.storage.models import Result
-        from voicetest.storage.models import Run
-        from voicetest.storage.models import TestCase as TestCaseModel
 
         db_path = tmp_path / "test.duckdb"
         monkeypatch.setenv("VOICETEST_DB_PATH", str(db_path))

@@ -1,5 +1,6 @@
 """Tests for the pluggable DSPy cache backend."""
 
+import subprocess
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -7,8 +8,10 @@ from botocore.exceptions import ClientError
 import cloudpickle
 import dspy
 from dspy.clients.cache import Cache
+import dspy.clients.lm as dspy_lm_module
 import pytest
 
+from voicetest.llm.claudecode import ClaudeCodeLM
 from voicetest.settings import CacheSettings
 from voicetest.util.cache import CacheBackend
 from voicetest.util.cache import S3Cache
@@ -423,7 +426,6 @@ class TestTryEvictLastCall:
         """Monkey-patch dspy.clients.lm.litellm_completion with a mock that masquerades
         as the real identifier (so request_cache computes the same _fn_identifier
         that production would)."""
-        import dspy.clients.lm as dspy_lm_module
 
         call_count = {"n": 0}
 
@@ -500,9 +502,6 @@ class TestTryEvictLastCall:
         populate lm.history, so eviction must work via its _last_request hook.
 
         Heavily exercised by 3rd-party users (claudecode/ model strings)."""
-        import subprocess
-
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         cache = self._fresh_cache(tmp_path)
 

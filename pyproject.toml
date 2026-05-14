@@ -107,9 +107,6 @@ select = [
     "TID",     # tidy imports
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["PLC0415"]
-
 [tool.ruff.lint.isort]
 force-single-line = true
 force-sort-within-sections = true
