@@ -4,7 +4,7 @@ Transport adapter over the service layer. All business logic lives in
 voicetest.services — this module handles HTTP/WebSocket concerns.
 
 Run with: voicetest serve
-Or: uvicorn voicetest.rest:app --reload
+Or: uvicorn voicetest.web.rest:app --reload
 """
 
 from collections.abc import AsyncIterator
@@ -39,7 +39,6 @@ from starlette.websockets import WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from voicetest.container import create_container
-from voicetest.core.settings import Settings
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
 from voicetest.importers.transcripts.retell import parse_retell_file
@@ -68,6 +67,7 @@ from voicetest.services.snippets import SnippetService
 from voicetest.services.testing.cases import TestCaseService
 from voicetest.services.testing.execution import TestExecutionService
 from voicetest.services.testing.execution import resolve_run_options
+from voicetest.settings import Settings
 from voicetest.storage.models import Result as ResultModel
 from voicetest.storage.models import Run as RunModel
 from voicetest.storage.repositories import AgentRepository
@@ -114,7 +114,7 @@ def _db_session(http_request: Request) -> Session:
     return session
 
 
-_logger = logging.getLogger("voicetest.rest")
+_logger = logging.getLogger("voicetest.web.rest")
 
 _ORPHAN_ERROR_MESSAGE = "Run orphaned - backend stopped"
 

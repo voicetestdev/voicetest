@@ -9,7 +9,7 @@ import dspy
 from dspy.clients.cache import Cache
 import pytest
 
-from voicetest.core.settings import CacheSettings
+from voicetest.settings import CacheSettings
 from voicetest.util.cache import CacheBackend
 from voicetest.util.cache import S3Cache
 from voicetest.util.cache import S3CacheBackend

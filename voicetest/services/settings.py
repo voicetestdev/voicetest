@@ -1,9 +1,9 @@
 """Settings service for reading/writing .voicetest.toml configuration."""
 
-from voicetest.core.config import get_settings_path
-from voicetest.core.settings import Settings
-from voicetest.core.settings import load_settings
-from voicetest.core.settings import save_settings
+from voicetest.config import get_settings_path
+from voicetest.settings import Settings
+from voicetest.settings import load_settings
+from voicetest.settings import save_settings
 
 
 class SettingsService:

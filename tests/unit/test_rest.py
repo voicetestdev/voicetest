@@ -3,7 +3,7 @@
 from fastapi.testclient import TestClient
 import pytest
 
-from voicetest.rest import app
+from voicetest.web.rest import app
 
 
 @pytest.fixture

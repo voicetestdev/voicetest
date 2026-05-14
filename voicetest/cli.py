@@ -20,7 +20,6 @@ import uvicorn
 
 from voicetest.compose import get_compose_path
 from voicetest.container import create_container
-from voicetest.core.settings import Settings
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
 from voicetest.engine.conversation import ConversationEngine
@@ -30,9 +29,10 @@ from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
-from voicetest.runtime.runner import TestRunContext
+from voicetest.runner import TestRunContext
 from voicetest.services import AppServices
 from voicetest.services import build_app_services
+from voicetest.settings import Settings
 from voicetest.tui import VoicetestApp
 from voicetest.tui import VoicetestShell
 from voicetest.util.cache import setup_cache_from_settings
@@ -77,7 +77,7 @@ def _start_server(host: str, port: int, reload: bool = False) -> None:
     console.print()
 
     uvicorn.run(
-        "voicetest.rest:app",
+        "voicetest.web.rest:app",
         host=host,
         port=port,
         reload=reload,

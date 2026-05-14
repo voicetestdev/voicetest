@@ -150,7 +150,7 @@ class CallManager:
             "run",
             "python",
             "-m",
-            "voicetest.runtime.agent_worker",
+            "voicetest.livecall.agent_worker",
             "--room",
             room_name,
             "--url",

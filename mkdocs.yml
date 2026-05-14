@@ -45,6 +45,7 @@ nav:
     - Core Concepts: concepts.md
   - Recipes:
     - recipes/index.md
+    - Starter test suite: recipes/starter-test-suite.md
     - Diagnose a failing test: recipes/diagnose-failing-test.md
     - Import call history: recipes/import-call-history.md
     - Regression-test prompt changes: recipes/regression-test-prompt-changes.md

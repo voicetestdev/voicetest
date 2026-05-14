@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from voicetest.core.settings import Settings
+from voicetest.settings import Settings
 from voicetest.web.chat import ActiveChat
 from voicetest.web.chat import ChatManager
 
@@ -309,7 +309,7 @@ class TestChatManagerQuotaExhausted:
         self, chat_manager, call_repo, single_node_graph
     ):
         """QuotaExhaustedError should broadcast a 'quota_exhausted' message, not a generic error."""
-        from voicetest.core.exceptions import QuotaExhaustedError
+        from voicetest.exceptions import QuotaExhaustedError
 
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
@@ -348,7 +348,7 @@ class TestChatManagerQuotaExhausted:
         self, chat_manager, call_repo, single_node_graph
     ):
         """QuotaExhaustedError should not send a generic 'error' message type."""
-        from voicetest.core.exceptions import QuotaExhaustedError
+        from voicetest.exceptions import QuotaExhaustedError
 
         result = await chat_manager.start_chat(
             "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"

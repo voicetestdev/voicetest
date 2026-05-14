@@ -9,7 +9,7 @@ task.
 import asyncio
 from dataclasses import dataclass
 
-from voicetest.core.exceptions import QuotaExhaustedError
+from voicetest.exceptions import QuotaExhaustedError
 from voicetest.models.results import Message
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import RunOptions

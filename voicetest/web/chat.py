@@ -11,12 +11,12 @@ import logging
 from typing import Any
 from uuid import uuid4
 
-from voicetest.core.exceptions import QuotaExhaustedError
-from voicetest.core.settings import resolve_model
 from voicetest.engine.conversation import ConversationEngine
+from voicetest.exceptions import QuotaExhaustedError
 from voicetest.models.agent import AgentGraph
 from voicetest.models.test_case import RunOptions
 from voicetest.services.settings import SettingsService
+from voicetest.settings import resolve_model
 from voicetest.web.broadcast import SessionRegistry
 
 

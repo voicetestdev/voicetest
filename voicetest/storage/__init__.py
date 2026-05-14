@@ -1,6 +1,6 @@
 """Storage module for DuckDB persistence."""
 
-from voicetest.core.config import get_db_path
+from voicetest.config import get_db_path
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository

@@ -319,7 +319,7 @@ class TestQuotaExhaustedNotRetried:
 
     async def test_quota_exhausted_not_retried_async(self):
         """Should immediately propagate QuotaExhaustedError without retrying."""
-        from voicetest.core.exceptions import QuotaExhaustedError
+        from voicetest.exceptions import QuotaExhaustedError
         from voicetest.util.retry import with_retry
 
         call_count = 0
@@ -339,7 +339,7 @@ class TestQuotaExhaustedNotRetried:
 
     def test_quota_exhausted_not_retried_sync(self):
         """Should immediately propagate QuotaExhaustedError without retrying (sync)."""
-        from voicetest.core.exceptions import QuotaExhaustedError
+        from voicetest.exceptions import QuotaExhaustedError
         from voicetest.util.retry import with_retry_sync
 
         call_count = 0

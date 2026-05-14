@@ -1,6 +1,5 @@
 """Diagnosis service: diagnose failures and suggest/apply fixes."""
 
-from voicetest.core.settings import resolve_model
 from voicetest.judges.diagnosis import DiagnosisJudge
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import MetricsConfig
@@ -14,6 +13,7 @@ from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services.settings import SettingsService
 from voicetest.services.testing.execution import TestExecutionService
+from voicetest.settings import resolve_model
 
 
 class DiagnosisService:

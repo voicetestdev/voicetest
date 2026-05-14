@@ -5,8 +5,8 @@ import json
 from fastapi.testclient import TestClient
 import pytest
 
-from voicetest.rest import app
 from voicetest.storage.repositories import AgentRepository
+from voicetest.web.rest import app
 
 
 @pytest.fixture

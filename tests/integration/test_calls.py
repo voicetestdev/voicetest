@@ -56,7 +56,7 @@ class TestAgentWorkerSubprocess:
         cmd = [
             sys.executable,
             "-m",
-            "voicetest.runtime.agent_worker",
+            "voicetest.livecall.agent_worker",
             "--room",
             "test-room",
             "--url",
@@ -97,7 +97,7 @@ class TestAgentWorkerSubprocess:
         cmd = [
             sys.executable,
             "-m",
-            "voicetest.runtime.agent_worker",
+            "voicetest.livecall.agent_worker",
             "--room",
             "test-room",
             "--url",
@@ -129,7 +129,7 @@ class TestAgentWorkerSubprocess:
         cmd = [
             sys.executable,
             "-m",
-            "voicetest.runtime.agent_worker",
+            "voicetest.livecall.agent_worker",
             "--room",
             "test-room",
             "--url",
@@ -184,7 +184,7 @@ class TestAgentWorkerWithLiveKit:
         cmd = [
             sys.executable,
             "-m",
-            "voicetest.runtime.agent_worker",
+            "voicetest.livecall.agent_worker",
             "--room",
             "test-room-integration",
             "--url",
@@ -267,8 +267,13 @@ class TestCallManager:
     @pytest.fixture
     def call_manager(self):
         """Create a CallManager for testing."""
+        from voicetest.settings import Settings
         from voicetest.web.calls import CallManager
         from voicetest.web.calls import LiveKitConfig
+
+        class _EmptySettings:
+            def get_settings(self) -> Settings:
+                return Settings()
 
         config = LiveKitConfig(
             url="ws://localhost:7880",
@@ -279,7 +284,7 @@ class TestCallManager:
             whisper_url="http://localhost:8001/v1",
             kokoro_url="http://localhost:8002/v1",
         )
-        return CallManager(config)
+        return CallManager(_EmptySettings(), config)
 
     @pytest.fixture
     def mock_call_repo(self):
@@ -374,3 +379,31 @@ class TestCallManager:
 
         # Active call should be removed
         assert call_manager.get_active_call(call_info["call_id"]) is None
+
+    @pytest.mark.skipif(not livekit_server_available(), reason="LiveKit server not running")
+    @pytest.mark.asyncio
+    async def test_session_registry_broadcast_reaches_attached_websocket(
+        self, call_manager, mock_call_repo, simple_graph
+    ):
+        """end-to-end: start_call → attach mock WS → broadcast via SessionRegistry → WS receives."""
+        from unittest.mock import AsyncMock
+
+        call_info = await call_manager.start_call(
+            agent_id="test-agent",
+            graph=simple_graph,
+            call_repo=mock_call_repo,
+        )
+        call_id = call_info["call_id"]
+
+        ws = AsyncMock()
+        await call_manager.attach_websocket(call_id, ws)
+
+        # Use the SessionRegistry surface directly to verify it's wired.
+        await call_manager._sessions.broadcast(call_id, {"type": "ping"})
+
+        ws.send_text.assert_called_once()
+        payload = ws.send_text.call_args.args[0]
+        assert '"type": "ping"' in payload
+
+        await call_manager.end_call(call_id, mock_call_repo)
+        assert call_manager.get_active_call(call_id) is None

@@ -16,7 +16,7 @@ from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.cache import request_cache
 import litellm
 
-from voicetest.core.exceptions import QuotaExhaustedError
+from voicetest.exceptions import QuotaExhaustedError
 
 
 # Default timeout for the Claude Code CLI subprocess. Long generations

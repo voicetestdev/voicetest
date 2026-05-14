@@ -2,8 +2,6 @@
 
 import pytest
 
-from voicetest.core.settings import DEFAULT_MODEL
-from voicetest.core.settings import Settings
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import GlobalMetric
@@ -14,6 +12,8 @@ from voicetest.models.results import Message
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services.testing.execution import TestExecutionService
+from voicetest.settings import DEFAULT_MODEL
+from voicetest.settings import Settings
 
 
 class _EmptySettingsService:

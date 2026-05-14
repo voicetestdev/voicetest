@@ -564,7 +564,7 @@ class TestClaudeCodeLMQuotaExhausted:
 
     def test_detects_hit_your_limit(self):
         """Should raise QuotaExhaustedError for the known Claude Code quota message."""
-        from voicetest.core.exceptions import QuotaExhaustedError
+        from voicetest.exceptions import QuotaExhaustedError
         from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
@@ -588,7 +588,7 @@ class TestClaudeCodeLMQuotaExhausted:
 
     def test_parses_reset_time_from_message(self):
         """Should extract reset time into reset_message attribute."""
-        from voicetest.core.exceptions import QuotaExhaustedError
+        from voicetest.exceptions import QuotaExhaustedError
         from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
@@ -612,7 +612,7 @@ class TestClaudeCodeLMQuotaExhausted:
 
     def test_detection_is_case_insensitive(self):
         """Should detect 'hit your limit' regardless of case."""
-        from voicetest.core.exceptions import QuotaExhaustedError
+        from voicetest.exceptions import QuotaExhaustedError
         from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()

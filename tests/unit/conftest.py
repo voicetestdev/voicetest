@@ -17,8 +17,8 @@ def fresh_container():
     as a context manager.
     """
     from voicetest.container import create_container
-    from voicetest.rest import app
-    from voicetest.rest import init_storage
+    from voicetest.web.rest import app
+    from voicetest.web.rest import init_storage
 
     app.state.container = create_container()
     init_storage(app.state.container)
@@ -47,8 +47,8 @@ def db_client(tmp_path, monkeypatch):
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
 
     from voicetest.container import create_container
-    from voicetest.rest import app
-    from voicetest.rest import init_storage
+    from voicetest.web.rest import app
+    from voicetest.web.rest import init_storage
 
     app.state.container = create_container()
     init_storage(app.state.container)
@@ -112,8 +112,8 @@ def platform_client(tmp_path, monkeypatch):
     (tmp_path / ".voicetest").mkdir()
 
     from voicetest.container import create_container
-    from voicetest.rest import app
-    from voicetest.rest import init_storage
+    from voicetest.web.rest import app
+    from voicetest.web.rest import init_storage
 
     app.state.container = create_container()
     init_storage(app.state.container)
