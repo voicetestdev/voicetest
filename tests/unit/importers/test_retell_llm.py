@@ -1,45 +1,38 @@
 """Tests for voicetest.importers.retell_llm module."""
 
+import pytest
+
+from voicetest.importers.retell_llm import RetellLLMImporter
+from voicetest.importers.retell_llm import _extract_agent_envelope
+
 
 class TestRetellLLMImporter:
     """Tests for Retell LLM JSON importer."""
 
     def test_source_type(self):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         assert importer.source_type == "retell-llm"
 
     def test_can_import_dict(self, sample_retell_llm_config):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         assert importer.can_import(sample_retell_llm_config) is True
 
     def test_can_import_file_path(self, sample_retell_llm_config_path):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         assert importer.can_import(sample_retell_llm_config_path) is True
         assert importer.can_import(str(sample_retell_llm_config_path)) is True
 
     def test_can_import_rejects_conversation_flow(self, sample_retell_config):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         # Conversation Flow format should be rejected
         assert importer.can_import(sample_retell_config) is False
 
     def test_can_import_rejects_unknown(self):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         assert importer.can_import({"some": "config"}) is False
         assert importer.can_import({"model": "gpt-4"}) is False
 
     def test_import_agent_from_dict(self, sample_retell_llm_config):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_config)
 
@@ -56,8 +49,6 @@ class TestRetellLLMImporter:
         assert "transfer_to_nurse" in graph.nodes
 
     def test_import_agent_from_path(self, sample_retell_llm_config_path):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_config_path)
 
@@ -65,8 +56,6 @@ class TestRetellLLMImporter:
         assert graph.entry_node_id == "greeting"
 
     def test_state_instructions_include_general_prompt(self, sample_retell_llm_config):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_config)
 
@@ -77,8 +66,6 @@ class TestRetellLLMImporter:
         assert "medical receptionist" in graph.source_metadata.get("general_prompt", "")
 
     def test_transitions_imported(self, sample_retell_llm_config):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_config)
 
@@ -93,8 +80,6 @@ class TestRetellLLMImporter:
         assert "transfer_to_nurse" in targets
 
     def test_transition_conditions_imported(self, sample_retell_llm_config):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_config)
 
@@ -106,8 +91,6 @@ class TestRetellLLMImporter:
         assert "appointment" in verify_transition.condition.value.lower()
 
     def test_tools_imported(self, sample_retell_llm_config):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_config)
 
@@ -125,8 +108,6 @@ class TestRetellLLMImporter:
         assert "transfer_to_nurse" in targets
 
     def test_general_tools_on_all_states(self, sample_retell_llm_config):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_config)
 
@@ -140,8 +121,6 @@ class TestRetellLLMImporter:
             assert "end_call" in targets, f"Node {node.id} should have edge to end_call"
 
     def test_source_metadata_captured(self, sample_retell_llm_config):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_config)
 
@@ -150,8 +129,6 @@ class TestRetellLLMImporter:
         assert "Hello!" in graph.source_metadata["begin_message"]
 
     def test_get_info(self):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         info = importer.get_info()
 
@@ -161,7 +138,6 @@ class TestRetellLLMImporter:
 
     def test_single_prompt_agent(self):
         """Test importing a single-prompt agent (no states)."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         config = {
             "llm_id": "llm_simple",
@@ -190,8 +166,6 @@ class TestRetellLLMImporter:
         assert graph.nodes["main"].transitions[0].target_node_id == "end_call"
 
     def test_tool_parameters_imported(self, sample_retell_llm_config):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_config)
 
@@ -206,20 +180,14 @@ class TestRetellLLMDashboardExport:
     """Tests for Retell LLM dashboard export format (wrapped in retellLlmData)."""
 
     def test_can_import_wrapped_format(self, sample_retell_llm_dashboard_export):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         assert importer.can_import(sample_retell_llm_dashboard_export) is True
 
     def test_can_import_wrapped_format_path(self, sample_retell_llm_dashboard_export_path):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         assert importer.can_import(sample_retell_llm_dashboard_export_path) is True
 
     def test_import_agent_from_wrapped_format(self, sample_retell_llm_dashboard_export):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_dashboard_export)
 
@@ -231,8 +199,6 @@ class TestRetellLLMDashboardExport:
         assert "verify_identity" in graph.nodes
 
     def test_wrapped_format_metadata(self, sample_retell_llm_dashboard_export):
-        from voicetest.importers.retell_llm import RetellLLMImporter
-
         importer = RetellLLMImporter()
         graph = importer.import_agent(sample_retell_llm_dashboard_export)
 
@@ -241,9 +207,6 @@ class TestRetellLLMDashboardExport:
 
     def test_ambiguous_config_raises_error(self):
         """Config with LLM fields at both top level and in retellLlmData should error."""
-        import pytest
-
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         ambiguous_config = {
             "general_prompt": "Top level prompt",
@@ -259,7 +222,6 @@ class TestRetellLLMDashboardExport:
 
     def test_ambiguous_config_can_import_returns_false(self):
         """can_import should return False for ambiguous configs."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         ambiguous_config = {
             "llm_id": "top_level_id",
@@ -273,7 +235,6 @@ class TestRetellLLMDashboardExport:
 
     def test_end_call_tool_gets_correct_type(self):
         """Tools named end_call should become a synthetic node with type='end_call'."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         config = {
             "general_prompt": "You are a helpful agent.",
@@ -292,7 +253,6 @@ class TestRetellLLMDashboardExport:
 
     def test_transfer_call_tool_gets_correct_type(self):
         """transfer_call_to_* tools should become synthetic nodes."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         config = {
             "general_prompt": "You are a helpful agent.",
@@ -315,7 +275,6 @@ class TestRetellLLMDashboardExport:
 
     def test_custom_tool_keeps_custom_type(self):
         """Regular custom tools should keep type='custom'."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         config = {
             "general_prompt": "You are a helpful agent.",
@@ -338,7 +297,6 @@ class TestRetellLLMDashboardExport:
     def test_end_call_tool_creates_synthetic_node(self):
         """end_call general tool should create a synthetic end_call node
         with edges only from nodes that have the end_call tool."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         config = {
             "general_prompt": "You are a helpful agent.",
@@ -388,7 +346,6 @@ class TestRetellLLMDashboardExport:
 
     def test_transfer_call_tool_creates_synthetic_node(self):
         """transfer_call general tool should create a synthetic transfer node with edges."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         config = {
             "general_prompt": "You are a helpful agent.",
@@ -425,7 +382,6 @@ class TestRetellLLMDashboardExport:
 
     def test_end_call_single_prompt_agent(self):
         """Single-prompt agent with end_call should get synthetic end_call node."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         config = {
             "general_prompt": "You are a helpful assistant.",
@@ -446,7 +402,6 @@ class TestRetellLLMDashboardExport:
 
     def test_node_without_end_call_tool_gets_no_edge(self):
         """Nodes that don't have end_call tool should NOT get an edge to end_call."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         config = {
             "general_prompt": "You are a helpful agent.",
@@ -484,7 +439,6 @@ class TestRetellLLMDashboardExport:
 
     def test_extract_agent_envelope(self):
         """_extract_agent_envelope filters LLM keys, keeps agent fields."""
-        from voicetest.importers.retell_llm import _extract_agent_envelope
 
         config = {
             "voice_id": "voice_abc",
@@ -514,7 +468,6 @@ class TestRetellLLMDashboardExport:
 
     def test_agent_envelope_stored_in_metadata(self):
         """Full agent export -> agent_envelope in source_metadata."""
-        from voicetest.importers.retell_llm import RetellLLMImporter
 
         config = {
             "voice_id": "voice_xyz",

@@ -20,8 +20,9 @@ import shutil
 from fastapi.testclient import TestClient
 import pytest
 
-from voicetest.rest import app
+from voicetest.platforms.livekit import LiveKitPlatformClient
 from voicetest.settings import load_settings
+from voicetest.web.rest import app
 
 
 # Load settings and apply to environment before skip check
@@ -44,8 +45,10 @@ pytestmark = pytest.mark.skipif(not livekit_available(), reason="LIVEKIT_API_KEY
 
 @pytest.fixture
 def client():
-    """Create a test client."""
-    return TestClient(app)
+    """Create a test client. The `with` context fires FastAPI's lifespan,
+    which builds the DI container on app.state."""
+    with TestClient(app) as client:
+        yield client
 
 
 @pytest.fixture
@@ -231,7 +234,6 @@ class TestLiveKitExportToPlatform:
             assert data["name"] is not None
 
             # Clean up - delete the deployed agent
-            from voicetest.platforms.livekit import LiveKitPlatformClient
 
             try:
                 lk = LiveKitPlatformClient()

@@ -8,13 +8,18 @@ Requires platform API keys to be set (in environment or .voicetest/settings.toml
 Run with: uv run pytest tests/integration/test_platforms.py -v
 """
 
+import contextlib
 import os
 
 from fastapi.testclient import TestClient
 import pytest
 
-from voicetest.rest import app
+from voicetest.platforms.bland import BlandPlatformClient
+from voicetest.platforms.livekit import LiveKitPlatformClient
+from voicetest.platforms.retell import get_client as _get_retell_client
+from voicetest.platforms.vapi import get_client as _get_vapi_client
 from voicetest.settings import load_settings
+from voicetest.web.rest import app
 
 
 # Load settings and apply to environment before tests
@@ -53,8 +58,10 @@ def get_available_platforms() -> list[str]:
 
 @pytest.fixture
 def client():
-    """Create a test client."""
-    return TestClient(app)
+    """Create a test client. The `with` context fires FastAPI's lifespan,
+    which builds the DI container on app.state."""
+    with TestClient(app) as client:
+        yield client
 
 
 # sample_graph_dict_dict fixture is inherited from tests/conftest.py
@@ -274,25 +281,15 @@ class TestPlatformListEndpoint:
 def _cleanup_agent(platform: str, agent_id: str) -> None:
     """Clean up a created agent after test."""
     if platform == "retell":
-        from voicetest.platforms.retell import get_client
-
-        get_client().conversation_flow.delete(conversation_flow_id=agent_id)
+        _get_retell_client().conversation_flow.delete(conversation_flow_id=agent_id)
     elif platform == "vapi":
-        from voicetest.platforms.vapi import get_client
-
-        get_client().assistants.delete(agent_id)
+        _get_vapi_client().assistants.delete(agent_id)
     elif platform == "livekit":
-        import contextlib
-
-        from voicetest.platforms.livekit import LiveKitPlatformClient
-
         client_mgr = LiveKitPlatformClient()
         client = client_mgr.get_client()
         with contextlib.suppress(Exception):
             client_mgr.delete_agent(client, agent_id)
     elif platform == "bland":
-        from voicetest.platforms.bland import BlandPlatformClient
-
         client_mgr = BlandPlatformClient()
         client = client_mgr.get_client()
         client_mgr.delete_agent(client, agent_id)

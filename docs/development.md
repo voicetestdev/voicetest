@@ -214,38 +214,51 @@ When importing Retell LLM-format agents, terminal tools (`end_call`, `transfer_c
 
 ```
 voicetest/
-├── voicetest/           # Python package
-│   ├── cli.py           # CLI (40+ commands)
-│   ├── rest.py          # REST API server + WebSocket + SPA serving
-│   ├── container.py     # Dependency injection (Punq)
-│   ├── cache.py         # LLM response cache (disk + S3 backends)
-│   ├── templating.py    # Snippet and variable expansion
-│   ├── services/        # Service layer (agents, diagnosis, evaluation, runs, snippets, etc.)
-│   ├── compose/         # Bundled Docker Compose for infrastructure services
-│   ├── models/          # Pydantic models (agent, test_case, results, decompose, etc.)
-│   ├── importers/       # Source importers (retell, vapi, bland, telnyx, livekit, xlsform, custom)
-│   ├── exporters/       # Format exporters (mermaid, livekit, retell, vapi, bland, telnyx, voicetest_ir)
-│   ├── platforms/       # Platform SDK clients (retell, vapi, bland, telnyx, livekit)
-│   ├── engine/          # Execution engine
-│   │   ├── conversation.py    # ConversationEngine: advance(), graph traversal
-│   │   ├── equations.py       # Deterministic equation evaluation
-│   │   ├── modules.py         # DSPy modules for state execution
-│   │   ├── session.py         # ConversationRunner for simulated tests
-│   │   └── livekit_llm.py     # LiveKit real-time integration
-│   ├── simulator/       # User simulation
-│   ├── judges/          # Evaluation judges (metric, rule, diagnosis)
-│   ├── storage/         # DuckDB persistence layer
-│   └── tui/             # TUI and shell
-├── claude-plugin/       # Claude Code plugin (commands + skills)
-│   ├── commands/        # Slash commands (/voicetest-run, etc.)
-│   └── skills/          # Auto-activating skill + references
-├── web/                 # Frontend (Bun + Svelte + Vite)
-│   ├── src/
-│   │   ├── components/  # Svelte components
-│   │   └── lib/         # API client, stores, types
-│   └── dist/            # Built assets (bundled in package)
+├── voicetest/                    # Python package
+│   ├── cli.py                    # CLI (40+ commands)
+│   ├── container.py              # Dependency injection (Punq) — composition root
+│   ├── config.py                 # Path resolution for .voicetest/ data dirs
+│   ├── settings.py               # Pydantic Settings model + TOML loading
+│   ├── exceptions.py             # Shared domain exceptions
+│   ├── runner.py                 # Shared CLI/TUI run orchestration over AppServices
+│   ├── web/                      # FastAPI + WebSocket + SPA serving
+│   │   ├── rest.py               # REST endpoints + lifespan
+│   │   ├── broadcast.py          # BroadcastBus + SessionRegistry (WS pub/sub)
+│   │   ├── coordinator.py        # RunCoordinator: per-run cancel + orphan claim
+│   │   ├── calls.py              # CallManager: live LiveKit voice calls
+│   │   └── chat.py               # ChatManager: text chat sessions
+│   ├── livecall/                 # Live-call agent runtime
+│   │   ├── agent_worker.py       # `python -m voicetest.livecall.agent_worker` subprocess
+│   │   └── livekit_adapter.py    # LiveKit llm.LLM adapter wrapping ConversationEngine
+│   ├── engine/                   # Conversation engine
+│   │   ├── conversation.py       # ConversationEngine: advance(), graph traversal
+│   │   ├── equations.py          # Deterministic equation evaluation
+│   │   ├── modules.py            # DSPy modules for state execution
+│   │   └── session.py            # ConversationRunner for simulated tests
+│   ├── services/                 # Service layer (agents, diagnosis, evaluation, runs, etc.)
+│   │   └── run_runner.py         # Background test-run orchestrator (scheduled by REST)
+│   ├── simulator/                # User simulation (LLM-driven + scripted replay)
+│   ├── judges/                   # Evaluation judges (metric, rule, diagnosis)
+│   ├── llm/                      # LLM client + retry infrastructure
+│   ├── models/                   # Pydantic models (agent, test_case, results, decompose, etc.)
+│   ├── importers/                # Source importers (retell, vapi, bland, telnyx, livekit, xlsform, custom)
+│   ├── exporters/                # Format exporters (mermaid, livekit, retell, vapi, bland, telnyx, voicetest_ir)
+│   ├── platforms/                # Platform SDK clients (retell, vapi, bland, telnyx, livekit)
+│   ├── storage/                  # SQLAlchemy + DuckDB persistence layer
+│   ├── tui/                      # TUI and shell
+│   ├── util/                     # Pure helpers (audio, cache, formatting, retry, templating, etc.)
+│   ├── compose/                  # Packaged resource: docker-compose.yml shipped in the wheel,
+│   │                             # loaded via importlib.resources by `voicetest up`
+│   └── demo/                     # Packaged resource: bundled demo agent + tests JSON,
+│                                 # loaded via importlib.resources by `voicetest demo`
+├── claude-plugin/                # Claude Code plugin (commands + skills)
+├── web/                          # Frontend (Bun + Svelte + Vite)
+│   └── dist/                     # Built assets (bundled in package)
 ├── tests/
-│   ├── unit/            # Unit tests
-│   └── integration/     # Integration tests (Ollama)
+│   ├── unit/                     # Unit tests
+│   ├── integration/              # Integration tests (Ollama)
+│   └── fixtures/                 # Sample agent/test JSON for tests
 └── docs/
 ```
+
+`compose/` and `demo/` live inside the Python package on purpose — they're loaded via `importlib.resources` so they ship with the wheel and work for pip-installed users. The root-level `docker-compose.dev.yml` is a separate dev-only file that *includes* `voicetest/compose/docker-compose.yml`.

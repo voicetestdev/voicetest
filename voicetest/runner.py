@@ -1,7 +1,9 @@
 """Shared test runner logic for CLI and TUI.
 
 This module provides the core test execution logic that both the
-command-line interface and the TUI share.
+command-line interface and the TUI share. Callers pass an `AppServices`
+bag built from a composition-root container — runner.py never reaches
+into a container itself.
 """
 
 from collections.abc import AsyncIterator
@@ -15,26 +17,26 @@ from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
-from voicetest.retry import OnErrorCallback
-from voicetest.services import get_agent_service
-from voicetest.services import get_test_execution_service
+from voicetest.services import AppServices
+from voicetest.util.retry import OnErrorCallback
 
 
 async def load_agent(
+    services: AppServices,
     agent_path: Path,
     source: str | None = None,
 ) -> AgentGraph:
     """Load an agent from a definition file.
 
     Args:
+        services: Application services bag.
         agent_path: Path to agent definition file.
         source: Source type override (auto-detect if None).
 
     Returns:
         Loaded AgentGraph.
     """
-    svc = get_agent_service()
-    return await svc.import_agent(agent_path, source=source)
+    return await services.agents.import_agent(agent_path, source=source)
 
 
 def load_test_cases(tests_path: Path) -> list[TestCase]:
@@ -51,6 +53,7 @@ def load_test_cases(tests_path: Path) -> list[TestCase]:
 
 
 async def run_all_tests(
+    services: AppServices,
     graph: AgentGraph,
     test_cases: list[TestCase],
     options: RunOptions | None = None,
@@ -59,6 +62,7 @@ async def run_all_tests(
     """Run all test cases and return aggregated results.
 
     Args:
+        services: Application services bag.
         graph: Agent graph to test.
         test_cases: List of test cases.
         options: Run options.
@@ -67,11 +71,11 @@ async def run_all_tests(
     Returns:
         TestRun with all results.
     """
-    svc = get_test_execution_service()
-    return await svc.run_tests(graph, test_cases, options, _mock_mode=mock_mode)
+    return await services.test_execution.run_tests(graph, test_cases, options, _mock_mode=mock_mode)
 
 
 async def run_tests_streaming(
+    services: AppServices,
     graph: AgentGraph,
     test_cases: list[TestCase],
     options: RunOptions | None = None,
@@ -83,6 +87,7 @@ async def run_tests_streaming(
     This is useful for TUI to show live progress.
 
     Args:
+        services: Application services bag.
         graph: Agent graph to test.
         test_cases: List of test cases.
         options: Run options.
@@ -92,9 +97,8 @@ async def run_tests_streaming(
     Yields:
         TestResult as each test completes.
     """
-    svc = get_test_execution_service()
     for test_case in test_cases:
-        result = await svc.run_test(
+        result = await services.test_execution.run_test(
             graph, test_case, options, _mock_mode=mock_mode, on_error=on_error
         )
         yield result
@@ -105,12 +109,14 @@ class TestRunContext:
 
     def __init__(
         self,
+        services: AppServices,
         agent_path: Path,
         tests_path: Path,
         source: str | None = None,
         options: RunOptions | None = None,
         mock_mode: bool = False,
     ):
+        self.services = services
         self.agent_path = agent_path
         self.tests_path = tests_path
         self.source = source
@@ -123,7 +129,7 @@ class TestRunContext:
 
     async def load(self) -> None:
         """Load agent and test cases."""
-        self.graph = await load_agent(self.agent_path, self.source)
+        self.graph = await load_agent(self.services, self.agent_path, self.source)
         self.test_cases = load_test_cases(self.tests_path)
 
     def filter_tests(self, test_names: list[str]) -> None:
@@ -157,6 +163,7 @@ class TestRunContext:
         if not self.graph:
             await self.load()
         async for result in run_tests_streaming(
+            self.services,
             self.graph,
             self.test_cases,
             self.options,

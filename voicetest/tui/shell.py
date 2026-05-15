@@ -21,12 +21,9 @@ from voicetest.config import get_settings_path
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.runner import load_test_cases
-from voicetest.services import get_agent_service
-from voicetest.services import get_discovery_service
-from voicetest.services import get_test_execution_service
+from voicetest.services import AppServices
+from voicetest.services.settings import SettingsService
 from voicetest.settings import Settings
-from voicetest.settings import load_settings
-from voicetest.settings import save_settings
 
 
 COMMANDS = [
@@ -57,12 +54,13 @@ API_KEY_NAMES = [
 class ConfigPanel(Static):
     """Panel showing current configuration."""
 
-    def __init__(self, **kwargs):
+    def __init__(self, settings_service: SettingsService, **kwargs):
         super().__init__("", **kwargs)
         self._agent: Path | None = None
         self._tests: Path | None = None
         self._test_cases: list[TestCase] = []
-        self._settings = load_settings()
+        self._settings_service = settings_service
+        self._settings = settings_service.get_settings()
         self._options = self._options_from_settings(self._settings)
         self._update_display()
 
@@ -109,7 +107,7 @@ class ConfigPanel(Static):
             self._settings.run.verbose = val
         else:
             return False
-        save_settings(self._settings)
+        self._settings_service.update_settings(self._settings)
         self._update_display()
         return True
 
@@ -192,8 +190,14 @@ class VoicetestShell(App):
         Binding("ctrl+l", "clear", "Clear"),
     ]
 
-    def __init__(self, agent_path: Path | None = None, tests_path: Path | None = None):
+    def __init__(
+        self,
+        services: AppServices,
+        agent_path: Path | None = None,
+        tests_path: Path | None = None,
+    ):
         super().__init__()
+        self.services = services
         self._history: list[str] = []
         self._history_index = 0
         self._initial_agent_path = agent_path
@@ -206,7 +210,7 @@ class VoicetestShell(App):
         yield Header()
         with Horizontal(id="main"):
             with Vertical(id="left-panel"):
-                yield ConfigPanel(id="config-panel")
+                yield ConfigPanel(self.services.settings, id="config-panel")
                 yield Static(
                     "\n[bold]Commands[/bold]\n"
                     "  agent [path]     Show graph / set agent\n"
@@ -409,7 +413,7 @@ class VoicetestShell(App):
         self._ctrl_c_pressed = False
 
         try:
-            graph = await get_agent_service().import_agent(config_panel.agent_path)
+            graph = await self.services.agents.import_agent(config_panel.agent_path)
 
             if not config_panel.test_cases:
                 test_cases = load_test_cases(config_panel.tests_path)
@@ -460,7 +464,7 @@ class VoicetestShell(App):
                     transcript_len = len(transcript)
 
                 try:
-                    result = await get_test_execution_service().run_test(
+                    result = await self.services.test_execution.run_test(
                         graph, test_case, options=config_panel.options, on_turn=on_turn
                     )
 
@@ -514,8 +518,8 @@ class VoicetestShell(App):
             return
 
         try:
-            graph = await get_agent_service().import_agent(config_panel.agent_path)
-            result = await get_agent_service().export_agent(graph, format=format)
+            graph = await self.services.agents.import_agent(config_panel.agent_path)
+            result = await self.services.agents.export_agent(graph, format=format)
             self._log(f"[bold]Exported ({format}):[/bold]\n{result}")
         except Exception as e:
             self._log(f"[red]Error: {e}[/red]")
@@ -523,7 +527,7 @@ class VoicetestShell(App):
     async def _list_importers(self) -> None:
         """List available importers."""
 
-        importers = get_discovery_service().list_importers()
+        importers = self.services.discovery.list_importers()
         self._log("[bold]Available importers:[/bold]")
         for imp in importers:
             patterns = ", ".join(imp.file_patterns) if imp.file_patterns else "-"
@@ -614,7 +618,7 @@ class VoicetestShell(App):
         """Show ASCII representation of agent graph."""
 
         try:
-            graph = await get_agent_service().import_agent(config_panel.agent_path)
+            graph = await self.services.agents.import_agent(config_panel.agent_path)
 
             self._log(f"[bold]Agent: {graph.source_type}[/bold]")
             self._log(f"  Entry: [cyan]{graph.entry_node_id}[/cyan]")

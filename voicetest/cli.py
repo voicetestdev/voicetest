@@ -18,36 +18,41 @@ from rich.table import Table
 from rich.tree import Tree
 import uvicorn
 
-from voicetest.cache import setup_cache_from_settings
 from voicetest.compose import get_compose_path
+from voicetest.container import create_container
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
 from voicetest.engine.conversation import ConversationEngine
-from voicetest.formatting import format_run
 from voicetest.importers.transcripts.retell import parse_retell_file
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
-from voicetest.retry import RetryError
 from voicetest.runner import TestRunContext
-from voicetest.services import get_agent_service
-from voicetest.services import get_decompose_service
-from voicetest.services import get_diagnosis_service
-from voicetest.services import get_discovery_service
-from voicetest.services import get_evaluation_service
-from voicetest.services import get_platform_service
-from voicetest.services import get_run_service
-from voicetest.services import get_settings_service
-from voicetest.services import get_snippet_service
-from voicetest.services import get_test_case_service
-from voicetest.services import get_test_execution_service
+from voicetest.services import AppServices
+from voicetest.services import build_app_services
 from voicetest.settings import Settings
-from voicetest.settings import load_settings
-from voicetest.snippets import suggest_snippets
 from voicetest.tui import VoicetestApp
 from voicetest.tui import VoicetestShell
+from voicetest.util.cache import setup_cache_from_settings
+from voicetest.util.formatting import format_run
+from voicetest.util.retry import RetryError
+from voicetest.util.snippets import suggest_snippets
+
+
+def _services() -> AppServices:
+    """Lazily build (and cache) the AppServices bag on the current Click context.
+
+    Lazy so that subcommands like `serve` — which delegate DB work to a uvicorn
+    worker process — don't open the DuckDB file in the CLI process. Otherwise
+    the CLI and the uvicorn worker both grab a write lock and the worker fails
+    its lifespan with `Conflicting lock is held in ... (PID N)`.
+    """
+    ctx = click.get_current_context()
+    if "services" not in ctx.obj:
+        ctx.obj["services"] = build_app_services(create_container())
+    return ctx.obj["services"]
 
 
 console = Console()
@@ -81,7 +86,7 @@ def _start_server(host: str, port: int, reload: bool = False) -> None:
     console.print()
 
     uvicorn.run(
-        "voicetest.rest:app",
+        "voicetest.web.rest:app",
         host=host,
         port=port,
         reload=reload,
@@ -104,7 +109,7 @@ def main(ctx, json_mode):
     ctx.obj["json"] = json_mode
     if ctx.invoked_subcommand is None:
         # No subcommand - launch interactive shell
-        app = VoicetestShell()
+        app = VoicetestShell(_services())
         app.run()
 
 
@@ -180,8 +185,8 @@ def _run_tui(
     verbose: bool,
 ) -> None:
     """Launch interactive TUI."""
-    settings = load_settings()
-    settings.apply_env()
+    svc = _services()
+    settings = svc.settings.get_settings()
     setup_cache_from_settings(settings.cache)
     options = RunOptions(
         agent_model=settings.models.agent,
@@ -191,6 +196,7 @@ def _run_tui(
         verbose=verbose or settings.run.verbose,
     )
     app = VoicetestApp(
+        services=svc,
         agent_path=agent,
         tests_path=tests,
         source=source,
@@ -215,8 +221,8 @@ async def _run_cli(
     agent_id: str | None = None,
 ) -> None:
     """Run tests in CLI mode."""
-    settings = load_settings()
-    settings.apply_env()
+    svc = _services()
+    settings = svc.settings.get_settings()
     setup_cache_from_settings(settings.cache)
     options = RunOptions(
         agent_model=settings.models.agent,
@@ -226,6 +232,7 @@ async def _run_cli(
         verbose=verbose or settings.run.verbose,
     )
     run_ctx = TestRunContext(
+        services=svc,
         agent_path=agent,
         tests_path=tests,
         source=source,
@@ -261,7 +268,7 @@ async def _run_cli(
 
     # Save to database if requested
     if save_run and agent_id:
-        run_svc = get_run_service()
+        run_svc = svc.runs
         db_run = run_svc.create_run(agent_id)
         for result in run_result.results:
             run_svc.add_result(db_run["id"], result)
@@ -313,7 +320,7 @@ def tui(agent: Path, tests: Path, source: str | None):
 
 def _get_export_format_ids() -> list[str]:
     """Get export format IDs from the registry (single source of truth)."""
-    return [f["id"] for f in get_discovery_service().list_export_formats()]
+    return [f["id"] for f in _services().discovery.list_export_formats()]
 
 
 class LazyExportChoice(click.Choice):
@@ -369,7 +376,7 @@ def _get_export_info(format: str) -> tuple[str, str]:
     Returns:
         Tuple of (extension with dot, filename suffix).
     """
-    formats = get_discovery_service().list_export_formats()
+    formats = _services().discovery.list_export_formats()
     for fmt in formats:
         if fmt["id"] == format:
             ext = f".{fmt['ext']}"
@@ -383,7 +390,7 @@ async def _export(
     agent: Path, format: str, output: Path | None, *, json_mode: bool = False
 ) -> None:
     """Async implementation of export command."""
-    svc = get_agent_service()
+    svc = _services().agents
     graph = await svc.import_agent(agent)
 
     if json_mode and output is None:
@@ -410,7 +417,7 @@ async def _export(
 @click.pass_context
 def importers(ctx):
     """List available importers."""
-    svc = get_discovery_service()
+    svc = _services().discovery
     importer_list = svc.list_importers()
 
     if ctx.obj.get("json"):
@@ -436,7 +443,7 @@ def importers(ctx):
 @click.pass_context
 def exporters(ctx):
     """List available export formats."""
-    svc = get_discovery_service()
+    svc = _services().discovery
     format_list = svc.list_export_formats()
 
     if ctx.obj.get("json"):
@@ -474,10 +481,11 @@ def demo(serve: bool, host: str, port: int):
 
     demo_agent_config = get_demo_agent()
     demo_tests = get_demo_tests()
+    svc = _services()
 
     if serve:
-        agent_svc = get_agent_service()
-        test_svc = get_test_case_service()
+        agent_svc = svc.agents
+        test_svc = svc.test_cases
 
         asyncio.run(agent_svc.import_agent(demo_agent_config))
 
@@ -519,7 +527,7 @@ def demo(serve: bool, host: str, port: int):
         console.print(f"  Tests: {tests_path}")
         console.print()
 
-        app = VoicetestShell(agent_path=agent_path, tests_path=tests_path)
+        app = VoicetestShell(svc, agent_path=agent_path, tests_path=tests_path)
         app.run()
 
 
@@ -541,8 +549,8 @@ def smoke_test(ctx, max_turns: int):
 
 async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
     """Run smoke test with bundled demo data."""
-    settings = load_settings()
-    settings.apply_env()
+    svc = _services()
+    settings = svc.settings.get_settings()
     setup_cache_from_settings(settings.cache)
 
     _echo("[bold]Running smoke test...[/bold]")
@@ -556,8 +564,8 @@ async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
     _echo(f"  Max turns: {max_turns}")
     _echo("")
 
-    agent_svc = get_agent_service()
-    exec_svc = get_test_execution_service()
+    agent_svc = svc.agents
+    exec_svc = svc.test_execution
 
     graph = await agent_svc.import_agent(demo_agent)
     test_case = TestCase.model_validate(first_test)
@@ -790,13 +798,12 @@ def import_call(ctx, agent_id: str, transcript: Path, format_: str):
         _echo("[red]No conversations found in transcript file.[/red]")
         raise SystemExit(1)
 
-    agent_svc = get_agent_service()
-    if not agent_svc.get_agent(agent_id):
+    svc = _services()
+    if not svc.agents.get_agent(agent_id):
         _echo(f"[red]Agent not found: {agent_id}[/red]")
         raise SystemExit(1)
 
-    run_svc = get_run_service()
-    run = run_svc.import_calls(agent_id, results)
+    run = svc.runs.import_calls(agent_id, results)
 
     if json_mode:
         click.echo(json.dumps(run, default=str))
@@ -827,17 +834,17 @@ def replay(ctx, source_run_id: str):
     """
     json_mode = ctx.obj.get("json", False)
 
-    settings = load_settings()
-    settings.apply_env()
+    svc = _services()
+    settings = svc.settings.get_settings()
     setup_cache_from_settings(settings.cache)
 
-    run_svc = get_run_service()
+    run_svc = svc.runs
     source = run_svc.get_run(source_run_id)
     if not source:
         _echo(f"[red]Source run not found: {source_run_id}[/red]")
         raise SystemExit(1)
 
-    agent_svc = get_agent_service()
+    agent_svc = svc.agents
     try:
         _agent, graph = agent_svc.load_graph(source["agent_id"])
     except (ValueError, FileNotFoundError) as e:
@@ -879,7 +886,7 @@ def agent():
 @click.pass_context
 def agent_list(ctx):
     """List all agents."""
-    svc = get_agent_service()
+    svc = _services().agents
     agents = svc.list_agents()
 
     if ctx.find_root().obj.get("json"):
@@ -908,7 +915,7 @@ def agent_list(ctx):
 @click.pass_context
 def agent_get(ctx, agent_id):
     """Get agent details by ID."""
-    svc = get_agent_service()
+    svc = _services().agents
     result = svc.get_agent(agent_id)
 
     if result is None:
@@ -936,7 +943,7 @@ def agent_get(ctx, agent_id):
 @click.pass_context
 def agent_create(ctx, agent_path, name):
     """Create an agent from a definition file."""
-    svc = get_agent_service()
+    svc = _services().agents
 
     config = json.loads(agent_path.read_text())
     agent_name = name or agent_path.stem
@@ -966,7 +973,7 @@ def agent_create(ctx, agent_path, name):
 @click.pass_context
 def agent_update(ctx, agent_id, name, model):
     """Update an agent's properties."""
-    svc = get_agent_service()
+    svc = _services().agents
     result = svc.update_agent(agent_id, name=name, default_model=model)
 
     if ctx.find_root().obj.get("json"):
@@ -985,7 +992,7 @@ def agent_delete(ctx, agent_id, yes):
     if not yes:
         click.confirm(f"Delete agent {agent_id}?", abort=True)
 
-    svc = get_agent_service()
+    svc = _services().agents
     svc.delete_agent(agent_id)
 
     if ctx.find_root().obj.get("json"):
@@ -1000,7 +1007,7 @@ def agent_delete(ctx, agent_id, yes):
 @click.pass_context
 def agent_graph(ctx, agent_id):
     """Display agent graph structure."""
-    svc = get_agent_service()
+    svc = _services().agents
     _agent_dict, graph = svc.load_graph(agent_id)
 
     if ctx.find_root().obj.get("json"):
@@ -1036,7 +1043,7 @@ def test_group():
 @click.pass_context
 def test_list(ctx, agent_id):
     """List test cases for an agent."""
-    svc = get_test_case_service()
+    svc = _services().test_cases
     tests = svc.list_tests(agent_id)
 
     if ctx.find_root().obj.get("json"):
@@ -1065,7 +1072,7 @@ def test_list(ctx, agent_id):
 @click.pass_context
 def test_get(ctx, test_id):
     """Get test case details."""
-    svc = get_test_case_service()
+    svc = _services().test_cases
     result = svc.get_test(test_id)
 
     if result is None:
@@ -1092,7 +1099,7 @@ def test_get(ctx, test_id):
 @click.pass_context
 def test_create(ctx, agent_id, file):
     """Create a test case from a JSON file."""
-    svc = get_test_case_service()
+    svc = _services().test_cases
     test_data = json.loads(file.read_text())
     test_case = TestCase.model_validate(test_data)
     result = svc.create_test(agent_id, test_case)
@@ -1116,7 +1123,7 @@ def test_create(ctx, agent_id, file):
 @click.pass_context
 def test_update(ctx, test_id, file):
     """Update a test case from a JSON file."""
-    svc = get_test_case_service()
+    svc = _services().test_cases
     test_data = json.loads(file.read_text())
     test_case = TestCase.model_validate(test_data)
     result = svc.update_test(test_id, test_case)
@@ -1137,7 +1144,7 @@ def test_delete(ctx, test_id, yes):
     if not yes:
         click.confirm(f"Delete test {test_id}?", abort=True)
 
-    svc = get_test_case_service()
+    svc = _services().test_cases
     svc.delete_test(test_id)
 
     if ctx.find_root().obj.get("json"):
@@ -1153,7 +1160,7 @@ def test_delete(ctx, test_id, yes):
 @click.pass_context
 def test_link(ctx, agent_id, path):
     """Link an external test file to an agent."""
-    svc = get_test_case_service()
+    svc = _services().test_cases
     result = svc.link_test_file(agent_id, str(path))
 
     if ctx.find_root().obj.get("json"):
@@ -1169,7 +1176,7 @@ def test_link(ctx, agent_id, path):
 @click.pass_context
 def test_unlink(ctx, agent_id, path):
     """Unlink an external test file from an agent."""
-    svc = get_test_case_service()
+    svc = _services().test_cases
     result = svc.unlink_test_file(agent_id, str(path))
 
     if ctx.find_root().obj.get("json"):
@@ -1186,7 +1193,7 @@ def test_unlink(ctx, agent_id, path):
 @click.pass_context
 def test_export(ctx, agent_id, ids, fmt):
     """Export test cases for an agent."""
-    svc = get_test_case_service()
+    svc = _services().test_cases
     test_ids = ids.split(",") if ids else None
     result = svc.export_tests(agent_id, test_ids, fmt)
 
@@ -1213,7 +1220,7 @@ def runs():
 @click.pass_context
 def runs_list(ctx, agent_id, limit):
     """List test runs for an agent."""
-    svc = get_run_service()
+    svc = _services().runs
     run_list = svc.list_runs(agent_id, limit)
 
     if ctx.find_root().obj.get("json"):
@@ -1242,7 +1249,7 @@ def runs_list(ctx, agent_id, limit):
 @click.pass_context
 def runs_get(ctx, run_id):
     """Get run details with results."""
-    svc = get_run_service()
+    svc = _services().runs
     result = svc.get_run(run_id)
 
     if result is None:
@@ -1278,7 +1285,7 @@ def runs_delete(ctx, run_id, yes):
     if not yes:
         click.confirm(f"Delete run {run_id}?", abort=True)
 
-    svc = get_run_service()
+    svc = _services().runs
     svc.delete_run(run_id)
 
     if ctx.find_root().obj.get("json"):
@@ -1322,10 +1329,10 @@ def snippet_list(ctx, agent_id, agent_path):
     _require_agent_source(agent_id, agent_path)
 
     if agent_id:
-        svc = get_snippet_service()
+        svc = _services().snippets
         snippets = svc.get_snippets(agent_id)
     else:
-        svc = get_agent_service()
+        svc = _services().agents
         graph = asyncio.run(svc.import_agent(agent_path))
         snippets = graph.snippets
 
@@ -1362,10 +1369,10 @@ def snippet_set(ctx, name, text, agent_id, agent_path):
     _require_agent_source(agent_id, agent_path)
 
     if agent_id:
-        svc = get_snippet_service()
+        svc = _services().snippets
         snippets = svc.update_snippet(agent_id, name, text)
     else:
-        agent_svc = get_agent_service()
+        agent_svc = _services().agents
         graph = asyncio.run(agent_svc.import_agent(agent_path))
         graph.snippets[name] = text
         asyncio.run(agent_svc.export_agent(graph, format=graph.source_type, output=agent_path))
@@ -1399,10 +1406,10 @@ def snippet_delete(ctx, name, agent_id, agent_path, yes):
         click.confirm(f"Delete snippet '{name}'?", abort=True)
 
     if agent_id:
-        svc = get_snippet_service()
+        svc = _services().snippets
         snippets = svc.delete_snippet(agent_id, name)
     else:
-        agent_svc = get_agent_service()
+        agent_svc = _services().agents
         graph = asyncio.run(agent_svc.import_agent(agent_path))
         if name not in graph.snippets:
             raise click.ClickException(f"Snippet not found: {name}")
@@ -1435,10 +1442,10 @@ def snippet_analyze(ctx, agent_id, agent_path, threshold, min_length):
     _require_agent_source(agent_id, agent_path)
 
     if agent_id:
-        svc = get_snippet_service()
+        svc = _services().snippets
         result = svc.analyze_dry(agent_id)
     else:
-        agent_svc = get_agent_service()
+        agent_svc = _services().agents
         graph = asyncio.run(agent_svc.import_agent(agent_path))
         analysis = suggest_snippets(graph, threshold=threshold, min_length=min_length)
         result = {
@@ -1500,10 +1507,10 @@ def snippet_apply(ctx, agent_id, agent_path, snippets):
     snippets_list = json.loads(snippets)
 
     if agent_id:
-        svc = get_snippet_service()
+        svc = _services().snippets
         graph = svc.apply_snippets(agent_id, snippets_list)
     else:
-        agent_svc = get_agent_service()
+        agent_svc = _services().agents
         graph = asyncio.run(agent_svc.import_agent(agent_path))
 
         for s in snippets_list:
@@ -1540,7 +1547,7 @@ def snippet_apply(ctx, agent_id, agent_path, snippets):
 @click.pass_context
 def settings(ctx, set_values, defaults):
     """Show or edit .voicetest.toml settings."""
-    svc = get_settings_service()
+    svc = _services().settings
 
     if defaults:
         s = svc.get_defaults()
@@ -1604,7 +1611,7 @@ def _display_settings(s) -> None:
 @click.pass_context
 def platforms(ctx):
     """List available platforms with configuration status."""
-    svc = get_platform_service()
+    svc = _services().platforms
     platform_list = svc.list_platforms()
 
     if ctx.obj.get("json"):
@@ -1641,7 +1648,7 @@ def platform(ctx):
 @click.pass_context
 def platform_configure(ctx, name, api_key, api_secret):
     """Configure platform credentials."""
-    svc = get_platform_service()
+    svc = _services().platforms
     result = svc.configure(name, api_key, api_secret)
 
     if ctx.find_root().obj.get("json"):
@@ -1656,7 +1663,7 @@ def platform_configure(ctx, name, api_key, api_secret):
 @click.pass_context
 def platform_list_agents(ctx, name):
     """List agents from a remote platform."""
-    svc = get_platform_service()
+    svc = _services().platforms
     agents = svc.list_remote_agents(name)
 
     if ctx.find_root().obj.get("json"):
@@ -1680,12 +1687,11 @@ def platform_list_agents(ctx, name):
 @click.pass_context
 def platform_import(ctx, name, agent_id, output):
     """Import an agent from a remote platform."""
-    svc = get_platform_service()
-    graph = svc.import_from_platform(name, agent_id)
+    services = _services()
+    graph = services.platforms.import_from_platform(name, agent_id)
 
     if output:
-        agent_svc = get_agent_service()
-        asyncio.run(agent_svc.export_agent(graph, format=graph.source_type, output=output))
+        asyncio.run(services.agents.export_agent(graph, format=graph.source_type, output=output))
         if ctx.find_root().obj.get("json"):
             click.echo(json.dumps({"file": str(output)}))
         else:
@@ -1708,11 +1714,9 @@ def platform_import(ctx, name, agent_id, output):
 @click.pass_context
 def platform_push(ctx, name, agent_path, agent_name):
     """Push an agent to a remote platform."""
-    agent_svc = get_agent_service()
-    graph = asyncio.run(agent_svc.import_agent(agent_path))
-
-    svc = get_platform_service()
-    result = svc.export_to_platform(name, graph, agent_name)
+    services = _services()
+    graph = asyncio.run(services.agents.import_agent(agent_path))
+    result = services.platforms.export_to_platform(name, graph, agent_name)
 
     if ctx.find_root().obj.get("json"):
         click.echo(json.dumps(result, indent=2))
@@ -1754,7 +1758,7 @@ async def _evaluate(
     transcript_data = json.loads(transcript_path.read_text())
     transcript = [Message.model_validate(m) for m in transcript_data]
 
-    svc = get_evaluation_service()
+    svc = _services().eval
     results = await svc.evaluate_transcript(transcript, metrics, judge_model)
 
     if json_mode:
@@ -1848,15 +1852,15 @@ async def _diagnose(
     json_mode: bool = False,
 ) -> None:
     """Async implementation of diagnose command."""
-    settings = load_settings()
-    settings.apply_env()
+    svc = _services()
+    settings = svc.settings.get_settings()
 
-    agent_svc = get_agent_service()
-    exec_svc = get_test_execution_service()
-    diag_svc = get_diagnosis_service()
+    agent_svc = svc.agents
+    exec_svc = svc.test_execution
+    diag_svc = svc.diagnosis
 
     graph = await agent_svc.import_agent(agent_path)
-    test_cases = get_test_case_service().load_test_cases(tests_path)
+    test_cases = svc.test_cases.load_test_cases(tests_path)
 
     options = RunOptions(
         agent_model=settings.models.agent,
@@ -2029,11 +2033,11 @@ async def _decompose(
     json_mode: bool = False,
 ) -> None:
     """Async implementation of decompose command."""
-    settings = load_settings()
-    settings.apply_env()
+    svc = _services()
+    settings = svc.settings.get_settings()
 
-    agent_svc = get_agent_service()
-    decompose_svc = get_decompose_service()
+    agent_svc = svc.agents
+    decompose_svc = svc.decompose
 
     graph = await agent_svc.import_agent(agent_path)
 
@@ -2091,10 +2095,10 @@ async def _chat(
     json_mode: bool = False,
 ) -> None:
     """Async implementation of chat command."""
-    settings = load_settings()
-    settings.apply_env()
+    svc = _services()
+    settings = svc.settings.get_settings()
 
-    agent_svc = get_agent_service()
+    agent_svc = svc.agents
     graph = await agent_svc.import_agent(agent_path)
 
     agent_model = model or settings.models.agent or "groq/llama-3.1-8b-instant"

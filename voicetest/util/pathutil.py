@@ -14,10 +14,12 @@ from pathlib import Path
 from fastapi import HTTPException
 
 
-_ALLOWED_BASE = Path(os.environ.get("VOICETEST_ALLOWED_BASE", "/")).resolve()
+def _allowed_base() -> Path:
+    """Read VOICETEST_ALLOWED_BASE each call so tests can monkeypatch it."""
+    return Path(os.environ.get("VOICETEST_ALLOWED_BASE", "/")).resolve()
 
 
-def resolve_path(raw: str, base: Path = _ALLOWED_BASE) -> Path:
+def resolve_path(raw: str, base: Path | None = None) -> Path:
     """Normalize, resolve, and validate an absolute path against a base directory.
 
     Collapses '..' segments via normpath, resolves symlinks to a canonical
@@ -28,6 +30,8 @@ def resolve_path(raw: str, base: Path = _ALLOWED_BASE) -> Path:
     if not raw or not raw.strip():
         raise HTTPException(status_code=400, detail="Path must not be empty")
 
+    if base is None:
+        base = _allowed_base()
     resolved = Path(os.path.normpath(raw)).resolve()
 
     if not resolved.is_relative_to(base):

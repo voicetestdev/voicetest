@@ -2,12 +2,17 @@
 
 import pytest
 
-from voicetest.audio import AudioRoundTrip
+from voicetest.judges.metric import MetricJudge
+from voicetest.judges.rule import RuleJudge
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
+from voicetest.models.results import TestResult
 from voicetest.models.test_case import RunOptions
 from voicetest.settings import AudioSettings
 from voicetest.settings import Settings
+from voicetest.settings import load_settings
+from voicetest.settings import save_settings
+from voicetest.util.audio import AudioRoundTrip
 
 
 class TestAudioRoundTrip:
@@ -184,9 +189,6 @@ class TestAudioSettings:
         assert settings.run.audio_eval is True
 
     def test_save_and_load_audio_settings(self, tmp_path):
-        from voicetest.settings import load_settings
-        from voicetest.settings import save_settings
-
         settings_file = tmp_path / ".voicetest.toml"
 
         original = Settings(
@@ -204,8 +206,6 @@ class TestAudioSettings:
         assert loaded.audio.stt_url == "http://custom:8001/v1"
 
     def test_toml_contains_audio_section(self, tmp_path):
-        from voicetest.settings import save_settings
-
         settings_file = tmp_path / ".voicetest.toml"
 
         settings = Settings()
@@ -222,14 +222,10 @@ class TestMetricResult:
     """Tests for audio_metric_results in TestResult."""
 
     def test_audio_metric_results_default_empty(self):
-        from voicetest.models.results import TestResult
-
         result = TestResult(test_name="test", status="pass")
         assert result.audio_metric_results == []
 
     def test_audio_metric_results_populated(self):
-        from voicetest.models.results import TestResult
-
         result = TestResult(
             test_name="test",
             status="pass",
@@ -249,8 +245,6 @@ class TestFormatTranscriptUseHeard:
     """Tests for use_heard parameter in judge format_transcript."""
 
     def test_metric_judge_format_without_heard(self):
-        from voicetest.judges.metric import MetricJudge
-
         judge = MetricJudge("test-model")
         transcript = [
             Message(
@@ -264,8 +258,6 @@ class TestFormatTranscriptUseHeard:
         assert "four fifteen" not in result
 
     def test_metric_judge_format_with_heard(self):
-        from voicetest.judges.metric import MetricJudge
-
         judge = MetricJudge("test-model")
         transcript = [
             Message(
@@ -279,8 +271,6 @@ class TestFormatTranscriptUseHeard:
         assert "415-555-1234" not in result
 
     def test_metric_judge_heard_only_for_assistant(self):
-        from voicetest.judges.metric import MetricJudge
-
         judge = MetricJudge("test-model")
         transcript = [
             Message(
@@ -294,8 +284,6 @@ class TestFormatTranscriptUseHeard:
         assert "should not be used" not in result
 
     def test_metric_judge_heard_fallback_to_content(self):
-        from voicetest.judges.metric import MetricJudge
-
         judge = MetricJudge("test-model")
         transcript = [
             Message(role="assistant", content="No heard metadata here"),
@@ -304,8 +292,6 @@ class TestFormatTranscriptUseHeard:
         assert "No heard metadata here" in result
 
     def test_rule_judge_format_with_heard(self):
-        from voicetest.judges.rule import RuleJudge
-
         judge = RuleJudge()
         transcript = [
             Message(
@@ -319,8 +305,6 @@ class TestFormatTranscriptUseHeard:
         assert "REF-ABC123" not in result
 
     def test_rule_judge_format_without_heard(self):
-        from voicetest.judges.rule import RuleJudge
-
         judge = RuleJudge()
         transcript = [
             Message(

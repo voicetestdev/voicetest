@@ -1,7 +1,12 @@
 """Tests for voicetest.exporters.telnyx module."""
 
+import json
+
 import pytest
 
+from voicetest.exporters.telnyx import TelnyxExporter
+from voicetest.exporters.telnyx import export_telnyx_config
+from voicetest.importers.telnyx import TelnyxImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import ToolDefinition
@@ -13,26 +18,18 @@ class TestTelnyxExporter:
     """Tests for Telnyx AI assistant exporter."""
 
     def test_export_returns_dict(self, single_node_graph):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         result = export_telnyx_config(single_node_graph)
         assert isinstance(result, dict)
 
     def test_export_has_instructions(self, single_node_graph):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         result = export_telnyx_config(single_node_graph)
         assert "instructions" in result
 
     def test_export_instructions_from_entry_node(self, single_node_graph):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         result = export_telnyx_config(single_node_graph)
         assert result["instructions"] == "You are a helpful assistant."
 
     def test_export_tools_converted(self, sample_graph_with_tools):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         result = export_telnyx_config(sample_graph_with_tools)
 
         assert "tools" in result
@@ -42,16 +39,12 @@ class TestTelnyxExporter:
         assert result["tools"][0]["webhook"]["description"] == "Get information"
 
     def test_export_webhook_tool_url(self, sample_graph_with_tools):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         result = export_telnyx_config(sample_graph_with_tools)
 
         webhook = result["tools"][0]["webhook"]
         assert webhook["url"] == "https://api.example.com/info"
 
     def test_export_webhook_parameters_as_body(self, sample_graph_with_tools):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         result = export_telnyx_config(sample_graph_with_tools)
 
         webhook = result["tools"][0]["webhook"]
@@ -59,8 +52,6 @@ class TestTelnyxExporter:
         assert webhook["body_parameters"]["type"] == "object"
 
     def test_export_preserves_source_metadata(self, sample_graph_with_metadata):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         result = export_telnyx_config(sample_graph_with_metadata)
 
         assert result["name"] == "Test Bot"
@@ -71,8 +62,6 @@ class TestTelnyxExporter:
         assert result["telephony_settings"]["noise_suppression"] == "krisp"
 
     def test_export_greeting_from_node_metadata(self):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         graph = AgentGraph(
             nodes={
                 "main": AgentNode(
@@ -92,8 +81,6 @@ class TestTelnyxExporter:
         assert result["greeting"] == "Hi there!"
 
     def test_export_empty_graph(self):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         graph = AgentGraph(
             nodes={},
             entry_node_id="",
@@ -106,8 +93,6 @@ class TestTelnyxExporter:
         assert result.get("instructions", "") == ""
 
     def test_export_transfer_tool(self):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         graph = AgentGraph(
             nodes={
                 "main": AgentNode(
@@ -138,8 +123,6 @@ class TestTelnyxExporter:
         assert transfer_tools[0]["transfer"]["targets"][0]["name"] == "Sales"
 
     def test_export_hangup_tool(self):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         graph = AgentGraph(
             nodes={
                 "main": AgentNode(
@@ -168,8 +151,6 @@ class TestTelnyxExporter:
         assert hangup_tools[0]["hangup"]["description"] == "End the call"
 
     def test_export_transitions_as_handoff_tools(self):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         graph = AgentGraph(
             nodes={
                 "main": AgentNode(
@@ -207,8 +188,6 @@ class TestTelnyxExporter:
         assert assistants[1]["name"] == "Tech Support"
 
     def test_export_tool_deduplication(self):
-        from voicetest.exporters.telnyx import export_telnyx_config
-
         graph = AgentGraph(
             nodes={
                 "n1": AgentNode(
@@ -240,14 +219,10 @@ class TestTelnyxExporter:
         assert len(webhook_tools) == 1
 
     def test_exporter_class_format_id(self):
-        from voicetest.exporters.telnyx import TelnyxExporter
-
         exporter = TelnyxExporter()
         assert exporter.format_id == "telnyx"
 
     def test_exporter_class_get_info(self):
-        from voicetest.exporters.telnyx import TelnyxExporter
-
         exporter = TelnyxExporter()
         info = exporter.get_info()
         assert info.format_id == "telnyx"
@@ -255,10 +230,6 @@ class TestTelnyxExporter:
         assert info.ext == "json"
 
     def test_exporter_class_export_returns_json_string(self, single_node_graph):
-        import json
-
-        from voicetest.exporters.telnyx import TelnyxExporter
-
         exporter = TelnyxExporter()
         result = exporter.export(single_node_graph)
         assert isinstance(result, str)
@@ -266,9 +237,6 @@ class TestTelnyxExporter:
         assert "instructions" in parsed
 
     def test_roundtrip_import_export(self, sample_telnyx_config):
-        from voicetest.exporters.telnyx import export_telnyx_config
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_config)
         exported = export_telnyx_config(graph)
@@ -284,9 +252,6 @@ class TestTelnyxExporter:
         assert webhook_tools[0]["webhook"]["name"] == "check_order_status"
 
     def test_roundtrip_handoff(self, sample_telnyx_handoff_config):
-        from voicetest.exporters.telnyx import export_telnyx_config
-        from voicetest.importers.telnyx import TelnyxImporter
-
         importer = TelnyxImporter()
         graph = importer.import_agent(sample_telnyx_handoff_config)
         exported = export_telnyx_config(graph)

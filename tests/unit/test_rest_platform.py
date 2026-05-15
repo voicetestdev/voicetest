@@ -1,6 +1,17 @@
 """Tests for platform integration endpoints and sync functionality."""
 
+import json
+from unittest.mock import MagicMock
+
 import pytest
+
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.platforms.bland import BlandPlatformClient
+from voicetest.platforms.livekit import LiveKitPlatformClient
+from voicetest.platforms.registry import PlatformRegistry
+from voicetest.platforms.retell import RetellPlatformClient
+from voicetest.platforms.vapi import VapiPlatformClient
 
 
 class TestPlatformEndpoints:
@@ -78,9 +89,6 @@ class TestPlatformEndpoints:
 
     def test_list_retell_agents_mocked(self, db_client, monkeypatch):
         """List Retell agents with mocked client."""
-        from unittest.mock import MagicMock
-
-        from voicetest.platforms.retell import RetellPlatformClient
 
         # Configure platform first
         db_client.post(
@@ -109,9 +117,6 @@ class TestPlatformEndpoints:
 
     def test_list_vapi_agents_mocked(self, db_client, monkeypatch):
         """List VAPI agents with mocked client."""
-        from unittest.mock import MagicMock
-
-        from voicetest.platforms.vapi import VapiPlatformClient
 
         # Configure platform first
         db_client.post(
@@ -224,21 +229,8 @@ class TestSyncToPlatform:
         """Use platform_client (with cleared API keys and temp settings dir)."""
         return platform_client
 
-    def _create_agent_with_graph(self, db_client, graph, name):
-        """Helper to create an agent with a specific graph using the repository."""
-        from voicetest.rest import get_agent_repo
-
-        repo = get_agent_repo()
-        return repo.create(
-            name=name,
-            source_type=graph.source_type,
-            graph_json=graph.model_dump_json(),
-        )
-
-    def test_sync_status_no_platform_source(self, db_client):
+    def test_sync_status_no_platform_source(self, db_client, make_agent):
         """Sync status returns can_sync=False for non-platform agents."""
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={
@@ -252,7 +244,7 @@ class TestSyncToPlatform:
             source_type="custom",
         )
 
-        agent = self._create_agent_with_graph(db_client, graph, "Custom Agent")
+        agent = make_agent(name="Custom Agent", graph=graph)
         agent_id = agent["id"]
 
         status_response = db_client.get(f"/api/agents/{agent_id}/sync-status")
@@ -261,10 +253,8 @@ class TestSyncToPlatform:
         assert status["can_sync"] is False
         assert "not a supported platform" in status["reason"]
 
-    def test_sync_status_platform_no_remote_id(self, db_client):
+    def test_sync_status_platform_no_remote_id(self, db_client, make_agent):
         """Sync status returns can_sync=False when agent has no remote ID."""
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={
@@ -279,7 +269,7 @@ class TestSyncToPlatform:
             source_metadata={},
         )
 
-        agent = self._create_agent_with_graph(db_client, graph, "Retell Agent No ID")
+        agent = make_agent(name="Retell Agent No ID", graph=graph)
         agent_id = agent["id"]
 
         status_response = db_client.get(f"/api/agents/{agent_id}/sync-status")
@@ -289,10 +279,8 @@ class TestSyncToPlatform:
         assert status["platform"] == "retell"
         assert "No remote ID" in status["reason"]
 
-    def test_sync_status_platform_not_configured(self, db_client):
+    def test_sync_status_platform_not_configured(self, db_client, make_agent):
         """Sync status returns needs_configuration=True when platform not configured."""
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={
@@ -307,7 +295,7 @@ class TestSyncToPlatform:
             source_metadata={"conversation_flow_id": "flow-123"},
         )
 
-        agent = self._create_agent_with_graph(db_client, graph, "Retell Agent")
+        agent = make_agent(name="Retell Agent", graph=graph)
         agent_id = agent["id"]
 
         status_response = db_client.get(f"/api/agents/{agent_id}/sync-status")
@@ -319,10 +307,8 @@ class TestSyncToPlatform:
         assert status["needs_configuration"] is True
         assert "not configured" in status["reason"]
 
-    def test_sync_status_can_sync(self, db_client, monkeypatch):
+    def test_sync_status_can_sync(self, db_client, make_agent, monkeypatch):
         """Sync status returns can_sync=True when all conditions met."""
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
 
         monkeypatch.setenv("RETELL_API_KEY", "test-key")
 
@@ -339,7 +325,7 @@ class TestSyncToPlatform:
             source_metadata={"conversation_flow_id": "flow-123"},
         )
 
-        agent = self._create_agent_with_graph(db_client, graph, "Retell Agent")
+        agent = make_agent(name="Retell Agent", graph=graph)
         agent_id = agent["id"]
 
         status_response = db_client.get(f"/api/agents/{agent_id}/sync-status")
@@ -349,10 +335,8 @@ class TestSyncToPlatform:
         assert status["platform"] == "retell"
         assert status["remote_id"] == "flow-123"
 
-    def test_sync_status_bland_not_supported(self, db_client, monkeypatch):
+    def test_sync_status_bland_not_supported(self, db_client, make_agent, monkeypatch):
         """Sync status returns can_sync=False for Bland (doesn't support updates)."""
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
 
         monkeypatch.setenv("BLAND_API_KEY", "test-key")
 
@@ -369,7 +353,7 @@ class TestSyncToPlatform:
             source_metadata={"agent_id": "agent-123"},
         )
 
-        agent = self._create_agent_with_graph(db_client, graph, "Bland Agent")
+        agent = make_agent(name="Bland Agent", graph=graph)
         agent_id = agent["id"]
 
         status_response = db_client.get(f"/api/agents/{agent_id}/sync-status")
@@ -381,10 +365,6 @@ class TestSyncToPlatform:
 
     def test_sync_agent_not_found(self, db_client):
         """Sync returns 404 for non-existent agent."""
-        import json
-
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={
@@ -404,12 +384,8 @@ class TestSyncToPlatform:
         )
         assert response.status_code == 404
 
-    def test_sync_platform_not_supported(self, db_client):
+    def test_sync_platform_not_supported(self, db_client, make_agent):
         """Sync returns 400 for non-platform source."""
-        import json
-
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
 
         graph = AgentGraph(
             nodes={
@@ -423,7 +399,7 @@ class TestSyncToPlatform:
             source_type="custom",
         )
 
-        agent = self._create_agent_with_graph(db_client, graph, "Custom Agent")
+        agent = make_agent(name="Custom Agent", graph=graph)
         agent_id = agent["id"]
 
         sync_response = db_client.post(
@@ -433,12 +409,8 @@ class TestSyncToPlatform:
         assert sync_response.status_code == 400
         assert "not a supported platform" in sync_response.json()["detail"]
 
-    def test_sync_no_remote_id(self, db_client, monkeypatch):
+    def test_sync_no_remote_id(self, db_client, make_agent, monkeypatch):
         """Sync returns 400 when agent has no remote ID."""
-        import json
-
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
 
         monkeypatch.setenv("RETELL_API_KEY", "test-key")
 
@@ -455,7 +427,7 @@ class TestSyncToPlatform:
             source_metadata={},
         )
 
-        agent = self._create_agent_with_graph(db_client, graph, "Retell Agent")
+        agent = make_agent(name="Retell Agent", graph=graph)
         agent_id = agent["id"]
 
         sync_response = db_client.post(
@@ -465,14 +437,8 @@ class TestSyncToPlatform:
         assert sync_response.status_code == 400
         assert "No remote ID" in sync_response.json()["detail"]
 
-    def test_sync_retell_success_mocked(self, db_client, monkeypatch):
+    def test_sync_retell_success_mocked(self, db_client, make_agent, monkeypatch):
         """Sync to Retell calls update_agent correctly."""
-        import json
-        from unittest.mock import MagicMock
-
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.platforms.retell import RetellPlatformClient
 
         monkeypatch.setenv("RETELL_API_KEY", "test-key")
 
@@ -489,7 +455,7 @@ class TestSyncToPlatform:
             source_metadata={"conversation_flow_id": "flow-123"},
         )
 
-        agent = self._create_agent_with_graph(db_client, graph, "Retell Agent")
+        agent = make_agent(name="Retell Agent", graph=graph)
         agent_id = agent["id"]
 
         mock_flow = MagicMock()
@@ -516,14 +482,8 @@ class TestSyncToPlatform:
 
         mock_client.conversation_flow.update.assert_called_once()
 
-    def test_sync_vapi_success_mocked(self, db_client, monkeypatch):
+    def test_sync_vapi_success_mocked(self, db_client, make_agent, monkeypatch):
         """Sync to VAPI calls update_agent correctly."""
-        import json
-        from unittest.mock import MagicMock
-
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-        from voicetest.platforms.vapi import VapiPlatformClient
 
         monkeypatch.setenv("VAPI_API_KEY", "test-key")
 
@@ -540,7 +500,7 @@ class TestSyncToPlatform:
             source_metadata={"assistant_id": "asst-456"},
         )
 
-        agent = self._create_agent_with_graph(db_client, graph, "VAPI Agent")
+        agent = make_agent(name="VAPI Agent", graph=graph)
         agent_id = agent["id"]
 
         mock_assistant = MagicMock()
@@ -573,7 +533,6 @@ class TestPlatformSupportsUpdate:
 
     def test_retell_supports_update(self):
         """Retell platform supports updates."""
-        from voicetest.platforms.retell import RetellPlatformClient
 
         client = RetellPlatformClient()
         assert client.supports_update is True
@@ -581,7 +540,6 @@ class TestPlatformSupportsUpdate:
 
     def test_vapi_supports_update(self):
         """VAPI platform supports updates."""
-        from voicetest.platforms.vapi import VapiPlatformClient
 
         client = VapiPlatformClient()
         assert client.supports_update is True
@@ -589,7 +547,6 @@ class TestPlatformSupportsUpdate:
 
     def test_livekit_supports_update(self):
         """LiveKit platform supports updates."""
-        from voicetest.platforms.livekit import LiveKitPlatformClient
 
         client = LiveKitPlatformClient()
         assert client.supports_update is True
@@ -597,7 +554,6 @@ class TestPlatformSupportsUpdate:
 
     def test_bland_does_not_support_update(self):
         """Bland platform does not support updates."""
-        from voicetest.platforms.bland import BlandPlatformClient
 
         client = BlandPlatformClient()
         assert client.supports_update is False
@@ -605,7 +561,6 @@ class TestPlatformSupportsUpdate:
 
     def test_bland_update_agent_raises(self):
         """Bland update_agent raises NotImplementedError."""
-        from voicetest.platforms.bland import BlandPlatformClient
 
         client = BlandPlatformClient()
         with pytest.raises(NotImplementedError) as exc_info:
@@ -618,8 +573,6 @@ class TestPlatformRegistrySupportsUpdate:
 
     def test_registry_supports_update_retell(self):
         """Registry returns True for Retell."""
-        from voicetest.platforms.registry import PlatformRegistry
-        from voicetest.platforms.retell import RetellPlatformClient
 
         registry = PlatformRegistry()
         registry.register(RetellPlatformClient())
@@ -628,8 +581,6 @@ class TestPlatformRegistrySupportsUpdate:
 
     def test_registry_supports_update_bland(self):
         """Registry returns False for Bland."""
-        from voicetest.platforms.bland import BlandPlatformClient
-        from voicetest.platforms.registry import PlatformRegistry
 
         registry = PlatformRegistry()
         registry.register(BlandPlatformClient())
@@ -638,9 +589,6 @@ class TestPlatformRegistrySupportsUpdate:
 
     def test_registry_get_remote_id_key(self):
         """Registry returns correct remote ID key."""
-        from voicetest.platforms.registry import PlatformRegistry
-        from voicetest.platforms.retell import RetellPlatformClient
-        from voicetest.platforms.vapi import VapiPlatformClient
 
         registry = PlatformRegistry()
         registry.register(RetellPlatformClient())
@@ -651,7 +599,6 @@ class TestPlatformRegistrySupportsUpdate:
 
     def test_registry_supports_update_unknown_platform(self):
         """Registry raises ValueError for unknown platform."""
-        from voicetest.platforms.registry import PlatformRegistry
 
         registry = PlatformRegistry()
 

@@ -1,6 +1,12 @@
 """Tests for agent CRUD, variables, test cases, gallery, and snippet endpoints."""
 
+import json
+import os
+
 import pytest
+
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
 
 
 class TestAgentsCRUD:
@@ -27,8 +33,6 @@ class TestAgentsCRUD:
         assert agent["source_type"] == "retell"
 
     def test_create_agent_from_path(self, db_client, tmp_path, sample_retell_config):
-        import json
-
         agent_file = tmp_path / "agent.json"
         agent_file.write_text(json.dumps(sample_retell_config))
 
@@ -49,9 +53,6 @@ class TestAgentsCRUD:
     def test_create_agent_relative_path_stored_as_absolute(
         self, db_client, tmp_path, sample_retell_config, monkeypatch
     ):
-        import json
-        import os
-
         agent_file = tmp_path / "agent.json"
         agent_file.write_text(json.dumps(sample_retell_config))
 
@@ -109,8 +110,6 @@ class TestAgentsCRUD:
         assert "Could not auto-detect" in response.json()["detail"]
 
     def test_create_agent_invalid_config_json(self, db_client, tmp_path, sample_retell_config):
-        import json
-
         # Valid JSON but missing required fields
         bad_config = {"nodes": []}
         bad_file = tmp_path / "bad_config.json"
@@ -252,17 +251,11 @@ class TestAgentsCRUD:
 class TestAgentVariablesEndpoint:
     """Tests for GET /agents/{id}/variables endpoint."""
 
-    def test_get_variables_from_dynamic_graph(self, db_client, graph_with_dynamic_variables):
+    def test_get_variables_from_dynamic_graph(
+        self, db_client, make_agent, graph_with_dynamic_variables
+    ):
         """Agent with {{var}} placeholders returns extracted variable names."""
-        from voicetest.rest import get_agent_repo
-
-        repo = get_agent_repo()
-        agent = repo.create(
-            name="Vars Agent",
-            source_type="custom",
-            graph_json=graph_with_dynamic_variables.model_dump_json(),
-        )
-        agent_id = agent["id"]
+        agent_id = make_agent(name="Vars Agent", graph=graph_with_dynamic_variables)["id"]
 
         response = db_client.get(f"/api/agents/{agent_id}/variables")
         assert response.status_code == 200
@@ -394,21 +387,7 @@ class TestGalleryEndpoint:
 class TestSnippetEndpoints:
     """Tests for snippet CRUD and DRY analysis endpoints."""
 
-    def _create_agent_with_graph(self, db_client, graph):
-        """Helper to create an agent with a specific graph."""
-        from voicetest.rest import get_agent_repo
-
-        repo = get_agent_repo()
-        return repo.create(
-            name="Snippet Test Agent",
-            source_type=graph.source_type,
-            graph_json=graph.model_dump_json(),
-        )
-
     def _make_graph(self, snippets=None, **node_prompts):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         nodes = {}
         first_id = None
         for node_id, prompt in node_prompts.items():
@@ -423,10 +402,9 @@ class TestSnippetEndpoints:
             snippets=snippets or {},
         )
 
-    def test_get_snippets(self, db_client):
+    def test_get_snippets(self, db_client, make_agent):
         graph = self._make_graph(snippets={"greeting": "Hello!", "signoff": "Bye!"}, a="main")
-        agent = self._create_agent_with_graph(db_client, graph)
-        agent_id = agent["id"]
+        agent_id = make_agent(name="Snippet Test Agent", graph=graph)["id"]
 
         response = db_client.get(f"/api/agents/{agent_id}/snippets")
         assert response.status_code == 200
@@ -437,10 +415,9 @@ class TestSnippetEndpoints:
         response = db_client.get("/api/agents/nonexistent/snippets")
         assert response.status_code == 404
 
-    def test_update_snippet(self, db_client):
+    def test_update_snippet(self, db_client, make_agent):
         graph = self._make_graph(a="main")
-        agent = self._create_agent_with_graph(db_client, graph)
-        agent_id = agent["id"]
+        agent_id = make_agent(name="Snippet Test Agent", graph=graph)["id"]
 
         response = db_client.put(
             f"/api/agents/{agent_id}/snippets/greeting",
@@ -452,10 +429,9 @@ class TestSnippetEndpoints:
         get_response = db_client.get(f"/api/agents/{agent_id}/snippets")
         assert get_response.json()["snippets"]["greeting"] == "Hello world!"
 
-    def test_delete_snippet(self, db_client):
+    def test_delete_snippet(self, db_client, make_agent):
         graph = self._make_graph(snippets={"greeting": "Hello!"}, a="main")
-        agent = self._create_agent_with_graph(db_client, graph)
-        agent_id = agent["id"]
+        agent_id = make_agent(name="Snippet Test Agent", graph=graph)["id"]
 
         response = db_client.delete(f"/api/agents/{agent_id}/snippets/greeting")
         assert response.status_code == 200
@@ -464,21 +440,19 @@ class TestSnippetEndpoints:
         get_response = db_client.get(f"/api/agents/{agent_id}/snippets")
         assert "greeting" not in get_response.json()["snippets"]
 
-    def test_delete_snippet_not_found(self, db_client):
+    def test_delete_snippet_not_found(self, db_client, make_agent):
         graph = self._make_graph(a="main")
-        agent = self._create_agent_with_graph(db_client, graph)
-        agent_id = agent["id"]
+        agent_id = make_agent(name="Snippet Test Agent", graph=graph)["id"]
 
         response = db_client.delete(f"/api/agents/{agent_id}/snippets/nonexistent")
         assert response.status_code == 404
 
-    def test_analyze_dry(self, db_client):
+    def test_analyze_dry(self, db_client, make_agent):
         graph = self._make_graph(
             a="Always be polite and professional in every interaction. Task A.",
             b="Always be polite and professional in every interaction. Task B.",
         )
-        agent = self._create_agent_with_graph(db_client, graph)
-        agent_id = agent["id"]
+        agent_id = make_agent(name="Snippet Test Agent", graph=graph)["id"]
 
         response = db_client.post(f"/api/agents/{agent_id}/analyze-dry")
         assert response.status_code == 200
@@ -487,13 +461,12 @@ class TestSnippetEndpoints:
         assert "fuzzy" in data
         assert len(data["exact"]) > 0
 
-    def test_apply_snippets(self, db_client):
+    def test_apply_snippets(self, db_client, make_agent):
         graph = self._make_graph(
             a="Always be polite. Task A.",
             b="Always be polite. Task B.",
         )
-        agent = self._create_agent_with_graph(db_client, graph)
-        agent_id = agent["id"]
+        agent_id = make_agent(name="Snippet Test Agent", graph=graph)["id"]
 
         response = db_client.post(
             f"/api/agents/{agent_id}/apply-snippets",
@@ -510,12 +483,12 @@ class TestSnippetEndpoints:
         assert "{%tone%}" in data["nodes"]["a"]["state_prompt"]
         assert "{%tone%}" in data["nodes"]["b"]["state_prompt"]
 
-    def test_export_expanded(self, db_client):
+    def test_export_expanded(self, db_client, make_agent):
         graph = self._make_graph(
             snippets={"greeting": "Hello!"},
             a="{%greeting%} Welcome to support.",
         )
-        self._create_agent_with_graph(db_client, graph)
+        make_agent(name="Snippet Test Agent", graph=graph)
 
         # Export with expanded=True should resolve snippet refs
         response = db_client.post(

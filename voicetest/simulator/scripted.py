@@ -17,8 +17,8 @@ from collections.abc import Callable
 
 from voicetest.llm import _invoke_callback
 from voicetest.models.results import Message
-from voicetest.retry import OnErrorCallback
 from voicetest.simulator.user_sim import SimulatorResponse
+from voicetest.util.retry import OnErrorCallback
 
 
 # Same shape as UserSimulator's OnTokenCallback so the runner can pass either.

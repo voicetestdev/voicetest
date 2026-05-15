@@ -4,6 +4,10 @@ These tests require the 'macos' optional dependency group:
     uv sync --extra macos
 """
 
+# ruff: noqa: PLC0415
+# `pytest.importorskip` below runs after module-level imports, so we defer
+# importing voicetest.plugins.mlx (which pulls in mlx_audio) into each test body.
+
 import pytest
 
 

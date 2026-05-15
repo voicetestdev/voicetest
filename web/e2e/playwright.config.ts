@@ -34,7 +34,8 @@ export default defineConfig({
     command: `cd .. && uv run voicetest serve --port ${E2E_PORT}`,
     url: `http://localhost:${E2E_PORT}`,
     reuseExistingServer: false,
-    timeout: 15000,
+    // CI cold-start (uv resolve + lifespan init) takes ~13s; 15s leaves no margin.
+    timeout: 30000,
     env: {
       VOICETEST_DB_PATH: dbPath,
     },

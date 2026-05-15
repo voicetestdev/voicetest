@@ -1,6 +1,7 @@
 """Tests for decomposition data models."""
 
 from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
 from voicetest.models.decompose import DecompositionPlan
 from voicetest.models.decompose import DecompositionResult
 from voicetest.models.decompose import HandoffRule
@@ -253,8 +254,6 @@ class TestOrchestratorManifest:
 
 class TestDecompositionResult:
     def test_basic(self):
-        from voicetest.models.agent import AgentNode
-
         sub_graph = AgentGraph(
             nodes={
                 "greeting": AgentNode(
@@ -301,8 +300,6 @@ class TestDecompositionResult:
         assert result.manifest.entry_sub_agent_id == "main"
 
     def test_serialization_roundtrip(self):
-        from voicetest.models.agent import AgentNode
-
         sub_graph = AgentGraph(
             nodes={
                 "n1": AgentNode(id="n1", state_prompt="Node 1", transitions=[]),

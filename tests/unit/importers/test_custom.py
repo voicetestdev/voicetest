@@ -4,19 +4,19 @@ from pathlib import Path
 
 import pytest
 
+from voicetest.importers.custom import CustomImporter
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+
 
 class TestCustomImporter:
     """Tests for custom Python function importer."""
 
     def test_source_type(self):
-        from voicetest.importers.custom import CustomImporter
-
         importer = CustomImporter()
         assert importer.source_type == "custom"
 
     def test_can_import_callable(self):
-        from voicetest.importers.custom import CustomImporter
-
         importer = CustomImporter()
 
         def my_func():
@@ -26,8 +26,6 @@ class TestCustomImporter:
         assert importer.can_import(lambda: None) is True
 
     def test_can_import_rejects_non_callable(self):
-        from voicetest.importers.custom import CustomImporter
-
         importer = CustomImporter()
         assert importer.can_import("string") is False
         assert importer.can_import({"dict": "value"}) is False
@@ -35,10 +33,6 @@ class TestCustomImporter:
         assert importer.can_import(Path("/some/path")) is False
 
     def test_import_agent_from_function(self):
-        from voicetest.importers.custom import CustomImporter
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         importer = CustomImporter()
 
         def create_agent() -> AgentGraph:
@@ -58,10 +52,6 @@ class TestCustomImporter:
         assert len(graph.nodes) == 2
 
     def test_import_agent_from_lambda(self):
-        from voicetest.importers.custom import CustomImporter
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         importer = CustomImporter()
 
         graph = importer.import_agent(
@@ -76,16 +66,12 @@ class TestCustomImporter:
         assert graph.entry_node_id == "n"
 
     def test_import_agent_non_callable_raises(self):
-        from voicetest.importers.custom import CustomImporter
-
         importer = CustomImporter()
 
         with pytest.raises(TypeError, match="callable"):
             importer.import_agent("not a function")
 
     def test_import_agent_wrong_return_type_raises(self):
-        from voicetest.importers.custom import CustomImporter
-
         importer = CustomImporter()
 
         def bad_func():
@@ -95,8 +81,6 @@ class TestCustomImporter:
             importer.import_agent(bad_func)
 
     def test_get_info(self):
-        from voicetest.importers.custom import CustomImporter
-
         importer = CustomImporter()
         info = importer.get_info()
 

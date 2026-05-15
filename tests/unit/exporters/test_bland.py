@@ -2,6 +2,8 @@
 
 import pytest
 
+from voicetest.exporters.bland import export_bland_config
+from voicetest.importers.bland import BlandImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import ToolDefinition
@@ -11,26 +13,18 @@ class TestBlandExporter:
     """Tests for Bland AI inbound config exporter."""
 
     def test_export_returns_dict(self, single_node_graph):
-        from voicetest.exporters.bland import export_bland_config
-
         result = export_bland_config(single_node_graph)
         assert isinstance(result, dict)
 
     def test_export_has_prompt(self, single_node_graph):
-        from voicetest.exporters.bland import export_bland_config
-
         result = export_bland_config(single_node_graph)
         assert "prompt" in result
 
     def test_export_prompt_from_entry_node(self, single_node_graph):
-        from voicetest.exporters.bland import export_bland_config
-
         result = export_bland_config(single_node_graph)
         assert result["prompt"] == "You are a helpful assistant."
 
     def test_export_tools_converted(self, sample_graph_with_tools):
-        from voicetest.exporters.bland import export_bland_config
-
         result = export_bland_config(sample_graph_with_tools)
 
         assert "tools" in result
@@ -39,8 +33,6 @@ class TestBlandExporter:
         assert result["tools"][0]["description"] == "Get information"
 
     def test_export_tool_parameters(self, sample_graph_with_tools):
-        from voicetest.exporters.bland import export_bland_config
-
         result = export_bland_config(sample_graph_with_tools)
 
         tool = result["tools"][0]
@@ -48,8 +40,6 @@ class TestBlandExporter:
         assert tool["input_schema"]["type"] == "object"
 
     def test_export_preserves_source_metadata(self, sample_graph_with_metadata):
-        from voicetest.exporters.bland import export_bland_config
-
         result = export_bland_config(sample_graph_with_metadata)
 
         assert result["phone_number"] == "+1234567890"
@@ -58,8 +48,6 @@ class TestBlandExporter:
         assert result["max_duration"] == 900
 
     def test_export_empty_graph(self):
-        from voicetest.exporters.bland import export_bland_config
-
         graph = AgentGraph(
             nodes={},
             entry_node_id="",
@@ -73,8 +61,6 @@ class TestBlandExporter:
         assert "prompt" not in result or result.get("prompt") in (None, "")
 
     def test_export_node_metadata_first_sentence(self):
-        from voicetest.exporters.bland import export_bland_config
-
         graph = AgentGraph(
             nodes={
                 "main": AgentNode(
@@ -94,9 +80,6 @@ class TestBlandExporter:
         assert result["first_sentence"] == "Hi there!"
 
     def test_roundtrip_import_export(self, sample_bland_config):
-        from voicetest.exporters.bland import export_bland_config
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
         graph = importer.import_agent(sample_bland_config)
         exported = export_bland_config(graph)

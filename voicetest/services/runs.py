@@ -1,17 +1,26 @@
 """Run service: persisted test run management."""
 
+from datetime import datetime
+import logging
+
 from voicetest.engine.session import ConversationRunner
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
+from voicetest.services.agents import AgentService
 from voicetest.services.settings import SettingsService
+from voicetest.services.testing.execution import TestExecutionService
 from voicetest.services.testing.execution import resolve_run_options
 from voicetest.simulator.scripted import ScriptedUserSimulator
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
+
+
+_logger = logging.getLogger(__name__)
 
 
 class RunService:
@@ -22,11 +31,15 @@ class RunService:
         run_repo: RunRepository,
         agent_repo: AgentRepository,
         test_case_repo: TestCaseRepository,
+        agent_service: AgentService,
+        test_execution_service: TestExecutionService,
         settings_service: SettingsService,
     ):
         self._runs = run_repo
         self._agents = agent_repo
         self._tests = test_case_repo
+        self._agent_service = agent_service
+        self._test_execution = test_execution_service
         self._settings = settings_service
 
     def create_run(self, agent_id: str) -> dict:
@@ -104,9 +117,62 @@ class RunService:
         """Update a result's transcript."""
         self._runs.update_transcript(result_id, transcript)
 
+    def result_to_dict(self, db_result) -> dict:
+        """Render an ORM Result row as a plain dict (transport-shaped)."""
+        return self._runs._result_to_dict(db_result)
+
     def update_audio_eval(self, result_id: str, transformed, audio_metrics) -> None:
         """Update a result with audio eval data."""
         self._runs.update_audio_eval(result_id, transformed, audio_metrics)
+
+    async def save_call_as_run(self, call: dict) -> str | None:
+        """Convert a completed call into a Run with a single Result.
+
+        Evaluates the agent's configured global metrics against the transcript.
+        Returns the new run_id, or None if the call has no transcript.
+        """
+        transcript_data = call.get("transcript_json") or []
+        if not transcript_data:
+            return None
+
+        agent_id = call["agent_id"]
+        call_id = call["id"]
+        transcript = [Message(**m) for m in transcript_data]
+
+        duration_ms = None
+        if call.get("started_at") and call.get("ended_at"):
+            started = datetime.fromisoformat(call["started_at"])
+            ended = datetime.fromisoformat(call["ended_at"])
+            duration_ms = int((ended - started).total_seconds() * 1000)
+
+        turn_count = len(transcript) // 2
+
+        metrics_config = self._agent_service.get_metrics_config(agent_id)
+        metric_results: list[MetricResult] = []
+        if metrics_config and metrics_config.global_metrics:
+            try:
+                metric_results = await self._test_execution.evaluate_global_metrics(
+                    transcript, metrics_config
+                )
+            except Exception:
+                _logger.exception("Failed to evaluate global metrics for call %s", call_id)
+
+        status = "pass" if all(r.passed for r in metric_results) else "fail"
+
+        test_result = TestResult(
+            test_name="Live Call",
+            status=status,
+            transcript=transcript,
+            metric_results=metric_results,
+            turn_count=turn_count,
+            duration_ms=duration_ms,
+            end_reason="user_ended",
+        )
+
+        run = self.create_run(agent_id)
+        self.add_result(run["id"], test_result, call_id=call_id)
+        self.complete(run["id"])
+        return run["id"]
 
     def add_result_from_call(self, run_id: str, call_id: str, test_result) -> str:
         """Back-compat alias — prefer add_result(run_id, result, call_id=...).

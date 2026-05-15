@@ -12,7 +12,7 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
-from voicetest.settings import load_settings
+from voicetest.services.settings import SettingsService
 
 
 _TERMINAL_TOOL_TYPES = {"end_call", "transfer_call"}
@@ -33,6 +33,9 @@ class RetellCFExporter:
 
     format_id = "retell-cf"
 
+    def __init__(self, settings_service: SettingsService):
+        self._settings_service = settings_service
+
     def get_info(self) -> ExporterInfo:
         return ExporterInfo(
             format_id=self.format_id,
@@ -49,14 +52,15 @@ class RetellCFExporter:
         Preserves agent-level fields (voice_id, language, etc.) from
         the original import when available.
         """
-        cf = export_retell_cf(graph)
+        layout_enabled = self._settings_service.get_settings().export.layout
+        cf = export_retell_cf(graph, layout_enabled=layout_enabled)
         metadata = graph.source_metadata or {}
         agent_envelope = metadata.get("agent_envelope")
         agent_wrapper = _wrap_for_retell_ui(cf, agent_envelope)
         return json.dumps(agent_wrapper, indent=2)
 
 
-def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
+def export_retell_cf(graph: AgentGraph, *, layout_enabled: bool = False) -> dict[str, Any]:
     """Export AgentGraph to Retell Conversation Flow format.
 
     Converts the unified AgentGraph representation to Retell's Conversation
@@ -64,13 +68,12 @@ def export_retell_cf(graph: AgentGraph) -> dict[str, Any]:
 
     Args:
         graph: The agent graph to export.
+        layout_enabled: If True, compute node positions for the Retell UI.
 
     Returns:
         Dictionary in Retell Conversation Flow JSON format.
     """
     metadata = graph.source_metadata or {}
-    settings = load_settings()
-    layout_enabled = settings.export.layout
 
     positions: dict[str, dict[str, float]] = {}
     if layout_enabled:

@@ -4,7 +4,6 @@ Handles call lifecycle: room creation, token generation, subprocess management.
 """
 
 import asyncio
-import contextlib
 from dataclasses import dataclass
 from dataclasses import field
 import json
@@ -16,8 +15,8 @@ from uuid import uuid4
 from livekit import api as livekit_api
 
 from voicetest.models.agent import AgentGraph
-from voicetest.services import get_settings_service
 from voicetest.services.settings import SettingsService
+from voicetest.web.broadcast import SessionRegistry
 
 
 @dataclass
@@ -54,10 +53,8 @@ class ActiveCall:
     call_id: str
     room_name: str
     process: subprocess.Popen | None = None
-    websockets: set = field(default_factory=set)
     transcript: list = field(default_factory=list)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
-    message_queue: list = field(default_factory=list)
 
 
 class CallManager:
@@ -69,7 +66,7 @@ class CallManager:
         config: LiveKitConfig | None = None,
     ):
         self.config = config or LiveKitConfig.from_env()
-        self._active_calls: dict[str, ActiveCall] = {}
+        self._sessions: SessionRegistry[ActiveCall] = SessionRegistry()
         self._settings = settings_service
 
     async def create_room(self, room_name: str) -> None:
@@ -141,7 +138,7 @@ class CallManager:
             call_id=call_record["id"],
             room_name=room_name,
         )
-        self._active_calls[call_record["id"]] = active_call
+        self._sessions.register(call_record["id"], active_call)
 
         graph_json = graph.model_dump_json()
         agent_token = self.generate_token(room_name, "agent", is_agent=True)
@@ -153,7 +150,7 @@ class CallManager:
             "run",
             "python",
             "-m",
-            "voicetest.agent_worker",
+            "voicetest.livecall.agent_worker",
             "--room",
             room_name,
             "--url",
@@ -206,10 +203,9 @@ class CallManager:
         call_repo: Any,
     ) -> None:
         """Monitor agent worker stdout for transcript updates."""
-        if call_id not in self._active_calls:
+        active_call = self._sessions.get(call_id)
+        if active_call is None:
             return
-
-        active_call = self._active_calls[call_id]
 
         try:
             loop = asyncio.get_running_loop()
@@ -226,7 +222,7 @@ class CallManager:
                             if data.get("type") == "transcript":
                                 active_call.transcript.append(data["message"])
                                 call_repo.update_transcript(call_id, active_call.transcript)
-                                await self._broadcast_update(
+                                await self._sessions.broadcast(
                                     call_id,
                                     {
                                         "type": "transcript_update",
@@ -243,13 +239,13 @@ class CallManager:
             # Broadcast error if process exited unexpectedly
             if exit_code != 0 and not active_call.cancel_event.is_set():
                 error_msg = f"Agent worker exited with code {exit_code} (check logs for details)"
-                await self._broadcast_update(
+                await self._sessions.broadcast(
                     call_id,
                     {"type": "error", "message": error_msg},
                 )
 
         except Exception as e:
-            await self._broadcast_update(
+            await self._sessions.broadcast(
                 call_id,
                 {"type": "error", "message": str(e)},
             )
@@ -261,34 +257,12 @@ class CallManager:
                 except subprocess.TimeoutExpired:
                     process.kill()
 
-    async def _broadcast_update(self, call_id: str, data: dict) -> None:
-        """Broadcast update to all WebSocket clients watching this call."""
-        if call_id not in self._active_calls:
-            return
-
-        active_call = self._active_calls[call_id]
-        message = json.dumps(data)
-
-        if not active_call.websockets:
-            active_call.message_queue.append(message)
-            return
-
-        dead_sockets = []
-        for ws in active_call.websockets:
-            try:
-                await ws.send_text(message)
-            except Exception:
-                dead_sockets.append(ws)
-
-        for ws in dead_sockets:
-            active_call.websockets.discard(ws)
-
     async def end_call(self, call_id: str, call_repo: Any) -> dict | None:
         """End a call and clean up resources."""
-        if call_id not in self._active_calls:
+        active_call = self._sessions.get(call_id)
+        if active_call is None:
             return call_repo.end_call(call_id)
 
-        active_call = self._active_calls[call_id]
         active_call.cancel_event.set()
 
         if active_call.process and active_call.process.poll() is None:
@@ -298,47 +272,17 @@ class CallManager:
             except subprocess.TimeoutExpired:
                 active_call.process.kill()
 
-        await self._broadcast_update(call_id, {"type": "call_ended"})
-
-        for ws in list(active_call.websockets):
-            with contextlib.suppress(Exception):
-                await ws.close()
-
-        del self._active_calls[call_id]
+        await self._sessions.close(call_id, {"type": "call_ended"})
 
         return call_repo.end_call(call_id)
 
     def get_active_call(self, call_id: str) -> ActiveCall | None:
         """Get active call state."""
-        return self._active_calls.get(call_id)
+        return self._sessions.get(call_id)
 
-    def register_websocket(self, call_id: str, websocket: Any) -> list[str]:
-        """Register a WebSocket for call updates.
+    async def attach_websocket(self, call_id: str, websocket: Any) -> None:
+        """Subscribe a WebSocket to call updates (after replaying any backlog)."""
+        await self._sessions.attach(call_id, websocket)
 
-        Returns queued messages for replay.
-        """
-        if call_id not in self._active_calls:
-            return []
-
-        active_call = self._active_calls[call_id]
-        active_call.websockets.add(websocket)
-
-        queued = active_call.message_queue
-        active_call.message_queue = []
-        return queued
-
-    def unregister_websocket(self, call_id: str, websocket: Any) -> None:
-        """Unregister a WebSocket from call updates."""
-        if call_id in self._active_calls:
-            self._active_calls[call_id].websockets.discard(websocket)
-
-
-_call_manager: CallManager | None = None
-
-
-def get_call_manager() -> CallManager:
-    """Get or create the global CallManager instance."""
-    global _call_manager
-    if _call_manager is None:
-        _call_manager = CallManager(get_settings_service())
-    return _call_manager
+    def detach_websocket(self, call_id: str, websocket: Any) -> None:
+        self._sessions.detach(call_id, websocket)

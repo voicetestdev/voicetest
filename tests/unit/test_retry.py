@@ -1,16 +1,23 @@
-"""Tests for voicetest.retry module."""
+"""Tests for voicetest.util.retry module."""
 
+import dspy
+from dspy.utils.exceptions import AdapterParseError
 import litellm
 import openai
 import pytest
+
+from voicetest.exceptions import QuotaExhaustedError
+from voicetest.util.retry import EmptyLLMOutputError
+from voicetest.util.retry import RetryError
+from voicetest.util.retry import _calculate_delay
+from voicetest.util.retry import with_retry
+from voicetest.util.retry import with_retry_sync
 
 
 class TestWithRetry:
     """Tests for with_retry async function."""
 
     async def test_success_on_first_attempt(self):
-        from voicetest.retry import with_retry
-
         call_count = 0
 
         async def succeed():
@@ -23,8 +30,6 @@ class TestWithRetry:
         assert call_count == 1
 
     async def test_retry_on_rate_limit_then_succeed(self):
-        from voicetest.retry import with_retry
-
         call_count = 0
 
         async def fail_then_succeed():
@@ -43,8 +48,6 @@ class TestWithRetry:
         assert call_count == 3
 
     async def test_raises_after_max_attempts(self):
-        from voicetest.retry import with_retry
-
         call_count = 0
 
         async def always_fail():
@@ -62,9 +65,6 @@ class TestWithRetry:
         assert call_count == 3
 
     async def test_on_error_callback_called(self):
-        from voicetest.retry import RetryError
-        from voicetest.retry import with_retry
-
         errors_received: list[RetryError] = []
 
         async def on_error(error: RetryError):
@@ -91,8 +91,6 @@ class TestWithRetry:
         assert errors_received[0].error_type == "RateLimitError"
 
     async def test_non_rate_limit_error_not_retried(self):
-        from voicetest.retry import with_retry
-
         call_count = 0
 
         async def raise_other_error():
@@ -110,8 +108,6 @@ class TestWithRetrySync:
     """Tests for with_retry_sync function."""
 
     def test_success_on_first_attempt(self):
-        from voicetest.retry import with_retry_sync
-
         call_count = 0
 
         def succeed():
@@ -124,8 +120,6 @@ class TestWithRetrySync:
         assert call_count == 1
 
     def test_retry_on_rate_limit_then_succeed(self):
-        from voicetest.retry import with_retry_sync
-
         call_count = 0
 
         def fail_then_succeed():
@@ -144,8 +138,6 @@ class TestWithRetrySync:
         assert call_count == 3
 
     def test_raises_after_max_attempts(self):
-        from voicetest.retry import with_retry_sync
-
         call_count = 0
 
         def always_fail():
@@ -164,8 +156,6 @@ class TestWithRetrySync:
 
     def test_on_error_callback_called(self):
         """on_error callback should be invoked on each retry attempt."""
-        from voicetest.retry import RetryError
-        from voicetest.retry import with_retry_sync
 
         errors_received: list[RetryError] = []
 
@@ -198,7 +188,6 @@ class TestRetryableExceptions:
 
     async def test_retry_on_timeout(self):
         """Should retry on litellm.Timeout."""
-        from voicetest.retry import with_retry
 
         call_count = 0
 
@@ -219,7 +208,6 @@ class TestRetryableExceptions:
 
     async def test_retry_on_api_connection_error(self):
         """Should retry on litellm.APIConnectionError."""
-        from voicetest.retry import with_retry
 
         call_count = 0
 
@@ -240,7 +228,6 @@ class TestRetryableExceptions:
 
     async def test_retry_on_openai_timeout(self):
         """Should retry on openai.APITimeoutError."""
-        from voicetest.retry import with_retry
 
         call_count = 0
 
@@ -257,8 +244,6 @@ class TestRetryableExceptions:
 
     async def test_on_error_reports_correct_type_for_timeout(self):
         """on_error should report correct error_type for different exceptions."""
-        from voicetest.retry import RetryError
-        from voicetest.retry import with_retry
 
         errors_received: list[RetryError] = []
 
@@ -285,10 +270,6 @@ class TestRetryableExceptions:
 
     async def test_retry_on_adapter_parse_error(self):
         """Should retry on DSPy AdapterParseError (malformed LLM output)."""
-        import dspy
-        from dspy.utils.exceptions import AdapterParseError
-
-        from voicetest.retry import with_retry
 
         # Create a minimal signature for the error constructor
         class DummySig(dspy.Signature):
@@ -319,8 +300,6 @@ class TestQuotaExhaustedNotRetried:
 
     async def test_quota_exhausted_not_retried_async(self):
         """Should immediately propagate QuotaExhaustedError without retrying."""
-        from voicetest.exceptions import QuotaExhaustedError
-        from voicetest.retry import with_retry
 
         call_count = 0
 
@@ -339,8 +318,6 @@ class TestQuotaExhaustedNotRetried:
 
     def test_quota_exhausted_not_retried_sync(self):
         """Should immediately propagate QuotaExhaustedError without retrying (sync)."""
-        from voicetest.exceptions import QuotaExhaustedError
-        from voicetest.retry import with_retry_sync
 
         call_count = 0
 
@@ -359,8 +336,6 @@ class TestCalculateDelay:
     """Tests for delay calculation."""
 
     def test_exponential_backoff(self):
-        from voicetest.retry import _calculate_delay
-
         # With base_delay=1.0, delays should be approximately 1, 2, 4, 8, 16...
         # (plus jitter up to 10%)
         delay1 = _calculate_delay(1, 1.0, 60.0)
@@ -372,8 +347,6 @@ class TestCalculateDelay:
         assert 4.0 <= delay3 <= 4.4
 
     def test_respects_max_delay(self):
-        from voicetest.retry import _calculate_delay
-
         # Attempt 10 with base_delay=1 would be 512s, but max_delay=60 caps it
         delay = _calculate_delay(10, 1.0, 60.0)
         assert delay <= 66.0  # 60 + 10% jitter
@@ -384,8 +357,6 @@ class TestEmptyLLMOutputError:
     returns None for a required output field after retries are exhausted."""
 
     def test_message_includes_field_and_model(self):
-        from voicetest.retry import EmptyLLMOutputError
-
         err = EmptyLLMOutputError(field_name="message", model="gemini/gemini-3.1-flash-lite")
 
         msg = str(err)
@@ -394,15 +365,11 @@ class TestEmptyLLMOutputError:
         assert "None" in msg
 
     def test_exposes_field_and_model_attributes(self):
-        from voicetest.retry import EmptyLLMOutputError
-
         err = EmptyLLMOutputError(field_name="answer", model="openai/gpt-4o-mini")
 
         assert err.field_name == "answer"
         assert err.model == "openai/gpt-4o-mini"
 
     def test_is_an_exception(self):
-        from voicetest.retry import EmptyLLMOutputError
-
         err = EmptyLLMOutputError(field_name="f", model="m")
         assert isinstance(err, Exception)

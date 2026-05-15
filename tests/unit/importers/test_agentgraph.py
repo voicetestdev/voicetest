@@ -1,18 +1,18 @@
 """Tests for voicetest.importers.agentgraph module."""
 
+from voicetest.importers.agentgraph import AgentGraphImporter
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+
 
 class TestAgentGraphImporter:
     """Tests for AgentGraph JSON importer."""
 
     def test_source_type(self):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-
         importer = AgentGraphImporter()
         assert importer.source_type == "agentgraph"
 
     def test_can_import_dict_with_required_fields(self):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-
         importer = AgentGraphImporter()
 
         valid_dict = {
@@ -23,24 +23,18 @@ class TestAgentGraphImporter:
         assert importer.can_import(valid_dict) is True
 
     def test_can_import_rejects_dict_without_nodes(self):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-
         importer = AgentGraphImporter()
 
         invalid_dict = {"entry_node_id": "start", "source_type": "test"}
         assert importer.can_import(invalid_dict) is False
 
     def test_can_import_rejects_dict_without_entry_node_id(self):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-
         importer = AgentGraphImporter()
 
         invalid_dict = {"nodes": {}, "source_type": "test"}
         assert importer.can_import(invalid_dict) is False
 
     def test_can_import_file(self, tmp_path):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-
         importer = AgentGraphImporter()
 
         agent_file = tmp_path / "agent.json"
@@ -49,8 +43,6 @@ class TestAgentGraphImporter:
         assert importer.can_import(str(agent_file)) is True
 
     def test_can_import_rejects_non_json_file(self, tmp_path):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-
         importer = AgentGraphImporter()
 
         txt_file = tmp_path / "agent.txt"
@@ -58,8 +50,6 @@ class TestAgentGraphImporter:
         assert importer.can_import(txt_file) is False
 
     def test_can_import_rejects_platform_format_file(self, tmp_path):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-
         importer = AgentGraphImporter()
 
         retell_file = tmp_path / "agent.json"
@@ -67,16 +57,12 @@ class TestAgentGraphImporter:
         assert importer.can_import(retell_file) is False
 
     def test_can_import_rejects_missing_file(self, tmp_path):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-
         importer = AgentGraphImporter()
 
         missing_file = tmp_path / "missing.json"
         assert importer.can_import(missing_file) is False
 
     def test_import_agent_from_dict(self):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-
         importer = AgentGraphImporter()
 
         config = {
@@ -94,10 +80,6 @@ class TestAgentGraphImporter:
         assert "start" in graph.nodes
 
     def test_import_agent_from_file(self, tmp_path):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         importer = AgentGraphImporter()
 
         sample_graph = AgentGraph(
@@ -115,8 +97,6 @@ class TestAgentGraphImporter:
         assert graph.entry_node_id == "greeting"
 
     def test_get_info(self):
-        from voicetest.importers.agentgraph import AgentGraphImporter
-
         importer = AgentGraphImporter()
         info = importer.get_info()
 

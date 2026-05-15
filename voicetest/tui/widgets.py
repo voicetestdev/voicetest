@@ -4,11 +4,11 @@ from textual.widgets import ListItem
 from textual.widgets import ListView
 from textual.widgets import Static
 
-from voicetest.formatting import format_flow
-from voicetest.formatting import status_color
-from voicetest.formatting import status_icon
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import TestCase
+from voicetest.util.formatting import format_flow
+from voicetest.util.formatting import status_color
+from voicetest.util.formatting import status_icon
 
 
 class TestListItem(ListItem):

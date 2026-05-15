@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sys
 
-from voicetest.rest import app
+from voicetest.web.rest import app
 
 
 def main() -> None:

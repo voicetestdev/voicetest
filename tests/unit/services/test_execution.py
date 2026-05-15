@@ -6,6 +6,7 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import GlobalMetric
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.results import Message
 from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import TestCase
@@ -101,7 +102,6 @@ class TestEvaluateGlobalMetrics:
     @pytest.mark.asyncio
     async def test_no_enabled_global_metrics(self, svc):
         """evaluate_global_metrics returns empty when no metrics are enabled."""
-        from voicetest.models.results import Message
 
         transcript = [
             Message(role="user", content="Hello"),
@@ -119,7 +119,6 @@ class TestEvaluateGlobalMetrics:
     @pytest.mark.asyncio
     async def test_empty_global_metrics(self, svc):
         """evaluate_global_metrics returns empty for empty global_metrics list."""
-        from voicetest.models.results import Message
 
         transcript = [
             Message(role="user", content="Hello"),

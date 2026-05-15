@@ -13,6 +13,7 @@ from textual.widgets import Static
 
 from voicetest.models.test_case import RunOptions
 from voicetest.runner import TestRunContext
+from voicetest.services import AppServices
 from voicetest.tui.widgets import ResultsPanel
 from voicetest.tui.widgets import TestList
 from voicetest.tui.widgets import TranscriptViewer
@@ -67,6 +68,7 @@ class VoicetestApp(App):
 
     def __init__(
         self,
+        services: AppServices,
         agent_path: Path,
         tests_path: Path,
         source: str | None = None,
@@ -75,6 +77,7 @@ class VoicetestApp(App):
     ):
         super().__init__()
         self.context = TestRunContext(
+            services=services,
             agent_path=agent_path,
             tests_path=tests_path,
             source=source,

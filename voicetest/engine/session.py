@@ -15,7 +15,7 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message
 from voicetest.models.results import ToolCall
 from voicetest.models.test_case import RunOptions
-from voicetest.retry import OnErrorCallback
+from voicetest.util.retry import OnErrorCallback
 
 
 # Callback type for turn updates: receives transcript after each turn

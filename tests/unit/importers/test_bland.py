@@ -1,20 +1,20 @@
 """Tests for voicetest.importers.bland module."""
 
+import json
+
 import pytest
+
+from voicetest.importers.bland import BlandImporter
 
 
 class TestBlandImporter:
     """Tests for Bland AI inbound number importer."""
 
     def test_source_type(self):
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
         assert importer.source_type == "bland"
 
     def test_can_import_dict_with_prompt_and_phone(self):
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
         config = {
             "prompt": "You are a helpful assistant",
@@ -23,8 +23,6 @@ class TestBlandImporter:
         assert importer.can_import(config) is True
 
     def test_can_import_dict_with_bland_fields(self):
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
         config = {
             "prompt": "You are a helpful assistant",
@@ -34,15 +32,11 @@ class TestBlandImporter:
         assert importer.can_import(config) is True
 
     def test_can_import_file_path(self, sample_bland_config_path):
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
         assert importer.can_import(sample_bland_config_path) is True
         assert importer.can_import(str(sample_bland_config_path)) is True
 
     def test_can_import_rejects_non_bland(self):
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
 
         # VAPI config (model is a dict)
@@ -61,8 +55,6 @@ class TestBlandImporter:
         assert importer.can_import({"prompt": "Hello"}) is False
 
     def test_import_agent_from_dict(self, sample_bland_config):
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
         graph = importer.import_agent(sample_bland_config)
 
@@ -72,8 +64,6 @@ class TestBlandImporter:
         assert "main" in graph.nodes
 
     def test_import_agent_from_path(self, sample_bland_config_path):
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
         graph = importer.import_agent(sample_bland_config_path)
 
@@ -81,8 +71,6 @@ class TestBlandImporter:
         assert graph.entry_node_id == "main"
 
     def test_node_instructions_from_prompt(self, sample_bland_config):
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
         graph = importer.import_agent(sample_bland_config)
 
@@ -90,8 +78,6 @@ class TestBlandImporter:
         assert node.state_prompt == sample_bland_config["prompt"]
 
     def test_tools_imported(self):
-        from voicetest.importers.bland import BlandImporter
-
         config = {
             "prompt": "You are a helpful assistant",
             "phone_number": "+1234567890",
@@ -120,8 +106,6 @@ class TestBlandImporter:
         assert "properties" in node.tools[0].parameters
 
     def test_source_metadata_captured(self, sample_bland_config):
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
         graph = importer.import_agent(sample_bland_config)
 
@@ -132,8 +116,6 @@ class TestBlandImporter:
         assert meta["max_duration"] == sample_bland_config["max_duration"]
 
     def test_node_metadata_includes_first_sentence(self):
-        from voicetest.importers.bland import BlandImporter
-
         config = {
             "prompt": "You are a helpful assistant",
             "phone_number": "+1234567890",
@@ -147,8 +129,6 @@ class TestBlandImporter:
         assert node.metadata.get("first_sentence") == "Hello, how can I help you today?"
 
     def test_get_info(self):
-        from voicetest.importers.bland import BlandImporter
-
         importer = BlandImporter()
         info = importer.get_info()
 
@@ -161,8 +141,6 @@ class TestBlandImporterEdgeCases:
     """Tests for edge cases and error handling."""
 
     def test_minimal_config(self):
-        from voicetest.importers.bland import BlandImporter
-
         config = {
             "prompt": "Hello",
             "phone_number": "+1234567890",
@@ -176,8 +154,6 @@ class TestBlandImporterEdgeCases:
         assert graph.nodes["main"].tools == []
 
     def test_transfer_list_preserved(self):
-        from voicetest.importers.bland import BlandImporter
-
         config = {
             "prompt": "Hello",
             "phone_number": "+1234567890",
@@ -193,8 +169,6 @@ class TestBlandImporterEdgeCases:
         assert graph.source_metadata["transfer_list"] == config["transfer_list"]
 
     def test_all_optional_fields_preserved(self):
-        from voicetest.importers.bland import BlandImporter
-
         config = {
             "prompt": "Hello",
             "phone_number": "+1234567890",
@@ -250,7 +224,6 @@ def sample_bland_config():
 @pytest.fixture
 def sample_bland_config_path(tmp_path, sample_bland_config):
     """Create a temp file with sample Bland config."""
-    import json
 
     path = tmp_path / "bland_config.json"
     path.write_text(json.dumps(sample_bland_config))

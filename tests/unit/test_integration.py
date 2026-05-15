@@ -8,11 +8,13 @@ from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
+from voicetest.models.results import TestResult
+from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
-from voicetest.services import get_agent_service
-from voicetest.services import get_evaluation_service
-from voicetest.services import get_test_execution_service
+from voicetest.services.agents import AgentService
+from voicetest.services.evaluation import EvaluationService
+from voicetest.services.testing.execution import TestExecutionService
 
 
 @pytest.fixture
@@ -69,20 +71,18 @@ class TestEndToEndFlow:
     """End-to-end integration tests."""
 
     @pytest.mark.asyncio
-    async def test_import_retell_config(self, sample_retell_config):
-        graph = await get_agent_service().import_agent(sample_retell_config)
+    async def test_import_retell_config(self, sample_retell_config, container):
+        graph = await container.resolve(AgentService).import_agent(sample_retell_config)
 
         assert graph.source_type == "retell"
         assert graph.entry_node_id == "greeting"
         assert len(graph.nodes) == 4
 
     @pytest.mark.asyncio
-    async def test_run_test_returns_result(self, simple_agent_graph, simple_test_case):
-        from voicetest.models.results import TestResult
-
+    async def test_run_test_returns_result(self, simple_agent_graph, simple_test_case, container):
         options = RunOptions(max_turns=2)
 
-        result = await get_test_execution_service().run_test(
+        result = await container.resolve(TestExecutionService).run_test(
             simple_agent_graph, simple_test_case, options=options, _mock_mode=True
         )
 
@@ -91,9 +91,7 @@ class TestEndToEndFlow:
         assert result.status in ("pass", "fail", "error")
 
     @pytest.mark.asyncio
-    async def test_run_tests_returns_run(self, simple_agent_graph):
-        from voicetest.models.results import TestRun
-
+    async def test_run_tests_returns_run(self, simple_agent_graph, container):
         test_cases = [
             TestCase(
                 name="Test 1",
@@ -105,7 +103,7 @@ class TestEndToEndFlow:
             ),
         ]
 
-        result = await get_test_execution_service().run_tests(
+        result = await container.resolve(TestExecutionService).run_tests(
             simple_agent_graph, test_cases, options=RunOptions(max_turns=2), _mock_mode=True
         )
 
@@ -113,14 +111,14 @@ class TestEndToEndFlow:
         assert len(result.results) == 2
 
     @pytest.mark.asyncio
-    async def test_evaluate_transcript_returns_results(self):
+    async def test_evaluate_transcript_returns_results(self, container):
         transcript = [
             Message(role="assistant", content="Hello! How can I help you?"),
             Message(role="user", content="I need help with my bill"),
             Message(role="assistant", content="I'd be happy to help with your billing question."),
         ]
 
-        results = await get_evaluation_service().evaluate_transcript(
+        results = await container.resolve(EvaluationService).evaluate_transcript(
             transcript,
             metrics=["Agent greeted the user", "Agent acknowledged the request"],
             _mock_mode=True,
@@ -134,16 +132,18 @@ class TestRunTestBehavior:
     """Tests for run_test behavior."""
 
     @pytest.mark.asyncio
-    async def test_run_test_tracks_nodes(self, simple_agent_graph, simple_test_case):
-        result = await get_test_execution_service().run_test(
+    async def test_run_test_tracks_nodes(self, simple_agent_graph, simple_test_case, container):
+        result = await container.resolve(TestExecutionService).run_test(
             simple_agent_graph, simple_test_case, options=RunOptions(max_turns=3), _mock_mode=True
         )
 
         assert "greeting" in result.nodes_visited
 
     @pytest.mark.asyncio
-    async def test_run_test_evaluates_metrics(self, simple_agent_graph, simple_test_case):
-        result = await get_test_execution_service().run_test(
+    async def test_run_test_evaluates_metrics(
+        self, simple_agent_graph, simple_test_case, container
+    ):
+        result = await container.resolve(TestExecutionService).run_test(
             simple_agent_graph, simple_test_case, options=RunOptions(max_turns=3), _mock_mode=True
         )
 
@@ -154,8 +154,10 @@ class TestExportAgent:
     """Tests for export_agent function."""
 
     @pytest.mark.asyncio
-    async def test_export_mermaid(self, simple_agent_graph):
-        result = await get_agent_service().export_agent(simple_agent_graph, format="mermaid")
+    async def test_export_mermaid(self, simple_agent_graph, container):
+        result = await container.resolve(AgentService).export_agent(
+            simple_agent_graph, format="mermaid"
+        )
 
         assert "flowchart" in result.lower()
         assert "greeting" in result
@@ -163,8 +165,10 @@ class TestExportAgent:
         assert "end" in result
 
     @pytest.mark.asyncio
-    async def test_export_livekit(self, simple_agent_graph):
-        result = await get_agent_service().export_agent(simple_agent_graph, format="livekit")
+    async def test_export_livekit(self, simple_agent_graph, container):
+        result = await container.resolve(AgentService).export_agent(
+            simple_agent_graph, format="livekit"
+        )
 
         assert "class Agent_greeting" in result
         assert "def __init__" in result

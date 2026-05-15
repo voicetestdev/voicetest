@@ -16,8 +16,8 @@ import litellm
 import openai
 
 from voicetest.llm.claudecode import ClaudeCodeLM
-from voicetest.retry import OnErrorCallback
-from voicetest.retry import with_retry
+from voicetest.util.retry import OnErrorCallback
+from voicetest.util.retry import with_retry
 
 
 # Timeouts cost the full request timeout per attempt (unlike rate limits which
@@ -83,7 +83,7 @@ async def call_llm(
 
     The returned Prediction has a `_voicetest_lm` attribute holding the LM
     instance used for the call, so callers can pass it to
-    `voicetest.cache.try_evict_last_call` if downstream validation detects a
+    `voicetest.util.cache.try_evict_last_call` if downstream validation detects a
     poisoned cache entry.
     """
     if on_token:

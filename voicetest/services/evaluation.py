@@ -1,6 +1,5 @@
 """Evaluation service: evaluate transcripts against metrics."""
 
-from voicetest.audio import AudioRoundTrip
 from voicetest.judges.metric import MetricJudge
 from voicetest.judges.rule import RuleJudge
 from voicetest.models.agent import MetricsConfig
@@ -10,6 +9,7 @@ from voicetest.models.test_case import TestCase
 from voicetest.services.settings import SettingsService
 from voicetest.services.testing.execution import TestExecutionService
 from voicetest.settings import resolve_model
+from voicetest.util.audio import AudioRoundTrip
 
 
 class EvaluationService:

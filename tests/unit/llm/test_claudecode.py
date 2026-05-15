@@ -5,7 +5,19 @@ import subprocess
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import dspy
+import litellm
 import pytest
+
+from voicetest.exceptions import QuotaExhaustedError
+from voicetest.llm import OnErrorCallback
+from voicetest.llm import OnTokenCallback
+from voicetest.llm import _call_llm_streaming
+from voicetest.llm import _call_llm_sync
+from voicetest.llm import _invoke_callback
+from voicetest.llm import call_llm
+from voicetest.llm.base import _create_lm
+from voicetest.llm.claudecode import ClaudeCodeLM
 
 
 class TestClaudeCodeLMInit:
@@ -13,7 +25,6 @@ class TestClaudeCodeLMInit:
 
     def test_raises_when_cli_not_found(self):
         """Should raise RuntimeError when claude CLI is not installed."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         with (
             patch("shutil.which", return_value=None),
@@ -23,7 +34,6 @@ class TestClaudeCodeLMInit:
 
     def test_default_model_is_sonnet(self):
         """Should default to sonnet variant."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
             lm = ClaudeCodeLM()
@@ -31,7 +41,6 @@ class TestClaudeCodeLMInit:
 
     def test_parses_model_variant_from_string(self):
         """Should parse variant from model string like claudecode/opus."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
             lm = ClaudeCodeLM(model="claudecode/opus")
@@ -39,7 +48,6 @@ class TestClaudeCodeLMInit:
 
     def test_handles_model_without_prefix(self):
         """Should use model string directly if no slash present."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
             lm = ClaudeCodeLM(model="haiku")
@@ -51,7 +59,6 @@ class TestClaudeCodeLMCall:
 
     def test_calls_claude_cli_with_correct_args(self):
         """Should invoke claude CLI with correct arguments."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -76,7 +83,6 @@ class TestClaudeCodeLMCall:
 
     def test_clears_anthropic_api_key_from_env(self):
         """Should remove ANTHROPIC_API_KEY to use Max quota."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -97,7 +103,6 @@ class TestClaudeCodeLMCall:
 
     def test_returns_list_with_content_dict(self):
         """Should return response in DSPy expected format."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -116,7 +121,6 @@ class TestClaudeCodeLMCall:
 
     def test_raises_on_nonzero_exit_code(self):
         """Should raise RuntimeError when CLI returns non-zero exit code with invalid JSON."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -133,7 +137,6 @@ class TestClaudeCodeLMCall:
 
     def test_raises_on_is_error_in_json_response(self):
         """Should raise RuntimeError when JSON response has is_error=true."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -156,9 +159,6 @@ class TestClaudeCodeLMCall:
         """Subprocess timeouts are translated to litellm.Timeout (retryable)
         so with_retry handles them alongside other timeout errors. The original
         TimeoutExpired is preserved on __cause__ for diagnostics."""
-        import litellm
-
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         with (
             patch("shutil.which", return_value="/usr/local/bin/claude"),
@@ -173,7 +173,6 @@ class TestClaudeCodeLMCall:
 
     def test_uses_correct_variant_in_command(self):
         """Should use the variant specified in model string."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -192,7 +191,6 @@ class TestClaudeCodeLMCall:
 
     def test_passes_custom_timeout(self):
         """Should pass custom timeout to subprocess."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -214,7 +212,6 @@ class TestClaudeCodeLMCallEdgeCases:
 
     def test_handles_multiline_prompt(self):
         """Should handle prompts with newlines correctly."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -235,7 +232,6 @@ class TestClaudeCodeLMCallEdgeCases:
 
     def test_handles_special_characters_in_prompt(self):
         """Should handle prompts with special characters."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -256,7 +252,6 @@ class TestClaudeCodeLMCallEdgeCases:
 
     def test_handles_empty_result(self):
         """Should handle empty result from CLI."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -273,7 +268,6 @@ class TestClaudeCodeLMCallEdgeCases:
 
     def test_raises_on_invalid_json_response(self):
         """Should raise error when CLI returns invalid JSON."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -289,7 +283,6 @@ class TestClaudeCodeLMCallEdgeCases:
 
     def test_subprocess_called_with_capture_and_text(self):
         """Should call subprocess with capture_output=True and text=True."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -308,7 +301,6 @@ class TestClaudeCodeLMCallEdgeCases:
 
     def test_error_includes_stderr_content(self):
         """Should include stderr content in error message."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -342,7 +334,6 @@ class TestClaudeCodeLMModelVariants:
     )
     def test_model_variant_parsing(self, model_string, expected_variant):
         """Should correctly parse variant from model string."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
             lm = ClaudeCodeLM(model=model_string)
@@ -354,8 +345,6 @@ class TestCreateLmFactory:
 
     def test_creates_claudecode_lm_for_claudecode_prefix(self):
         """Should create ClaudeCodeLM when model starts with claudecode/."""
-        from voicetest.llm.base import _create_lm
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
             lm = _create_lm("claudecode/sonnet")
@@ -363,9 +352,6 @@ class TestCreateLmFactory:
 
     def test_creates_dspy_lm_for_other_models(self):
         """Should create standard dspy.LM for non-claudecode models."""
-        import dspy
-
-        from voicetest.llm.base import _create_lm
 
         lm = _create_lm("openai/gpt-4o-mini")
         assert isinstance(lm, dspy.LM)
@@ -373,8 +359,6 @@ class TestCreateLmFactory:
 
     def test_factory_passes_full_model_string_to_claudecode(self):
         """Should pass the full model string to ClaudeCodeLM."""
-        from voicetest.llm.base import _create_lm
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
             lm = _create_lm("claudecode/opus")
@@ -383,9 +367,6 @@ class TestCreateLmFactory:
 
     def test_factory_with_anthropic_model(self):
         """Should create dspy.LM for anthropic/ models."""
-        import dspy
-
-        from voicetest.llm.base import _create_lm
 
         lm = _create_lm("anthropic/claude-3-5-sonnet-20241022")
         assert isinstance(lm, dspy.LM)
@@ -397,9 +378,6 @@ class TestClaudeCodeLMIntegrationWithCallLlm:
     @pytest.mark.asyncio
     async def test_call_llm_uses_claudecode_provider(self):
         """call_llm should use ClaudeCodeLM when model starts with claudecode/."""
-        import dspy
-
-        from voicetest.llm import call_llm
 
         class TestSignature(dspy.Signature):
             """Test signature."""
@@ -436,7 +414,6 @@ class TestClaudeCodeLMCaching:
     @pytest.fixture(autouse=True)
     def _fresh_cache(self, tmp_path):
         """Use a fresh temporary DSPy cache so tests don't pollute each other."""
-        import dspy
 
         original_cache = dspy.cache
         dspy.cache = dspy.clients.cache.Cache(
@@ -449,7 +426,6 @@ class TestClaudeCodeLMCaching:
 
     def test_cache_hit_skips_cli_call(self):
         """Identical prompts should return cached result without calling CLI twice."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -470,7 +446,6 @@ class TestClaudeCodeLMCaching:
 
     def test_different_prompts_are_cached_separately(self):
         """Different prompts should each call CLI once."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         call_count = 0
 
@@ -494,7 +469,6 @@ class TestClaudeCodeLMCaching:
 
     def test_cache_disabled_calls_cli_every_time(self):
         """When cache=False, CLI should be called every time."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 0
@@ -511,7 +485,6 @@ class TestClaudeCodeLMCaching:
 
     def test_cache_salt_differentiates_cache_keys(self):
         """Different metadata should produce different cache keys."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         call_count = 0
 
@@ -540,8 +513,6 @@ class TestCreateLmCachePassthrough:
 
     def test_cache_salt_passed_to_claudecode(self):
         """_create_lm should pass cache_salt as metadata to ClaudeCodeLM."""
-        from voicetest.llm.base import _create_lm
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
             lm = _create_lm("claudecode/sonnet", cache_salt="abc123")
@@ -550,8 +521,6 @@ class TestCreateLmCachePassthrough:
 
     def test_no_cache_passed_to_claudecode(self):
         """_create_lm should pass no_cache as cache=False to ClaudeCodeLM."""
-        from voicetest.llm.base import _create_lm
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         with patch("shutil.which", return_value="/usr/local/bin/claude"):
             lm = _create_lm("claudecode/sonnet", no_cache=True)
@@ -564,8 +533,6 @@ class TestClaudeCodeLMQuotaExhausted:
 
     def test_detects_hit_your_limit(self):
         """Should raise QuotaExhaustedError for the known Claude Code quota message."""
-        from voicetest.exceptions import QuotaExhaustedError
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -588,8 +555,6 @@ class TestClaudeCodeLMQuotaExhausted:
 
     def test_parses_reset_time_from_message(self):
         """Should extract reset time into reset_message attribute."""
-        from voicetest.exceptions import QuotaExhaustedError
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -612,8 +577,6 @@ class TestClaudeCodeLMQuotaExhausted:
 
     def test_detection_is_case_insensitive(self):
         """Should detect 'hit your limit' regardless of case."""
-        from voicetest.exceptions import QuotaExhaustedError
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -634,7 +597,6 @@ class TestClaudeCodeLMQuotaExhausted:
 
     def test_other_errors_still_raise_runtime_error(self):
         """Non-quota is_error responses should still raise RuntimeError."""
-        from voicetest.llm.claudecode import ClaudeCodeLM
 
         mock_result = MagicMock()
         mock_result.returncode = 1
@@ -659,27 +621,21 @@ class TestPackageExports:
 
     def test_call_llm_exported(self):
         """call_llm should be importable from voicetest.llm."""
-        from voicetest.llm import call_llm
 
         assert callable(call_llm)
 
     def test_on_token_callback_exported(self):
         """OnTokenCallback should be importable from voicetest.llm."""
-        from voicetest.llm import OnTokenCallback
 
         assert OnTokenCallback is not None
 
     def test_on_error_callback_exported(self):
         """OnErrorCallback should be importable from voicetest.llm."""
-        from voicetest.llm import OnErrorCallback
 
         assert OnErrorCallback is not None
 
     def test_private_functions_exported(self):
         """Private functions should still be accessible for tests."""
-        from voicetest.llm import _call_llm_streaming
-        from voicetest.llm import _call_llm_sync
-        from voicetest.llm import _invoke_callback
 
         assert callable(_call_llm_sync)
         assert callable(_call_llm_streaming)

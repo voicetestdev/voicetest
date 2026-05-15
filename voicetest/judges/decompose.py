@@ -10,7 +10,7 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.decompose import DecompositionPlan
 from voicetest.models.decompose import HandoffRule
 from voicetest.models.decompose import SubAgentSpec
-from voicetest.retry import OnErrorCallback
+from voicetest.util.retry import OnErrorCallback
 
 
 logger = logging.getLogger(__name__)

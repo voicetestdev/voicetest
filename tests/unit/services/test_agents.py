@@ -6,15 +6,15 @@ import pytest
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import MetricsConfig
-from voicetest.services import get_agent_service
+from voicetest.services.agents import AgentService
 
 
 @pytest.fixture
-def svc(tmp_path, monkeypatch):
+def svc(tmp_path, monkeypatch, container):
     """AgentService backed by an isolated temp database."""
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
-    return get_agent_service()
+    return container.resolve(AgentService)
 
 
 @pytest.fixture

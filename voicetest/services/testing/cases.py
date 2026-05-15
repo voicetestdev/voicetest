@@ -5,10 +5,10 @@ from pathlib import Path
 
 from voicetest.exporters.test_cases import export_tests
 from voicetest.models.test_case import TestCase
-from voicetest.pathutil import resolve_file
-from voicetest.pathutil import resolve_path
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import TestCaseRepository
+from voicetest.util.pathutil import resolve_file
+from voicetest.util.pathutil import resolve_path
 
 
 class TestCaseService:

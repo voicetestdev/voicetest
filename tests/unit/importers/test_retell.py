@@ -200,7 +200,6 @@ class TestRetellImporterTransferMetadata:
 
     def test_cf_importer_preserves_transfer_metadata(self):
         """CF import with transfer_call tool -> transfer_destination in tool metadata."""
-        from voicetest.importers.retell import RetellImporter
 
         config = {
             "start_node_id": "main",

@@ -1,10 +1,12 @@
-"""Tests for voicetest.templating module."""
+"""Tests for voicetest.util.templating module."""
 
-from voicetest.templating import expand_graph_snippets
-from voicetest.templating import expand_snippets
-from voicetest.templating import extract_snippet_refs
-from voicetest.templating import extract_variables
-from voicetest.templating import substitute_variables
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
+from voicetest.util.templating import expand_graph_snippets
+from voicetest.util.templating import expand_snippets
+from voicetest.util.templating import extract_snippet_refs
+from voicetest.util.templating import extract_variables
+from voicetest.util.templating import substitute_variables
 
 
 class TestSubstituteVariables:
@@ -161,9 +163,6 @@ class TestExpandGraphSnippets:
     """Tests for expand_graph_snippets function."""
 
     def test_expands_all_prompts(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         graph = AgentGraph(
             nodes={
                 "a": AgentNode(
@@ -191,9 +190,6 @@ class TestExpandGraphSnippets:
         assert expanded.snippets == {}
 
     def test_does_not_modify_original(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         graph = AgentGraph(
             nodes={
                 "a": AgentNode(
@@ -214,9 +210,6 @@ class TestExpandGraphSnippets:
         assert graph.snippets == {"snip": "expanded"}
 
     def test_empty_snippets_returns_copy(self):
-        from voicetest.models.agent import AgentGraph
-        from voicetest.models.agent import AgentNode
-
         graph = AgentGraph(
             nodes={
                 "a": AgentNode(

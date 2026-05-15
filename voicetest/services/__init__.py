@@ -1,11 +1,15 @@
 """Service layer for voicetest.
 
-Services own all business logic. CLI and REST are pure transport adapters
-that resolve services from the DI container.
+Services own all business logic. CLI, TUI, and REST are transport adapters
+that receive services from the composition root (entry-point container build).
+
+This package re-exports the service classes for convenience. The `AppServices`
+bag (CLI/TUI's typed service container) lives in `app_services.py`.
 """
 
-from voicetest.container import get_container
 from voicetest.services.agents import AgentService
+from voicetest.services.app_services import AppServices
+from voicetest.services.app_services import build_app_services
 from voicetest.services.decompose import DecomposeService
 from voicetest.services.diagnosis import DiagnosisService
 from voicetest.services.discovery import DiscoveryService
@@ -18,52 +22,9 @@ from voicetest.services.testing import TestCaseService
 from voicetest.services.testing import TestExecutionService
 
 
-def get_discovery_service() -> DiscoveryService:
-    return get_container().resolve(DiscoveryService)
-
-
-def get_agent_service() -> AgentService:
-    return get_container().resolve(AgentService)
-
-
-def get_test_case_service() -> TestCaseService:
-    return get_container().resolve(TestCaseService)
-
-
-def get_test_execution_service() -> TestExecutionService:
-    return get_container().resolve(TestExecutionService)
-
-
-def get_evaluation_service() -> EvaluationService:
-    return get_container().resolve(EvaluationService)
-
-
-def get_decompose_service() -> DecomposeService:
-    return get_container().resolve(DecomposeService)
-
-
-def get_diagnosis_service() -> DiagnosisService:
-    return get_container().resolve(DiagnosisService)
-
-
-def get_snippet_service() -> SnippetService:
-    return get_container().resolve(SnippetService)
-
-
-def get_run_service() -> RunService:
-    return get_container().resolve(RunService)
-
-
-def get_platform_service() -> PlatformService:
-    return get_container().resolve(PlatformService)
-
-
-def get_settings_service() -> SettingsService:
-    return get_container().resolve(SettingsService)
-
-
 __all__ = [
     "AgentService",
+    "AppServices",
     "DecomposeService",
     "DiagnosisService",
     "DiscoveryService",
@@ -74,15 +35,5 @@ __all__ = [
     "SnippetService",
     "TestCaseService",
     "TestExecutionService",
-    "get_agent_service",
-    "get_decompose_service",
-    "get_diagnosis_service",
-    "get_discovery_service",
-    "get_evaluation_service",
-    "get_platform_service",
-    "get_run_service",
-    "get_settings_service",
-    "get_snippet_service",
-    "get_test_case_service",
-    "get_test_execution_service",
+    "build_app_services",
 ]

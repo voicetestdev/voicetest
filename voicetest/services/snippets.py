@@ -2,7 +2,7 @@
 
 from voicetest.models.agent import AgentGraph
 from voicetest.services.agents import AgentService
-from voicetest.snippets import suggest_snippets
+from voicetest.util.snippets import suggest_snippets
 
 
 class SnippetService:

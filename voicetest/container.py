@@ -33,6 +33,7 @@ from voicetest.platforms.registry import PlatformRegistry
 from voicetest.platforms.retell import RetellPlatformClient
 from voicetest.platforms.telnyx import TelnyxPlatformClient
 from voicetest.platforms.vapi import VapiPlatformClient
+from voicetest.services.settings import SettingsService
 from voicetest.storage.engine import create_db_engine
 from voicetest.storage.engine import get_session_factory
 from voicetest.storage.repositories import AgentRepository
@@ -56,13 +57,13 @@ def _create_importer_registry() -> ImporterRegistry:
     return registry
 
 
-def _create_exporter_registry() -> ExporterRegistry:
+def _create_exporter_registry(settings_service: SettingsService) -> ExporterRegistry:
     """Create and configure the exporter registry."""
     registry = ExporterRegistry()
     registry.register(MermaidExporter())
     registry.register(LiveKitExporter())
     registry.register(RetellLLMExporter())
-    registry.register(RetellCFExporter())
+    registry.register(RetellCFExporter(settings_service))
     registry.register(VAPIAssistantExporter())
     registry.register(VAPISquadExporter())
     registry.register(BlandExporter())
@@ -124,12 +125,18 @@ def create_container() -> punq.Container:
         scope=session_scope,
     )
 
+    # SettingsService registered early — exporter registry factory depends on it.
+    # Singleton scope: its cache (mtime-guarded) only helps if the instance survives.
+    container.register(SettingsService, scope=punq.Scope.singleton)
+
     # Registries (singletons)
     container.register(
         ImporterRegistry, factory=_create_importer_registry, scope=punq.Scope.singleton
     )
     container.register(
-        ExporterRegistry, factory=_create_exporter_registry, scope=punq.Scope.singleton
+        ExporterRegistry,
+        factory=lambda: _create_exporter_registry(container.resolve(SettingsService)),
+        scope=punq.Scope.singleton,
     )
     container.register(
         PlatformRegistry, factory=_create_platform_registry, scope=punq.Scope.singleton
@@ -148,8 +155,8 @@ def create_container() -> punq.Container:
     from voicetest.services.discovery import DiscoveryService  # noqa: PLC0415
     from voicetest.services.evaluation import EvaluationService  # noqa: PLC0415
     from voicetest.services.platforms import PlatformService  # noqa: PLC0415
+    from voicetest.services.run_runner import RunRunner  # noqa: PLC0415
     from voicetest.services.runs import RunService  # noqa: PLC0415
-    from voicetest.services.settings import SettingsService  # noqa: PLC0415
     from voicetest.services.snippets import SnippetService  # noqa: PLC0415
     from voicetest.services.testing.cases import TestCaseService  # noqa: PLC0415
     from voicetest.services.testing.execution import TestExecutionService  # noqa: PLC0415
@@ -163,51 +170,16 @@ def create_container() -> punq.Container:
     container.register(DiagnosisService)
     container.register(SnippetService)
     container.register(RunService)
+    container.register(RunRunner)
     container.register(PlatformService)
-    container.register(SettingsService)
+
+    # Live call / chat managers hold per-process session state, so they must be singletons.
+    from voicetest.web.calls import CallManager  # noqa: PLC0415
+    from voicetest.web.chat import ChatManager  # noqa: PLC0415
+    from voicetest.web.coordinator import RunCoordinator  # noqa: PLC0415
+
+    container.register(CallManager, scope=punq.Scope.singleton)
+    container.register(ChatManager, scope=punq.Scope.singleton)
+    container.register(RunCoordinator, scope=punq.Scope.singleton)
 
     return container
-
-
-# Application container - initialized once at startup
-_container: punq.Container | None = None
-
-
-def get_container() -> punq.Container:
-    """Get the application container, creating it if needed."""
-    global _container
-    if _container is None:
-        _container = create_container()
-    return _container
-
-
-def reset_container() -> None:
-    """Reset the container (for testing).
-
-    This also resets the database connection since it's managed by the container.
-    """
-    global _container
-    _container = None
-
-
-def get_session() -> Session:
-    """Get a database session from the DI container.
-
-    For PostgreSQL, each call returns a fresh session (transient scope).
-    For DuckDB, returns the singleton session. If the singleton session
-    is in a failed transaction state, issues a rollback to recover it.
-    """
-    session = get_container().resolve(Session)
-    if not session.is_active:
-        session.rollback()
-    return session
-
-
-def get_importer_registry() -> ImporterRegistry:
-    """Get the importer registry from the DI container."""
-    return get_container().resolve(ImporterRegistry)
-
-
-def get_exporter_registry() -> ExporterRegistry:
-    """Get the exporter registry from the DI container."""
-    return get_container().resolve(ExporterRegistry)

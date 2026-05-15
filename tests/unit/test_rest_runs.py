@@ -1,18 +1,45 @@
 """Tests for WebSocket, run management, orphan detection, and diagnosis endpoints."""
 
+import asyncio
+import json
+import threading
+import time
+from unittest.mock import AsyncMock
+from unittest.mock import patch
+
 import pytest
 
-from voicetest.container import get_container
+from voicetest.exceptions import QuotaExhaustedError
+from voicetest.models.diagnosis import Diagnosis
+from voicetest.models.diagnosis import DiagnosisResult
+from voicetest.models.diagnosis import FaultLocation
+from voicetest.models.diagnosis import FixAttemptResult
+from voicetest.models.diagnosis import FixSuggestion
+from voicetest.models.diagnosis import PromptChange
+from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
+from voicetest.models.results import TestResult
+from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
+from voicetest.services.run_runner import RunJob
+from voicetest.services.run_runner import RunRunner
+from voicetest.services.runs import RunService
+from voicetest.services.testing.cases import TestCaseService
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
+from voicetest.web.coordinator import RunCoordinator
 
 
-def _get_run_repo():
-    return get_container().resolve(RunRepository)
+def _get_run_repo(db_client):
+    return db_client.app.state.container.resolve(RunRepository)
 
 
-def _get_test_case_repo():
-    return get_container().resolve(TestCaseRepository)
+def _get_test_case_repo(db_client):
+    return db_client.app.state.container.resolve(TestCaseRepository)
+
+
+def _get_coordinator(db_client) -> RunCoordinator:
+    return db_client.app.state.container.resolve(RunCoordinator)
 
 
 class TestRunWebSocket:
@@ -39,56 +66,27 @@ class TestRunWebSocket:
 
         return {"agent_id": agent_id, "test_id": test_id}
 
-    def test_broadcast_test_started_includes_test_case_id(self):
-        """Verify _broadcast_run_update sends test_case_id in test_started messages."""
-        import asyncio
-
-        from voicetest.rest import _active_runs
-
-        run_id = "test-run-123"
-        test_case_id = "test-case-456"
-        result_id = "result-789"
-
-        _active_runs[run_id] = {
-            "cancel": asyncio.Event(),
-            "websockets": set(),
-            "cancelled_tests": set(),
-        }
-
-        message = {
-            "type": "test_started",
-            "result_id": result_id,
-            "test_case_id": test_case_id,
-            "test_name": "My Test",
-        }
-
-        assert "test_case_id" in message
-        assert message["test_case_id"] == test_case_id
-
-        del _active_runs[run_id]
-
     def test_execute_run_sends_test_case_id_in_test_started(
         self, db_client, agent_with_test, monkeypatch
     ):
         """Verify _execute_run includes test_case_id when broadcasting test_started."""
-        from unittest.mock import patch
 
         agent_id = agent_with_test["agent_id"]
         test_id = agent_with_test["test_id"]
 
         broadcast_calls = []
+        coordinator = _get_coordinator(db_client)
+        original_broadcast = coordinator.broadcast
 
-        async def mock_broadcast(run_id, data):
+        async def spy_broadcast(run_id, data):
             broadcast_calls.append(data)
+            await original_broadcast(run_id, data)
 
-        with (
-            patch("voicetest.rest._broadcast_run_update", mock_broadcast),
-            patch(
-                "voicetest.services.testing.execution.TestExecutionService.run_test"
-            ) as mock_run_test,
-        ):
-            from voicetest.models.results import TestResult
+        monkeypatch.setattr(coordinator, "broadcast", spy_broadcast)
 
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test"
+        ) as mock_run_test:
             mock_run_test.return_value = TestResult(
                 test_id="test",
                 test_name="WebSocket Test",
@@ -101,8 +99,6 @@ class TestRunWebSocket:
                 json={"test_ids": [test_id]},
             )
             assert response.status_code == 200
-
-            import time
 
             time.sleep(0.5)
 
@@ -139,20 +135,22 @@ class TestTimeoutEnforcement:
         return {"agent_id": agent_id, "test_id": test_id}
 
     def test_turn_timeout_reports_completed_with_turn_timeout_reason(
-        self, db_client, agent_with_test
+        self, db_client, agent_with_test, monkeypatch
     ):
         """When a turn exceeds turn_timeout_seconds, run completes with end_reason=turn_timeout."""
-        import asyncio
-        import time
-        from unittest.mock import patch
 
         agent_id = agent_with_test["agent_id"]
         test_id = agent_with_test["test_id"]
 
         broadcast_calls = []
+        coordinator = _get_coordinator(db_client)
+        original_broadcast = coordinator.broadcast
 
-        async def mock_broadcast(run_id, data):
+        async def spy_broadcast(run_id, data):
             broadcast_calls.append(data)
+            await original_broadcast(run_id, data)
+
+        monkeypatch.setattr(coordinator, "broadcast", spy_broadcast)
 
         call_count = 0
 
@@ -169,10 +167,7 @@ class TestTimeoutEnforcement:
 
             return MockResult()
 
-        with (
-            patch("voicetest.rest._broadcast_run_update", mock_broadcast),
-            patch("voicetest.engine.conversation.call_llm", side_effect=slow_llm),
-        ):
+        with patch("voicetest.engine.conversation.call_llm", side_effect=slow_llm):
             response = db_client.post(
                 f"/api/agents/{agent_id}/runs",
                 json={
@@ -195,7 +190,6 @@ class TestTranscriptUpdate:
 
     def test_transcript_update_message_format(self):
         """Verify transcript_update message has correct structure."""
-        from voicetest.models.results import Message
 
         transcript = [
             Message(role="assistant", content="Hello!"),
@@ -221,9 +215,7 @@ class TestOrphanedRunDetection:
 
     @pytest.fixture
     def orphaned_run(self, db_client, sample_retell_config):
-        """Create an orphaned run (not in _active_runs, not completed)."""
-        from voicetest.rest import _active_runs
-
+        """Create an orphaned run (not registered with coordinator, not completed)."""
         # Create agent
         agent_response = db_client.post(
             "/api/agents",
@@ -232,15 +224,15 @@ class TestOrphanedRunDetection:
         agent_id = agent_response.json()["id"]
 
         # Create run directly in DB (simulating a crashed run)
-        run_repo = _get_run_repo()
+        run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
         # Add a "running" result
         result_id = run_repo.create_pending_result(run_id, "test-case-1", "Test Case 1")
 
-        # Ensure run is NOT in _active_runs (simulating backend restart)
-        _active_runs.pop(run_id, None)
+        # Ensure coordinator has no entry (simulating backend restart)
+        _get_coordinator(db_client).end(run_id)
 
         return {"run_id": run_id, "result_id": result_id, "agent_id": agent_id}
 
@@ -271,10 +263,6 @@ class TestOrphanedRunDetection:
 
     def test_active_run_not_marked_orphaned(self, db_client, sample_retell_config):
         """GET /runs/{id} should NOT mark active runs as orphaned."""
-        import asyncio
-
-        from voicetest.rest import _active_runs
-
         # Create agent
         agent_response = db_client.post(
             "/api/agents",
@@ -283,17 +271,13 @@ class TestOrphanedRunDetection:
         agent_id = agent_response.json()["id"]
 
         # Create run
-        run_repo = _get_run_repo()
+        run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
-        # Add run to _active_runs (simulating active run)
-        _active_runs[run_id] = {
-            "cancel": asyncio.Event(),
-            "websockets": set(),
-            "cancelled_tests": set(),
-            "message_queue": [],
-        }
+        # Mark the run active via the coordinator (simulating active run)
+        coordinator = _get_coordinator(db_client)
+        coordinator.start(run_id)
 
         try:
             response = db_client.get(f"/api/runs/{run_id}")
@@ -302,7 +286,7 @@ class TestOrphanedRunDetection:
             run_data = response.json()
             assert run_data["completed_at"] is None, "Active run should NOT be marked complete"
         finally:
-            _active_runs.pop(run_id, None)
+            coordinator.end(run_id)
 
 
 class TestRunDeletion:
@@ -316,7 +300,7 @@ class TestRunDeletion:
         )
         agent_id = agent_response.json()["id"]
 
-        run_repo = _get_run_repo()
+        run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
         run_repo.create_pending_result(run_id, "test-case-1", "Test Case 1")
@@ -336,33 +320,25 @@ class TestRunDeletion:
 
     def test_delete_active_run_fails(self, db_client, sample_retell_config):
         """DELETE /runs/{id} should not allow deleting an active run."""
-        import asyncio
-
-        from voicetest.rest import _active_runs
-
         agent_response = db_client.post(
             "/api/agents",
             json={"name": "Test Agent", "config": sample_retell_config},
         )
         agent_id = agent_response.json()["id"]
 
-        run_repo = _get_run_repo()
+        run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
-        _active_runs[run_id] = {
-            "cancel": asyncio.Event(),
-            "websockets": set(),
-            "cancelled_tests": set(),
-            "message_queue": [],
-        }
+        coordinator = _get_coordinator(db_client)
+        coordinator.start(run_id)
 
         try:
             response = db_client.delete(f"/api/runs/{run_id}")
             assert response.status_code == 400
             assert "active" in response.json()["detail"].lower()
         finally:
-            _active_runs.pop(run_id, None)
+            coordinator.end(run_id)
 
 
 class TestWebSocketStateMessage:
@@ -449,7 +425,6 @@ class TestWebSocketStateMessage:
 
         Regression test for: TypeError: Object of type datetime is not JSON serializable
         """
-        import json
 
         agent_id = agent_with_tests["agent_id"]
         test_ids = agent_with_tests["test_ids"]
@@ -490,9 +465,6 @@ class TestWebSocketStateMessage:
 
     def test_websocket_completed_run_sends_state_and_closes(self, db_client, agent_with_tests):
         """WebSocket connection to completed run should receive state and run_completed."""
-        import time
-
-        from voicetest.rest import _active_runs
 
         agent_id = agent_with_tests["agent_id"]
         test_ids = agent_with_tests["test_ids"]
@@ -504,9 +476,10 @@ class TestWebSocketStateMessage:
         )
         run_id = run_response.json()["id"]
 
-        # Wait for run to complete and be removed from _active_runs
+        # Wait for the coordinator to drop the run (signaling completion)
+        coordinator = _get_coordinator(db_client)
         max_wait = 10
-        while run_id in _active_runs and max_wait > 0:
+        while coordinator.is_active(run_id) and max_wait > 0:
             time.sleep(0.5)
             max_wait -= 1
 
@@ -531,9 +504,6 @@ class TestDiagnosisEndpoints:
     @pytest.fixture
     def failed_result(self, db_client, sample_retell_config):
         """Create an agent, test case, run, and failed result for testing."""
-        from voicetest.models.results import MetricResult
-        from voicetest.models.results import TestResult
-        from voicetest.models.test_case import TestCase
 
         # Create agent with graph
         agent_response = db_client.post(
@@ -543,7 +513,7 @@ class TestDiagnosisEndpoints:
         agent_id = agent_response.json()["id"]
 
         # Create test case
-        test_case_repo = _get_test_case_repo()
+        test_case_repo = _get_test_case_repo(db_client)
         tc = TestCase(
             name="Billing test",
             user_prompt="Ask about a refund",
@@ -553,7 +523,7 @@ class TestDiagnosisEndpoints:
         tc_id = tc_record["id"]
 
         # Create run + result
-        run_repo = _get_run_repo()
+        run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
         result_id = run_repo.create_pending_result(run_id, tc_id, "Billing test")
@@ -594,15 +564,6 @@ class TestDiagnosisEndpoints:
         }
 
     def test_diagnose_returns_200(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import Diagnosis
-        from voicetest.models.diagnosis import DiagnosisResult
-        from voicetest.models.diagnosis import FaultLocation
-        from voicetest.models.diagnosis import FixSuggestion
-        from voicetest.models.diagnosis import PromptChange
-
         mock_result = DiagnosisResult(
             diagnosis=Diagnosis(
                 fault_locations=[
@@ -649,11 +610,6 @@ class TestDiagnosisEndpoints:
         assert response.status_code == 404
 
     def test_apply_fix_returns_200(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import FixAttemptResult
-
         mock_attempt = FixAttemptResult(
             iteration=1,
             changes_applied=[],
@@ -690,12 +646,6 @@ class TestDiagnosisEndpoints:
         assert data["improved"] is True
 
     def test_revise_fix_returns_200(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import FixSuggestion
-        from voicetest.models.diagnosis import PromptChange
-
         mock_fix = FixSuggestion(
             changes=[
                 PromptChange(
@@ -767,13 +717,6 @@ class TestDiagnosisEndpoints:
         assert "nodes" in data
 
     def test_diagnose_with_model_override(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import Diagnosis
-        from voicetest.models.diagnosis import DiagnosisResult
-        from voicetest.models.diagnosis import FixSuggestion
-
         mock_result = DiagnosisResult(
             diagnosis=Diagnosis(
                 fault_locations=[],
@@ -803,13 +746,6 @@ class TestDiagnosisEndpoints:
         assert call_kwargs["judge_model"] == "openai/gpt-4o"
 
     def test_diagnose_without_model_uses_default(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import Diagnosis
-        from voicetest.models.diagnosis import DiagnosisResult
-        from voicetest.models.diagnosis import FixSuggestion
-
         mock_result = DiagnosisResult(
             diagnosis=Diagnosis(
                 fault_locations=[],
@@ -839,11 +775,6 @@ class TestDiagnosisEndpoints:
         assert call_kwargs["judge_model"] != "openai/gpt-4o"
 
     def test_revise_fix_with_model_override(self, db_client, failed_result):
-        from unittest.mock import AsyncMock
-        from unittest.mock import patch
-
-        from voicetest.models.diagnosis import FixSuggestion
-
         mock_fix = FixSuggestion(
             changes=[],
             summary="Revised",
@@ -879,3 +810,264 @@ class TestDiagnosisEndpoints:
             json={"changes": []},
         )
         assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# RunRunner lifecycle + cancellation paths
+# ---------------------------------------------------------------------------
+
+
+class TestRunRunnerLifecycle:
+    """End-to-end coverage of voicetest.services.run_runner.RunRunner.
+
+    These tests POST to /api/agents/{id}/runs, then spy on coordinator.broadcast
+    to assert the full broadcast sequence (state lives at the WS layer; we
+    verify orchestration here).
+    """
+
+    @pytest.fixture
+    def two_tests_agent(self, db_client, sample_retell_config):
+        """Agent + 2 test cases; returns {agent_id, test_ids[]}."""
+        agent_resp = db_client.post(
+            "/api/agents",
+            json={"name": "Lifecycle Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_resp.json()["id"]
+        test_ids = []
+        for i in range(2):
+            tr = db_client.post(
+                f"/api/agents/{agent_id}/tests",
+                json={"name": f"Test {i + 1}", "user_prompt": f"Prompt {i + 1}", "metrics": []},
+            )
+            test_ids.append(tr.json()["id"])
+        return {"agent_id": agent_id, "test_ids": test_ids}
+
+    @staticmethod
+    def _spy_broadcasts(coordinator, monkeypatch) -> tuple[list, threading.Event]:
+        """Replace coordinator.broadcast with a spy + an event that fires on run_completed.
+
+        Returns `(calls, completed)`. Callers can `completed.wait(timeout=N)` to
+        synchronize on the end of the run instead of polling — `threading.Event`
+        works cross-loop, which matters because the spy runs on the FastAPI
+        BackgroundTask's loop while tests wait from the sync thread.
+        """
+        calls: list = []
+        completed = threading.Event()
+        original = coordinator.broadcast
+
+        async def spy(run_id, data):
+            calls.append(data)
+            await original(run_id, data)
+            if data.get("type") == "run_completed":
+                completed.set()
+
+        monkeypatch.setattr(coordinator, "broadcast", spy)
+        return calls, completed
+
+    def test_full_lifecycle_broadcasts_state_running_completed(
+        self, db_client, two_tests_agent, monkeypatch
+    ):
+        """A run with N tests broadcasts test_started + test_completed, then run_completed."""
+
+        broadcasts, completed = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
+
+        async def fake_run_test(*args, **kwargs):
+            return TestResult(test_id="t", test_name="Patched", status="pass", transcript=[])
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test",
+            side_effect=fake_run_test,
+        ):
+            resp = db_client.post(
+                f"/api/agents/{two_tests_agent['agent_id']}/runs",
+                json={"test_ids": two_tests_agent["test_ids"]},
+            )
+            assert resp.status_code == 200
+            assert completed.wait(timeout=5), f"run never completed; broadcasts: {broadcasts}"
+
+        types = [c.get("type") for c in broadcasts]
+        assert types.count("test_started") == 2
+        assert types.count("test_completed") == 2
+        assert types[-1] == "run_completed"
+        # Each test_started precedes its test_completed (both pairs).
+        started_idxs = [i for i, t in enumerate(types) if t == "test_started"]
+        completed_idxs = [i for i, t in enumerate(types) if t == "test_completed"]
+        for s, c in zip(started_idxs, completed_idxs, strict=True):
+            assert s < c
+
+    # The cancel-path tests below invoke RunRunner.execute() directly through the
+    # container. Running through POST + TestClient is unreliable for cancellation
+    # timing because TestClient awaits the BackgroundTask before returning, leaving
+    # no window for the test thread to inject a cancel between iterations.
+
+    @staticmethod
+    def _prepare_job(db_client, agent_id: str, test_ids: list[str]):
+        """Mirror start_run: create the Run, pending results, and a RunJob."""
+
+        container = db_client.app.state.container
+        run_svc = container.resolve(RunService)
+        tc_svc = container.resolve(TestCaseService)
+
+        all_tests = tc_svc.list_tests(agent_id)
+        tests_by_id = {t["id"]: t for t in all_tests}
+        test_records = [tests_by_id[tid] for tid in test_ids]
+
+        run = run_svc.create_run(agent_id)
+        result_ids: dict[str, str] = {}
+        for tr in test_records:
+            result_ids[tr["id"]] = run_svc.create_pending_result(run["id"], tr["id"], tr["name"])
+
+        job = RunJob(
+            run_id=run["id"],
+            agent_id=agent_id,
+            test_records=test_records,
+            result_ids=result_ids,
+            options=RunOptions(),
+        )
+        return job, result_ids
+
+    def test_runrunner_skips_cancelled_test(self, db_client, two_tests_agent, monkeypatch):
+        """A test cancelled before the loop reaches it → test_cancelled; run_test is skipped."""
+
+        coordinator = _get_coordinator(db_client)
+        broadcasts, _completed = self._spy_broadcasts(coordinator, monkeypatch)
+
+        job, result_ids = self._prepare_job(
+            db_client, two_tests_agent["agent_id"], two_tests_agent["test_ids"]
+        )
+        second_test_id = two_tests_agent["test_ids"][1]
+        coordinator.start(job.run_id)
+        coordinator.cancel_test(job.run_id, result_ids[second_test_id])
+
+        async def fake_run_test(*args, **kwargs):
+            return TestResult(test_id="t", test_name="Patched", status="pass", transcript=[])
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test",
+            side_effect=fake_run_test,
+        ) as mock_run_test:
+            runner = db_client.app.state.container.resolve(RunRunner)
+            asyncio.run(runner.execute(job))
+
+        types = [c.get("type") for c in broadcasts]
+        assert types.count("test_completed") == 1
+        assert types.count("test_cancelled") == 1
+        assert types[-1] == "run_completed"
+        assert mock_run_test.call_count == 1
+
+    def test_runrunner_cancel_run_aborts_remaining(self, db_client, two_tests_agent, monkeypatch):
+        """coordinator.cancel_run() before execute() → all tests cancelled."""
+
+        coordinator = _get_coordinator(db_client)
+        broadcasts, _completed = self._spy_broadcasts(coordinator, monkeypatch)
+
+        job, _ = self._prepare_job(
+            db_client, two_tests_agent["agent_id"], two_tests_agent["test_ids"]
+        )
+        coordinator.start(job.run_id)
+        coordinator.cancel_run(job.run_id)
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test"
+        ) as mock_run_test:
+            runner = db_client.app.state.container.resolve(RunRunner)
+            asyncio.run(runner.execute(job))
+
+        types = [c.get("type") for c in broadcasts]
+        assert types.count("test_cancelled") == 2
+        assert types[-1] == "run_completed"
+        assert mock_run_test.call_count == 0
+
+    def test_run_websocket_forwards_cancel_run_to_coordinator(
+        self, db_client, sample_retell_config
+    ):
+        """/runs/{id}/ws forwards a `cancel_run` message to RunCoordinator.cancel_run.
+
+        Sets up the run via the repo + coordinator manually so the WS endpoint
+        has something to attach to, avoiding TestClient + BackgroundTask races.
+        """
+
+        agent_resp = db_client.post(
+            "/api/agents",
+            json={"name": "WS Cancel Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_resp.json()["id"]
+        run_repo = db_client.app.state.container.resolve(RunRepository)
+        run = run_repo.create(agent_id)
+        run_id = run["id"]
+
+        coordinator = _get_coordinator(db_client)
+        coordinator.start(run_id)  # keep the WS endpoint past the "already complete" early-exit
+
+        try:
+            with (
+                patch.object(coordinator, "cancel_run") as cancel_run_spy,
+                db_client.websocket_connect(f"/api/runs/{run_id}/ws") as ws,
+            ):
+                ws.receive_json()  # state
+                ws.send_json({"type": "cancel_run"})
+
+                time.sleep(0.2)
+
+            cancel_run_spy.assert_called_with(run_id)
+        finally:
+            coordinator.end(run_id)
+
+    def test_quota_exhausted_aborts_remaining_tests(self, db_client, two_tests_agent, monkeypatch):
+        """When run_test raises QuotaExhaustedError, remaining tests are marked cancelled."""
+
+        broadcasts, completed = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
+        agent_id = two_tests_agent["agent_id"]
+
+        async def raises_quota(*args, **kwargs):
+            raise QuotaExhaustedError("quota gone", reset_message="try later")
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test",
+            side_effect=raises_quota,
+        ):
+            resp = db_client.post(
+                f"/api/agents/{agent_id}/runs",
+                json={"test_ids": two_tests_agent["test_ids"]},
+            )
+            assert resp.status_code == 200
+            assert completed.wait(timeout=5), f"run never completed; broadcasts: {broadcasts}"
+
+        types = [c.get("type") for c in broadcasts]
+        assert "quota_exhausted" in types
+        # First test errored via quota_exhausted, second test never started but was cancelled.
+        assert types.count("test_cancelled") == 1
+        assert "test_started" in types  # first test did start before raising
+        quota_msg = next(c for c in broadcasts if c.get("type") == "quota_exhausted")
+        assert quota_msg["reset_message"] == "try later"
+
+    def test_runrunner_unexpected_exception_broadcasts_test_error(
+        self, db_client, two_tests_agent, monkeypatch
+    ):
+        """A non-Quota / non-Cancelled exception from run_test is surfaced as `test_error`
+        and the run continues to the next test."""
+        broadcasts, _completed = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
+
+        job, result_ids = self._prepare_job(
+            db_client, two_tests_agent["agent_id"], two_tests_agent["test_ids"]
+        )
+        first_test_id = two_tests_agent["test_ids"][0]
+        first_result_id = result_ids[first_test_id]
+        _get_coordinator(db_client).start(job.run_id)
+
+        async def raises_unexpected(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test",
+            side_effect=raises_unexpected,
+        ):
+            runner = db_client.app.state.container.resolve(RunRunner)
+            asyncio.run(runner.execute(job))
+
+        errors = [c for c in broadcasts if c.get("type") == "test_error"]
+        assert len(errors) == 2, f"expected one test_error per test; got broadcasts: {broadcasts}"
+        assert errors[0]["result_id"] == first_result_id
+        assert errors[0]["error"] == "boom"
+        # Run still finishes cleanly — unexpected errors don't abort the run.
+        assert [c for c in broadcasts if c.get("type") == "run_completed"]

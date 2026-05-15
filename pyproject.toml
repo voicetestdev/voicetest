@@ -1,6 +1,6 @@
 [project]
 name = "voicetest"
-version = "0.43"
+version = "0.44"
 description = "A generic test harness for voice agent workflows"
 readme = "README.md"
 license = "Apache-2.0"
@@ -106,9 +106,6 @@ select = [
     "SIM",     # flake8-simplify
     "TID",     # tidy imports
 ]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["PLC0415"]
 
 [tool.ruff.lint.isort]
 force-single-line = true
