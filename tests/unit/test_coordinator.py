@@ -104,9 +104,9 @@ class TestRunCoordinatorCancellation:
 
     def test_cancel_run_sets_flag(self, coordinator):
         coordinator.start("r")
-        assert not coordinator.is_cancelled("r")
+        assert not coordinator.is_run_cancelled("r")
         coordinator.cancel_run("r")
-        assert coordinator.is_cancelled("r")
+        assert coordinator.is_run_cancelled("r")
         coordinator.end("r")
 
     def test_cancel_test_only_marks_that_result(self, coordinator):
@@ -114,9 +114,17 @@ class TestRunCoordinatorCancellation:
         coordinator.cancel_test("r", "result-1")
         assert coordinator.is_test_cancelled("r", "result-1")
         assert not coordinator.is_test_cancelled("r", "result-2")
-        # is_cancelled with result_id returns True for cancelled tests even if run isn't.
-        assert coordinator.is_cancelled("r", "result-1")
-        assert not coordinator.is_cancelled("r", "result-2")
+        # Test-level cancel does not propagate to run-level.
+        assert not coordinator.is_run_cancelled("r")
+        coordinator.end("r")
+
+    def test_run_and_test_cancellation_are_independent(self, coordinator):
+        coordinator.start("r")
+        coordinator.cancel_run("r")
+        coordinator.cancel_test("r", "result-1")
+        assert coordinator.is_run_cancelled("r")
+        assert coordinator.is_test_cancelled("r", "result-1")
+        assert not coordinator.is_test_cancelled("r", "result-2")
         coordinator.end("r")
 
     def test_orphan_cleanup_is_single_flight(self, coordinator):

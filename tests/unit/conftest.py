@@ -18,8 +18,10 @@ from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.results import Message
 from voicetest.models.results import TestResult
+from voicetest.services import SettingsService
 from voicetest.services import build_app_services
 from voicetest.storage.repositories import AgentRepository
+from voicetest.util.cache import setup_cache_from_settings
 from voicetest.web.rest import app
 from voicetest.web.rest import init_storage
 
@@ -28,14 +30,15 @@ from voicetest.web.rest import init_storage
 def fresh_container():
     """Give each test its own DI container on the FastAPI app.state.
 
-    Mirrors the work the FastAPI lifespan handler does (container + storage init)
-    so that bare `TestClient(app)` constructions in tests get the same state
+    Mirrors the work the FastAPI lifespan handler does (container + storage init
+    + cache setup) so bare `TestClient(app)` constructions get the same state
     they would in production — the lifespan only fires when the client is used
     as a context manager.
     """
-
     app.state.container = create_container()
     init_storage(app.state.container)
+    settings = app.state.container.resolve(SettingsService).get_settings()
+    setup_cache_from_settings(settings.cache)
     yield
 
 

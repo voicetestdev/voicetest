@@ -32,7 +32,10 @@ class ActiveChat:
     engine: ConversationEngine
     transcript: list = field(default_factory=list)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
-    processing: bool = False
+    # Serializes process_message calls for a single chat. ConversationEngine
+    # holds turn-state (transcript, current node, pending tool calls) that
+    # corrupts if two awaits interleave on the same chat.
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 class ChatManager:
@@ -108,76 +111,77 @@ class ChatManager:
         if active_chat.cancel_event.is_set():
             return
 
-        active_chat.processing = True
+        async with active_chat.lock:
+            # Re-check cancellation: end_chat may have set it while we waited.
+            if active_chat.cancel_event.is_set():
+                return
 
-        try:
-            # Add user message to engine
-            await active_chat.engine.add_user_message(content)
+            try:
+                # Add user message to engine
+                await active_chat.engine.add_user_message(content)
 
-            # Update transcript with user message
-            active_chat.transcript = [m.model_dump() for m in active_chat.engine.transcript]
-            call_repo.update_transcript(chat_id, active_chat.transcript)
+                # Update transcript with user message
+                active_chat.transcript = [m.model_dump() for m in active_chat.engine.transcript]
+                call_repo.update_transcript(chat_id, active_chat.transcript)
 
-            # Broadcast user message in transcript
-            await self._sessions.broadcast(
-                chat_id,
-                {
-                    "type": "transcript_update",
-                    "transcript": active_chat.transcript,
-                },
-            )
-
-            # Define streaming token callback
-            async def on_token(token: str, source: str) -> None:
+                # Broadcast user message in transcript
                 await self._sessions.broadcast(
                     chat_id,
-                    {"type": "token", "content": token},
+                    {
+                        "type": "transcript_update",
+                        "transcript": active_chat.transcript,
+                    },
                 )
 
-            # Process the turn
-            turn_result = await active_chat.engine.advance(
-                on_token=on_token,
-            )
+                # Define streaming token callback
+                async def on_token(token: str, source: str) -> None:
+                    await self._sessions.broadcast(
+                        chat_id,
+                        {"type": "token", "content": token},
+                    )
 
-            # Update transcript with agent response
-            active_chat.transcript = [m.model_dump() for m in active_chat.engine.transcript]
-            call_repo.update_transcript(chat_id, active_chat.transcript)
+                # Process the turn
+                turn_result = await active_chat.engine.advance(
+                    on_token=on_token,
+                )
 
-            # Broadcast full transcript update
-            await self._sessions.broadcast(
-                chat_id,
-                {
-                    "type": "transcript_update",
-                    "transcript": active_chat.transcript,
-                },
-            )
+                # Update transcript with agent response
+                active_chat.transcript = [m.model_dump() for m in active_chat.engine.transcript]
+                call_repo.update_transcript(chat_id, active_chat.transcript)
 
-            # If agent ended the call, broadcast and clean up the session
-            if turn_result.end_call_invoked:
-                call_repo.end_call(chat_id)
-                await self._sessions.close(
+                # Broadcast full transcript update
+                await self._sessions.broadcast(
                     chat_id,
-                    {"type": "chat_ended", "reason": "agent_ended"},
+                    {
+                        "type": "transcript_update",
+                        "transcript": active_chat.transcript,
+                    },
                 )
 
-        except QuotaExhaustedError as e:
-            logger.warning("Quota exhausted during chat %s: %s", chat_id, e)
-            await self._sessions.broadcast(
-                chat_id,
-                {
-                    "type": "quota_exhausted",
-                    "message": str(e),
-                    "reset_message": e.reset_message,
-                },
-            )
-        except Exception as e:
-            logger.exception("Error processing chat message for %s", chat_id)
-            await self._sessions.broadcast(
-                chat_id,
-                {"type": "error", "message": str(e)},
-            )
-        finally:
-            active_chat.processing = False
+                # If agent ended the call, broadcast and clean up the session
+                if turn_result.end_call_invoked:
+                    call_repo.end_call(chat_id)
+                    await self._sessions.close(
+                        chat_id,
+                        {"type": "chat_ended", "reason": "agent_ended"},
+                    )
+
+            except QuotaExhaustedError as e:
+                logger.warning("Quota exhausted during chat %s: %s", chat_id, e)
+                await self._sessions.broadcast(
+                    chat_id,
+                    {
+                        "type": "quota_exhausted",
+                        "message": str(e),
+                        "reset_message": e.reset_message,
+                    },
+                )
+            except Exception as e:
+                logger.exception("Error processing chat message for %s", chat_id)
+                await self._sessions.broadcast(
+                    chat_id,
+                    {"type": "error", "message": str(e)},
+                )
 
     async def end_chat(self, chat_id: str, call_repo: Any) -> dict | None:
         """End a chat session and clean up resources."""

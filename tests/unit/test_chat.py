@@ -1,5 +1,6 @@
 """Tests for voicetest text chat manager."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -302,6 +303,65 @@ class TestChatManagerProcessMessage:
         # Should not raise
         await chat_manager.process_message("nonexistent", "hello", call_repo)
 
+    @pytest.mark.asyncio
+    async def test_process_message_serializes_concurrent_calls(
+        self, chat_manager, call_repo, single_node_graph
+    ):
+        """Two concurrent process_message calls on the same chat must run serially.
+
+        Engine state (transcript, current node) corrupts if two turns interleave;
+        the per-chat asyncio.Lock guarantees ordering. We block the first call
+        inside `advance`, confirm the second hasn't entered the critical section,
+        then release and verify both calls completed in order.
+        """
+        result = await chat_manager.start_chat(
+            "agent-1", single_node_graph, call_repo, agent_model="groq/llama-3.1-8b-instant"
+        )
+        chat_id = result["chat_id"]
+        active = chat_manager.get_active_chat(chat_id)
+
+        gate = asyncio.Event()
+        order: list[str] = []
+
+        async def slow_advance(on_token=None):
+            order.append("advance-start")
+            await gate.wait()
+            order.append("advance-end")
+            return MagicMock(end_call_invoked=False)
+
+        async def record_add(msg: str):
+            order.append(f"add:{msg}")
+
+        mock_engine = MagicMock()
+        mock_engine.add_user_message = AsyncMock(side_effect=record_add)
+        mock_engine.advance = AsyncMock(side_effect=slow_advance)
+        mock_engine.transcript = []
+        active.engine = mock_engine
+
+        first = asyncio.create_task(chat_manager.process_message(chat_id, "one", call_repo))
+        # Yield until the first call is parked inside advance.
+        while "advance-start" not in order:
+            await asyncio.sleep(0)
+
+        second = asyncio.create_task(chat_manager.process_message(chat_id, "two", call_repo))
+        # Give the second task several scheduling rounds; it must not enter the
+        # critical section while the first holds the lock.
+        for _ in range(10):
+            await asyncio.sleep(0)
+        assert order == ["add:one", "advance-start"]
+
+        gate.set()
+        await asyncio.gather(first, second)
+
+        assert order == [
+            "add:one",
+            "advance-start",
+            "advance-end",
+            "add:two",
+            "advance-start",
+            "advance-end",
+        ]
+
 
 class TestChatManagerQuotaExhausted:
     """Tests for quota exhaustion handling in chat sessions."""
@@ -383,4 +443,4 @@ class TestActiveChatDataclass:
         )
         assert chat.transcript == []
         assert not chat.cancel_event.is_set()
-        assert chat.processing is False
+        assert not chat.lock.locked()

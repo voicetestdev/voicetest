@@ -2,8 +2,8 @@
 
 import asyncio
 import json
+import threading
 import time
-import time as _t
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
@@ -843,24 +843,33 @@ class TestRunRunnerLifecycle:
         return {"agent_id": agent_id, "test_ids": test_ids}
 
     @staticmethod
-    def _spy_broadcasts(coordinator, monkeypatch) -> list:
-        """Replace coordinator.broadcast with a spy that records every call."""
+    def _spy_broadcasts(coordinator, monkeypatch) -> tuple[list, threading.Event]:
+        """Replace coordinator.broadcast with a spy + an event that fires on run_completed.
+
+        Returns `(calls, completed)`. Callers can `completed.wait(timeout=N)` to
+        synchronize on the end of the run instead of polling — `threading.Event`
+        works cross-loop, which matters because the spy runs on the FastAPI
+        BackgroundTask's loop while tests wait from the sync thread.
+        """
         calls: list = []
+        completed = threading.Event()
         original = coordinator.broadcast
 
         async def spy(run_id, data):
             calls.append(data)
             await original(run_id, data)
+            if data.get("type") == "run_completed":
+                completed.set()
 
         monkeypatch.setattr(coordinator, "broadcast", spy)
-        return calls
+        return calls, completed
 
     def test_full_lifecycle_broadcasts_state_running_completed(
         self, db_client, two_tests_agent, monkeypatch
     ):
         """A run with N tests broadcasts test_started + test_completed, then run_completed."""
 
-        broadcasts = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
+        broadcasts, completed = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
 
         async def fake_run_test(*args, **kwargs):
             return TestResult(test_id="t", test_name="Patched", status="pass", transcript=[])
@@ -874,13 +883,7 @@ class TestRunRunnerLifecycle:
                 json={"test_ids": two_tests_agent["test_ids"]},
             )
             assert resp.status_code == 200
-
-            # Background task is dispatched by FastAPI; poll for run_completed.
-            deadline = time.time() + 5
-            while time.time() < deadline and not any(
-                c.get("type") == "run_completed" for c in broadcasts
-            ):
-                time.sleep(0.05)
+            assert completed.wait(timeout=5), f"run never completed; broadcasts: {broadcasts}"
 
         types = [c.get("type") for c in broadcasts]
         assert types.count("test_started") == 2
@@ -927,7 +930,7 @@ class TestRunRunnerLifecycle:
         """A test cancelled before the loop reaches it → test_cancelled; run_test is skipped."""
 
         coordinator = _get_coordinator(db_client)
-        broadcasts = self._spy_broadcasts(coordinator, monkeypatch)
+        broadcasts, _completed = self._spy_broadcasts(coordinator, monkeypatch)
 
         job, result_ids = self._prepare_job(
             db_client, two_tests_agent["agent_id"], two_tests_agent["test_ids"]
@@ -956,7 +959,7 @@ class TestRunRunnerLifecycle:
         """coordinator.cancel_run() before execute() → all tests cancelled."""
 
         coordinator = _get_coordinator(db_client)
-        broadcasts = self._spy_broadcasts(coordinator, monkeypatch)
+        broadcasts, _completed = self._spy_broadcasts(coordinator, monkeypatch)
 
         job, _ = self._prepare_job(
             db_client, two_tests_agent["agent_id"], two_tests_agent["test_ids"]
@@ -1004,7 +1007,7 @@ class TestRunRunnerLifecycle:
                 ws.receive_json()  # state
                 ws.send_json({"type": "cancel_run"})
 
-                _t.sleep(0.2)
+                time.sleep(0.2)
 
             cancel_run_spy.assert_called_with(run_id)
         finally:
@@ -1013,7 +1016,7 @@ class TestRunRunnerLifecycle:
     def test_quota_exhausted_aborts_remaining_tests(self, db_client, two_tests_agent, monkeypatch):
         """When run_test raises QuotaExhaustedError, remaining tests are marked cancelled."""
 
-        broadcasts = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
+        broadcasts, completed = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
         agent_id = two_tests_agent["agent_id"]
 
         async def raises_quota(*args, **kwargs):
@@ -1028,12 +1031,7 @@ class TestRunRunnerLifecycle:
                 json={"test_ids": two_tests_agent["test_ids"]},
             )
             assert resp.status_code == 200
-
-            deadline = time.time() + 5
-            while time.time() < deadline and not any(
-                c.get("type") == "run_completed" for c in broadcasts
-            ):
-                time.sleep(0.05)
+            assert completed.wait(timeout=5), f"run never completed; broadcasts: {broadcasts}"
 
         types = [c.get("type") for c in broadcasts]
         assert "quota_exhausted" in types
@@ -1042,3 +1040,34 @@ class TestRunRunnerLifecycle:
         assert "test_started" in types  # first test did start before raising
         quota_msg = next(c for c in broadcasts if c.get("type") == "quota_exhausted")
         assert quota_msg["reset_message"] == "try later"
+
+    def test_runrunner_unexpected_exception_broadcasts_test_error(
+        self, db_client, two_tests_agent, monkeypatch
+    ):
+        """A non-Quota / non-Cancelled exception from run_test is surfaced as `test_error`
+        and the run continues to the next test."""
+        broadcasts, _completed = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
+
+        job, result_ids = self._prepare_job(
+            db_client, two_tests_agent["agent_id"], two_tests_agent["test_ids"]
+        )
+        first_test_id = two_tests_agent["test_ids"][0]
+        first_result_id = result_ids[first_test_id]
+        _get_coordinator(db_client).start(job.run_id)
+
+        async def raises_unexpected(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test",
+            side_effect=raises_unexpected,
+        ):
+            runner = db_client.app.state.container.resolve(RunRunner)
+            asyncio.run(runner.execute(job))
+
+        errors = [c for c in broadcasts if c.get("type") == "test_error"]
+        assert len(errors) == 2, f"expected one test_error per test; got broadcasts: {broadcasts}"
+        assert errors[0]["result_id"] == first_result_id
+        assert errors[0]["error"] == "boom"
+        # Run still finishes cleanly — unexpected errors don't abort the run.
+        assert [c for c in broadcasts if c.get("type") == "run_completed"]

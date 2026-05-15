@@ -2,24 +2,15 @@
 
 Exercises the full path: POST /api/agents/{id}/chats/start → connect
 /api/chats/{id}/ws → send `message` → receive `transcript_update`. The
-ConversationEngine.advance call is patched so tests don't hit a real LLM.
+real `ConversationEngine` runs; only `call_llm` (the LLM transport seam)
+is stubbed so tests don't hit a real provider.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
-from voicetest.engine.conversation import ConversationEngine
-from voicetest.engine.conversation import TurnResult
-from voicetest.models.results import Message
 from voicetest.web.chat import ChatManager
-
-
-def _build_agent(db_client, sample_retell_config) -> str:
-    agent_resp = db_client.post(
-        "/api/agents",
-        json={"name": "Chat WS Agent", "config": sample_retell_config},
-    )
-    return agent_resp.json()["id"]
 
 
 def _start_chat(db_client, agent_id: str) -> str:
@@ -28,11 +19,25 @@ def _start_chat(db_client, agent_id: str) -> str:
     return resp.json()["chat_id"]
 
 
+async def _stub_llm(model, signature, **kwargs):
+    """Return a minimal prediction shape covering both transition + response calls.
+
+    The engine's response-generation path reads `.response`; transition-resolution
+    reads `.objectives_complete` and `.transition_to`. We supply all three so a
+    single stub works for either call, regardless of signature.
+    """
+    return SimpleNamespace(
+        response="canned reply",
+        objectives_complete=False,
+        transition_to="none",
+    )
+
+
 class TestChatWebSocket:
     """Lifecycle coverage for /api/chats/{chat_id}/ws."""
 
-    def test_chat_ws_sends_state_on_connect(self, db_client, sample_retell_config):
-        agent_id = _build_agent(db_client, sample_retell_config)
+    def test_chat_ws_sends_state_on_connect(self, db_client, make_agent, single_node_graph):
+        agent_id = make_agent(graph=single_node_graph)["id"]
         chat_id = _start_chat(db_client, agent_id)
 
         with db_client.websocket_connect(f"/api/chats/{chat_id}/ws") as ws:
@@ -48,43 +53,37 @@ class TestChatWebSocket:
             assert msg["type"] == "error"
 
     def test_chat_ws_broadcasts_transcript_after_user_message(
-        self, db_client, sample_retell_config
+        self, db_client, make_agent, single_node_graph
     ):
-        """Sending a `message` advances the engine and broadcasts the updated transcript."""
-        agent_id = _build_agent(db_client, sample_retell_config)
+        """Real engine runs end-to-end; only the LLM transport is stubbed.
+
+        Single-node graph has no transitions, so `advance` makes exactly one
+        `call_llm` invocation (for response generation). The engine's own
+        transcript bookkeeping, snippet expansion, and broadcast emission all
+        execute normally — only the LLM provider call is intercepted.
+        """
+        agent_id = make_agent(graph=single_node_graph)["id"]
         chat_id = _start_chat(db_client, agent_id)
 
-        # Patch the engine's advance() to skip LLM work and push a fake reply onto the
-        # transcript. add_user_message is patched to append the user turn synchronously.
-        # `transcript` is a property returning a copy, so we write through `_transcript`.
-        async def fake_add_user_message(self_engine, content):
-            self_engine._transcript.append(Message(role="user", content=content))
-
-        async def fake_advance(self_engine, on_token=None):
-            self_engine._transcript.append(Message(role="assistant", content="canned reply"))
-            return TurnResult(response="canned reply", end_call_invoked=False)
-
         with (
-            patch.object(ConversationEngine, "add_user_message", fake_add_user_message),
-            patch.object(ConversationEngine, "advance", fake_advance),
+            patch("voicetest.engine.conversation.call_llm", side_effect=_stub_llm),
             db_client.websocket_connect(f"/api/chats/{chat_id}/ws") as ws,
         ):
             ws.receive_json()  # state
             ws.send_json({"type": "message", "content": "hello there"})
 
-            # First transcript_update is the user-msg echo (process_message broadcasts twice).
-            msg = ws.receive_json()
-            assert msg["type"] == "transcript_update"
-            assert any(m["content"] == "hello there" for m in msg["transcript"])
+            # process_message broadcasts twice: first the user turn, then the assistant reply.
+            user_msg = ws.receive_json()
+            assert user_msg["type"] == "transcript_update"
+            assert any(m["content"] == "hello there" for m in user_msg["transcript"])
 
-            # Second transcript_update includes the agent's reply.
-            msg = ws.receive_json()
-            assert msg["type"] == "transcript_update"
-            assert any(m["content"] == "canned reply" for m in msg["transcript"])
+            agent_msg = ws.receive_json()
+            assert agent_msg["type"] == "transcript_update"
+            assert any(m["content"] == "canned reply" for m in agent_msg["transcript"])
 
-    def test_chat_ws_end_chat_closes_session(self, db_client, sample_retell_config):
+    def test_chat_ws_end_chat_closes_session(self, db_client, make_agent, single_node_graph):
         """Sending `end_chat` removes the session from ChatManager and closes the WS."""
-        agent_id = _build_agent(db_client, sample_retell_config)
+        agent_id = make_agent(graph=single_node_graph)["id"]
         chat_id = _start_chat(db_client, agent_id)
 
         chat_manager = db_client.app.state.container.resolve(ChatManager)

@@ -70,7 +70,7 @@ class RunRunner:
                     )
                     continue
 
-                if self._coordinator.is_cancelled(job.run_id):
+                if self._coordinator.is_run_cancelled(job.run_id):
                     await self._cancel_remaining(job, idx)
                     break
 
@@ -160,8 +160,14 @@ class RunRunner:
             self._runs.complete(job.run_id)
             await self._coordinator.broadcast(job.run_id, {"type": "run_completed"})
         finally:
-            # Delay so final WS messages flush before subscribers detach.
-            await asyncio.sleep(1)
+            # `broadcast()` awaits each subscriber's `send_text` under the
+            # per-channel lock before returning, so by the time we reach here
+            # every attached client has received `run_completed`. `end()` only
+            # drops in-memory channel state — it doesn't close sockets or
+            # affect in-flight TCP — so no flush window is needed. A late-
+            # connecting WS hits the endpoint's early-exit path (sees
+            # `completed_at` in the DB + inactive coordinator, sends
+            # `run_completed`, closes).
             self._coordinator.end(job.run_id)
 
     async def _cancel_remaining(self, job: RunJob, start_idx: int) -> None:
@@ -175,7 +181,9 @@ class RunRunner:
 
     def _make_on_turn(self, run_id: str, result_id: str, transcript_ref: list[Message]):
         async def on_turn(transcript: list) -> None:
-            if self._coordinator.is_cancelled(run_id, result_id):
+            if self._coordinator.is_run_cancelled(run_id) or self._coordinator.is_test_cancelled(
+                run_id, result_id
+            ):
                 raise asyncio.CancelledError("Test cancelled by user")
             transcript_ref.clear()
             transcript_ref.extend(transcript)

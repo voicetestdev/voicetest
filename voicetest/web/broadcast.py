@@ -8,10 +8,10 @@ directly because its per-run state is bespoke (cancel flags + orphan
 cleanup).
 
 Threading contract: all bus operations run on the FastAPI event loop. Each
-channel has its own `asyncio.Lock` to serialize `attach()` (drain queue
-then subscribe) against `broadcast()` (snapshot subscribers + send), so a
-connecting client receives queued backlog before any newly-broadcast
-message.
+channel has its own `asyncio.Lock` covering attach (drain queue then
+subscribe) AND broadcast (send to all subscribers under the lock), so
+messages land in a single total order per channel and a connecting client
+receives queued backlog before any newly-broadcast message.
 """
 
 import asyncio
@@ -71,7 +71,11 @@ class BroadcastBus:
             ch["websockets"].discard(websocket)
 
     async def broadcast(self, channel: str, data: dict) -> None:
-        """Send to all subscribers; queue for later if none are attached."""
+        """Send to all subscribers; queue for later if none are attached.
+
+        Lock covers the whole send so concurrent broadcasts can't interleave:
+        subscribers see messages in the order they were broadcast.
+        """
         ch = self._channels.get(channel)
         if ch is None:
             return
@@ -80,18 +84,14 @@ class BroadcastBus:
             if not ch["websockets"]:
                 ch["message_queue"].append(message)
                 return
-            targets = list(ch["websockets"])  # snapshot — set may mutate during sends
-        dead = []
-        for ws in targets:
-            try:
-                await ws.send_text(message)
-            except Exception:
-                dead.append(ws)
-        if dead:
-            ch = self._channels.get(channel)
-            if ch is not None:
-                for ws in dead:
-                    ch["websockets"].discard(ws)
+            dead = []
+            for ws in list(ch["websockets"]):
+                try:
+                    await ws.send_text(message)
+                except Exception:
+                    dead.append(ws)
+            for ws in dead:
+                ch["websockets"].discard(ws)
 
 
 class SessionRegistry[TSession]:

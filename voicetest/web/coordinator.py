@@ -59,20 +59,17 @@ class RunCoordinator:
         if run is not None:
             run["cancelled_tests"].add(result_id)
 
+    def is_run_cancelled(self, run_id: str) -> bool:
+        run = self._runs.get(run_id)
+        if run is None:
+            return False
+        return run["cancel"].is_set()
+
     def is_test_cancelled(self, run_id: str, result_id: str) -> bool:
         run = self._runs.get(run_id)
         if run is None:
             return False
         return result_id in run["cancelled_tests"]
-
-    def is_cancelled(self, run_id: str, result_id: str | None = None) -> bool:
-        """Check if the run is cancelled, or (optionally) if a specific test is."""
-        run = self._runs.get(run_id)
-        if run is None:
-            return False
-        if result_id and result_id in run["cancelled_tests"]:
-            return True
-        return run["cancel"].is_set()
 
     @contextlib.contextmanager
     def claim_orphan_cleanup(self, run_id: str):
