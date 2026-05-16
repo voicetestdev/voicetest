@@ -5,6 +5,7 @@ environment variable is not set.
 """
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -17,6 +18,9 @@ from dspy.clients.cache import request_cache
 import litellm
 
 from voicetest.exceptions import QuotaExhaustedError
+
+
+logger = logging.getLogger(__name__)
 
 
 # Default timeout for the Claude Code CLI subprocess. Long generations
@@ -178,6 +182,40 @@ class ClaudeCodeLM(dspy.LM):
                 if reset_message:
                     detail += f" Resets {reset_message}."
                 raise QuotaExhaustedError(detail, reset_message=reset_message)
+            # Translate transient upstream errors to retryable litellm
+            # exceptions so with_retry catches them; bare RuntimeError is
+            # not in RETRYABLE_EXCEPTIONS and would kill the run on a
+            # single 5xx. `api_error_status` is the upstream HTTP status
+            # surfaced by the CLI.
+            api_status = response.get("api_error_status")
+            if isinstance(api_status, int):
+                detail = f"Claude Code transient error {api_status}: {error_msg}"
+                if api_status in (408, 504, 524):
+                    logger.warning(
+                        "Claude Code timeout %d, translating to litellm.Timeout: %s",
+                        api_status,
+                        error_msg,
+                    )
+                    raise litellm.Timeout(
+                        message=detail, model=self.model, llm_provider="claudecode"
+                    )
+                if api_status == 429:
+                    logger.warning(
+                        "Claude Code rate limit, translating to litellm.RateLimitError: %s",
+                        error_msg,
+                    )
+                    raise litellm.RateLimitError(
+                        message=detail, model=self.model, llm_provider="claudecode"
+                    )
+                if 500 <= api_status < 600:
+                    logger.warning(
+                        "Claude Code 5xx %d, translating to litellm.APIConnectionError: %s",
+                        api_status,
+                        error_msg,
+                    )
+                    raise litellm.APIConnectionError(
+                        message=detail, model=self.model, llm_provider="claudecode"
+                    )
             raise RuntimeError(f"Claude Code error: {error_msg}")
 
         return [{"text": response["result"]}]

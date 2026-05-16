@@ -201,6 +201,14 @@ class MySignature(dspy.Signature):
 
 The type annotations (`str`, `int`, `float`, `bool`, `list[str]`) guide the LLM's output format. The `desc` should clarify semantics, not just repeat the type.
 
+### Retry and idempotency
+
+`voicetest.util.retry.with_retry` wraps the LLM call path (`voicetest.llm.base.call_llm`) with exponential backoff. Retries fire on the exceptions listed in `RETRYABLE_EXCEPTIONS`: `litellm.RateLimitError`, `litellm.Timeout`, `litellm.APIConnectionError`, `openai.APITimeoutError`, and `AdapterParseError`.
+
+LLM-provider classes are responsible for translating transient upstream failures into one of these exception types so the retry layer catches them — e.g. `voicetest.llm.claudecode.ClaudeCodeLM` maps 5xx → `APIConnectionError`, 429 → `RateLimitError`, 408/504/524 → `Timeout`. Non-transient errors (4xx other than the rate-limit/timeout codes, malformed responses, quota exhausted) stay as `RuntimeError` or `QuotaExhaustedError` so they fail fast instead of burning the retry budget.
+
+**Idempotency contract.** The retry layer assumes the wrapped function is idempotent. Today every caller is an LLM completion, where duplicate generations on the upstream side are accepted: the worst case is an extra billed token chunk that never reaches us. If a future caller performs side effects (tool execution, DB write, external API mutation), that call MUST NOT be retried by `with_retry`. Wrap it in explicit error handling, or guard the side effect with an idempotency key on the receiving side. Extending `RETRYABLE_EXCEPTIONS` or adding new `with_retry` call sites without checking this contract will silently re-trigger side effects on transient failure.
+
 ### Retell terminal-tool conversion
 
 When importing Retell LLM-format agents, terminal tools (`end_call`, `transfer_call`) are converted to proper CF node types during export rather than remaining as tools in the tools array:

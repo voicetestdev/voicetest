@@ -41,7 +41,8 @@ class EmptyLLMOutputError(Exception):
 # Callback type for error notifications
 OnErrorCallback = Callable[[RetryError], Awaitable[None] | None]
 
-# Exceptions that should trigger a retry
+# Exceptions that should trigger a retry. Callers must be idempotent — see
+# docs/development.md § Retry and idempotency.
 RETRYABLE_EXCEPTIONS = (
     litellm.RateLimitError,
     litellm.Timeout,
