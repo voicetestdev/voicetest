@@ -715,11 +715,11 @@
               <button type="button" onclick={addMetric}>Add</button>
             </div>
             {#if newTest.metrics && newTest.metrics.length > 0}
-              <ul class="tag-list">
+              <ul class="tag-list metrics">
                 {#each newTest.metrics as metric, i}
                   <li>
-                    <input
-                      type="text"
+                    <textarea
+                      rows="1"
                       value={metric}
                       oninput={(e) => {
                         if (newTest.metrics) {
@@ -727,7 +727,7 @@
                           newTest.metrics = [...newTest.metrics];
                         }
                       }}
-                    />
+                    ></textarea>
                     <button class="small danger" onclick={() => removeMetric(i)}>x</button>
                   </li>
                 {/each}
@@ -1123,7 +1123,7 @@
 
   .modal {
     width: 90%;
-    max-width: 600px;
+    max-width: 900px;
   }
 
   .form-group {
@@ -1179,21 +1179,29 @@
   .tag-list li {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
+    gap: 0.5rem;
     background: var(--bg-primary);
-    padding: 0.25rem 0.5rem;
+    padding: 0.35rem 0.5rem;
     border-radius: 4px;
     font-size: 0.85rem;
   }
 
-  .tag-list li input[type="text"] {
+  .tag-list li textarea {
     flex: 1;
     background: transparent;
     border: none;
     color: inherit;
     font-size: inherit;
+    font-family: inherit;
     padding: 0;
     outline: none;
+    line-height: 1.5;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    resize: none;
+    field-sizing: content;
+    min-height: 1.5em;
   }
 
   .tag-list.includes li {
