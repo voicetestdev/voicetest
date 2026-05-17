@@ -6,6 +6,7 @@
     currentAgentId,
     runHistory,
     cancelTest,
+    cancelRun,
     retryStatus,
     startRun,
     currentView,
@@ -651,15 +652,21 @@
           >
             {replaying ? "Replaying..." : "Replay"}
           </button>
+          <button
+            class="delete-run-btn"
+            onclick={deleteRun}
+            disabled={deleting}
+            title="Delete run"
+          >
+            {deleting ? "Deleting..." : "Delete"}
+          </button>
+        {:else}
+          <button
+            class="cancel-run-btn"
+            onclick={cancelRun}
+            title="Cancel run"
+          >Cancel</button>
         {/if}
-        <button
-          class="delete-run-btn"
-          onclick={deleteRun}
-          disabled={deleting}
-          title="Delete run"
-        >
-          {deleting ? "Deleting..." : "Delete"}
-        </button>
       {/if}
     </div>
 
@@ -1437,6 +1444,17 @@
   .delete-run-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .cancel-run-btn {
+    background: var(--danger-bg) !important;
+    color: var(--danger-text) !important;
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  .cancel-run-btn:hover {
+    background: var(--danger-bg-hover) !important;
   }
 
   .replay-btn {

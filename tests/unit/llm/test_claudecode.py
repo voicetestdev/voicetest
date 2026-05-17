@@ -20,6 +20,17 @@ from voicetest.llm.base import _create_lm
 from voicetest.llm.claudecode import ClaudeCodeLM
 
 
+def _error_response(message: str, api_error_status: int | None = None) -> MagicMock:
+    """Build a MagicMock subprocess.run return value simulating an is_error JSON payload."""
+    body: dict = {"is_error": True, "result": message}
+    if api_error_status is not None:
+        body["api_error_status"] = api_error_status
+    result = MagicMock()
+    result.returncode = 1
+    result.stdout = json.dumps(body)
+    return result
+
+
 class TestClaudeCodeLMInit:
     """Test ClaudeCodeLM initialization."""
 
@@ -138,18 +149,9 @@ class TestClaudeCodeLMCall:
     def test_raises_on_is_error_in_json_response(self):
         """Should raise RuntimeError when JSON response has is_error=true."""
 
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = json.dumps(
-            {
-                "is_error": True,
-                "result": "Credit balance is too low",
-            }
-        )
-
         with (
             patch("shutil.which", return_value="/usr/local/bin/claude"),
-            patch("subprocess.run", return_value=mock_result),
+            patch("subprocess.run", return_value=_error_response("Credit balance is too low")),
         ):
             lm = ClaudeCodeLM(cache=False)
             with pytest.raises(RuntimeError, match="Credit balance is too low"):
@@ -534,18 +536,14 @@ class TestClaudeCodeLMQuotaExhausted:
     def test_detects_hit_your_limit(self):
         """Should raise QuotaExhaustedError for the known Claude Code quota message."""
 
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = json.dumps(
-            {
-                "is_error": True,
-                "result": "You've hit your limit · resets 3pm (America/New_York)",
-            }
-        )
-
         with (
             patch("shutil.which", return_value="/usr/local/bin/claude"),
-            patch("subprocess.run", return_value=mock_result),
+            patch(
+                "subprocess.run",
+                return_value=_error_response(
+                    "You've hit your limit · resets 3pm (America/New_York)"
+                ),
+            ),
         ):
             lm = ClaudeCodeLM(cache=False)
             with pytest.raises(QuotaExhaustedError) as exc_info:
@@ -556,18 +554,14 @@ class TestClaudeCodeLMQuotaExhausted:
     def test_parses_reset_time_from_message(self):
         """Should extract reset time into reset_message attribute."""
 
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = json.dumps(
-            {
-                "is_error": True,
-                "result": "You've hit your limit · resets 3pm (America/New_York)",
-            }
-        )
-
         with (
             patch("shutil.which", return_value="/usr/local/bin/claude"),
-            patch("subprocess.run", return_value=mock_result),
+            patch(
+                "subprocess.run",
+                return_value=_error_response(
+                    "You've hit your limit · resets 3pm (America/New_York)"
+                ),
+            ),
         ):
             lm = ClaudeCodeLM(cache=False)
             with pytest.raises(QuotaExhaustedError) as exc_info:
@@ -578,18 +572,14 @@ class TestClaudeCodeLMQuotaExhausted:
     def test_detection_is_case_insensitive(self):
         """Should detect 'hit your limit' regardless of case."""
 
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = json.dumps(
-            {
-                "is_error": True,
-                "result": "You've HIT YOUR LIMIT · resets 5pm (America/Chicago)",
-            }
-        )
-
         with (
             patch("shutil.which", return_value="/usr/local/bin/claude"),
-            patch("subprocess.run", return_value=mock_result),
+            patch(
+                "subprocess.run",
+                return_value=_error_response(
+                    "You've HIT YOUR LIMIT · resets 5pm (America/Chicago)"
+                ),
+            ),
         ):
             lm = ClaudeCodeLM(cache=False)
             with pytest.raises(QuotaExhaustedError):
@@ -598,21 +588,162 @@ class TestClaudeCodeLMQuotaExhausted:
     def test_other_errors_still_raise_runtime_error(self):
         """Non-quota is_error responses should still raise RuntimeError."""
 
-        mock_result = MagicMock()
-        mock_result.returncode = 1
-        mock_result.stdout = json.dumps(
-            {
-                "is_error": True,
-                "result": "Credit balance is too low",
-            }
-        )
-
         with (
             patch("shutil.which", return_value="/usr/local/bin/claude"),
-            patch("subprocess.run", return_value=mock_result),
+            patch("subprocess.run", return_value=_error_response("Credit balance is too low")),
         ):
             lm = ClaudeCodeLM(cache=False)
             with pytest.raises(RuntimeError, match="Credit balance is too low"):
+                lm("test prompt")
+
+
+class TestClaudeCodeLMTransientServerErrors:
+    """Transient upstream errors should map to retryable litellm exceptions for with_retry."""
+
+    def test_500_maps_to_apiconnectionerror(self):
+        """5xx server errors are transient — raise litellm.APIConnectionError
+        so with_retry catches them."""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch(
+                "subprocess.run",
+                return_value=_error_response(
+                    "API Error: 500 Internal server error. This is a server-side issue, "
+                    "usually temporary — try again in a moment.",
+                    api_error_status=500,
+                ),
+            ),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(litellm.APIConnectionError) as exc_info:
+                lm("test prompt")
+
+            assert "500" in str(exc_info.value)
+
+    def test_502_maps_to_apiconnectionerror(self):
+        """502 Bad Gateway is also a transient upstream error."""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch(
+                "subprocess.run",
+                return_value=_error_response("API Error: 502 Bad Gateway", api_error_status=502),
+            ),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(litellm.APIConnectionError):
+                lm("test prompt")
+
+    def test_503_maps_to_apiconnectionerror(self):
+        """503 Service Unavailable is transient."""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch(
+                "subprocess.run",
+                return_value=_error_response(
+                    "API Error: 503 Service Unavailable", api_error_status=503
+                ),
+            ),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(litellm.APIConnectionError):
+                lm("test prompt")
+
+    def test_429_maps_to_ratelimiterror(self):
+        """429 Too Many Requests is a rate limit — raise litellm.RateLimitError."""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch(
+                "subprocess.run",
+                return_value=_error_response(
+                    "API Error: 429 Too Many Requests", api_error_status=429
+                ),
+            ),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(litellm.RateLimitError):
+                lm("test prompt")
+
+    def test_408_maps_to_timeout(self):
+        """408 Request Timeout maps to litellm.Timeout."""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch(
+                "subprocess.run",
+                return_value=_error_response(
+                    "API Error: 408 Request Timeout", api_error_status=408
+                ),
+            ),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(litellm.Timeout):
+                lm("test prompt")
+
+    def test_504_maps_to_timeout(self):
+        """504 Gateway Timeout maps to litellm.Timeout (timeout-shaped, not generic 5xx)."""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch(
+                "subprocess.run",
+                return_value=_error_response(
+                    "API Error: 504 Gateway Timeout", api_error_status=504
+                ),
+            ),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(litellm.Timeout):
+                lm("test prompt")
+
+    def test_400_still_raises_runtime_error(self):
+        """Non-transient client errors (400 Credit balance, etc.) stay as
+        RuntimeError — retrying won't help."""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch(
+                "subprocess.run",
+                return_value=_error_response("Credit balance is too low", api_error_status=400),
+            ),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(RuntimeError, match="Credit balance is too low"):
+                lm("test prompt")
+
+    def test_is_error_without_api_status_still_raises_runtime_error(self):
+        """If api_error_status is missing we can't classify — fall back to
+        the original RuntimeError so non-transient failures (auth, malformed
+        request) aren't silently retried forever."""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", return_value=_error_response("Some opaque CLI failure")),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(RuntimeError, match="Some opaque CLI failure"):
+                lm("test prompt")
+
+    def test_hit_your_limit_still_takes_precedence(self):
+        """The quota-exhausted path stays distinct from transient errors —
+        a quota response shouldn't be retried, even if api_error_status is
+        somehow present alongside it."""
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch(
+                "subprocess.run",
+                return_value=_error_response(
+                    "You've hit your limit · resets 3pm (America/New_York)",
+                    api_error_status=429,
+                ),
+            ),
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            with pytest.raises(QuotaExhaustedError):
                 lm("test prompt")
 
 
