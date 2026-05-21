@@ -14,6 +14,7 @@ from voicetest.container import create_container
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
+from voicetest.web.calls import CallManager
 
 
 @pytest.fixture
@@ -141,3 +142,21 @@ class TestSessionScopeByBackend:
 
         assert agent_repo.session is not test_case_repo.session
         assert test_case_repo.session is not run_repo.session
+
+
+class TestLiveCallManagerResolution:
+    """Regression coverage for CallManager / LiveKit wiring.
+
+    Hit by `GET /api/livekit/status`: the endpoint resolves CallManager
+    via the container, and any broken DI on CallManager surfaces as a
+    500. A `LiveKitConfig | None` constructor arg with no matching
+    registration produced `MissingDependencyError` in production.
+    """
+
+    def test_call_manager_resolves_from_container(self, fresh_container):
+        manager = fresh_container.resolve(CallManager)
+        assert isinstance(manager, CallManager)
+        # The manager must carry a populated LiveKitConfig so the
+        # /livekit/status endpoint can introspect connection settings.
+        assert manager.config is not None
+        assert manager.config.url

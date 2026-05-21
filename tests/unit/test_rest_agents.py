@@ -231,7 +231,6 @@ class TestAgentsCRUD:
         )
         agent_id = create_response.json()["id"]
 
-        # Update metrics config
         db_client.put(
             f"/api/agents/{agent_id}/metrics-config",
             json={
@@ -240,12 +239,15 @@ class TestAgentsCRUD:
             },
         )
 
-        # Get agent should include metrics_config
         response = db_client.get(f"/api/agents/{agent_id}")
         assert response.status_code == 200
 
         agent = response.json()
-        assert "metrics_config" in agent
+        # metrics_config must arrive as a structured object the client can
+        # consume directly — not a JSON-encoded string the caller has to parse.
+        assert isinstance(agent["metrics_config"], dict)
+        assert agent["metrics_config"]["threshold"] == 0.9
+        assert agent["metrics_config"]["global_metrics"] == []
 
 
 class TestAgentVariablesEndpoint:

@@ -214,8 +214,7 @@ export interface AgentRecord {
   source_type: string;
   source_path: string | null;
   tests_paths: string[] | null;
-  graph_json: string | null;
-  metrics_config?: string | null;
+  metrics_config?: MetricsConfig | null;
   created_at: string;
   updated_at: string;
 }

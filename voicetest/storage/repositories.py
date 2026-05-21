@@ -129,20 +129,10 @@ class AgentRepository:
         if not agent:
             return None
 
-        agent.metrics_config = None
+        agent.metrics_config = json.loads(metrics_config.model_dump_json())
         agent.updated_at = datetime.now(UTC)
         self.session.commit()
-
-        return self._get_with_metrics_json(agent_id, metrics_config)
-
-    def _get_with_metrics_json(self, agent_id: str, metrics_config: MetricsConfig) -> dict:
-        """Get agent dict with metrics_config as JSON string for API compatibility."""
-        agent = self.session.get(Agent, agent_id)
-        result = self._to_dict(agent)
-        result["metrics_config"] = metrics_config.model_dump_json()
-        agent.metrics_config = json.loads(metrics_config.model_dump_json())
-        self.session.commit()
-        return result
+        return self.get(agent_id)
 
     def get_metrics_config(self, agent_id: str) -> MetricsConfig:
         """Get an agent's metrics configuration.
@@ -196,7 +186,7 @@ class AgentRepository:
                 self.session.rollback()
                 raise
 
-    def load_graph(self, agent: dict) -> AgentGraph | Path:
+    def load_graph(self, agent_id: str) -> AgentGraph | Path:
         """Load the AgentGraph for an agent.
 
         For linked agents (source_path set), returns Path for caller to import.
@@ -205,23 +195,33 @@ class AgentRepository:
         Returns:
             AgentGraph if graph_json is stored, or Path for linked files.
         """
-        if agent.get("graph_json"):
-            return AgentGraph.model_validate_json(agent["graph_json"])
+        agent = self.session.get(Agent, agent_id)
+        if not agent:
+            raise ValueError(f"Agent not found: {agent_id}")
 
-        if agent.get("source_path"):
-            path = resolve_path(agent["source_path"])
+        if agent.graph_json:
+            return AgentGraph.model_validate_json(agent.graph_json)
+
+        if agent.source_path:
+            path = resolve_path(agent.source_path)
             if not path.exists():
                 raise FileNotFoundError(f"Agent file not found: {path}")
             return path
 
-        raise ValueError(f"Agent {agent['id']} has neither source_path nor graph_json")
+        raise ValueError(f"Agent {agent_id} has neither source_path nor graph_json")
+
+    def get_graph_json(self, agent_id: str) -> str | None:
+        """Return the raw stored graph_json column for an agent, or None."""
+        agent = self.session.get(Agent, agent_id)
+        return agent.graph_json if agent else None
 
     def _to_dict(self, agent: Agent) -> dict:
-        """Convert Agent model to dictionary for API responses."""
-        metrics_json = None
-        if agent.metrics_config:
-            metrics_json = json.dumps(agent.metrics_config)
+        """Convert Agent model to dictionary for API responses.
 
+        The graph payload is intentionally excluded — clients fetch it from
+        `GET /api/agents/{id}/graph`, which handles linked-file re-import and
+        ETag caching as a single source of truth.
+        """
         return {
             "id": agent.id,
             "user_id": agent.user_id,
@@ -229,8 +229,7 @@ class AgentRepository:
             "source_type": agent.source_type,
             "source_path": agent.source_path,
             "tests_paths": agent.tests_paths,
-            "graph_json": agent.graph_json,
-            "metrics_config": metrics_json,
+            "metrics_config": agent.metrics_config,
             "created_at": _serialize_datetime(agent.created_at),
             "updated_at": _serialize_datetime(agent.updated_at),
         }
