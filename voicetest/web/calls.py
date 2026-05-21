@@ -63,9 +63,9 @@ class CallManager:
     def __init__(
         self,
         settings_service: SettingsService,
-        config: LiveKitConfig | None = None,
+        config: LiveKitConfig,
     ):
-        self.config = config or LiveKitConfig.from_env()
+        self.config = config
         self._sessions: SessionRegistry[ActiveCall] = SessionRegistry()
         self._settings = settings_service
 

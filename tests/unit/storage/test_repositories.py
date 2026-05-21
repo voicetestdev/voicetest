@@ -132,7 +132,9 @@ class TestAgentRepository:
         assert record["name"] == "Test Agent"
         assert record["source_type"] == "retell"
         assert record["source_path"] is None
-        assert record["graph_json"] is not None
+        # The graph payload itself is fetched via load_graph; verify it
+        # round-tripped through storage.
+        assert agent_repo.load_graph(record["id"]) is not None
 
     def test_create_linked_agent(self, agent_repo, tmp_path):
         agent_file = tmp_path / "agent.json"
@@ -146,7 +148,8 @@ class TestAgentRepository:
 
         assert record["id"] is not None
         assert record["source_path"] == str(agent_file)
-        assert record["graph_json"] is None
+        # Linked agents resolve to the file path via load_graph.
+        assert agent_repo.load_graph(record["id"]) == agent_file
 
     def test_list_all(self, agent_repo, sample_graph):
         agent_repo.create(name="Agent 1", source_type="retell", graph_json="{}")
@@ -205,7 +208,7 @@ class TestAgentRepository:
             graph_json=sample_graph.model_dump_json(),
         )
 
-        graph = agent_repo.load_graph(record)
+        graph = agent_repo.load_graph(record["id"])
 
         assert graph is not None
         assert graph.source_type == "test"
@@ -223,7 +226,7 @@ class TestAgentRepository:
             source_path=str(agent_file),
         )
 
-        result = agent_repo.load_graph(record)
+        result = agent_repo.load_graph(record["id"])
 
         assert isinstance(result, Path)
         assert result == agent_file
@@ -238,7 +241,7 @@ class TestAgentRepository:
         )
 
         with pytest.raises(FileNotFoundError):
-            agent_repo.load_graph(record)
+            agent_repo.load_graph(record["id"])
 
     def test_create_agent_with_metrics_config(self, agent_repo):
         metrics_config = MetricsConfig(
@@ -256,7 +259,7 @@ class TestAgentRepository:
         )
 
         assert record["metrics_config"] is not None
-        loaded = MetricsConfig.model_validate_json(record["metrics_config"])
+        loaded = MetricsConfig.model_validate(record["metrics_config"])
         assert loaded.threshold == 0.8
         assert len(loaded.global_metrics) == 1
         assert loaded.global_metrics[0].name == "HIPAA"
@@ -280,7 +283,7 @@ class TestAgentRepository:
         updated = agent_repo.update_metrics_config(record["id"], new_config)
 
         assert updated["metrics_config"] is not None
-        loaded = MetricsConfig.model_validate_json(updated["metrics_config"])
+        loaded = MetricsConfig.model_validate(updated["metrics_config"])
         assert loaded.threshold == 0.9
         assert loaded.global_metrics[0].name == "PCI"
 
@@ -568,7 +571,7 @@ class TestAgentRepositoryEdgeCases:
         )
 
         with pytest.raises(ValueError, match="has neither source_path nor graph_json"):
-            agent_repo.load_graph(record)
+            agent_repo.load_graph(record["id"])
 
     def test_get_metrics_config_nonexistent_agent(self, agent_repo):
         config = agent_repo.get_metrics_config("nonexistent-id")

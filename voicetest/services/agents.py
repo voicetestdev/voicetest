@@ -141,10 +141,12 @@ class AgentService:
         if not agent:
             raise ValueError(f"Agent not found: {agent_id}")
 
-        if graph_json is None and default_model is not None and agent.get("graph_json"):
-            graph_data = json.loads(agent["graph_json"])
-            graph_data["default_model"] = default_model if default_model else None
-            graph_json = json.dumps(graph_data)
+        if graph_json is None and default_model is not None:
+            stored = self._repo.get_graph_json(agent_id)
+            if stored:
+                graph_data = json.loads(stored)
+                graph_data["default_model"] = default_model if default_model else None
+                graph_json = json.dumps(graph_data)
 
         return self._repo.update(agent_id, name=name, graph_json=graph_json)
 
@@ -173,7 +175,7 @@ class AgentService:
         if source_path:
             graph = self._importers.import_agent(resolve_path(source_path))
         else:
-            result = self._repo.load_graph(agent)
+            result = self._repo.load_graph(agent_id)
             graph = self._importers.import_agent(result) if isinstance(result, Path) else result
 
         return agent, graph
@@ -212,7 +214,7 @@ class AgentService:
             graph = self._importers.import_agent(resolve_path(source_path))
             return graph, etag, False
 
-        result = self._repo.load_graph(agent)
+        result = self._repo.load_graph(agent_id)
         graph = self._importers.import_agent(result) if isinstance(result, Path) else result
 
         updated_at = agent.get("updated_at", "")

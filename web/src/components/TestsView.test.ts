@@ -181,7 +181,6 @@ describe("App - View switching reactivity", () => {
         source_type: "custom",
         source_path: null,
         tests_paths: null,
-        graph_json: null,
         metrics_config: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),

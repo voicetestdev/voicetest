@@ -175,9 +175,11 @@ def create_container() -> punq.Container:
 
     # Live call / chat managers hold per-process session state, so they must be singletons.
     from voicetest.web.calls import CallManager  # noqa: PLC0415
+    from voicetest.web.calls import LiveKitConfig  # noqa: PLC0415
     from voicetest.web.chat import ChatManager  # noqa: PLC0415
     from voicetest.web.coordinator import RunCoordinator  # noqa: PLC0415
 
+    container.register(LiveKitConfig, instance=LiveKitConfig.from_env())
     container.register(CallManager, scope=punq.Scope.singleton)
     container.register(ChatManager, scope=punq.Scope.singleton)
     container.register(RunCoordinator, scope=punq.Scope.singleton)
