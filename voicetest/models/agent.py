@@ -164,9 +164,7 @@ class AgentNode(BaseModel):
         return self.node_type == NodeType.EXTRACT
 
     def is_function_node(self) -> bool:
-        """Check if this is a tool-call (function) node. Voicetest does not
-        execute the underlying tool — see docs/development.md § Tool
-        execution for the weak-support contract."""
+        """Check if this is a tool-call (function) node."""
         return self.node_type == NodeType.FUNCTION
 
 

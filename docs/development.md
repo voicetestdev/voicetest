@@ -209,6 +209,17 @@ LLM-provider classes are responsible for translating transient upstream failures
 
 **Idempotency contract.** The retry layer assumes the wrapped function is idempotent. Today every caller is an LLM completion, where duplicate generations on the upstream side are accepted: the worst case is an extra billed token chunk that never reaches us. If a future caller performs side effects (tool execution, DB write, external API mutation), that call MUST NOT be retried by `with_retry`. Wrap it in explicit error handling, or guard the side effect with an idempotency key on the receiving side. Extending `RETRYABLE_EXCEPTIONS` or adding new `with_retry` call sites without checking this contract will silently re-trigger side effects on transient failure.
 
+### Function nodes (tool calls) — weak support
+
+`NodeType.FUNCTION` represents a tool-call node in the agent graph (Retell CF's `"type": "function"` is the canonical example — a node whose runtime job is to invoke an external HTTP/webhook tool and branch on the result). Voicetest **does not execute the underlying tool**. The engine's behavior on a function node is deliberately limited:
+
+- A `logger.warning(...)` records that the node was reached and that tool execution is unsupported, naming the node id and pointing to the tracking issue.
+- The engine then follows the first `always`-type transition out of the node (Retell's `else_edge` shape, imported into the IR as an always-type `Transition`).
+- If no fallback edge is present, the call stalls cleanly — empty response, no exception.
+- Non-`always` transitions on the function node are **skipped**, even when their conditions reference variables that voicetest could in principle evaluate. This is intentional: in practice these conditions are almost always tool-result driven (e.g. `{{tool_result.status}} == "success"`); evaluating them against an absent `tool_result` would return false and route the conversation incorrectly. Taking the else edge unconditionally is the safer default until real tool execution lands.
+
+The full tool-execution roadmap — mock-mode (consume `TestCase.tool_mocks`), live HTTP execution behind a flag, and result-driven branching — is tracked at [voicetestdev/voicetest#51](https://github.com/voicetestdev/voicetest/issues/51). When that work lands, `_evaluate_function_node` in `voicetest/engine/conversation.py` is the swap-in site.
+
 ### Retell terminal-tool conversion
 
 When importing Retell LLM-format agents, terminal tools (`end_call`, `transfer_call`) are converted to proper CF node types during export rather than remaining as tools in the tools array:
