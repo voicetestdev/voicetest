@@ -20,6 +20,7 @@ class NodeType(StrEnum):
     EXTRACT = "extract"
     END = "end"
     TRANSFER = "transfer"
+    FUNCTION = "function"
 
 
 class EquationClause(BaseModel):
@@ -161,6 +162,12 @@ class AgentNode(BaseModel):
     def is_extract_node(self) -> bool:
         """Check if this is an extract-then-branch node."""
         return self.node_type == NodeType.EXTRACT
+
+    def is_function_node(self) -> bool:
+        """Check if this is a tool-call (function) node. Voicetest does not
+        execute the underlying tool — see docs/development.md § Tool
+        execution for the weak-support contract."""
+        return self.node_type == NodeType.FUNCTION
 
 
 class GlobalMetric(BaseModel):

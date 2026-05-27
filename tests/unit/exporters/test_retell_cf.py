@@ -1226,6 +1226,72 @@ class TestLogicSplitExport:
         assert always_transitions[0].target_node_id == "standard"
 
 
+class TestFunctionNodeExport:
+    """Function (tool-call) nodes export with type=function and their
+    always transition becomes else_edge, mirroring logic_split's shape.
+    """
+
+    @pytest.fixture
+    def function_node_graph(self):
+        return AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet the caller.",
+                    transitions=[
+                        Transition(
+                            target_node_id="process_refill",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="User confirmed refill"
+                            ),
+                        ),
+                    ],
+                ),
+                "process_refill": AgentNode(
+                    id="process_refill",
+                    state_prompt="",
+                    node_type=NodeType.FUNCTION,
+                    transitions=[
+                        Transition(
+                            target_node_id="confirm",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    metadata={"retell_type": "function", "name": "Process Refill Request"},
+                ),
+                "confirm": AgentNode(
+                    id="confirm",
+                    state_prompt="Confirm and end.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="greeting",
+            source_type="retell",
+        )
+
+    def test_function_node_exported_as_function_type(self, function_node_graph):
+        result = export_retell_cf(function_node_graph)
+        process = _find_node(result["nodes"], "process_refill")
+        assert process["type"] == "function"
+
+    def test_function_node_always_transition_becomes_else_edge(self, function_node_graph):
+        result = export_retell_cf(function_node_graph)
+        process = _find_node(result["nodes"], "process_refill")
+        assert "else_edge" in process
+        assert process["else_edge"]["destination_node_id"] == "confirm"
+
+    def test_function_node_roundtrip(self, function_node_graph):
+        """import → export → re-import preserves the function node type."""
+        exported = export_retell_cf(function_node_graph)
+        reimported = RetellImporter().import_agent(exported)
+        process = reimported.nodes["process_refill"]
+        assert process.node_type == NodeType.FUNCTION
+        assert process.is_function_node()
+        always_transitions = [t for t in process.transitions if t.condition.type == "always"]
+        assert len(always_transitions) == 1
+        assert always_transitions[0].target_node_id == "confirm"
+
+
 class TestExportAlwaysEdge:
     """Tests for exporting always_edge on conversation nodes."""
 

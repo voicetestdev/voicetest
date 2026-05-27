@@ -1,5 +1,6 @@
 """Tests for voicetest.engine.conversation module."""
 
+import logging
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
@@ -510,6 +511,91 @@ class TestLogicNodeHandling:
 
         assert mock_llm.called
         assert result.response == "Hello!"
+
+
+class TestFunctionNodeHandling:
+    """Function (tool-call) nodes are weakly supported: voicetest does not
+    execute the underlying HTTP/webhook tool, but it must not crash when
+    one appears mid-graph — the engine logs a warning and follows the
+    always (else) edge so the conversation can continue.
+    """
+
+    @pytest.fixture
+    def function_graph(self):
+        return AgentGraph(
+            nodes={
+                "greet": AgentNode(
+                    id="greet",
+                    state_prompt="Greet the user.",
+                    transitions=[
+                        Transition(
+                            target_node_id="call_tool",
+                            condition=TransitionCondition(type="llm_prompt", value="User ready"),
+                        )
+                    ],
+                ),
+                "call_tool": AgentNode(
+                    id="call_tool",
+                    state_prompt="",
+                    node_type=NodeType.FUNCTION,
+                    transitions=[
+                        Transition(
+                            target_node_id="after_tool",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        )
+                    ],
+                ),
+                "after_tool": AgentNode(
+                    id="after_tool",
+                    state_prompt="Thanks, your request was processed.",
+                    transitions=[],
+                ),
+            },
+            entry_node_id="greet",
+            source_type="retell",
+        )
+
+    @pytest.mark.asyncio
+    async def test_function_node_follows_else_edge(self, function_graph, caplog):
+        """Engine takes the always edge through a function node and logs a warning."""
+        engine = ConversationEngine(function_graph, model="openai/gpt-4o-mini")
+        engine._current_node = "call_tool"
+        engine._nodes_visited = ["greet", "call_tool"]
+
+        with caplog.at_level(logging.WARNING, logger="voicetest.engine.conversation"):
+            result = await engine._process_node()
+
+        assert result.transitioned_to == "after_tool"
+        assert "after_tool" in engine.nodes_visited
+        # The synthetic ToolCall records the routing decision, same as logic/extract nodes do.
+        assert any(tc.name == "route_to_after_tool" for tc in result.tool_calls)
+        # And the user gets a single warning explaining tool execution is unsupported.
+        assert any(
+            "function node" in rec.message.lower() and "call_tool" in rec.message
+            for rec in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_function_node_without_transition_does_not_crash(self):
+        """A function node with no outbound edges stalls cleanly — no LLM call, no exception."""
+        graph = AgentGraph(
+            nodes={
+                "lone_tool": AgentNode(
+                    id="lone_tool",
+                    state_prompt="",
+                    node_type=NodeType.FUNCTION,
+                    transitions=[],
+                ),
+            },
+            entry_node_id="lone_tool",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(graph, model="openai/gpt-4o-mini")
+        result = await engine._process_node()
+
+        assert result.response == ""
+        assert result.transitioned_to is None
 
 
 class TestLogicalOperator:

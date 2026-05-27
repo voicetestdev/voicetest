@@ -385,6 +385,16 @@ class TestNodeType:
         assert str(NodeType.EXTRACT) == "extract"
         assert str(NodeType.END) == "end"
         assert str(NodeType.TRANSFER) == "transfer"
+        assert str(NodeType.FUNCTION) == "function"
+
+    def test_function_type_round_trip(self):
+        """An explicit FUNCTION node survives JSON round-trip and predicates correctly."""
+        node = AgentNode(id="tool", state_prompt="", node_type=NodeType.FUNCTION)
+        assert node.is_function_node()
+
+        restored = AgentNode.model_validate_json(node.model_dump_json())
+        assert restored.node_type == NodeType.FUNCTION
+        assert restored.is_function_node()
 
 
 class TestGlobalNodeSetting:

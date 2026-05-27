@@ -303,6 +303,19 @@ def sample_retell_config_logic_split_path(retell_fixtures_dir: Path) -> Path:
 
 
 @pytest.fixture
+def sample_retell_config_function_node(retell_fixtures_dir: Path) -> dict:
+    """Load Retell CF configuration with a function (tool-call) node."""
+    config_path = retell_fixtures_dir / "sample_config_function_node.json"
+    return json.loads(config_path.read_text())
+
+
+@pytest.fixture
+def sample_retell_config_function_node_path(retell_fixtures_dir: Path) -> Path:
+    """Return path to Retell CF configuration with a function node."""
+    return retell_fixtures_dir / "sample_config_function_node.json"
+
+
+@pytest.fixture
 def sample_retell_config_extract_variables(retell_fixtures_dir: Path) -> dict:
     """Load Retell CF configuration with extract_dynamic_variables node."""
     config_path = retell_fixtures_dir / "sample_config_extract_variables.json"

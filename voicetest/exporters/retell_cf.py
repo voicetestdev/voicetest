@@ -23,6 +23,7 @@ _NODE_TYPE_TO_RETELL: dict[NodeType, str] = {
     NodeType.END: "end",
     NodeType.TRANSFER: "transfer_call",
     NodeType.CONVERSATION: "conversation",
+    NodeType.FUNCTION: "function",
 }
 
 _NODE_TYPE_TO_RETELL_REV: dict[str, NodeType] = {v: k for k, v in _NODE_TYPE_TO_RETELL.items()}
@@ -327,14 +328,15 @@ def _convert_node(
     if is_entry and begin_message:
         prompt_text = f"[Begin message: {begin_message}]\n\n{prompt_text}"
 
-    # Separate always-type transitions for logic/extract nodes (else_edge)
-    # and conversation nodes (always_edge)
+    # Separate always-type transitions for logic/extract/function nodes
+    # (else_edge — Retell's convention for non-speaking routers) and
+    # conversation nodes (always_edge).
     regular_transitions = []
     else_transition = None
     always_transition = None
     for t in node.transitions:
         if t.condition.type == "always":
-            if node.is_logic_node() or node.is_extract_node():
+            if node.is_logic_node() or node.is_extract_node() or node.is_function_node():
                 else_transition = t
             else:
                 always_transition = t

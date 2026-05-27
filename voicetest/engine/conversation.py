@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from dataclasses import field
 import hashlib
 import json
+import logging
 
 import dspy
 
@@ -25,6 +26,9 @@ from voicetest.models.test_case import RunOptions
 from voicetest.util.retry import OnErrorCallback
 from voicetest.util.templating import expand_snippets
 from voicetest.util.templating import substitute_variables
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -191,6 +195,15 @@ class ConversationEngine:
                 has_advanced = True
                 continue
 
+            if node.is_function_node():
+                result = await self._evaluate_function_node(node)
+                accumulated_tool_calls.extend(result.tool_calls)
+                if result.transitioned_to is None:
+                    break
+                last_transition_target = result.transitioned_to
+                has_advanced = True
+                continue
+
             # End/transfer nodes without a prompt: end immediately.
             if (node.is_end_node() or node.is_transfer_node()) and not node.state_prompt:
                 self._end_call_invoked = True
@@ -245,6 +258,8 @@ class ConversationEngine:
             return await self._evaluate_extract_node(node, state_module, on_error=on_error)
         if node.is_logic_node():
             return await self._evaluate_logic_node(state_module)
+        if node.is_function_node():
+            return await self._evaluate_function_node(node)
         if (node.is_end_node() or node.is_transfer_node()) and not node.state_prompt:
             self._end_call_invoked = True
             return TurnResult(response="", end_call_invoked=True)
@@ -459,6 +474,30 @@ class ConversationEngine:
             if fallback_target:
                 await self._apply_transition(turn_result, fallback_target)
 
+        return turn_result
+
+    async def _evaluate_function_node(self, node: AgentNode) -> TurnResult:
+        """Pass through a function (tool-call) node without executing the tool.
+
+        Voicetest does not run custom HTTP/webhook tools. The engine logs a
+        warning so users notice the gap, then follows the first `always`
+        transition (Retell's `else_edge` shape) so the conversation can
+        continue. If there is no fallback edge, the call stalls cleanly with
+        no response and no exception.
+
+        Tracking tool execution as a real feature: voicetestdev/voicetest#51.
+        """
+        logger.warning(
+            "function node %s reached; tool execution is not supported — "
+            "following else/always edge if present (see voicetestdev/voicetest#51)",
+            node.id,
+        )
+
+        turn_result = TurnResult(response="")
+        for transition in node.transitions:
+            if transition.condition.type == "always":
+                await self._apply_transition(turn_result, transition.target_node_id)
+                break
         return turn_result
 
     async def _evaluate_extract_node(

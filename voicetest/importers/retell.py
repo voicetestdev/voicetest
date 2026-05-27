@@ -28,9 +28,12 @@ _MUSTACHE_RE = re.compile(r"^\{\{(.+?)\}\}$")
 _RETELL_TYPE_MAP: dict[str, NodeType] = {
     "conversation": NodeType.CONVERSATION,
     "logic_split": NodeType.LOGIC,
+    # Newer Retell CF exports emit `branch` for the equation-router shape.
+    "branch": NodeType.LOGIC,
     "extract_dynamic_variables": NodeType.EXTRACT,
     "end": NodeType.END,
     "transfer_call": NodeType.TRANSFER,
+    "function": NodeType.FUNCTION,
 }
 
 
