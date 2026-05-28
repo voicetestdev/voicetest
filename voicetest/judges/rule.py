@@ -8,11 +8,7 @@ from voicetest.models.results import MetricResult
 
 
 class RuleJudge:
-    """Evaluate conversation against deterministic rules.
-
-    Checks transcripts for required substrings (includes),
-    forbidden substrings (excludes), and wildcard/regex patterns.
-    """
+    """Evaluate conversation against deterministic rules."""
 
     def __init__(self, pattern_engine: str = "fnmatch"):
         self._pattern_engine = pattern_engine
@@ -25,18 +21,7 @@ class RuleJudge:
         patterns: list[str],
         use_heard: bool = False,
     ) -> list[MetricResult]:
-        """Evaluate transcript against rules.
-
-        Args:
-            transcript: Conversation transcript to evaluate.
-            includes: Substrings that must be present.
-            excludes: Substrings that must NOT be present.
-            patterns: Wildcard patterns (fnmatch) or regex patterns (re2).
-            use_heard: If True, use metadata["heard"] for assistant messages.
-
-        Returns:
-            List of MetricResult objects for each rule.
-        """
+        """Evaluate transcript against rules."""
         text = self._format_transcript(transcript, use_heard=use_heard)
         results = []
 

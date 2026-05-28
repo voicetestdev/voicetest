@@ -1,11 +1,4 @@
-"""Pluggable DSPy cache backend.
-
-DSPy supports custom cache implementations via subclassing
-``dspy.clients.Cache``. This module provides ``S3Cache``, a subclass
-that swaps the default ``diskcache.FanoutCache`` disk layer for an
-S3-backed store so cached responses survive container restarts and can
-be shared across team members.
-"""
+"""Pluggable DSPy cache backend."""
 
 import logging
 import threading
@@ -54,8 +47,7 @@ class S3CacheBackend:
     """S3-backed cache backend using cloudpickle for serialization.
 
     S3 key format: {prefix}{cache_key}
-    Error handling: GET/HEAD failures → cache miss, PUT failures → log + skip.
-    """
+    Error handling: GET/HEAD failures → cache miss, PUT failures → log + skip."""
 
     def __init__(
         self,
@@ -109,13 +101,7 @@ class S3CacheBackend:
 
 
 class S3Cache(Cache):
-    """DSPy Cache subclass that uses S3 for persistent storage.
-
-    Replaces the default ``diskcache.FanoutCache`` with an
-    ``S3CacheBackend`` while preserving the in-memory LRU cache,
-    thread safety, cache key generation, and all other base class
-    behavior.
-    """
+    """DSPy Cache subclass that uses S3 for persistent storage."""
 
     def __init__(
         self,
@@ -160,8 +146,7 @@ def _reconstruct_last_request(lm: Any) -> tuple[dict | None, str | None]:
     Only "chat" model_type is supported for the dspy.LM path. Other model types
     ("text", "responses") would need their own fn_identifier string and request
     shape — they aren't exercised by voicetest today, so reconstruction returns
-    (None, None) for them (eviction silently skips, which is safe).
-    """
+    (None, None) for them (eviction silently skips, which is safe)."""
     last_request = getattr(lm, "_voicetest_last_request", None)
     if last_request:
         fn_identifier = getattr(lm, "_voicetest_last_cache_fn_identifier", None)
@@ -202,8 +187,7 @@ def try_evict_last_call(lm: Any) -> bool:
     eviction lets the next run re-roll against a clean cache instead of replaying
     the bad string forever.
 
-    Returns True if at least one cache layer had the entry removed.
-    """
+    Returns True if at least one cache layer had the entry removed."""
     try:
         request, fn_identifier = _reconstruct_last_request(lm)
         if request is None or fn_identifier is None:
@@ -239,12 +223,7 @@ def try_evict_last_call(lm: Any) -> bool:
 
 
 def setup_cache_from_settings(cache_settings: Any) -> None:
-    """Configure DSPy cache from voicetest CacheSettings.
-
-    If backend is "s3" and a bucket is configured, creates an
-    S3Cache and assigns it to ``dspy.cache``. Otherwise does nothing
-    (DSPy uses its built-in local disk cache).
-    """
+    """Configure DSPy cache from voicetest CacheSettings."""
     if cache_settings.cache_backend != "s3":
         return
     if not cache_settings.s3_bucket:

@@ -31,11 +31,7 @@ class SnippetService:
         return graph.snippets
 
     def delete_snippet(self, agent_id: str, name: str) -> dict[str, str]:
-        """Delete a single snippet.
-
-        Raises:
-            ValueError: If snippet not found.
-        """
+        """Delete a single snippet."""
         agent, graph = self._agents.load_graph(agent_id)
         if name not in graph.snippets:
             raise ValueError(f"Snippet not found: {name}")

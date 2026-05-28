@@ -29,16 +29,8 @@ class RetellLLMExporter:
 def export_retell_llm(graph: AgentGraph) -> dict[str, Any]:
     """Export AgentGraph to Retell LLM format.
 
-    Converts the unified AgentGraph representation to Retell's LLM format
-    with states, edges, and tools. Synthetic terminal nodes (end_call,
-    transfer_call) are collapsed back into general_tools with edges removed.
-
-    Args:
-        graph: The agent graph to export.
-
-    Returns:
-        Dictionary in Retell LLM JSON format.
-    """
+    Synthetic terminal nodes (end_call, transfer_call) are collapsed back into
+    general_tools with edges removed."""
     result: dict[str, Any] = {}
 
     if graph.source_metadata:
@@ -51,7 +43,6 @@ def export_retell_llm(graph: AgentGraph) -> dict[str, Any]:
         if "model_temperature" in graph.source_metadata:
             result["model_temperature"] = graph.source_metadata["model_temperature"]
 
-    # Identify synthetic terminal nodes to collapse back into general_tools
     terminal_node_ids, terminal_tools = _collect_terminal_nodes(graph)
 
     general_tools = _extract_general_tools(graph, exclude_nodes=terminal_node_ids)
@@ -66,11 +57,7 @@ def export_retell_llm(graph: AgentGraph) -> dict[str, Any]:
 
 
 def _collect_terminal_nodes(graph: AgentGraph) -> tuple[set[str], list[ToolDefinition]]:
-    """Identify synthetic terminal nodes (end_call/transfer_call) and extract their tools.
-
-    Returns:
-        Tuple of (terminal node IDs to exclude, tool definitions to restore as general_tools).
-    """
+    """Identify synthetic terminal nodes (end_call/transfer_call) and extract their tools."""
     terminal_node_ids: set[str] = set()
     terminal_tools: list[ToolDefinition] = []
 
@@ -146,8 +133,7 @@ def _convert_node_to_state(
     """Convert an AgentNode to a Retell LLM state.
 
     Edges pointing to excluded nodes (synthetic terminal nodes) are stripped
-    since those are represented as general_tools in the LLM format.
-    """
+    since those are represented as general_tools in the LLM format."""
     exclude = exclude_edge_targets or set()
     edges = [
         _convert_transition_to_edge(t) for t in node.transitions if t.target_node_id not in exclude

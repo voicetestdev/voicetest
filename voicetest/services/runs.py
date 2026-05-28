@@ -56,7 +56,6 @@ class RunService:
         if not run:
             return None
 
-        # Enrich results with dynamic_variables from test cases (DB + file-based)
         tc_ids = {r.get("test_case_id") for r in run["results"] if r.get("test_case_id")}
         if tc_ids:
             agent_id = run["agent_id"]
@@ -85,8 +84,7 @@ class RunService:
         """Add a completed result to a run.
 
         Pass `test_case_id` for test runs, `call_id` for live calls, or neither
-        for imported transcripts. Returns the new result id.
-        """
+        for imported transcripts. Returns the new result id."""
         return self._runs.add_result(run_id, result, test_case_id=test_case_id, call_id=call_id)
 
     def delete_run(self, run_id: str) -> None:
@@ -129,8 +127,7 @@ class RunService:
         """Convert a completed call into a Run with a single Result.
 
         Evaluates the agent's configured global metrics against the transcript.
-        Returns the new run_id, or None if the call has no transcript.
-        """
+        Returns the new run_id, or None if the call has no transcript."""
         transcript_data = call.get("transcript_json") or []
         if not transcript_data:
             return None
@@ -175,10 +172,7 @@ class RunService:
         return run["id"]
 
     def add_result_from_call(self, run_id: str, call_id: str, test_result) -> str:
-        """Back-compat alias — prefer add_result(run_id, result, call_id=...).
-
-        Retained because external integrators may depend on this entry point.
-        """
+        """Back-compat alias — prefer add_result(run_id, result, call_id=...)."""
         return self.add_result(run_id, test_result, call_id=call_id)
 
     def import_calls(self, agent_id: str, results: list[TestResult]) -> dict:
@@ -188,8 +182,7 @@ class RunService:
         with status="imported" and no test_case_id/call_id linkage. The Run is
         marked complete immediately since imports are historical, not running.
 
-        Returns the created Run record.
-        """
+        Returns the created Run record."""
         run = self.create_run(agent_id)
         for result in results:
             self.add_result(run["id"], result)
@@ -210,15 +203,7 @@ class RunService:
         ones. Each replay produces a new Result inside a new Run.
 
         Status is "pass" by default — replay results are passive captures of
-        live behavior; judging happens later when metrics are configured. The
-        diff against the source is implicit (same source, different agent
-        responses) and consumed by the diff view.
-
-        Returns the new Run record.
-
-        Raises:
-            ValueError: source run not found, or has no replayable results.
-        """
+        live behavior; judging happens later when metrics are configured."""
         source = self.get_run(source_run_id)
         if not source:
             raise ValueError(f"Source run not found: {source_run_id}")

@@ -49,10 +49,7 @@ class RetellCFExporter:
         """Export as Retell UI-importable agent JSON.
 
         Wraps the bare conversation flow in the agent envelope that
-        Retell's UI import expects (response_engine + conversationFlow).
-        Preserves agent-level fields (voice_id, language, etc.) from
-        the original import when available.
-        """
+        Retell's UI import expects (response_engine + conversationFlow)."""
         layout_enabled = self._settings_service.get_settings().export.layout
         cf = export_retell_cf(graph, layout_enabled=layout_enabled)
         metadata = graph.source_metadata or {}
@@ -62,18 +59,7 @@ class RetellCFExporter:
 
 
 def export_retell_cf(graph: AgentGraph, *, layout_enabled: bool = False) -> dict[str, Any]:
-    """Export AgentGraph to Retell Conversation Flow format.
-
-    Converts the unified AgentGraph representation to Retell's Conversation
-    Flow format with nodes, edges, and tools at the root level.
-
-    Args:
-        graph: The agent graph to export.
-        layout_enabled: If True, compute node positions for the Retell UI.
-
-    Returns:
-        Dictionary in Retell Conversation Flow JSON format.
-    """
+    """Export AgentGraph to Retell Conversation Flow format."""
     metadata = graph.source_metadata or {}
 
     positions: dict[str, dict[str, float]] = {}
@@ -92,7 +78,6 @@ def export_retell_cf(graph: AgentGraph, *, layout_enabled: bool = False) -> dict
         "model_choice": model_choice,
     }
 
-    # Add global_prompt if present
     general_prompt = metadata.get("general_prompt", "")
     if general_prompt:
         result["global_prompt"] = general_prompt
@@ -191,8 +176,7 @@ def _synthesize_transfer_node(
     instead of the ``edges`` array that conversation nodes use, plus
     required ``transfer_destination`` and ``transfer_option`` fields.
     Uses values from tool.metadata if the importer preserved them,
-    otherwise falls back to placeholder defaults.
-    """
+    otherwise falls back to placeholder defaults."""
     node_id = f"synth_{tool.name}"
     transfer_dest = tool.metadata.get("transfer_destination", _DEFAULT_TRANSFER_DESTINATION)
     transfer_opt = tool.metadata.get("transfer_option", _DEFAULT_TRANSFER_OPTION)
@@ -230,8 +214,7 @@ def _build_nodes(
     """Build nodes array from graph, synthesizing terminal nodes from tools.
 
     Processes end_call tools first so the end node ID is available as
-    the failure destination for transfer_call nodes.
-    """
+    the failure destination for transfer_call nodes."""
     positions = positions or {}
     nodes = [
         _convert_node(
@@ -247,11 +230,9 @@ def _build_nodes(
     end_tools = [t for t in terminal_tools if t.type == "end_call"]
     transfer_tools = [t for t in terminal_tools if t.type == "transfer_call"]
 
-    # Compute position for synthesized nodes: one layer right of deepest real node
     synth_position = _synth_node_position(positions) if positions else None
     synth_index = 0
 
-    # Synthesize end nodes first
     end_node_id: str | None = None
     for tool in end_tools:
         if _has_node_of_type(graph, "end"):
@@ -263,14 +244,13 @@ def _build_nodes(
         _wire_edges_for_tool(nodes, graph, tool, synth_node)
         nodes.append(synth_node)
 
-    # Find an existing end node ID if we didn't just create one
     if end_node_id is None:
         for node in graph.nodes.values():
             if node.node_type == NodeType.END or node.metadata.get("retell_type") == "end":
                 end_node_id = node.id
                 break
 
-    # Synthesize transfer nodes, failure edges point to the end node
+    # Transfer-failure edges target the end node (computed above)
     for tool in transfer_tools:
         if _has_node_of_type(graph, "transfer_call"):
             break
@@ -370,7 +350,6 @@ def _convert_node(
             len(regular_transitions),
         )
 
-    # Export transfer_destination/transfer_option for transfer nodes
     if node.node_type == NodeType.TRANSFER:
         transfer_tool = next((t for t in node.tools if t.type == "transfer_call"), None)
         if transfer_tool:
@@ -381,7 +360,6 @@ def _convert_node(
                 "transfer_option", _DEFAULT_TRANSFER_OPTION
             )
 
-    # Export variables for extract_dynamic_variables nodes
     if node.variables_to_extract:
         result["variables"] = [
             {
@@ -393,7 +371,6 @@ def _convert_node(
             for v in node.variables_to_extract
         ]
 
-    # Export global_node_setting if present
     if node.global_node_setting:
         gns: dict[str, Any] = {
             "condition": node.global_node_setting.condition,
@@ -439,7 +416,7 @@ def _convert_transition_to_edge(transition, source_node_id: str, index: int) -> 
                 for eq in transition.condition.equations
             ]
         else:
-            # Fallback for equations without structured data
+            # Free-form equation strings (no parsed clauses available)
             tc["equation"] = transition.condition.value
         op = "||" if transition.condition.logical_operator == "or" else "&&"
         tc["operator"] = op
@@ -470,8 +447,7 @@ def _collect_all_tools(graph: AgentGraph) -> list[ToolDefinition]:
     """Collect and deduplicate all non-terminal tools from all nodes.
 
     Terminal tool types (end_call, transfer_call) are converted to CF nodes
-    by _build_nodes and excluded from the tools array.
-    """
+    by _build_nodes and excluded from the tools array."""
     seen_names: set[str] = set()
     tools: list[ToolDefinition] = []
 
@@ -487,11 +463,7 @@ def _collect_all_tools(graph: AgentGraph) -> list[ToolDefinition]:
 
 
 def _convert_tool(tool: ToolDefinition) -> dict[str, Any]:
-    """Convert a ToolDefinition to Retell Conversation Flow tool format.
-
-    Only called for non-terminal tools (custom, check_availability_cal, etc.).
-    Terminal tool types are handled by _build_nodes as synthesized nodes.
-    """
+    """Convert a ToolDefinition to Retell Conversation Flow tool format."""
     result: dict[str, Any] = {
         "type": tool.type,
         "name": tool.name,
@@ -509,14 +481,7 @@ def _convert_tool(tool: ToolDefinition) -> dict[str, Any]:
 def _wrap_for_retell_ui(
     cf: dict[str, Any], agent_envelope: dict[str, Any] | None = None
 ) -> dict[str, Any]:
-    """Wrap a bare conversation flow dict in the agent envelope Retell's UI expects.
-
-    Merges preserved agent-level fields (voice_id, language, etc.) from the
-    original import so they survive the LLM→CF conversion round-trip.
-
-    Terminal tools (end_call, transfer_call) are already excluded from the
-    tools array by _collect_all_tools, so no additional filtering is needed.
-    """
+    """Wrap a bare conversation flow dict in the agent envelope Retell's UI expects."""
     cf_id = cf.get("conversation_flow_id", "")
 
     wrapper: dict[str, Any] = {

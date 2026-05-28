@@ -6,12 +6,7 @@ from voicetest.models.agent import EquationClause
 
 
 def evaluate_equation(clause: EquationClause, variables: dict[str, Any]) -> bool:
-    """Evaluate a single equation clause against dynamic variables.
-
-    For exists/not_exist operators, checks variable presence.
-    For comparison operators (>, >=, <, <=), attempts numeric coercion.
-    Missing variables return False (except for not_exist).
-    """
+    """Evaluate a single equation clause against dynamic variables."""
     op = clause.operator
 
     if op == "exists":
@@ -39,7 +34,6 @@ def evaluate_equation(clause: EquationClause, variables: dict[str, Any]) -> bool
     if op == "not_contains":
         return expected not in actual
 
-    # Numeric comparison operators
     if op in (">", ">=", "<", "<="):
         try:
             left_num = float(actual)

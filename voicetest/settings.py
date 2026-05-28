@@ -1,8 +1,4 @@
-"""Settings management for voicetest.
-
-Settings are stored in .voicetest/settings.toml (project-local or global).
-Both CLI and web UI read/write the same file.
-"""
+"""Settings management for voicetest."""
 
 import os
 from pathlib import Path
@@ -14,7 +10,6 @@ from pydantic import Field
 from voicetest.config import get_settings_path
 
 
-# Default model used when settings are not configured
 DEFAULT_MODEL = "groq/llama-3.1-8b-instant"
 
 
@@ -89,11 +84,7 @@ class Settings(BaseModel):
     )
 
     def apply_env(self) -> None:
-        """Apply configured environment variables.
-
-        Sets environment variables from settings. Useful for API keys.
-        Only sets variables that are configured - does not clear existing env vars.
-        """
+        """Apply configured environment variables."""
         for key, value in self.env.items():
             if value:
                 os.environ[key] = value
@@ -122,7 +113,6 @@ def _to_toml(settings: Settings) -> str:
     """Convert settings to TOML string."""
     lines = []
 
-    # Only write [models] section if any model is configured
     model_lines = []
     if settings.models.agent is not None:
         model_lines.append(f'agent = "{settings.models.agent}"')
@@ -154,7 +144,6 @@ def _to_toml(settings: Settings) -> str:
     lines.append(f"layout = {str(settings.export.layout).lower()}")
     lines.append("")
 
-    # Only write [cache] section if non-default backend is configured
     if settings.cache.cache_backend != "disk":
         lines.append("[cache]")
         lines.append(f'cache_backend = "{settings.cache.cache_backend}"')

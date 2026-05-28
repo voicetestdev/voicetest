@@ -135,10 +135,7 @@ class AgentRepository:
         return self.get(agent_id)
 
     def get_metrics_config(self, agent_id: str) -> MetricsConfig:
-        """Get an agent's metrics configuration.
-
-        Returns the stored configuration or a default if none exists.
-        """
+        """Get an agent's metrics configuration."""
         agent = self.session.get(Agent, agent_id)
         if not agent:
             return MetricsConfig()
@@ -152,14 +149,13 @@ class AgentRepository:
         """Delete an agent and all associated runs, test cases, and calls.
 
         DuckDB enforces foreign keys but does not support CASCADE at the DB
-        level, so children must be deleted manually in dependency order.
-        """
+        level, so children must be deleted manually in dependency order."""
         agent = self.session.get(Agent, agent_id)
         if agent:
             try:
-                # Delete in FK-dependency order: results → runs → tests/calls → agent.
-                # DuckDB enforces foreign keys eagerly within a transaction, so
-                # each layer must be committed before deleting the parent layer.
+                # FK-dependency order: results → runs → tests/calls → agent.
+                # DuckDB enforces FKs eagerly within a transaction, so each
+                # layer must be committed before deleting the parent layer.
                 run_ids = [r.id for r in agent.runs]
                 self.session.expire(agent)
                 if run_ids:
@@ -190,11 +186,7 @@ class AgentRepository:
         """Load the AgentGraph for an agent.
 
         For linked agents (source_path set), returns Path for caller to import.
-        For imported agents (graph_json set), parses the stored JSON.
-
-        Returns:
-            AgentGraph if graph_json is stored, or Path for linked files.
-        """
+        For imported agents (graph_json set), parses the stored JSON."""
         agent = self.session.get(Agent, agent_id)
         if not agent:
             raise ValueError(f"Agent not found: {agent_id}")
@@ -220,8 +212,7 @@ class AgentRepository:
 
         The graph payload is intentionally excluded — clients fetch it from
         `GET /api/agents/{id}/graph`, which handles linked-file re-import and
-        ETag caching as a single source of truth.
-        """
+        ETag caching as a single source of truth."""
         return {
             "id": agent.id,
             "user_id": agent.user_id,
@@ -337,8 +328,7 @@ class TestCaseRepository:
         """List all test cases for an agent, merging DB and file-based tests.
 
         File-based tests get deterministic IDs via uuid5(NAMESPACE_URL, "{path}:{name}")
-        and include source_path and source_index fields.
-        """
+        so they are stable across reads."""
         db_tests = self.list_for_agent(agent_id)
 
         if not tests_paths:
@@ -531,11 +521,7 @@ class RunRepository:
     ) -> list[dict]:
         """List runs for an agent with per-run result status counts.
 
-        Returns the same fields as list_for_agent plus a ``summary`` dict
-        containing total, passed, failed, errors, and running counts.
-        Uses a single grouped query to avoid N+1.
-        """
-        # Subquery: per-run result status counts
+        Uses a single grouped query to avoid N+1 on result-status counts."""
         counts = (
             self.session.query(
                 Result.run_id,
@@ -577,7 +563,6 @@ class RunRepository:
             results.append(d)
             run_ids.append(run.id)
 
-        # Batch-fetch failed/error test names for all runs in one query
         if run_ids:
             failed_rows = (
                 self.session.query(Result.run_id, Result.test_name)
@@ -644,10 +629,7 @@ class RunRepository:
         At most one of `test_case_id` or `call_id` is set per result:
           - test runs: pass `test_case_id`
           - live calls: pass `call_id`
-          - imported transcripts: pass neither (both columns null)
-
-        Returns the new result id.
-        """
+          - imported transcripts: pass neither (both columns null)"""
         result_id = str(uuid4())
         now = datetime.now(UTC)
         data = self._serialize_result_data(result)
@@ -681,10 +663,7 @@ class RunRepository:
         call_id: str,
         result: TestResult,
     ) -> str:
-        """Back-compat alias — prefer add_result(run_id, result, call_id=...).
-
-        Retained because external integrators may depend on this entry point.
-        """
+        """Back-compat alias — prefer add_result(run_id, result, call_id=...)."""
         return self.add_result(run_id, result, call_id=call_id)
 
     def create_pending_result(self, run_id: str, test_case_id: str, test_name: str) -> str:

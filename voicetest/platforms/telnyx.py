@@ -49,31 +49,14 @@ class TelnyxPlatformClient:
         return export_telnyx_config
 
     def get_client(self, api_key: str | None = None) -> telnyx.Telnyx:
-        """Get a configured Telnyx SDK client.
-
-        Args:
-            api_key: Telnyx API key. Defaults to TELNYX_API_KEY env var.
-
-        Returns:
-            Configured Telnyx client.
-
-        Raises:
-            ValueError: If no API key available.
-        """
+        """Get a configured Telnyx SDK client."""
         key = api_key or os.environ.get(self.env_key)
         if not key:
             raise ValueError(f"{self.env_key} not set")
         return telnyx.Telnyx(api_key=key)
 
     def list_agents(self, client: telnyx.Telnyx) -> list[dict[str, Any]]:
-        """List AI assistants from Telnyx.
-
-        Args:
-            client: Telnyx SDK client.
-
-        Returns:
-            List of dicts with id and name fields.
-        """
+        """List AI assistants from Telnyx."""
         response = client.ai.assistants.list()
         assistants = response.data if hasattr(response, "data") else []
         return [
@@ -85,15 +68,7 @@ class TelnyxPlatformClient:
         ]
 
     def get_agent(self, client: telnyx.Telnyx, agent_id: str) -> dict[str, Any]:
-        """Get an AI assistant configuration by ID.
-
-        Args:
-            client: Telnyx SDK client.
-            agent_id: Assistant ID.
-
-        Returns:
-            Assistant configuration dict.
-        """
+        """Get an AI assistant configuration by ID."""
         response = client.ai.assistants.retrieve(agent_id)
         assistant = response if not hasattr(response, "data") else response.data
 
@@ -119,16 +94,7 @@ class TelnyxPlatformClient:
     def create_agent(
         self, client: telnyx.Telnyx, config: dict[str, Any], name: str | None = None
     ) -> dict[str, Any]:
-        """Create an AI assistant in Telnyx.
-
-        Args:
-            client: Telnyx SDK client.
-            config: Assistant configuration.
-            name: Optional name override.
-
-        Returns:
-            Dict with id, name, and platform fields.
-        """
+        """Create an AI assistant in Telnyx."""
         create_params: dict[str, Any] = {
             "instructions": config.get("instructions", ""),
             "model": config.get("model", "openai/gpt-4o"),
@@ -157,27 +123,13 @@ class TelnyxPlatformClient:
         }
 
     def delete_agent(self, client: telnyx.Telnyx, agent_id: str) -> None:
-        """Delete an AI assistant from Telnyx.
-
-        Args:
-            client: Telnyx SDK client.
-            agent_id: Assistant ID.
-        """
+        """Delete an AI assistant from Telnyx."""
         client.ai.assistants.delete(agent_id)
 
     def update_agent(
         self, client: telnyx.Telnyx, agent_id: str, config: dict[str, Any]
     ) -> dict[str, Any]:
-        """Update an AI assistant in Telnyx.
-
-        Args:
-            client: Telnyx SDK client.
-            agent_id: Assistant ID.
-            config: Updated configuration.
-
-        Returns:
-            Dict with id, name, and platform fields.
-        """
+        """Update an AI assistant in Telnyx."""
         update_params: dict[str, Any] = {}
 
         for field in [
@@ -216,15 +168,5 @@ class TelnyxPlatformClient:
 
 
 def get_client(api_key: str | None = None) -> telnyx.Telnyx:
-    """Get a configured Telnyx SDK client.
-
-    Args:
-        api_key: Telnyx API key. Defaults to TELNYX_API_KEY env var.
-
-    Returns:
-        Configured Telnyx client.
-
-    Raises:
-        ValueError: If no API key available.
-    """
+    """Get a configured Telnyx SDK client."""
     return TelnyxPlatformClient().get_client(api_key)

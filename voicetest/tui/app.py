@@ -103,10 +103,8 @@ class VoicetestApp(App):
         self.title = "voicetest"
         self.sub_title = str(self.context.agent_path.name)
 
-        # Load test cases
         await self.context.load()
 
-        # Populate test list
         test_list = self.query_one("#test-list", TestList)
         test_list.set_tests(self.context.test_cases)
 

@@ -70,11 +70,9 @@ class BlandImporter:
 
     def _is_bland_config(self, config: dict) -> bool:
         """Check if config is a Bland AI inbound number configuration."""
-        # Bland configs have prompt and often phone_number
         has_prompt = "prompt" in config
         has_phone = "phone_number" in config
 
-        # Check for Bland-specific fields
         has_bland_fields = any(
             key in config
             for key in [
@@ -87,7 +85,6 @@ class BlandImporter:
             ]
         )
 
-        # Distinguish from other formats
         is_not_vapi = "model" not in config or not isinstance(config.get("model"), dict)
         is_not_retell_llm = "general_prompt" not in config and "llm_id" not in config
         is_not_retell_cf = "start_node_id" not in config and "nodes" not in config
@@ -107,10 +104,8 @@ class BlandImporter:
         raw_config = self._load_config(path_or_config)
         config = BlandInboundConfig.model_validate(raw_config)
 
-        # Convert tools
         tools = self._convert_tools(config.tools or [])
 
-        # Create single node (Bland doesn't have multi-agent flows)
         node_id = "main"
         nodes = {
             node_id: AgentNode(
@@ -122,7 +117,6 @@ class BlandImporter:
             )
         }
 
-        # Build source metadata
         source_metadata = self._build_metadata(config)
 
         return AgentGraph(
@@ -148,7 +142,7 @@ class BlandImporter:
     def _build_metadata(self, config: BlandInboundConfig) -> dict[str, Any]:
         """Build source metadata from Bland config."""
         metadata: dict[str, Any] = {
-            "general_prompt": "",  # Bland has no separate general prompt
+            "general_prompt": "",
         }
 
         if config.phone_number:

@@ -52,17 +52,7 @@ class BlandPlatformClient:
         return export_bland_config
 
     def get_client(self, api_key: str | None = None) -> BlandAI:
-        """Get a configured Bland AI SDK client.
-
-        Args:
-            api_key: Bland API key. Defaults to BLAND_API_KEY env var.
-
-        Returns:
-            Configured BlandAI client.
-
-        Raises:
-            ValueError: If no API key available.
-        """
+        """Get a configured Bland AI SDK client."""
         key = api_key or os.environ.get(self.env_key)
         if not key:
             raise ValueError(f"{self.env_key} not set")
@@ -73,16 +63,7 @@ class BlandPlatformClient:
         return client._client_wrapper.api_key
 
     def list_agents(self, client: BlandAI) -> list[dict[str, Any]]:
-        """List web agents from Bland AI.
-
-        Note: Uses direct HTTP call due to SDK issues.
-
-        Args:
-            client: Bland AI SDK client.
-
-        Returns:
-            List of dicts with id and name fields.
-        """
+        """List web agents from Bland AI."""
         api_key = self._get_api_key(client)
         response = httpx.get(
             f"{BLAND_API_BASE}/agents",
@@ -103,18 +84,7 @@ class BlandPlatformClient:
         """Get a web agent configuration by ID.
 
         Note: Bland doesn't have a GET individual agent endpoint, so we
-        fetch the list and find the agent by ID.
-
-        Args:
-            client: Bland AI SDK client.
-            agent_id: Web agent ID.
-
-        Returns:
-            Agent configuration dict.
-
-        Raises:
-            ValueError: If agent not found.
-        """
+        fetch the list and find the agent by ID."""
         api_key = self._get_api_key(client)
         response = httpx.get(
             f"{BLAND_API_BASE}/agents",
@@ -141,16 +111,7 @@ class BlandPlatformClient:
     def create_agent(
         self, client: BlandAI, config: dict[str, Any], name: str | None = None
     ) -> dict[str, Any]:
-        """Create a web agent in Bland AI.
-
-        Args:
-            client: Bland AI SDK client.
-            config: Agent configuration with prompt, tools, etc.
-            name: Optional name (used in prompt prefix if provided).
-
-        Returns:
-            Dict with id, name, and platform fields.
-        """
+        """Create a web agent in Bland AI."""
         api_key = self._get_api_key(client)
 
         prompt = config.get("prompt", "")
@@ -191,15 +152,7 @@ class BlandPlatformClient:
     def delete_agent(self, client: BlandAI, agent_id: str) -> None:
         """Delete a web agent from Bland AI.
 
-        Uses POST /v1/agents/{agent_id}/delete endpoint.
-
-        Args:
-            client: Bland AI SDK client.
-            agent_id: Web agent ID.
-
-        Raises:
-            httpx.HTTPStatusError: If deletion fails.
-        """
+        Uses POST /v1/agents/{agent_id}/delete endpoint."""
         api_key = self._get_api_key(client)
         response = httpx.post(
             f"{BLAND_API_BASE}/agents/{agent_id}/delete",
@@ -221,24 +174,10 @@ class BlandPlatformClient:
     def update_agent(
         self, client: BlandAI, agent_id: str, config: dict[str, Any]
     ) -> dict[str, Any]:
-        """Not supported for Bland AI.
-
-        Raises:
-            NotImplementedError: Always, as Bland doesn't support updates.
-        """
+        """Not supported for Bland AI."""
         raise NotImplementedError("Bland AI does not support updating agents in place")
 
 
 def get_client(api_key: str | None = None) -> BlandAI:
-    """Get a configured Bland AI SDK client.
-
-    Args:
-        api_key: Bland API key. Defaults to BLAND_API_KEY env var.
-
-    Returns:
-        Configured BlandAI client.
-
-    Raises:
-        ValueError: If no API key available.
-    """
+    """Get a configured Bland AI SDK client."""
     return BlandPlatformClient().get_client(api_key)

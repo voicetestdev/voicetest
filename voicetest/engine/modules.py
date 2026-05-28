@@ -1,8 +1,4 @@
-"""DSPy modules for conversation state management.
-
-Provides StateModule (per-node signature creation) and ConversationModule
-(graph-wide state module registry and transition formatting).
-"""
+"""DSPy modules for conversation state management."""
 
 from typing import Any
 
@@ -15,12 +11,7 @@ from voicetest.models.agent import TransitionOption
 
 
 class StateModule(dspy.Module):
-    """DSPy module for a single conversation state.
-
-    Each StateModule encapsulates the logic for one node in the conversation
-    flow. It generates a response; transition decisions are handled separately
-    by a dedicated LLM call in ConversationEngine.
-    """
+    """DSPy module for a single conversation state."""
 
     def __init__(
         self,
@@ -38,8 +29,7 @@ class StateModule(dspy.Module):
 
         The node's state prompt is the signature docstring, giving it
         system-level weight in the LLM prompt rather than being just
-        another input field.
-        """
+        another input field."""
         attrs: dict[str, Any] = {
             "__doc__": docstring,
             "general_instructions": dspy.InputField(desc="Overall agent instructions and context"),
@@ -55,13 +45,7 @@ class StateModule(dspy.Module):
 
 
 class ConversationModule(dspy.Module):
-    """DSPy module for full conversation flow.
-
-    Wraps all state modules and manages conversation execution.
-    State modules are registered as submodules for DSPy optimization.
-    Transition detection happens in a separate LLM call after getting
-    the agent's response.
-    """
+    """DSPy module for full conversation flow."""
 
     def __init__(self, graph: AgentGraph):
         super().__init__()
@@ -69,7 +53,6 @@ class ConversationModule(dspy.Module):
         self.entry_node_id = graph.entry_node_id
         self.graph = graph
 
-        # Build and register state modules as proper submodules
         self._state_modules: dict[str, StateModule] = {}
         for node_id, node in graph.nodes.items():
             state_module = StateModule(
@@ -94,8 +77,7 @@ class ConversationModule(dspy.Module):
         Output fields are ordered to force completion reasoning before
         transition selection: the LLM must assess remaining objectives
         and whether the user addressed the agent's last message before
-        it can pick a transition target.
-        """
+        it can pick a transition target."""
         docstring = (
             "Evaluate if the conversation should transition to a different state. "
             "First determine whether the current node's objectives are complete, "
@@ -147,13 +129,11 @@ class ConversationModule(dspy.Module):
         fire automatically after the LLM responds (not LLM-decided).
 
         Appends global node entry conditions for conversation nodes, and
-        go-back conditions when inside a global node with an originator.
-        """
+        go-back conditions when inside a global node with an originator."""
         node = self.graph.nodes.get(node_id)
 
         options: list[TransitionOption] = []
 
-        # Local transitions (excluding always-type)
         if node and node.transitions:
             options.extend(
                 TransitionOption(
@@ -166,7 +146,6 @@ class ConversationModule(dspy.Module):
                 if t.condition.type != "always"
             )
 
-        # Global node entry conditions (only for conversation nodes)
         if node and node.node_type == NodeType.CONVERSATION:
             for global_node in self.graph.global_nodes:
                 if global_node.id == node_id:
@@ -180,7 +159,6 @@ class ConversationModule(dspy.Module):
                     )
                 )
 
-        # Go-back conditions when inside a global node with an originator
         if node and node.global_node_setting and originator_id:
             for gb in node.global_node_setting.go_back_conditions:
                 options.append(

@@ -38,18 +38,10 @@ class ScriptedUserSimulator:
     in a different order), the recorded user turn may not fit perfectly. v1
     accepts that limitation; the regression signal is still useful because
     judging looks at whether the conversation as a whole reaches the same
-    outcome.
-    """
+    outcome."""
 
     def __init__(self, source_transcript: list[Message]):
-        """Initialize from a source transcript.
-
-        Args:
-            source_transcript: The full transcript of the source call. Only
-                user-role messages are extracted as the script; agent-role
-                messages from the source are ignored — the live agent's
-                responses replace them.
-        """
+        """Initialize from a source transcript."""
         self._user_turns: list[str] = [m.content for m in source_transcript if m.role == "user"]
         self._index = 0
 
@@ -59,16 +51,7 @@ class ScriptedUserSimulator:
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
     ) -> SimulatorResponse | None:
-        """Return the next scripted user turn, or None when exhausted.
-
-        Args:
-            transcript: The live conversation so far (unused — the script
-                doesn't depend on what the live agent said).
-            on_token: Optional token-streaming callback — emitted once with the
-                full message so callers that wire UI streaming see the same
-                token-flow shape.
-            on_error: Unused — scripted replay has no retryable errors.
-        """
+        """Return the next scripted user turn, or None when exhausted."""
         if self._index >= len(self._user_turns):
             return None
 

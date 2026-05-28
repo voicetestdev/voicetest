@@ -29,44 +29,31 @@ class MermaidExporter:
 
 
 def export_mermaid(graph: AgentGraph) -> str:
-    """Export AgentGraph to Mermaid flowchart format.
-
-    Args:
-        graph: The agent graph to export.
-
-    Returns:
-        Mermaid flowchart definition string.
-    """
+    """Export AgentGraph to Mermaid flowchart format."""
     lines = ["flowchart TD"]
 
-    # Track nodes with end_call tool
     nodes_with_end_call: list[tuple[str, str]] = []
 
-    # Add nodes with truncated state prompts
     for node_id, node in graph.nodes.items():
         escaped_node_id = _escape_mermaid_text(node_id)
 
         if node.is_extract_node():
-            # Extract nodes get a hexagon shape with their name and variable list
             name = node.metadata.get("name", node_id)
             name = _escape_mermaid_text(str(name))
             var_names = ", ".join(v.name for v in node.variables_to_extract)
             var_names = _escape_mermaid_text(var_names)
             lines.append(f'    {node_id}{{{{"Extract<br/>{name}<br/>[{var_names}]"}}}}')
         elif node.is_logic_node():
-            # Logic split nodes get a diamond shape with their name
             name = node.metadata.get("name", node_id)
             name = _escape_mermaid_text(str(name))
             lines.append(f'    {node_id}{{"Logic Split<br/>{name}"}}')
         else:
-            # Truncate long state prompts
             label = node.state_prompt[:50]
             if len(node.state_prompt) > 50:
                 label += "..."
             label = _escape_mermaid_text(label)
             lines.append(f'    {node_id}["{escaped_node_id}<br/>{label}"]')
 
-        # Check for end_call tool
         if node.tools:
             for tool in node.tools:
                 if tool.name == "end_call" or getattr(tool, "type", "") == "end_call":
@@ -77,7 +64,6 @@ def export_mermaid(graph: AgentGraph) -> str:
                     nodes_with_end_call.append((node_id, desc))
                     break
 
-    # Add edges
     for node_id, node in graph.nodes.items():
         for transition in node.transitions:
             condition_text = transition.condition.value.strip()
@@ -90,18 +76,15 @@ def export_mermaid(graph: AgentGraph) -> str:
             else:
                 lines.append(f"    {node_id} --> {transition.target_node_id}")
 
-    # Add end_call node and edges if any nodes have end_call tool
     if nodes_with_end_call:
         lines.append('    end_call(("End Call"))')
         for node_id, description in nodes_with_end_call:
             lines.append(f'    {node_id} -->|"{description}"| end_call')
         lines.append("    style end_call fill:#dc2626,color:#ffffff")
 
-    # Style global nodes with a purple border
     for global_node in graph.global_nodes:
         lines.append(f"    style {global_node.id} stroke:#7c3aed,stroke-width:3px")
 
-    # Mark entry node with green fill and contrasting text
     lines.append(f"    style {graph.entry_node_id} fill:#16a34a,color:#ffffff")
 
     return "\n".join(lines)

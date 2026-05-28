@@ -39,18 +39,7 @@ class AgentService:
         config: str | Path | dict,
         source: str | None = None,
     ) -> AgentGraph:
-        """Import agent config from any supported source.
-
-        Args:
-            config: Path to config file, config dict, or string path.
-            source: Source type (e.g., 'retell', 'custom'). Auto-detected if None.
-
-        Returns:
-            AgentGraph representing the agent workflow.
-
-        Raises:
-            ValueError: If source type is unknown or cannot be auto-detected.
-        """
+        """Import agent config from any supported source."""
         return self._importers.import_agent(config, source_type=source)
 
     async def export_agent(
@@ -60,17 +49,7 @@ class AgentService:
         output: Path | None = None,
         expanded: bool = False,
     ) -> str:
-        """Export agent graph to specified format.
-
-        Args:
-            graph: The agent graph to export.
-            format: Export format (see DiscoveryService.list_export_formats()).
-            output: Optional output path. Returns string if None.
-            expanded: If True, expand snippets before exporting.
-
-        Returns:
-            Exported content as string.
-        """
+        """Export agent graph to specified format."""
         if expanded and graph.snippets:
             graph = expand_graph_snippets(graph)
         content = self._exporters.export(graph, format)
@@ -95,21 +74,7 @@ class AgentService:
         path: str | None = None,
         source: str | None = None,
     ) -> dict:
-        """Create an agent from config dict or file path.
-
-        Args:
-            name: Agent display name.
-            config: Agent config dict (mutually exclusive with path).
-            path: Path to agent file (mutually exclusive with config).
-            source: Source type override.
-
-        Returns:
-            Created agent record dict.
-
-        Raises:
-            ValueError: If neither config nor path is provided, or import fails.
-            FileNotFoundError: If the path does not exist.
-        """
+        """Create an agent from config dict or file path."""
         if not config and not path:
             raise ValueError("Either config or path is required")
 
@@ -155,38 +120,14 @@ class AgentService:
         self._repo.delete(agent_id)
 
     def load_graph(self, agent_id: str) -> tuple[dict, AgentGraph]:
-        """Load agent record and its graph.
-
-        Checks source_path first (for linked-file agents) before falling back
-        to the database via repo.load_graph.
-
-        Returns:
-            Tuple of (agent dict, AgentGraph).
-
-        Raises:
-            ValueError: If agent not found or graph cannot be loaded.
-            FileNotFoundError: If linked file is missing.
-        """
+        """Load agent record and its graph (linked file first, else DB)."""
         agent = self._repo.get(agent_id)
         if not agent:
             raise ValueError(f"Agent not found: {agent_id}")
-
-        source_path = agent.get("source_path")
-        if source_path:
-            graph = self._importers.import_agent(resolve_path(source_path))
-        else:
-            result = self._repo.load_graph(agent_id)
-            graph = self._importers.import_agent(result) if isinstance(result, Path) else result
-
-        return agent, graph
+        return agent, self._load_graph_payload(agent, agent_id)
 
     def save_graph(self, agent_id: str, agent: dict, graph: AgentGraph) -> None:
-        """Persist an updated graph back to DB or linked file.
-
-        Raises:
-            ValueError: If no exporter available for the source type.
-            OSError: If linked file cannot be written.
-        """
+        """Persist an updated graph back to DB or linked file."""
         source_path = agent.get("source_path")
         if source_path:
             self._write_graph_to_linked_file(graph, source_path, agent)
@@ -198,10 +139,8 @@ class AgentService:
     ) -> tuple[AgentGraph | None, str | None, bool]:
         """Get agent graph with ETag support.
 
-        Returns:
-            Tuple of (graph_or_none, etag, not_modified).
-            If not_modified is True, graph is None (client can use cached version).
-        """
+        Returns (graph_or_none, etag, not_modified). When not_modified is True,
+        graph is None so the client can use its cached version."""
         agent = self._repo.get(agent_id)
         if not agent:
             raise ValueError(f"Agent not found: {agent_id}")
@@ -209,27 +148,24 @@ class AgentService:
         source_path = agent.get("source_path")
         if source_path:
             _mtime, etag = check_file(source_path, agent_id)
-            if if_none_match and if_none_match == etag:
-                return None, etag, True
-            graph = self._importers.import_agent(resolve_path(source_path))
-            return graph, etag, False
+        else:
+            etag = compute_etag(agent_id, agent.get("updated_at", ""))
 
-        result = self._repo.load_graph(agent_id)
-        graph = self._importers.import_agent(result) if isinstance(result, Path) else result
-
-        updated_at = agent.get("updated_at", "")
-        etag = compute_etag(agent_id, updated_at)
         if if_none_match and if_none_match == etag:
             return None, etag, True
 
-        return graph, etag, False
+        return self._load_graph_payload(agent, agent_id), etag, False
+
+    def _load_graph_payload(self, agent: dict, agent_id: str) -> AgentGraph:
+        """Resolve the graph for an agent: re-import the linked file if any, else DB."""
+        source_path = agent.get("source_path")
+        if source_path:
+            return self._importers.import_agent(resolve_path(source_path))
+        result = self._repo.load_graph(agent_id)
+        return self._importers.import_agent(result) if isinstance(result, Path) else result
 
     def get_variables(self, agent_id: str) -> list[str]:
-        """Extract dynamic variable names from agent prompts.
-
-        Scans general_prompt and all node state_prompt values for {{var}} placeholders.
-        Returns unique variable names in first-appearance order.
-        """
+        """Extract dynamic variable names from agent prompts."""
         _agent, graph = self.load_graph(agent_id)
 
         texts = []
@@ -254,11 +190,7 @@ class AgentService:
 
         When node_id is None, updates source_metadata.general_prompt.
         When node_id is set and transition_target_id is None, updates that node's state_prompt.
-        When both are set, updates transition condition value.
-
-        Returns:
-            Updated AgentGraph.
-        """
+        When both are set, updates transition condition value."""
         agent, graph = self.load_graph(agent_id)
 
         if node_id is None:
@@ -296,16 +228,7 @@ class AgentService:
         node_id: str,
         setting: dict[str, Any] | None,
     ) -> AgentGraph:
-        """Set or remove a node's global_node_setting.
-
-        Args:
-            agent_id: Agent ID.
-            node_id: Target node ID.
-            setting: Dict with 'condition' and 'go_back_conditions', or None to remove.
-
-        Returns:
-            Updated AgentGraph.
-        """
+        """Set or remove a node's global_node_setting."""
         agent, graph = self.load_graph(agent_id)
         node = graph.get_node(node_id)
         if not node:
@@ -341,7 +264,7 @@ class AgentService:
         self._repo.update_metrics_config(agent_id, config)
         return config
 
-    # Map importer source_type to exporter format_id when they differ
+    # Importer source_type to exporter format_id mapping when they differ
     _SOURCE_TYPE_TO_FORMAT: dict[str, str] = {
         "retell": "retell-cf",
     }
@@ -351,7 +274,6 @@ class AgentService:
         source_type = agent.get("source_type", "")
         format_id = self._SOURCE_TYPE_TO_FORMAT.get(source_type, source_type)
 
-        # Try format-based exporter (e.g. retell-llm, retell-cf)
         exporter = self._exporters.get(format_id)
         if exporter:
             exported = json.loads(exporter.export(graph))

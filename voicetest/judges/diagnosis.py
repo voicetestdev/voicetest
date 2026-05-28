@@ -24,8 +24,7 @@ class DiagnoseFailureSignature(dspy.Signature):
 
     Identify WHERE in the multi-prompt system (general prompt, node state prompts,
     transitions) the failure originates, and WHY — citing specific prompt text
-    and graph structure.
-    """
+    and graph structure."""
 
     graph_structure: str = dspy.InputField(
         desc="Full agent graph with prompt texts, node definitions, and transitions"
@@ -59,8 +58,7 @@ class SuggestFixSignature(dspy.Signature):
     """Suggest concrete prompt and transition text changes to fix a diagnosed failure.
 
     Given the diagnosis, propose minimal text changes that would resolve the issue.
-    Only suggest changes to text content — do not add or remove graph edges.
-    """
+    Only suggest changes to text content — do not add or remove graph edges."""
 
     graph_structure: str = dspy.InputField(
         desc="Full agent graph with prompt texts, node definitions, and transitions"
@@ -88,8 +86,7 @@ class ReviseFixSignature(dspy.Signature):
     """Revise a previous fix attempt based on metric results after application.
 
     The previous fix was applied but did not fully resolve the issue.
-    Analyze what improved, what didn't, and propose revised changes.
-    """
+    Analyze what improved, what didn't, and propose revised changes."""
 
     graph_structure: str = dspy.InputField(
         desc="Current agent graph (after previous fix was applied)"
@@ -117,16 +114,11 @@ class ReviseFixSignature(dspy.Signature):
 
 
 class DiagnosisJudge:
-    """Diagnose test failures and suggest prompt/transition fixes.
-
-    Uses LLM to analyze why a test failed and propose concrete text
-    changes to the agent graph that would resolve the issue.
-    """
+    """Diagnose test failures and suggest prompt/transition fixes."""
 
     def __init__(self, model: str):
         self.model = model
 
-        # Mock mode for testing without LLM calls
         self._mock_mode = False
         self._mock_diagnosis: Diagnosis | None = None
         self._mock_fix: FixSuggestion | None = None

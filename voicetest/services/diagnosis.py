@@ -41,19 +41,7 @@ class DiagnosisService:
         test_scenario: str,
         judge_model: str | None = None,
     ) -> DiagnosisResult:
-        """Diagnose a test failure and suggest a fix.
-
-        Args:
-            graph: The agent graph that was tested.
-            transcript: Conversation transcript from the failed test.
-            nodes_visited: Sequence of node IDs visited during the test.
-            failed_metrics: Metric results (including failures).
-            test_scenario: The user prompt / test scenario.
-            judge_model: LLM model for diagnosis. Reads from settings if None.
-
-        Returns:
-            DiagnosisResult with diagnosis and suggested fix.
-        """
+        """Diagnose a test failure and suggest a fix."""
         judge = DiagnosisJudge(self._resolve_judge_model(judge_model))
         diagnosis = await judge.diagnose(
             graph, transcript, nodes_visited, failed_metrics, test_scenario
@@ -71,20 +59,7 @@ class DiagnosisService:
         options: RunOptions | None = None,
         metrics_config: MetricsConfig | None = None,
     ) -> FixAttemptResult:
-        """Apply changes to graph, rerun test, and compare results.
-
-        Args:
-            graph: The original agent graph.
-            test_case: Test case to rerun.
-            changes: Proposed text changes.
-            original_metrics: Metrics from the original (failed) run.
-            iteration: Iteration number.
-            options: Run options.
-            metrics_config: Metrics configuration.
-
-        Returns:
-            FixAttemptResult with comparison data.
-        """
+        """Apply changes to graph, rerun test, and compare results."""
         modified_graph = self.apply_fix_to_graph(graph, changes)
         result = await self._execution.run_test(modified_graph, test_case, options, metrics_config)
 
@@ -115,18 +90,7 @@ class DiagnosisService:
         new_metrics: list[MetricResult],
         judge_model: str | None = None,
     ) -> FixSuggestion:
-        """Revise a previous fix suggestion based on new metric results.
-
-        Args:
-            graph: The agent graph (after previous fix was applied).
-            diagnosis: Original diagnosis.
-            prev_changes: Changes that were applied in the previous attempt.
-            new_metrics: Metric results after previous fix.
-            judge_model: LLM model for revision. Reads from settings if None.
-
-        Returns:
-            Revised FixSuggestion.
-        """
+        """Revise a previous fix suggestion based on new metric results."""
         judge = DiagnosisJudge(self._resolve_judge_model(judge_model))
         return await judge.revise_fix(graph, diagnosis, prev_changes, new_metrics)
 
@@ -139,15 +103,7 @@ class DiagnosisService:
         - transition: replaces transition.condition.value
 
         Skips changes that reference nonexistent nodes or transitions.
-        Does NOT persist anything.
-
-        Args:
-            graph: The original agent graph (not modified).
-            changes: List of text changes to apply.
-
-        Returns:
-            A deep copy of the graph with changes applied.
-        """
+        Does NOT persist anything."""
         modified = graph.model_copy(deep=True)
 
         for change in changes:
@@ -171,15 +127,7 @@ class DiagnosisService:
         return modified
 
     def scores_improved(self, original: dict[str, float], new: dict[str, float]) -> bool:
-        """Check if average scores improved.
-
-        Args:
-            original: Original metric scores by name.
-            new: Post-fix metric scores by name.
-
-        Returns:
-            True if the average of new scores is strictly greater than original.
-        """
+        """Check if average scores improved."""
         if not original or not new:
             return False
 

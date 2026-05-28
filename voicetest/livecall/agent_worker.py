@@ -69,8 +69,7 @@ def output_status(status: str) -> None:
 def get_general_prompt(graph: AgentGraph) -> str:
     """Get the general prompt from the agent graph.
 
-    Returns the general_prompt from source_metadata, or a default.
-    """
+    Returns the general_prompt from source_metadata, or a default."""
     return graph.source_metadata.get("general_prompt", "You are a helpful voice assistant.")
 
 

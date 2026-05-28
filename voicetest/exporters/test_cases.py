@@ -6,19 +6,15 @@ from voicetest.models.test_case import TestCase
 
 
 def export_tests_retell(tests: list[TestCase]) -> list[dict[str, Any]]:
-    """Export test cases to Retell format.
-
-    Retell expects an array of test objects with specific field names.
-    """
+    """Export test cases to Retell format."""
     return [_convert_test_to_retell(t) for t in tests]
 
 
 def _convert_test_to_retell(test: TestCase) -> dict[str, Any]:
     """Convert a TestCase to Retell test format.
 
-    Note: Retell's simulator UI only looks at the first element of the metrics
-    array, so multiple metrics are combined into a single string.
-    """
+    Retell's simulator UI only looks at the first element of the metrics
+    array, so multiple metrics are combined into a single string."""
     result: dict[str, Any] = {
         "name": test.name,
         "user_prompt": test.user_prompt,
@@ -29,7 +25,6 @@ def _convert_test_to_retell(test: TestCase) -> dict[str, Any]:
         if len(test.metrics) == 1:
             result["metrics"] = test.metrics
         else:
-            # Combine multiple metrics into one - Retell UI only reads first element
             combined = "\n".join(f"- {m}" for m in test.metrics)
             result["metrics"] = [combined]
 
@@ -54,18 +49,7 @@ def _convert_test_to_retell(test: TestCase) -> dict[str, Any]:
 
 
 def export_tests(tests: list[TestCase], format: str) -> list[dict[str, Any]]:
-    """Export tests to the specified format.
-
-    Args:
-        tests: List of TestCase objects to export.
-        format: Export format (currently only "retell" supported).
-
-    Returns:
-        List of dictionaries in the target format.
-
-    Raises:
-        ValueError: If format is not supported.
-    """
+    """Export tests to the specified format."""
     if format == "retell":
         return export_tests_retell(tests)
 

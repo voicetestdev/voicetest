@@ -108,18 +108,7 @@ class CallManager:
     ) -> dict:
         """Start a new live call.
 
-        Creates LiveKit room, generates tokens, spawns agent worker subprocess.
-
-        Args:
-            agent_id: ID of the agent to call.
-            graph: The agent graph configuration.
-            call_repo: Repository for persisting call records.
-            agent_model: LLM model. Reads from settings if None.
-            dynamic_variables: Variables for template substitution in prompts.
-
-        Returns:
-            Dict with call_id, room_name, livekit_url, token (for user)
-        """
+        Creates LiveKit room, generates tokens, spawns agent worker subprocess."""
         settings = self._settings.get_settings()
         if agent_model is None:
             agent_model = settings.models.agent

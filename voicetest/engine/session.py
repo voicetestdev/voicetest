@@ -1,7 +1,4 @@
-"""Conversation session management.
-
-Wraps the execution of conversations using the ConversationEngine.
-"""
+"""Conversation session management."""
 
 import asyncio
 from collections.abc import Awaitable
@@ -18,10 +15,7 @@ from voicetest.models.test_case import RunOptions
 from voicetest.util.retry import OnErrorCallback
 
 
-# Callback type for turn updates: receives transcript after each turn
 OnTurnCallback = Callable[[list[Message]], Awaitable[None] | None]
-
-# Callback type for token updates: receives token string and source ("agent" or "user")
 OnTokenCallback = Callable[[str, str], Awaitable[None] | None]
 
 
@@ -51,11 +45,7 @@ class NodeTracker:
 
 
 class ConversationRunner:
-    """Runs simulated conversations.
-
-    This class orchestrates the conversation loop, delegating turn processing
-    to ConversationEngine for consistent behavior between tests and live calls.
-    """
+    """Runs simulated conversations."""
 
     def __init__(
         self,
@@ -69,7 +59,6 @@ class ConversationRunner:
         self._mock_mode = mock_mode
         self._dynamic_variables = dynamic_variables or {}
 
-        # Engine for actual turn processing (not used in mock mode)
         self._engine: ConversationEngine | None = None
         if not mock_mode:
             self._engine = ConversationEngine(
@@ -87,39 +76,20 @@ class ConversationRunner:
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
     ) -> ConversationState:
-        """Run a complete conversation.
-
-        This method orchestrates the full conversation flow:
-        1. Agent processes graph until it speaks (entry preamble)
-        2. Loop: get user input -> agent processes graph until speech
-        3. Continue until end condition or max turns
-
-        Args:
-            test_case: The test case defining constraints.
-            user_simulator: The user persona simulator.
-            on_turn: Optional callback invoked after each turn with current transcript.
-            on_token: Optional callback invoked for each token during streaming.
-            on_error: Optional callback invoked on retryable errors (e.g., rate limits).
-
-        Returns:
-            ConversationState with transcript and tracking data.
-        """
+        """Run a complete conversation."""
         if self._mock_mode:
             return await self._run_mock(test_case, user_simulator, on_turn, on_token, on_error)
 
         state = ConversationState()
 
-        # Wrap on_token to add source="agent"
         agent_token_cb = None
         if on_token and self.options.streaming:
 
             async def agent_token_cb(token: str) -> None:
                 await _invoke_callback(on_token, token, "agent")
 
-        # Wire on_turn callback so the engine pushes updates as messages are appended
         self._engine._on_turn = on_turn
 
-        # Entry: agent processes graph until it speaks
         await self._engine.advance(
             on_token=agent_token_cb,
             on_error=on_error,
@@ -129,7 +99,6 @@ class ConversationRunner:
 
         for _turn in range(self.options.max_turns):
             try:
-                # Get simulated user input
                 sim_response = await asyncio.wait_for(
                     user_simulator.generate(
                         self._engine.transcript,

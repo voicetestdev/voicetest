@@ -49,31 +49,14 @@ class VapiPlatformClient:
         return export_vapi_assistant
 
     def get_client(self, api_key: str | None = None) -> Vapi:
-        """Get a configured VAPI SDK client.
-
-        Args:
-            api_key: VAPI API key. Defaults to VAPI_API_KEY env var.
-
-        Returns:
-            Configured Vapi client.
-
-        Raises:
-            ValueError: If no API key available.
-        """
+        """Get a configured VAPI SDK client."""
         key = api_key or os.environ.get(self.env_key)
         if not key:
             raise ValueError(f"{self.env_key} not set")
         return Vapi(token=key)
 
     def list_agents(self, client: Vapi) -> list[dict[str, Any]]:
-        """List assistants from VAPI.
-
-        Args:
-            client: VAPI SDK client.
-
-        Returns:
-            List of dicts with id and name fields.
-        """
+        """List assistants from VAPI."""
         assistants = client.assistants.list()
         return [
             {
@@ -84,31 +67,14 @@ class VapiPlatformClient:
         ]
 
     def get_agent(self, client: Vapi, agent_id: str) -> dict[str, Any]:
-        """Get an assistant by ID.
-
-        Args:
-            client: VAPI SDK client.
-            agent_id: Assistant ID.
-
-        Returns:
-            Assistant configuration dict.
-        """
+        """Get an assistant by ID."""
         assistant = client.assistants.get(agent_id)
         return assistant.model_dump()
 
     def create_agent(
         self, client: Vapi, config: dict[str, Any], name: str | None = None
     ) -> dict[str, Any]:
-        """Create an assistant in VAPI.
-
-        Args:
-            client: VAPI SDK client.
-            config: Assistant configuration (from export_vapi_assistant).
-            name: Optional name override for the assistant.
-
-        Returns:
-            Dict with id, name, and platform fields.
-        """
+        """Create an assistant in VAPI."""
         if name:
             config["name"] = name
         assistant = client.assistants.create(**config)
@@ -119,12 +85,7 @@ class VapiPlatformClient:
         }
 
     def delete_agent(self, client: Vapi, agent_id: str) -> None:
-        """Delete an assistant from VAPI.
-
-        Args:
-            client: VAPI SDK client.
-            agent_id: Assistant ID.
-        """
+        """Delete an assistant from VAPI."""
         client.assistants.delete(agent_id)
 
     @property
@@ -138,16 +99,7 @@ class VapiPlatformClient:
         return "assistant_id"
 
     def update_agent(self, client: Vapi, agent_id: str, config: dict[str, Any]) -> dict[str, Any]:
-        """Update an existing assistant in VAPI.
-
-        Args:
-            client: VAPI SDK client.
-            agent_id: Assistant ID.
-            config: Assistant configuration (from export_vapi_assistant).
-
-        Returns:
-            Dict with id, name, and platform fields.
-        """
+        """Update an existing assistant in VAPI."""
         assistant = client.assistants.update(agent_id, **config)
         return {
             "id": assistant.id,
@@ -157,15 +109,5 @@ class VapiPlatformClient:
 
 
 def get_client(api_key: str | None = None) -> Vapi:
-    """Get a configured VAPI SDK client.
-
-    Args:
-        api_key: VAPI API key. Defaults to VAPI_API_KEY env var.
-
-    Returns:
-        Configured Vapi client.
-
-    Raises:
-        ValueError: If no API key available.
-    """
+    """Get a configured VAPI SDK client."""
     return VapiPlatformClient().get_client(api_key)

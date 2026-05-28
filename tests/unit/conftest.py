@@ -69,10 +69,7 @@ def db_client(tmp_path, monkeypatch):
 
 @pytest.fixture
 def resolved(db_client):
-    """Resolve a service/repository from the db_client's container.
-
-    Shorthand for `db_client.app.state.container.resolve(X)`.
-    """
+    """Resolve a service/repository from the db_client's container."""
 
     def _resolve(cls):
         return db_client.app.state.container.resolve(cls)
@@ -156,13 +153,7 @@ def sample_retell_config_path(retell_fixtures_dir: Path) -> Path:
 
 @pytest.fixture
 def retell_call():
-    """Factory fixture: build a minimal Retell call object.
-
-    Usage:
-        retell_call()                     # default call_id="call_001"
-        retell_call("call_a")             # custom id
-        retell_call("call_a", duration_ms=999)  # override any field
-    """
+    """Factory fixture: build a minimal Retell call object."""
 
     def _build(call_id: str = "call_001", **overrides) -> dict:
         payload = {

@@ -15,8 +15,7 @@ class MetricJudgeSignature(dspy.Signature):
     """Evaluate if a conversation transcript meets a success criterion.
 
     For criteria with multiple requirements, evaluate EACH requirement separately.
-    Quote specific parts of the transcript as evidence for each judgment.
-    """
+    Quote specific parts of the transcript as evidence for each judgment."""
 
     transcript: str = dspy.InputField(desc="Full conversation transcript")
     criterion: str = dspy.InputField(
@@ -34,21 +33,11 @@ class MetricJudgeSignature(dspy.Signature):
 
 
 class MetricJudge:
-    """Evaluate conversation against success metrics using LLM.
-
-    Uses DSPy for structured LLM generation to evaluate whether
-    a conversation transcript meets specified criteria.
-    """
+    """Evaluate conversation against success metrics using LLM."""
 
     def __init__(self, model: str):
-        """Initialize the judge.
-
-        Args:
-            model: LLM model to use for evaluation.
-        """
         self.model = model
 
-        # Mock mode for testing without LLM calls
         self._mock_mode = False
         self._mock_results: list[MetricResult] = []
         self._mock_index = 0
@@ -61,24 +50,12 @@ class MetricJudge:
         on_error: OnErrorCallback | None = None,
         use_heard: bool = False,
     ) -> MetricResult:
-        """Evaluate transcript against a single criterion.
-
-        Args:
-            transcript: Conversation transcript to evaluate.
-            criterion: Success criterion to check.
-            threshold: Minimum score (0-1) to pass. Defaults to 0.7.
-            on_error: Optional callback for retry notifications.
-
-        Returns:
-            MetricResult with score, pass/fail, and reasoning.
-        """
-        # Mock mode for testing
+        """Evaluate transcript against a single criterion."""
         if self._mock_mode and self._mock_results:
             result = self._mock_results[self._mock_index % len(self._mock_results)]
             self._mock_index += 1
             return result
 
-        # Real LLM evaluation
         return await self._evaluate_with_llm(
             transcript, criterion, threshold, on_error, use_heard=use_heard
         )
@@ -91,17 +68,7 @@ class MetricJudge:
         on_error: OnErrorCallback | None = None,
         use_heard: bool = False,
     ) -> list[MetricResult]:
-        """Evaluate transcript against multiple criteria.
-
-        Args:
-            transcript: Conversation transcript to evaluate.
-            criteria: List of success criteria.
-            threshold: Minimum score (0-1) to pass. Defaults to 0.7.
-            on_error: Optional callback for retry notifications.
-
-        Returns:
-            List of MetricResult objects.
-        """
+        """Evaluate transcript against multiple criteria."""
         results = []
         for criterion in criteria:
             result = await self.evaluate(
@@ -143,8 +110,7 @@ class MetricJudge:
         """Format transcript for LLM input.
 
         Filters out internal tool messages (transitions, extractions) to keep
-        the judge focused on the actual user/assistant conversation.
-        """
+        the judge focused on the actual user/assistant conversation."""
         lines = []
         for msg in transcript:
             if msg.role == "tool":

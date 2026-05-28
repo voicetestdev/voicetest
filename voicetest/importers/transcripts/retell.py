@@ -1,15 +1,8 @@
 """Retell call transcript adapter.
 
-Accepts Retell call records in the shape produced by the Retell API
-(`GET /v2/get-call/{call_id}`) and the post-call webhook payload — both
-contain the same call object structure. Produces voicetest TestResult
-objects ready to be persisted as imported run results.
-
-Input shapes accepted:
-  - Single call object: {"call_id": ..., "transcript_object": [...], ...}
-  - Array of call objects: [{...}, {...}]
-  - Webhook payload: {"event": "call_ended", "call": {...}}
-  - Array of webhook payloads
+Accepts Retell call records in the shape produced by the Retell API and
+the post-call webhook payload. Input may be a single call object, an array
+of call objects, a webhook payload, or an array of webhook payloads.
 """
 
 from __future__ import annotations
@@ -33,11 +26,7 @@ _ROLE_MAP = {
 
 
 def parse_retell_file(path: Path) -> list[TestResult]:
-    """Parse a Retell transcript file (JSON) into TestResult objects.
-
-    Raises:
-        ValueError: file is not parseable or contains no recognizable calls.
-    """
+    """Parse a Retell transcript file (JSON) into TestResult objects."""
     raw = path.read_text(encoding="utf-8")
     try:
         data = json.loads(raw)
@@ -65,12 +54,10 @@ def _iter_call_objects(data: Any) -> Iterable[dict]:
     if not isinstance(data, dict):
         return
 
-    # Webhook envelope: {"event": "call_ended", "call": {...}}
     if "call" in data and isinstance(data["call"], dict) and _looks_like_call(data["call"]):
         yield data["call"]
         return
 
-    # Direct call object
     if _looks_like_call(data):
         yield data
 

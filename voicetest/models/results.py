@@ -1,8 +1,4 @@
-"""Result models for test execution output.
-
-These models capture the complete results of test runs including
-transcripts, metric evaluations, and flow tracking.
-"""
+"""Result models for test execution output."""
 
 from datetime import datetime
 from typing import Any

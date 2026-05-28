@@ -51,8 +51,7 @@ class BroadcastBus:
 
         Holds the per-channel lock for the entire drain + subscribe
         transition, blocking concurrent broadcasts so they can't be
-        delivered ahead of older queued messages.
-        """
+        delivered ahead of older queued messages."""
         ch = self._channels.get(channel)
         if ch is None:
             return
@@ -74,8 +73,7 @@ class BroadcastBus:
         """Send to all subscribers; queue for later if none are attached.
 
         Lock covers the whole send so concurrent broadcasts can't interleave:
-        subscribers see messages in the order they were broadcast.
-        """
+        subscribers see messages in the order they were broadcast."""
         ch = self._channels.get(channel)
         if ch is None:
             return
@@ -99,8 +97,7 @@ class SessionRegistry[TSession]:
 
     Owns the lifecycle pair (`register` / `close`) plus the trivial bus
     delegations (`broadcast` / `attach` / `detach`). Subscribers are closed
-    inside `close()` so callers don't have to remember the order.
-    """
+    inside `close()` so callers don't have to remember the order."""
 
     def __init__(self) -> None:
         self._sessions: dict[str, TSession] = {}

@@ -47,14 +47,7 @@ def export_vapi_assistant(graph: AgentGraph) -> dict[str, Any]:
     """Export AgentGraph to VAPI single assistant format.
 
     Combines all nodes into a single assistant with merged instructions.
-    Multi-node graphs lose their state machine structure.
-
-    Args:
-        graph: The agent graph to export.
-
-    Returns:
-        Dictionary in VAPI assistant JSON format.
-    """
+    Multi-node graphs lose their state machine structure."""
     return _export_assistant(graph)
 
 
@@ -62,14 +55,7 @@ def export_vapi_squad(graph: AgentGraph) -> dict[str, Any]:
     """Export AgentGraph to VAPI squad format.
 
     Each node becomes a separate assistant in the squad.
-    Transitions become handoff tools between assistants.
-
-    Args:
-        graph: The agent graph to export.
-
-    Returns:
-        Dictionary in VAPI squad JSON format.
-    """
+    Transitions become handoff tools between assistants."""
     return _export_squad(graph)
 
 
@@ -77,17 +63,15 @@ def _export_assistant(graph: AgentGraph) -> dict[str, Any]:
     """Export as single VAPI assistant."""
     result: dict[str, Any] = {}
 
-    # Restore metadata from source
     if graph.source_metadata:
         if "assistant_id" in graph.source_metadata:
             result["id"] = graph.source_metadata["assistant_id"]
         if "name" in graph.source_metadata:
             result["name"] = graph.source_metadata["name"]
 
-    # Build model configuration
     model_config = _build_model_config(graph)
 
-    # Build system prompt from general_prompt + state_prompt (VAPI uses single system message)
+    # VAPI uses a single system message, so merge general_prompt + state_prompt
     node = list(graph.nodes.values())[0] if graph.nodes else None
     if node:
         general_prompt = graph.source_metadata.get("general_prompt", "")
@@ -99,23 +83,20 @@ def _export_assistant(graph: AgentGraph) -> dict[str, Any]:
 
     result["model"] = model_config
 
-    # Voice configuration
     if graph.source_metadata:
         voice_config = _build_voice_config(graph.source_metadata)
         if voice_config:
             result["voice"] = voice_config
 
-    # Transcriber configuration
     if graph.source_metadata:
         transcriber_config = _build_transcriber_config(graph.source_metadata)
         if transcriber_config:
             result["transcriber"] = transcriber_config
 
-    # First message
     if graph.source_metadata and "first_message" in graph.source_metadata:
         result["firstMessage"] = graph.source_metadata["first_message"]
 
-    # Collect tools from the node - tools go inside model config for VAPI
+    # VAPI puts tools inside the model config, not at the assistant root
     if node and node.tools:
         model_config["tools"] = [_convert_tool(t) for t in node.tools]
 
@@ -126,21 +107,18 @@ def _export_squad(graph: AgentGraph) -> dict[str, Any]:
     """Export as VAPI squad with multiple assistants."""
     result: dict[str, Any] = {}
 
-    # Restore metadata
     if graph.source_metadata:
         if "squad_id" in graph.source_metadata:
             result["id"] = graph.source_metadata["squad_id"]
         if "name" in graph.source_metadata:
             result["name"] = graph.source_metadata["name"]
 
-    # Build map of logic node IDs to their resolved transitions.
-    # Logic split nodes are skipped in the squad; their predecessors
-    # get direct handoffs to the logic node's successors.
+    # Logic split nodes are skipped in the squad; their predecessors get
+    # direct handoffs to the logic node's successors.
     logic_rewrites = _build_logic_rewrites(graph)
 
     members: list[dict[str, Any]] = []
 
-    # Build ordered list starting with entry node, excluding logic nodes
     ordered_nodes: list[AgentNode] = []
     entry_node = graph.nodes.get(graph.entry_node_id)
     if entry_node and not entry_node.is_logic_node():
@@ -150,7 +128,6 @@ def _export_squad(graph: AgentGraph) -> dict[str, Any]:
         if node_id != graph.entry_node_id and not node.is_logic_node():
             ordered_nodes.append(node)
 
-    # Convert each node to a squad member (only entry node gets general_prompt)
     for i, node in enumerate(ordered_nodes):
         is_entry = i == 0
         member = _convert_node_to_member(
@@ -168,12 +145,7 @@ def _export_squad(graph: AgentGraph) -> dict[str, Any]:
 def _build_logic_rewrites(
     graph: AgentGraph,
 ) -> dict[str, list[dict[str, str]]]:
-    """Map logic node IDs to their resolved handoff destinations.
-
-    For each logic split node, returns a list of dicts with
-    ``assistantName`` and ``description`` that predecessors should use
-    as handoff destinations instead of handing off to the logic node.
-    """
+    """Map logic node IDs to their resolved handoff destinations."""
     rewrites: dict[str, list[dict[str, str]]] = {}
     for node_id, node in graph.nodes.items():
         if not node.is_logic_node():
@@ -206,34 +178,29 @@ def _convert_node_to_member(
         "name": node.id,
     }
 
-    # Only add general_prompt to entry node
+    # general_prompt is added only to the entry node so it isn't duplicated
     general_prompt = graph.source_metadata.get("general_prompt", "") if is_entry else ""
     if general_prompt and node.state_prompt:
         full_prompt = f"{general_prompt}\n\n{node.state_prompt}"
     else:
         full_prompt = node.state_prompt or general_prompt
 
-    # Build model config
     model_config: dict[str, Any] = {
         "provider": "openai",
         "model": "gpt-4o",
         "messages": [{"role": "system", "content": full_prompt}],
     }
 
-    # Add tools (regular tools + handoff tools for transitions)
     tools: list[dict[str, Any]] = []
 
-    # Regular tools
     for tool in node.tools:
         tools.append(_convert_tool(tool))
 
-    # Convert transitions to handoff tools, resolving logic nodes
     if node.transitions:
         handoff_destinations: list[dict[str, Any]] = []
         for transition in node.transitions:
             target_id = transition.target_node_id
             if target_id in logic_rewrites:
-                # Logic node: replace with its resolved destinations
                 for dest in logic_rewrites[target_id]:
                     handoff_destinations.append(
                         {
@@ -263,7 +230,6 @@ def _convert_node_to_member(
 
     assistant["model"] = model_config
 
-    # First message from metadata
     if node.metadata and "first_message" in node.metadata:
         assistant["firstMessage"] = node.metadata["first_message"]
 
@@ -284,7 +250,6 @@ def _build_model_config(graph: AgentGraph) -> dict[str, Any]:
         if "max_tokens" in graph.source_metadata:
             model_config["maxTokens"] = graph.source_metadata["max_tokens"]
 
-    # Set defaults if not present
     if "provider" not in model_config:
         model_config["provider"] = "openai"
     if "model" not in model_config:

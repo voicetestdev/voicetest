@@ -28,11 +28,7 @@ _LLM_KEYS = {
 
 
 def _extract_agent_envelope(config: dict[str, Any]) -> dict[str, Any]:
-    """Extract agent-level fields (voice_id, language, etc.) from the raw config.
-
-    These live alongside the LLM data at the top level of a Retell agent
-    export and are needed when re-wrapping for the Retell UI import.
-    """
+    """Extract agent-level fields (voice_id, language, etc.) from the raw config."""
     return {k: v for k, v in config.items() if k not in _LLM_KEYS}
 
 
@@ -105,8 +101,7 @@ class RetellLLMImporter:
         - Top-level format (official API): {"general_prompt": ..., "states": ...}
         - Wrapped format (dashboard): {"retellLlmData": {"general_prompt": ..., "states": ...}}
 
-        Raises ValueError if LLM fields exist at both levels (ambiguous).
-        """
+        Raises ValueError if LLM fields exist at both levels (ambiguous)."""
         llm_fields = {"general_prompt", "llm_id", "states"}
         has_wrapper = "retellLlmData" in config
         has_top_level = bool(llm_fields & set(config.keys()))
@@ -128,7 +123,7 @@ class RetellLLMImporter:
             has_general_prompt = "general_prompt" in config
             has_llm_id = "llm_id" in config
             has_states = "states" in config
-            # Distinguish from Conversation Flow (which has start_node_id and nodes)
+            # Conversation Flow exports also have llm-like fields; exclude them
             is_not_flow = "start_node_id" not in config and "nodes" not in config
             return (has_general_prompt or has_llm_id or has_states) and is_not_flow
         except Exception:
@@ -144,16 +139,14 @@ class RetellLLMImporter:
         nodes: dict[str, AgentNode] = {}
 
         if llm_config.states:
-            # Multi-state: each state becomes a node
             for i, state in enumerate(llm_config.states):
                 transitions = [self._convert_edge(edge) for edge in state.edges]
                 tools = [self._convert_tool(t) for t in state.tools]
-                # Add general tools to each state
                 tools.extend([self._convert_tool(t) for t in llm_config.general_tools])
 
                 nodes[state.name] = AgentNode(
                     id=state.name,
-                    state_prompt=state.state_prompt,  # State-specific only, NOT merged
+                    state_prompt=state.state_prompt,
                     transitions=transitions,
                     tools=tools or [],
                     metadata={"state_index": i},
@@ -161,7 +154,6 @@ class RetellLLMImporter:
 
             entry_node_id = llm_config.states[0].name
         else:
-            # Single-prompt: create one node (general_prompt becomes state_prompt)
             tools = [self._convert_tool(t) for t in llm_config.general_tools]
             nodes["main"] = AgentNode(
                 id="main",
@@ -171,14 +163,13 @@ class RetellLLMImporter:
             )
             entry_node_id = "main"
 
-        # Convert end_call/transfer_call tools into synthetic nodes + edges
         nodes = self._synthesize_terminal_nodes(nodes)
 
         source_metadata: dict[str, Any] = {
             "llm_id": llm_config.llm_id,
             "model": llm_config.model,
             "begin_message": llm_config.begin_message,
-            "general_prompt": llm_config.general_prompt,  # Stored separately
+            "general_prompt": llm_config.general_prompt,
         }
         if agent_envelope:
             source_metadata["agent_envelope"] = agent_envelope
@@ -197,9 +188,7 @@ class RetellLLMImporter:
         For each end_call or transfer_call tool found on any node:
         1. Create a synthetic node (no prompt) with the tool attached
         2. Add an llm_prompt edge from the node to the synthetic node
-        3. Strip the tool from the original node
-        """
-        # Collect unique terminal tools across all nodes: tool_name -> ToolDefinition
+        3. Strip the tool from the original node"""
         terminal_tools: dict[str, ToolDefinition] = {}
         for node in nodes.values():
             for tool in node.tools:
@@ -209,7 +198,6 @@ class RetellLLMImporter:
         if not terminal_tools:
             return nodes
 
-        # Create synthetic nodes
         synthetic: dict[str, AgentNode] = {}
         for tool_name, tool_def in terminal_tools.items():
             node_type = NodeType.END if tool_def.type == "end_call" else NodeType.TRANSFER
@@ -221,7 +209,6 @@ class RetellLLMImporter:
                 transitions=[],
             )
 
-        # Add edges and strip terminal tools from conversation nodes
         updated: dict[str, AgentNode] = {}
         for node_id, node in nodes.items():
             node_terminal = [t for t in node.tools if t.type in ("end_call", "transfer_call")]
@@ -275,10 +262,7 @@ class RetellLLMImporter:
         """Convert Retell LLM tool to ToolDefinition.
 
         Retell's LLM format declares built-in actions (end_call, transfer_call)
-        as type=custom. This method resolves the actual type from the tool name.
-        Transfer tools carry transfer_destination and transfer_option in metadata
-        so the CF exporter can emit proper transfer_call nodes.
-        """
+        as type=custom. This method resolves the actual type from the tool name."""
         tool_type = _resolve_tool_type(tool.name, tool.type)
         metadata: dict[str, Any] = {}
         if tool.transfer_destination:
@@ -299,8 +283,7 @@ def _resolve_tool_type(name: str, declared_type: str) -> str:
 
     In Retell's LLM format, built-in actions like end_call and transfer_call
     are declared as type=custom. This function returns the correct type based
-    on well-known tool name patterns.
-    """
+    on well-known tool name patterns."""
     if name == "end_call":
         return "end_call"
     if name.startswith("transfer_call"):

@@ -1,8 +1,4 @@
-"""Agent graph models representing the unified internal representation (IR).
-
-These models define the source-agnostic representation that all importers
-convert to. The AgentGraph captures the complete workflow structure.
-"""
+"""Agent graph models representing the unified internal representation (IR)."""
 
 from enum import StrEnum
 from typing import Any
@@ -32,14 +28,7 @@ class EquationClause(BaseModel):
 
 
 class TransitionCondition(BaseModel):
-    """Condition that triggers a transition between nodes.
-
-    Supports multiple condition types:
-    - llm_prompt: LLM evaluates a natural language condition
-    - equation: Deterministic evaluation of a formula (e.g., {{age}} > 18)
-    - tool_call: Transition triggered by specific tool invocation
-    - always: Unconditional transition
-    """
+    """Condition that triggers a transition between nodes."""
 
     type: Literal["llm_prompt", "equation", "tool_call", "always"]
     value: str
@@ -93,24 +82,14 @@ class GoBackCondition(BaseModel):
 
 
 class GlobalNodeSetting(BaseModel):
-    """Settings for a global node reachable from any conversation node.
-
-    Global nodes can be entered from any conversation node when
-    their condition matches. Go-back conditions allow returning
-    to the originating node.
-    """
+    """Settings for a global node reachable from any conversation node."""
 
     condition: str
     go_back_conditions: list[GoBackCondition] = Field(default_factory=list)
 
 
 class AgentNode(BaseModel):
-    """Single node (state) in the agent workflow graph.
-
-    Each node represents a distinct conversational state with its own
-    state-specific prompt, available tools, and possible transitions.
-    The general_prompt is stored separately in AgentGraph.source_metadata.
-    """
+    """Single node (state) in the agent workflow graph."""
 
     id: str
     state_prompt: str
@@ -130,8 +109,7 @@ class AgentNode(BaseModel):
 
         Note: model_copy(update=...) does NOT re-run model_post_init
         in Pydantic v2. Any model_copy that changes the structural type
-        must include node_type in the update dict.
-        """
+        must include node_type in the update dict."""
         if self.node_type != NodeType.CONVERSATION:
             return
         if self.variables_to_extract and self._has_equation_transitions():
@@ -169,11 +147,7 @@ class AgentNode(BaseModel):
 
 
 class GlobalMetric(BaseModel):
-    """A metric that runs on all tests for an agent.
-
-    Global metrics are evaluated against every test transcript,
-    useful for compliance checks that should always pass.
-    """
+    """A metric that runs on all tests for an agent."""
 
     name: str
     criteria: str
@@ -182,23 +156,14 @@ class GlobalMetric(BaseModel):
 
 
 class MetricsConfig(BaseModel):
-    """Configuration for metric evaluation on an agent.
-
-    Contains the default threshold and any global metrics
-    that should run on all tests.
-    """
+    """Configuration for metric evaluation on an agent."""
 
     threshold: float = 0.7
     global_metrics: list[GlobalMetric] = Field(default_factory=list)
 
 
 class AgentGraph(BaseModel):
-    """Complete agent workflow graph.
-
-    This is the unified internal representation (IR) that all importers
-    convert to. It captures the full structure of an agent's conversation
-    flow including nodes, transitions, and metadata.
-    """
+    """Complete agent workflow graph."""
 
     nodes: dict[str, AgentNode]
     entry_node_id: str
@@ -226,11 +191,7 @@ class AgentGraph(BaseModel):
         return self.nodes.get(node_id)
 
     def format_graph(self) -> str:
-        """Format the agent graph as a human-readable string for LLM input.
-
-        Includes the general prompt (if present), all node prompts, transitions,
-        and logic node details with equation clauses.
-        """
+        """Format the agent graph as a human-readable string for LLM input."""
         lines = []
 
         general_prompt = self.source_metadata.get("general_prompt")

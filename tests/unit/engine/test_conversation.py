@@ -598,6 +598,155 @@ class TestFunctionNodeHandling:
         assert result.transitioned_to is None
 
 
+class TestCentralizedTransitionDispatch:
+    """Verifies the centralized `_evaluate_transitions` dispatcher behaves
+    consistently across node types. Each node type's "step 1" (LLM
+    response, extraction, warning, no-op) runs first; transition routing
+    then funnels through a single typed dispatcher.
+    """
+
+    @pytest.mark.asyncio
+    async def test_function_node_routes_via_equation_on_extracted_variable(self):
+        """A function node with an equation edge on a pre-existing extracted
+        variable routes via that equation — not silently dropped to the
+        always edge. Verifies the dispatch is uniform with logic nodes.
+        """
+        graph = AgentGraph(
+            nodes={
+                "tool": AgentNode(
+                    id="tool",
+                    state_prompt="",
+                    node_type=NodeType.FUNCTION,
+                    transitions=[
+                        Transition(
+                            target_node_id="vip_path",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="tier == vip",
+                                equations=[EquationClause(left="tier", operator="==", right="vip")],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="standard_path",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                ),
+                "vip_path": AgentNode(id="vip_path", state_prompt="vip", transitions=[]),
+                "standard_path": AgentNode(
+                    id="standard_path", state_prompt="standard", transitions=[]
+                ),
+            },
+            entry_node_id="tool",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(
+            graph, model="openai/gpt-4o-mini", dynamic_variables={"tier": "vip"}
+        )
+        result = await engine._process_node()
+
+        assert result.transitioned_to == "vip_path"
+
+    @pytest.mark.asyncio
+    async def test_tool_call_transition_skipped_with_warning(self, caplog):
+        """`tool_call`-typed transitions (Telnyx/LiveKit handoff shape) are
+        skipped with a per-node warning, falling through to the always edge.
+        Until #51 ships tool execution there's no signal to fire them on.
+        """
+        graph = AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    node_type=NodeType.LOGIC,
+                    transitions=[
+                        Transition(
+                            target_node_id="handoff_target",
+                            condition=TransitionCondition(
+                                type="tool_call", value="handoff_billing"
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="fallback",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                ),
+                "handoff_target": AgentNode(
+                    id="handoff_target", state_prompt="billed", transitions=[]
+                ),
+                "fallback": AgentNode(id="fallback", state_prompt="fallback", transitions=[]),
+            },
+            entry_node_id="router",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(graph, model="openai/gpt-4o-mini")
+        with caplog.at_level(logging.WARNING, logger="voicetest.engine.conversation"):
+            result = await engine._process_node()
+
+        assert result.transitioned_to == "fallback"
+        assert any("tool_call transition on node router" in rec.message for rec in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_conversation_node_equation_fires_deterministically(self):
+        """An equation-typed transition on a conversation node fires by
+        deterministic evaluation, not by LLM text-reasoning. The LLM's
+        transition_to pick is ignored when the equation matches first.
+        """
+        graph = AgentGraph(
+            nodes={
+                "talk": AgentNode(
+                    id="talk",
+                    state_prompt="Ask the caller something.",
+                    transitions=[
+                        Transition(
+                            target_node_id="vip_branch",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="tier == vip",
+                                equations=[EquationClause(left="tier", operator="==", right="vip")],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="llm_branch",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="User asked about billing"
+                            ),
+                        ),
+                    ],
+                ),
+                "vip_branch": AgentNode(id="vip_branch", state_prompt="vip", transitions=[]),
+                "llm_branch": AgentNode(id="llm_branch", state_prompt="billing", transitions=[]),
+            },
+            entry_node_id="talk",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(
+            graph, model="openai/gpt-4o-mini", dynamic_variables={"tier": "vip"}
+        )
+
+        # LLM gate passes (objectives_complete=True) but picks `llm_branch`.
+        # The deterministic equation on `tier == vip` matches first, so the
+        # LLM's pick is ignored and we route to vip_branch.
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                objectives_complete = True
+                transition_to = "llm_branch"
+                reasoning = ""
+                response = "ok"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("hi")
+            await engine.advance()
+
+        assert engine.current_node == "vip_branch"
+
+
 class TestLogicalOperator:
     """Tests for logical_operator (AND/OR) on equation transitions."""
 

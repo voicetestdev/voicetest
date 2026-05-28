@@ -47,8 +47,7 @@ def _services() -> AppServices:
     Lazy so that subcommands like `serve` — which delegate DB work to a uvicorn
     worker process — don't open the DuckDB file in the CLI process. Otherwise
     the CLI and the uvicorn worker both grab a write lock and the worker fails
-    its lifespan with `Conflicting lock is held in ... (PID N)`.
-    """
+    its lifespan with `Conflicting lock is held in ... (PID N)`."""
     ctx = click.get_current_context()
     if "services" not in ctx.obj:
         ctx.obj["services"] = build_app_services(create_container())
@@ -63,8 +62,7 @@ def _echo(msg: str) -> None:
     """Print a progress message to the appropriate console.
 
     When --json is active, writes to stderr so stdout stays parseable.
-    Otherwise writes to the normal stdout console.
-    """
+    Otherwise writes to the normal stdout console."""
     ctx = click.get_current_context(silent=True)
     json_mode = ctx and ctx.find_root().obj and ctx.find_root().obj.get("json")
     if json_mode:
@@ -103,8 +101,7 @@ def main(ctx, json_mode):
     Test voice agents from multiple platforms using a unified
     execution and evaluation model.
 
-    Run without arguments to launch interactive shell.
-    """
+    Run without arguments to launch interactive shell."""
     ctx.ensure_object(dict)
     ctx.obj["json"] = json_mode
     if ctx.invoked_subcommand is None:
@@ -356,14 +353,7 @@ class LazyExportChoice(click.Choice):
 @click.option("--output", "-o", default=None, type=click.Path(path_type=Path), help="Output file")
 @click.pass_context
 def export(ctx, agent: Path, format: str, output: Path | None):
-    """Export agent to different formats.
-
-    Examples:
-
-        voicetest export -a agent.json -f mermaid
-
-        voicetest export -a agent.json -f retell-llm -o out.json
-    """
+    """Export agent to different formats."""
     json_mode = ctx.obj.get("json", False)
     asyncio.run(_export(agent, format, output, json_mode=json_mode))
 
@@ -371,11 +361,7 @@ def export(ctx, agent: Path, format: str, output: Path | None):
 def _get_export_info(format: str) -> tuple[str, str]:
     """Get file extension and suffix for export format.
 
-    Uses the DiscoveryService as the single source of truth.
-
-    Returns:
-        Tuple of (extension with dot, filename suffix).
-    """
+    Uses the DiscoveryService as the single source of truth."""
     formats = _services().discovery.list_export_formats()
     for fmt in formats:
         if fmt["id"] == format:
@@ -469,14 +455,7 @@ def exporters(ctx):
 def demo(serve: bool, host: str, port: int):
     """Load demo agent and tests for trying voicetest.
 
-    Loads a sample healthcare receptionist agent with test cases.
-
-    Examples:
-
-        voicetest demo              # Load demo, start shell
-
-        voicetest demo --serve      # Load demo, start web server
-    """
+    Loads a sample healthcare receptionist agent with test cases."""
     console.print("[bold]Loading demo agent and tests...[/bold]")
 
     demo_agent_config = get_demo_agent()
@@ -538,11 +517,7 @@ def smoke_test(ctx, max_turns: int):
     """Run a quick smoke test using bundled demo data.
 
     Runs 1 test with limited turns to verify voicetest works.
-    Useful for CI pipelines.
-
-    Example:
-        voicetest smoke-test
-    """
+    Useful for CI pipelines."""
     json_mode = ctx.obj.get("json", False)
     asyncio.run(_smoke_test(max_turns, json_mode=json_mode))
 
@@ -627,8 +602,7 @@ def serve(
     Use --agent to link agent files, and --tests to link test files.
     Test files are associated with the last specified --agent.
     If multiple agents need different tests, specify them in order:
-      --agent a1.json --tests t1.json --agent a2.json --tests t2.json
-    """
+      --agent a1.json --tests t1.json --agent a2.json --tests t2.json"""
     os.environ["VOICETEST_LOG_LEVEL"] = "DEBUG" if verbose else "INFO"
 
     os.environ["VOICETEST_LINKED_AGENTS"] = ",".join(str(p) for p in agent)
@@ -682,16 +656,7 @@ def up(host: str, port: int, verbose: bool, detach: bool):
     then starts the voicetest backend server.
 
     Use --detach to start only the Docker infrastructure without
-    the backend server.
-
-    Examples:
-
-        voicetest up                # Start infra + backend
-
-        voicetest up --detach       # Start infra only
-
-        voicetest up -p 9000        # Backend on port 9000
-    """
+    the backend server."""
     _check_docker_compose()
 
     os.environ["VOICETEST_LOG_LEVEL"] = "DEBUG" if verbose else "INFO"
@@ -725,12 +690,7 @@ def down():
     """Stop infrastructure services.
 
     Stops the LiveKit, Whisper, and Kokoro containers started
-    by 'voicetest up'.
-
-    Example:
-
-        voicetest down
-    """
+    by 'voicetest up'."""
     _check_docker_compose()
 
     with get_compose_path() as compose_path:
@@ -776,12 +736,7 @@ def import_call(ctx, agent_id: str, transcript: Path, format_: str):
     """Import call transcripts from a platform export and persist as a Run.
 
     Each conversation in the transcript file becomes a Result inside the
-    created Run, with status="imported" and no test_case_id linkage.
-
-    Example:
-
-        voicetest import-call --agent <id> --transcript calls.json
-    """
+    created Run, with status="imported" and no test_case_id linkage."""
     json_mode = ctx.obj.get("json", False)
 
     if format_ != "retell":
@@ -826,12 +781,7 @@ def replay(ctx, source_run_id: str):
     """Replay a source Run against the agent's current graph.
 
     Drives a fresh conversation per source Result using the source's recorded
-    user turns as a script. Persists the live conversations as a new Run.
-
-    Example:
-
-        voicetest replay <run-id>
-    """
+    user turns as a script. Persists the live conversations as a new Run."""
     json_mode = ctx.obj.get("json", False)
 
     svc = _services()
@@ -2156,8 +2106,7 @@ def _get_plugin_source() -> Path:
     """Get the path to the bundled Claude Code plugin files.
 
     Uses importlib.resources to find the plugin data bundled in the package.
-    Falls back to the source tree if running from a development checkout.
-    """
+    Falls back to the source tree if running from a development checkout."""
     # Try the bundled package data path (installed via pip/uv)
     pkg = importlib.resources.files("voicetest") / "claude_plugin"
     pkg_path = Path(str(pkg))
@@ -2177,8 +2126,7 @@ def init_claude():
     """Set up Claude Code skills and commands for this project.
 
     Copies voicetest slash commands and skills into the current project's
-    .claude/ directory so Claude Code can discover them automatically.
-    """
+    .claude/ directory so Claude Code can discover them automatically."""
     source = _get_plugin_source()
     target = Path.cwd() / ".claude"
 
@@ -2212,8 +2160,7 @@ def init_claude():
 def claude_plugin_path():
     """Print path to the bundled Claude Code plugin directory.
 
-    Useful for: claude --plugin-dir $(voicetest claude-plugin-path)
-    """
+    Useful for: claude --plugin-dir $(voicetest claude-plugin-path)"""
     source = _get_plugin_source()
     click.echo(str(source))
 

@@ -33,6 +33,10 @@ uv run pre-commit run --all-files
 - No unused locals or parameters
 - No fallthrough in switch statements
 
+## Add no comments by default
+
+There must be exceptional justification to violate this. Code should be structured to be self documenting in lieu of comments.
+
 ## Test fixtures
 
 Shared fixtures live in `tests/fixtures/`:
@@ -209,16 +213,33 @@ LLM-provider classes are responsible for translating transient upstream failures
 
 **Idempotency contract.** The retry layer assumes the wrapped function is idempotent. Today every caller is an LLM completion, where duplicate generations on the upstream side are accepted: the worst case is an extra billed token chunk that never reaches us. If a future caller performs side effects (tool execution, DB write, external API mutation), that call MUST NOT be retried by `with_retry`. Wrap it in explicit error handling, or guard the side effect with an idempotency key on the receiving side. Extending `RETRYABLE_EXCEPTIONS` or adding new `with_retry` call sites without checking this contract will silently re-trigger side effects on transient failure.
 
+### Node evaluation model
+
+Every node in the graph executes in two steps:
+
+1. **Eval content** — node-type-specific. Conversation nodes generate an LLM response and emit `objectives_complete` as a gate. Extract nodes call the LLM to fill named variables. Logic nodes are no-ops. Function nodes are no-ops + a warning (see below).
+1. **Eval transitions** — uniform across all node types. Every node funnels through `_evaluate_transitions` in `voicetest/engine/conversation.py`, which walks `node.transitions` in author order and dispatches each by its explicit `condition.type`:
+
+| `condition.type` | How it's evaluated                                                                                                                                                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `equation`       | Deterministic. `evaluate_equation` compares each clause against `dynamic_variables`. First match fires.                                                                                                                                 |
+| `llm_prompt`     | Fires only when the caller-supplied `llm_decision.transition_to` names this transition's target. Only conversation nodes make an LLM call for this; other node types pass `llm_decision=None` and `llm_prompt` transitions are ignored. |
+| `tool_call`      | Skipped with a one-line warning. Voicetest doesn't execute tools, so there's no signal to fire them on (see voicetestdev/voicetest#51).                                                                                                 |
+| `always`         | Fallback when no other transition matched. Conversation nodes opt out (`apply_always_fallback=False`) because on conversation nodes always edges fire post-response in `_generate_response`, not as a pre-response default.             |
+
+Author intent (the `condition.type` on each transition) drives which evaluator is used per transition. There's no global precedence rule — iteration order within `node.transitions` decides which wins when multiple types coexist on the same node.
+
 ### Function nodes (tool calls) — weak support
 
-`NodeType.FUNCTION` represents a tool-call node in the agent graph (Retell CF's `"type": "function"` is the canonical example — a node whose runtime job is to invoke an external HTTP/webhook tool and branch on the result). Voicetest **does not execute the underlying tool**. The engine's behavior on a function node is deliberately limited:
+`NodeType.FUNCTION` represents a tool-call node (Retell CF's `"type": "function"` is the canonical example — a node whose runtime job is to invoke an external HTTP/webhook tool and branch on the result). Voicetest **does not execute the underlying tool**. The engine's behavior:
 
 - A `logger.warning(...)` records that the node was reached and that tool execution is unsupported, naming the node id and pointing to the tracking issue.
-- The engine then follows the first `always`-type transition out of the node (Retell's `else_edge` shape, imported into the IR as an always-type `Transition`).
-- If no fallback edge is present, the call stalls cleanly — empty response, no exception.
-- Non-`always` transitions on the function node are **skipped**, even when their conditions reference variables that voicetest could in principle evaluate. This is intentional: in practice these conditions are almost always tool-result driven (e.g. `{{tool_result.status}} == "success"`); evaluating them against an absent `tool_result` would return false and route the conversation incorrectly. Taking the else edge unconditionally is the safer default until real tool execution lands.
+- The node then delegates to the centralized `_evaluate_transitions` dispatcher — same evaluator logic/extract nodes use.
+- Equation transitions referencing `tool_result.*` variables evaluate to False (variable absent in `dynamic_variables`), so they don't fire — the dispatcher falls through to the always (else) edge.
+- Equation transitions referencing pre-existing extracted variables route correctly.
+- If no transition matches and no fallback exists, the call stalls cleanly — empty response, no exception.
 
-The full tool-execution roadmap — mock-mode (consume `TestCase.tool_mocks`), live HTTP execution behind a flag, and result-driven branching — is tracked at [voicetestdev/voicetest#51](https://github.com/voicetestdev/voicetest/issues/51). When that work lands, `_evaluate_function_node` in `voicetest/engine/conversation.py` is the swap-in site.
+The full tool-execution roadmap — mock-mode (consume `TestCase.tool_mocks`), live HTTP execution behind a flag, and result-driven branching — is tracked at [voicetestdev/voicetest#51](https://github.com/voicetestdev/voicetest/issues/51). When that work lands, `_evaluate_function_node` is the swap-in site for "step 1"; `_evaluate_transitions` keeps handling "step 2" unchanged.
 
 ### Retell terminal-tool conversion
 

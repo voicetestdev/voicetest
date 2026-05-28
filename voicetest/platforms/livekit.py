@@ -28,8 +28,7 @@ class LiveKitPlatformClient:
     """LiveKit platform client implementing PlatformClient protocol.
 
     Unlike Retell/VAPI, LiveKit agents are Python code deployed via CLI,
-    not JSON configs uploaded via HTTP API.
-    """
+    not JSON configs uploaded via HTTP API."""
 
     @property
     def platform_name(self) -> str:
@@ -62,17 +61,7 @@ class LiveKitPlatformClient:
         """Get LiveKit credentials as a dict (no SDK client).
 
         LiveKit uses the `lk` CLI tool rather than an SDK client.
-        This returns credentials needed for CLI operations.
-
-        Args:
-            api_key: LiveKit API key. Defaults to LIVEKIT_API_KEY env var.
-
-        Returns:
-            Dict with api_key, api_secret, and url.
-
-        Raises:
-            ValueError: If credentials are not available.
-        """
+        This returns credentials needed for CLI operations."""
         key = api_key or os.environ.get(self.env_key)
         secret = os.environ.get("LIVEKIT_API_SECRET")
         url = os.environ.get("LIVEKIT_URL", "wss://cloud.livekit.io")
@@ -89,15 +78,7 @@ class LiveKitPlatformClient:
     def _run_lk_command(
         self, args: list[str], credentials: dict[str, str] | None = None
     ) -> subprocess.CompletedProcess:
-        """Run a `lk` CLI command.
-
-        Args:
-            args: Command arguments (without 'lk' prefix).
-            credentials: Optional credentials dict from get_client().
-
-        Returns:
-            Completed process result.
-        """
+        """Run a `lk` CLI command."""
         env = os.environ.copy()
         if credentials:
             env["LIVEKIT_API_KEY"] = credentials["api_key"]
@@ -112,14 +93,7 @@ class LiveKitPlatformClient:
         )
 
     def list_agents(self, client: dict[str, str]) -> list[dict[str, Any]]:
-        """List agents from LiveKit Cloud via CLI.
-
-        Args:
-            client: Credentials dict from get_client().
-
-        Returns:
-            List of dicts with id and name fields.
-        """
+        """List agents from LiveKit Cloud via CLI."""
         result = self._run_lk_command(["agent", "list", "--json"], client)
         if result.returncode != 0:
             return []
@@ -134,15 +108,7 @@ class LiveKitPlatformClient:
             return []
 
     def get_agent(self, client: dict[str, str], agent_id: str) -> dict[str, Any]:
-        """Get agent info by ID.
-
-        Args:
-            client: Credentials dict from get_client().
-            agent_id: Agent identifier.
-
-        Returns:
-            Agent info dict.
-        """
+        """Get agent info by ID."""
         result = self._run_lk_command(["agent", "info", agent_id, "--json"], client)
         if result.returncode != 0:
             raise ValueError(f"Failed to get agent {agent_id}: {result.stderr}")
@@ -154,16 +120,7 @@ class LiveKitPlatformClient:
     ) -> dict[str, Any]:
         """Create/deploy an agent to LiveKit Cloud.
 
-        This generates a Python agent file and deploys it via CLI.
-
-        Args:
-            client: Credentials dict from get_client().
-            config: Dict containing 'code' (Python source) or AgentGraph.
-            name: Optional agent name.
-
-        Returns:
-            Dict with id, name, platform, and code_path fields.
-        """
+        This generates a Python agent file and deploys it via CLI."""
         code = config.get("code")
         if not code:
             graph_data = config.get("graph")
@@ -209,12 +166,7 @@ class LiveKitPlatformClient:
             raise
 
     def delete_agent(self, client: dict[str, str], agent_id: str) -> None:
-        """Delete an agent from LiveKit Cloud.
-
-        Args:
-            client: Credentials dict from get_client().
-            agent_id: Agent identifier.
-        """
+        """Delete an agent from LiveKit Cloud."""
         result = self._run_lk_command(["agent", "delete", agent_id], client)
         if result.returncode != 0:
             raise ValueError(f"Failed to delete agent {agent_id}: {result.stderr}")
@@ -235,29 +187,10 @@ class LiveKitPlatformClient:
         """Update an existing agent in LiveKit Cloud.
 
         LiveKit deploy is an upsert operation, so we use create_agent
-        with the same name to update.
-
-        Args:
-            client: Credentials dict from get_client().
-            agent_id: Agent identifier (used as name).
-            config: Dict containing 'code' or 'graph'.
-
-        Returns:
-            Dict with id, name, platform, and code_path fields.
-        """
+        with the same name to update."""
         return self.create_agent(client, config, name=agent_id)
 
 
 def get_client(api_key: str | None = None) -> dict[str, str]:
-    """Get LiveKit credentials.
-
-    Args:
-        api_key: LiveKit API key. Defaults to LIVEKIT_API_KEY env var.
-
-    Returns:
-        Dict with api_key, api_secret, and url.
-
-    Raises:
-        ValueError: If credentials are not available.
-    """
+    """Get LiveKit credentials."""
     return LiveKitPlatformClient().get_client(api_key)

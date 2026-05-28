@@ -19,15 +19,10 @@ class VoicetestLLM(livekit_llm.LLM):
     """LiveKit LLM that delegates to ConversationEngine.
 
     This LLM plugin wraps the ConversationEngine to provide identical
-    behavior between test runs and live calls.
-    """
+    behavior between test runs and live calls."""
 
     def __init__(self, engine: ConversationEngine):
-        """Initialize with a ConversationEngine.
-
-        Args:
-            engine: The ConversationEngine to delegate to.
-        """
+        """Initialize with a ConversationEngine."""
         super().__init__()
         self._engine = engine
         self._on_response: Callable[[str], None] | None = None
@@ -46,19 +41,7 @@ class VoicetestLLM(livekit_llm.LLM):
         tool_choice: livekit_llm.ToolChoice | None = None,
         extra_kwargs: dict | None = None,
     ) -> "VoicetestLLMStream":
-        """Process a chat turn using the ConversationEngine.
-
-        Args:
-            chat_ctx: LiveKit chat context with message history.
-            tools: Available tools (not used - engine handles tools).
-            conn_options: Connection options.
-            parallel_tool_calls: Whether to allow parallel tool calls.
-            tool_choice: Tool choice preference.
-            extra_kwargs: Extra keyword arguments.
-
-        Returns:
-            VoicetestLLMStream that yields the response.
-        """
+        """Process a chat turn using the ConversationEngine."""
         stream = VoicetestLLMStream(
             self, self._engine, chat_ctx, conn_options or APIConnectOptions()
         )
@@ -76,14 +59,7 @@ class VoicetestLLMStream(livekit_llm.LLMStream):
         chat_ctx: livekit_llm.ChatContext,
         conn_options: APIConnectOptions,
     ):
-        """Initialize the stream.
-
-        Args:
-            llm: The parent LLM instance.
-            engine: The ConversationEngine to use.
-            chat_ctx: LiveKit chat context.
-            conn_options: API connection options.
-        """
+        """Initialize the stream."""
         super().__init__(
             llm=llm,
             chat_ctx=chat_ctx,
