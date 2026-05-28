@@ -69,16 +69,30 @@ export interface Message {
 }
 
 /**
- * Determine which role should speak next based on the transcript.
- * Skips tool messages to find the last actual speaker.
+ * UI label for a message role. We persist "assistant" on the wire (OpenAI
+ * convention, what the LLM APIs return), but display "agent" — the better
+ * word for the voice-agent-testing context.
  */
-export function nextExpectedRole(transcript: Message[]): "user" | "assistant" {
+export function displayRole(role: Message["role"]): string {
+  return role === "assistant" ? "agent" : role;
+}
+
+/**
+ * Determine which role should speak next based on the transcript.
+ * Skips tool messages to find the last actual speaker. Before any
+ * user/assistant turn exists, falls back to `startSpeaker` (the
+ * graph's declared opener).
+ */
+export function nextExpectedRole(
+  transcript: Message[],
+  startSpeaker?: string | null,
+): "user" | "assistant" {
   for (let i = transcript.length - 1; i >= 0; i--) {
     const role = transcript[i].role;
     if (role === "user") return "assistant";
     if (role === "assistant") return "user";
   }
-  return "user";
+  return startSpeaker === "agent" ? "assistant" : "user";
 }
 
 export interface MetricResult {

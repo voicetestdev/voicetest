@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GlobalMetric, MetricsConfig, MetricResult, Settings, AgentGraph, Message } from "./types";
-import { nextExpectedRole, graphFingerprint } from "./types";
+import { nextExpectedRole, graphFingerprint, displayRole } from "./types";
 
 describe("types", () => {
   describe("GlobalMetric", () => {
@@ -261,8 +261,26 @@ describe("types", () => {
       return { role, content, metadata: {} };
     }
 
-    it("returns 'user' for empty transcript (agent speaks first)", () => {
+    it("returns 'user' for empty transcript when start_speaker is unset", () => {
       expect(nextExpectedRole([])).toBe("user");
+    });
+
+    it("respects start_speaker='agent' for the opener", () => {
+      expect(nextExpectedRole([], "agent")).toBe("assistant");
+    });
+
+    it("respects start_speaker='user' for the opener", () => {
+      expect(nextExpectedRole([], "user")).toBe("user");
+    });
+
+    it("uses start_speaker even when only routing/tool messages exist", () => {
+      const transcript: Message[] = [msg("tool", "Transitioned to greeting")];
+      expect(nextExpectedRole(transcript, "agent")).toBe("assistant");
+    });
+
+    it("ignores start_speaker once the conversation has begun", () => {
+      const transcript: Message[] = [msg("user", "hi")];
+      expect(nextExpectedRole(transcript, "agent")).toBe("assistant");
     });
 
     it("returns 'assistant' after a user message", () => {
@@ -449,6 +467,18 @@ describe("types", () => {
       const before = graphFingerprint(makeGraph());
       const after = graphFingerprint(makeGraph({ entry_node_id: "billing" }));
       expect(before).not.toBe(after);
+    });
+  });
+
+  describe("displayRole", () => {
+    it("maps assistant to agent", () => {
+      expect(displayRole("assistant")).toBe("agent");
+    });
+
+    it("passes other roles through unchanged", () => {
+      expect(displayRole("user")).toBe("user");
+      expect(displayRole("tool")).toBe("tool");
+      expect(displayRole("system")).toBe("system");
     });
   });
 });
