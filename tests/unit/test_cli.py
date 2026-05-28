@@ -266,7 +266,6 @@ class TestCLIUp:
 
         assert result.exit_code == 0
         assert "Infrastructure started" in result.output
-        # Should have called docker compose version and docker compose up
         assert len(calls) == 2
         assert calls[0] == ["docker", "compose", "version"]
         assert "up" in calls[1]
@@ -433,9 +432,7 @@ class TestCLIJsonOutput:
         )
 
         assert result.exit_code == 0
-        # Should contain mermaid content directly on stdout
         assert "flowchart" in result.output.lower()
-        # Should NOT create a file
         generated_files = list(tmp_path.glob("*_mermaid*"))
         assert len(generated_files) == 0
 

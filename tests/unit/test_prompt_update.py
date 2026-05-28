@@ -69,7 +69,6 @@ class TestUpdateGeneralPrompt:
             json={"node_id": None, "prompt_text": "Persisted prompt"},
         )
 
-        # Reload graph and verify persistence
         response = client.get(f"/api/agents/{agent_id}/graph")
         assert response.status_code == 200
         graph = response.json()
@@ -82,7 +81,6 @@ class TestUpdateNodePrompt:
     def test_update_node_prompt_stored_agent(self, client, sample_retell_llm_config):
         agent_id = _create_stored_agent(client, sample_retell_llm_config)
 
-        # Get the graph to find a valid node ID
         graph_resp = client.get(f"/api/agents/{agent_id}/graph")
         graph = graph_resp.json()
         node_id = list(graph["nodes"].keys())[0]
@@ -123,7 +121,6 @@ class TestUpdateTransitionCondition:
         graph_resp = client.get(f"/api/agents/{agent_id}/graph")
         graph = graph_resp.json()
 
-        # Find a node with transitions
         source_node_id = None
         target_node_id = None
         for nid, node in graph["nodes"].items():
@@ -228,7 +225,6 @@ class TestLinkedFileWriteBack:
             )
             assert response.status_code == 200
 
-            # Read the file directly and verify the prompt was written
             raw = json.loads(tmp_path.read_text())
             assert raw["general_prompt"] == "Written to file prompt"
         finally:
@@ -237,7 +233,6 @@ class TestLinkedFileWriteBack:
     def test_node_prompt_writes_to_file(self, client, sample_retell_llm_config_path):
         agent_id, tmp_path = _create_linked_agent(client, sample_retell_llm_config_path)
         try:
-            # Get a node ID from the graph
             graph_resp = client.get(f"/api/agents/{agent_id}/graph")
             graph = graph_resp.json()
             node_id = list(graph["nodes"].keys())[0]
@@ -248,7 +243,6 @@ class TestLinkedFileWriteBack:
             )
             assert response.status_code == 200
 
-            # Read the file and find the state with matching name
             raw = json.loads(tmp_path.read_text())
             matching_states = [s for s in raw["states"] if s["name"] == node_id]
             assert len(matching_states) == 1
@@ -262,7 +256,6 @@ class TestLinkedFileWriteBack:
             graph_resp = client.get(f"/api/agents/{agent_id}/graph")
             graph = graph_resp.json()
 
-            # Find a node with transitions
             source_node_id = None
             target_node_id = None
             for nid, node in graph["nodes"].items():
@@ -281,7 +274,6 @@ class TestLinkedFileWriteBack:
             )
             assert response.status_code == 200
 
-            # Read the file and check the edge description
             raw = json.loads(tmp_path.read_text())
             matching_states = [s for s in raw["states"] if s["name"] == source_node_id]
             assert len(matching_states) == 1
@@ -301,7 +293,6 @@ class TestLinkedFileWriteBack:
         try:
             original = json.loads(sample_retell_llm_config_path.read_text())
 
-            # Make a small change
             client.put(
                 f"/api/agents/{agent_id}/prompts",
                 json={"node_id": None, "prompt_text": "Slightly changed"},
@@ -313,13 +304,10 @@ class TestLinkedFileWriteBack:
             for key in ("llm_id", "model", "begin_message", "general_prompt", "states"):
                 assert key in written, f"Missing key: {key}"
 
-            # States count should be the same
             assert len(original["states"]) == len(written["states"])
-            # Model, llm_id, begin_message should be unchanged
             assert written["model"] == original["model"]
             assert written["llm_id"] == original["llm_id"]
             assert written["begin_message"] == original["begin_message"]
-            # The general_prompt should reflect our update
             assert written["general_prompt"] == "Slightly changed"
         finally:
             tmp_path.unlink(missing_ok=True)
@@ -328,7 +316,6 @@ class TestLinkedFileWriteBack:
         """Verify that a read-only linked file produces a clear error."""
         agent_id, tmp_path = _create_linked_agent(client, sample_retell_llm_config_path)
         try:
-            # Make the file read-only
             tmp_path.chmod(0o444)
 
             response = client.put(

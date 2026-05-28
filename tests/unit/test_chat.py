@@ -292,15 +292,12 @@ class TestChatManagerProcessMessage:
         active = chat_manager.get_active_chat(chat_id)
         active.cancel_event.set()
 
-        # Should return without processing
         await chat_manager.process_message(chat_id, "hello", call_repo)
 
-        # Transcript should be empty (no processing happened)
         assert active.transcript == []
 
     @pytest.mark.asyncio
     async def test_process_message_skips_nonexistent_chat(self, chat_manager, call_repo):
-        # Should not raise
         await chat_manager.process_message("nonexistent", "hello", call_repo)
 
     @pytest.mark.asyncio
@@ -381,7 +378,6 @@ class TestChatManagerQuotaExhausted:
         await chat_manager.attach_websocket(chat_id, ws)
 
         active = chat_manager.get_active_chat(chat_id)
-        # Replace engine with a fully mocked version
         mock_engine = MagicMock()
         mock_engine.add_user_message = AsyncMock()
         mock_engine.advance = AsyncMock(
@@ -394,8 +390,6 @@ class TestChatManagerQuotaExhausted:
         active.engine = mock_engine
 
         await chat_manager.process_message(chat_id, "hello", call_repo)
-
-        # Find the rate_limit message among broadcasts
 
         sent_messages = [json.loads(call.args[0]) for call in ws.send_text.call_args_list]
         rate_limit_msgs = [m for m in sent_messages if m.get("type") == "quota_exhausted"]

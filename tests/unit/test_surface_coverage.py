@@ -44,10 +44,6 @@ def _all_qualified() -> set[str]:
     return qualified
 
 
-# ---------------------------------------------------------------------------
-# Coverage sets — methods surfaced by each transport layer
-# ---------------------------------------------------------------------------
-
 # REST endpoints in voicetest/rest.py
 REST_SURFACED = {
     # Discovery
@@ -242,7 +238,6 @@ CLI_EXCLUDED_FROM_REST = {
     ),
 }
 
-# Combined set of all accounted-for methods
 ALL_SURFACED = REST_SURFACED | CLI_SURFACED | TUI_SURFACED | set(INTERNAL_ONLY.keys())
 
 

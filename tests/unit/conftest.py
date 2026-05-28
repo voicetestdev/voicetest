@@ -146,11 +146,6 @@ def sample_retell_config_path(retell_fixtures_dir: Path) -> Path:
     return retell_fixtures_dir / "sample_config.json"
 
 
-# ---------------------------------------------------------------------------
-# Fixtures for the call-transcript import + replay feature
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def retell_call():
     """Factory fixture: build a minimal Retell call object."""

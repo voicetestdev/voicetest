@@ -23,11 +23,6 @@ from voicetest.models.test_case import RunOptions
 from voicetest.util.retry import RetryError
 
 
-# ---------------------------------------------------------------------------
-# call_llm input validation
-# ---------------------------------------------------------------------------
-
-
 class TestCallLlmValidation:
     """Test call_llm input validation."""
 
@@ -47,11 +42,6 @@ class TestCallLlmValidation:
                 predictor_class=dspy.Predict,
                 input="test",
             )
-
-
-# ---------------------------------------------------------------------------
-# Retry callback
-# ---------------------------------------------------------------------------
 
 
 class TestCallLlmRetryCallback:
@@ -81,7 +71,6 @@ class TestCallLlmRetryCallback:
                     llm_provider="openai",
                     model="gpt-4o-mini",
                 )
-            # Return a mock prediction
             return dspy.Prediction(output="success")
 
         with patch("dspy.Predict.__call__", side_effect=mock_predict):
@@ -93,7 +82,6 @@ class TestCallLlmRetryCallback:
                 input="test",
             )
 
-        # Should have received 2 error callbacks (attempts 1 and 2 failed)
         assert len(errors_received) == 2
         assert errors_received[0].attempt == 1
         assert errors_received[0].error_type == "RateLimitError"
@@ -143,11 +131,6 @@ class TestCallLlmRetryIntegration:
         assert errors_received[1].attempt == 2
 
 
-# ---------------------------------------------------------------------------
-# _invoke_callback helper
-# ---------------------------------------------------------------------------
-
-
 class TestInvokeCallback:
     """Test _invoke_callback helper."""
 
@@ -186,11 +169,6 @@ class TestInvokeCallback:
         await _invoke_callback(callback, "a", "b", "c")
 
         assert called_with == ["a", "b", "c"]
-
-
-# ---------------------------------------------------------------------------
-# _create_lm cache salt
-# ---------------------------------------------------------------------------
 
 
 class TestCreateLmCacheSalt:
@@ -233,11 +211,6 @@ class TestCreateLmCacheSalt:
         assert key1 != key2
 
 
-# ---------------------------------------------------------------------------
-# _create_lm no_cache
-# ---------------------------------------------------------------------------
-
-
 class TestCreateLmNoCache:
     """_create_lm with no_cache=True disables DSPy caching."""
 
@@ -254,11 +227,6 @@ class TestCreateLmNoCache:
         lm = _create_lm("openai/gpt-4o-mini", cache_salt="abc", no_cache=True)
         assert lm.cache is False
         assert lm.kwargs["metadata"] == {"_cache_salt": "abc"}
-
-
-# ---------------------------------------------------------------------------
-# ConversationEngine cache salt integration
-# ---------------------------------------------------------------------------
 
 
 class TestConversationEngineCacheSalt:
@@ -301,11 +269,9 @@ class TestConversationEngineCacheSalt:
             await engine.add_user_message("hi")
             await engine.advance()
 
-        # First call is the transition call — no salt needed
         transition_call = call_args[0]
         assert transition_call["cache_salt"] is None
 
-        # Second call is the response call — should have a cache_salt
         response_call = call_args[1]
         assert response_call["cache_salt"] is not None
         assert len(response_call["cache_salt"]) > 0
@@ -357,14 +323,9 @@ class TestConversationEngineCacheSalt:
                 salts.clear()
                 await engine.add_user_message("hi")
                 await engine._process_node()
-                all_salts.append(salts[0])  # first call is response
+                all_salts.append(salts[0])
 
         assert all_salts[0] != all_salts[1]
-
-
-# ---------------------------------------------------------------------------
-# ConversationEngine no-cache integration
-# ---------------------------------------------------------------------------
 
 
 class TestConversationEngineNoCache:

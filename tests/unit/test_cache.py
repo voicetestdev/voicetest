@@ -53,7 +53,6 @@ class TestS3CacheBackend:
         assert call_kwargs["Bucket"] == "test-bucket"
         assert call_kwargs["Key"] == "dspy-cache/abc123"
         assert call_kwargs["ContentType"] == "application/octet-stream"
-        # Verify the body is cloudpickle-serialized
         stored_value = cloudpickle.loads(call_kwargs["Body"])
         assert stored_value == {"response": "hello"}
 
@@ -106,7 +105,6 @@ class TestS3CacheBackend:
         )
         backend = self._make_backend(client)
 
-        # Should not raise
         backend["abc123"] = {"data": "value"}
         assert "Failed to write cache" in caplog.text
 
@@ -126,7 +124,6 @@ class TestS3CacheBackend:
         )
         backend = self._make_backend(client)
 
-        # Should not raise
         del backend["abc123"]
         assert "Failed to delete cache" in caplog.text
 

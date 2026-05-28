@@ -58,7 +58,6 @@ class TestAgentWorkerSubprocess:
         """Agent worker subprocess starts and outputs connecting status."""
         graph_json = simple_graph.model_dump_json()
 
-        # Run agent worker with invalid token (will fail to connect but should start)
         cmd = [
             sys.executable,
             "-m",
@@ -85,15 +84,12 @@ class TestAgentWorkerSubprocess:
             text=True,
         )
 
-        # Send graph JSON to stdin
         stdout, stderr = process.communicate(input=graph_json, timeout=10)
 
-        # Should output status messages
         assert stdout, f"No stdout. stderr: {stderr}"
         lines = stdout.strip().split("\n")
         assert len(lines) > 0, f"No output lines. stderr: {stderr}"
 
-        # First line should be connecting status
         first_msg = json.loads(lines[0])
         assert first_msg["type"] == "status"
         assert first_msg["status"] == "connecting"
@@ -120,10 +116,8 @@ class TestAgentWorkerSubprocess:
             text=True,
         )
 
-        # Send invalid JSON
         stdout, stderr = process.communicate(input="not-valid-json", timeout=10)
 
-        # Should output error
         assert stdout
         msg = json.loads(stdout.strip().split("\n")[0])
         assert msg["type"] == "error"
@@ -152,10 +146,8 @@ class TestAgentWorkerSubprocess:
             text=True,
         )
 
-        # Send empty stdin
         stdout, stderr = process.communicate(input="", timeout=10)
 
-        # Should output error
         assert stdout
         msg = json.loads(stdout.strip().split("\n")[0])
         assert msg["type"] == "error"
@@ -170,7 +162,6 @@ class TestAgentWorkerWithLiveKit:
     def test_agent_worker_connects_to_livekit(self, simple_graph):
         """Agent worker connects to LiveKit and becomes active."""
 
-        # Generate a valid token
         grant = livekit_api.VideoGrants(
             room_join=True,
             room="test-room-integration",
@@ -212,16 +203,14 @@ class TestAgentWorkerWithLiveKit:
             text=True,
         )
 
-        # Send graph and close stdin
         process.stdin.write(graph_json)
         process.stdin.close()
 
-        # Read output lines with timeout
         statuses = []
 
         try:
             while True:
-                # Use select to wait for output with timeout
+                # select() with timeout so we don't hang on a stuck subprocess
                 readable, _, _ = select.select([process.stdout], [], [], 1.0)
                 if readable:
                     line = process.stdout.readline()
@@ -240,7 +229,6 @@ class TestAgentWorkerWithLiveKit:
                     except json.JSONDecodeError:
                         pass
 
-                # Check timeout
                 if (not statuses or "active" not in statuses) and process.poll() is not None:
                     break
         except Exception as e:
@@ -252,12 +240,10 @@ class TestAgentWorkerWithLiveKit:
             except subprocess.TimeoutExpired:
                 process.kill()
 
-        # Get any remaining stderr
         stderr = process.stderr.read()
         if stderr:
             print(f"stderr: {stderr}")
 
-        # Verify we got expected statuses
         assert "connecting" in statuses, (
             f"Expected 'connecting' status. Got: {statuses}. stderr: {stderr}"
         )
@@ -333,7 +319,6 @@ class TestCallManager:
         """CallManager can create a LiveKit room."""
         room_name = "test-room-create"
 
-        # Should not raise
         await call_manager.create_room(room_name)
 
     @pytest.mark.skipif(not livekit_server_available(), reason="LiveKit server not running")
@@ -351,12 +336,10 @@ class TestCallManager:
         assert call_info["livekit_url"] == "ws://localhost:7880"
         assert call_info["token"]
 
-        # Verify subprocess was started
         active_call = call_manager.get_active_call(call_info["call_id"])
         assert active_call is not None
         assert active_call.process is not None
 
-        # Clean up
         await call_manager.end_call(call_info["call_id"], mock_call_repo)
 
     @pytest.mark.skipif(not livekit_server_available(), reason="LiveKit server not running")
@@ -372,13 +355,9 @@ class TestCallManager:
         active_call = call_manager.get_active_call(call_info["call_id"])
         process = active_call.process
 
-        # End the call
         await call_manager.end_call(call_info["call_id"], mock_call_repo)
 
-        # Process should be terminated
         assert process.poll() is not None
-
-        # Active call should be removed
         assert call_manager.get_active_call(call_info["call_id"]) is None
 
     @pytest.mark.skipif(not livekit_server_available(), reason="LiveKit server not running")

@@ -87,11 +87,9 @@ class TestStreamingWithLLM:
             )
             pytest.skip("Rate limited by external API")
 
-        # Should complete without error
         assert result.status in ("pass", "fail"), f"Got error: {result.error_message}"
         assert len(result.transcript) > 0
 
-        # If streaming worked, we should have received tokens
         print(f"Received {len(tokens_received)} tokens")
 
 

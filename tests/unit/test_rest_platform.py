@@ -55,19 +55,16 @@ class TestPlatformEndpoints:
         assert data["platform"] == "retell"
         assert data["configured"] is True
 
-        # Verify status now shows configured
         status_response = db_client.get("/api/platforms/retell/status")
         assert status_response.json()["configured"] is True
 
     def test_configure_platform_already_configured_returns_409(self, db_client):
         """Configure returns 409 when API key already set."""
-        # First configuration succeeds
         db_client.post(
             "/api/platforms/retell/configure",
             json={"api_key": "test-key-1"},
         )
 
-        # Second configuration fails
         response = db_client.post(
             "/api/platforms/retell/configure",
             json={"api_key": "test-key-2"},
@@ -90,13 +87,11 @@ class TestPlatformEndpoints:
     def test_list_retell_agents_mocked(self, db_client, monkeypatch):
         """List Retell agents with mocked client."""
 
-        # Configure platform first
         db_client.post(
             "/api/platforms/retell/configure",
             json={"api_key": "test-retell-key"},
         )
 
-        # Mock the client
         mock_flow = MagicMock()
         mock_flow.conversation_flow_id = "flow-123"
         mock_flow.conversation_flow_name = "Test Flow"
@@ -118,13 +113,11 @@ class TestPlatformEndpoints:
     def test_list_vapi_agents_mocked(self, db_client, monkeypatch):
         """List VAPI agents with mocked client."""
 
-        # Configure platform first
         db_client.post(
             "/api/platforms/vapi/configure",
             json={"api_key": "test-vapi-key"},
         )
 
-        # Mock the client
         mock_asst = MagicMock()
         mock_asst.id = "asst-456"
         mock_asst.name = "Test Assistant"
@@ -151,7 +144,6 @@ class TestPlatformEndpoints:
 
     def test_export_to_retell_not_configured(self, db_client, sample_retell_config):
         """Export to platform returns 400 when API key not configured."""
-        # First import to get a graph
         import_response = db_client.post(
             "/api/agents/import", json={"config": sample_retell_config}
         )

@@ -56,7 +56,6 @@ class TestAgentsCRUD:
         agent_file = tmp_path / "agent.json"
         agent_file.write_text(json.dumps(sample_retell_config))
 
-        # Use a relative path
         monkeypatch.chdir(tmp_path)
         response = db_client.post(
             "/api/agents",
@@ -68,7 +67,6 @@ class TestAgentsCRUD:
         assert response.status_code == 200
 
         agent = response.json()
-        # Path should be stored as absolute
         assert os.path.isabs(agent["source_path"])
         assert agent["source_path"] == str(agent_file.resolve())
 
@@ -106,11 +104,9 @@ class TestAgentsCRUD:
             },
         )
         assert response.status_code == 400
-        # Auto-detection fails on invalid JSON before parsing
         assert "Could not auto-detect" in response.json()["detail"]
 
     def test_create_agent_invalid_config_json(self, db_client, tmp_path, sample_retell_config):
-        # Valid JSON but missing required fields
         bad_config = {"nodes": []}
         bad_file = tmp_path / "bad_config.json"
         bad_file.write_text(json.dumps(bad_config))
@@ -427,7 +423,6 @@ class TestSnippetEndpoints:
         )
         assert response.status_code == 200
 
-        # Verify it's persisted
         get_response = db_client.get(f"/api/agents/{agent_id}/snippets")
         assert get_response.json()["snippets"]["greeting"] == "Hello world!"
 
@@ -438,7 +433,6 @@ class TestSnippetEndpoints:
         response = db_client.delete(f"/api/agents/{agent_id}/snippets/greeting")
         assert response.status_code == 200
 
-        # Verify it's gone
         get_response = db_client.get(f"/api/agents/{agent_id}/snippets")
         assert "greeting" not in get_response.json()["snippets"]
 
@@ -477,11 +471,9 @@ class TestSnippetEndpoints:
         assert response.status_code == 200
         data = response.json()
 
-        # Snippet should be added to the graph
         assert "tone" in data["snippets"]
         assert data["snippets"]["tone"] == "Always be polite."
 
-        # The text should be replaced with refs in prompts
         assert "{%tone%}" in data["nodes"]["a"]["state_prompt"]
         assert "{%tone%}" in data["nodes"]["b"]["state_prompt"]
 
@@ -492,7 +484,6 @@ class TestSnippetEndpoints:
         )
         make_agent(name="Snippet Test Agent", graph=graph)
 
-        # Export with expanded=True should resolve snippet refs
         response = db_client.post(
             "/api/agents/export",
             json={

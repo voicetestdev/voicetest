@@ -767,9 +767,7 @@ class TestRetellCFExporter:
         )
 
         result = export_retell_cf(graph)
-        # Should not be in tools
         assert not any(t["name"] == "transfer_to_nurse" for t in result["tools"])
-        # Should be a node
         transfer_nodes = [n for n in result["nodes"] if n["type"] == "transfer_call"]
         assert len(transfer_nodes) == 1
         node = transfer_nodes[0]
@@ -804,9 +802,7 @@ class TestRetellCFExporter:
         )
 
         result = export_retell_cf(graph)
-        # Should not be in tools
         assert not any(t["name"] == "end_call" for t in result["tools"])
-        # Should be a node
         end_nodes = [n for n in result["nodes"] if n["type"] == "end"]
         assert len(end_nodes) == 1
 
@@ -1205,7 +1201,6 @@ class TestLogicSplitExport:
         greeting = next(n for n in result["nodes"] if n["id"] == "greeting")
         assert greeting["type"] == "conversation"
         assert "else_edge" not in greeting
-        # Should have an edge to the router
         assert any(e["destination_node_id"] == "router" for e in greeting["edges"])
 
     def test_roundtrip_logic_split(self, logic_split_graph):

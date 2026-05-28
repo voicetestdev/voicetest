@@ -24,7 +24,6 @@ def docker_compose_running() -> bool:
         )
         if result.returncode != 0:
             return False
-        # Check if backend is running
         services = result.stdout.strip()
         return "backend" in services and "running" in services.lower()
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -60,7 +59,6 @@ class TestAgentWorkerInDocker:
 
     def test_agent_worker_starts_in_docker(self, simple_graph_json):
         """Agent worker subprocess starts and outputs status inside Docker."""
-        # Run agent worker inside the backend container
         cmd = [
             "docker",
             "compose",
@@ -96,25 +94,21 @@ class TestAgentWorkerInDocker:
             text=True,
         )
 
-        # Send graph JSON and wait for output
         stdout, stderr = process.communicate(input=simple_graph_json, timeout=30)
 
         print(f"stdout: {stdout}")
         print(f"stderr: {stderr}")
 
-        # Should output status messages
         assert stdout, f"No stdout. stderr: {stderr}"
         lines = [line for line in stdout.strip().split("\n") if line.strip()]
         assert len(lines) > 0, f"No output lines. stderr: {stderr}"
 
-        # First JSON line should be connecting status
         first_msg = json.loads(lines[0])
         assert first_msg["type"] == "status", f"Unexpected first message: {first_msg}"
         assert first_msg["status"] == "connecting", f"Expected connecting status: {first_msg}"
 
     def test_agent_worker_connects_to_livekit_in_docker(self, simple_graph_json):
         """Agent worker connects to LiveKit server inside Docker network."""
-        # First generate a valid token using the backend
         token_cmd = [
             "docker",
             "compose",
@@ -153,9 +147,8 @@ print(token.to_jwt())
             timeout=30,
         )
         assert token_result.returncode == 0, f"Failed to generate token: {token_result.stderr}"
-        token = token_result.stdout.strip().split("\n")[-1]  # Get last line (the token)
+        token = token_result.stdout.strip().split("\n")[-1]
 
-        # Now run agent worker with valid token
         cmd = [
             "docker",
             "compose",
@@ -191,11 +184,9 @@ print(token.to_jwt())
             text=True,
         )
 
-        # Send graph JSON
         process.stdin.write(simple_graph_json)
         process.stdin.close()
 
-        # Read output with timeout, looking for status messages
         statuses = []
         errors = []
         start_time = time.time()
@@ -235,11 +226,9 @@ print(token.to_jwt())
             except subprocess.TimeoutExpired:
                 process.kill()
 
-        # Get stderr
         stderr = process.stderr.read()
         print(f"stderr: {stderr}")
 
-        # Verify statuses
         assert "connecting" in statuses, (
             f"Expected 'connecting'. Got: {statuses}. Errors: {errors}. stderr: {stderr}"
         )
@@ -261,11 +250,9 @@ class TestCallAPIInDocker:
 
     def test_start_call_endpoint(self, sync_api_client):
         """Start call endpoint returns connection info."""
-        # Create demo agent (auto-cleaned by sync_api_client fixture)
         demo_data = sync_api_client.create_demo_agent()
         agent_id = demo_data["agent_id"]
 
-        # Now start a call
         response = sync_api_client.post(f"/api/agents/{agent_id}/calls/start")
 
         assert response.status_code == 200, f"Failed to start call: {response.text}"
@@ -276,55 +263,44 @@ class TestCallAPIInDocker:
         assert "livekit_url" in data
         assert "token" in data
 
-        # End the call
         call_id = data["call_id"]
         end_response = sync_api_client.post(f"/api/calls/{call_id}/end")
         assert end_response.status_code == 200
 
     def test_call_produces_agent_worker_output(self, sync_api_client):
         """Starting a call spawns agent worker that produces output."""
-        # Create demo agent (auto-cleaned by sync_api_client fixture)
         demo_data = sync_api_client.create_demo_agent()
         agent_id = demo_data["agent_id"]
 
-        # Start call
         start_response = sync_api_client.post(f"/api/agents/{agent_id}/calls/start")
         assert start_response.status_code == 200
         call_id = start_response.json()["call_id"]
 
-        # Wait a moment for the agent to start
         time.sleep(2)
 
-        # Check call status
         status_response = sync_api_client.get(f"/api/calls/{call_id}")
         assert status_response.status_code == 200
         call_data = status_response.json()
 
         print(f"Call status: {call_data}")
 
-        # The call should be in connecting or active status
         assert call_data["status"] in ["connecting", "active", "ended"], (
             f"Unexpected call status: {call_data['status']}"
         )
 
-        # End the call
         sync_api_client.post(f"/api/calls/{call_id}/end")
 
     def test_backend_logs_show_agent_worker_spawn(self, sync_api_client):
         """Backend logs should show agent-worker spawn command."""
-        # Create demo agent (auto-cleaned by sync_api_client fixture)
         demo_data = sync_api_client.create_demo_agent()
         agent_id = demo_data["agent_id"]
 
-        # Start call
         start_response = sync_api_client.post(f"/api/agents/{agent_id}/calls/start")
         assert start_response.status_code == 200
         call_id = start_response.json()["call_id"]
 
-        # Wait for subprocess to start
         time.sleep(2)
 
-        # Check docker logs for agent-worker output
         logs_result = subprocess.run(
             [
                 "docker",
@@ -343,10 +319,8 @@ class TestCallAPIInDocker:
 
         print(f"Backend logs:\n{logs_result.stdout}")
 
-        # Look for our spawn log line
         assert "[agent-worker]" in logs_result.stdout, (
             f"Expected agent-worker log. Logs:\n{logs_result.stdout}"
         )
 
-        # End the call
         sync_api_client.post(f"/api/calls/{call_id}/end")

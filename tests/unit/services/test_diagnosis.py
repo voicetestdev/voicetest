@@ -116,7 +116,6 @@ class TestApplyFixToGraph:
             ),
         ]
         modified = service.apply_fix_to_graph(graph, changes)
-        # Should not raise, just skip
         assert "nonexistent" not in modified.nodes
 
     def test_nonexistent_transition_skipped(self, service, graph):

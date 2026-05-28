@@ -216,7 +216,6 @@ class TestOrphanedRunDetection:
     @pytest.fixture
     def orphaned_run(self, db_client, sample_retell_config):
         """Create an orphaned run (not registered with coordinator, not completed)."""
-        # Create agent
         agent_response = db_client.post(
             "/api/agents",
             json={"name": "Orphan Test Agent", "config": sample_retell_config},
@@ -228,7 +227,6 @@ class TestOrphanedRunDetection:
         run = run_repo.create(agent_id)
         run_id = run["id"]
 
-        # Add a "running" result
         result_id = run_repo.create_pending_result(run_id, "test-case-1", "Test Case 1")
 
         # Ensure coordinator has no entry (simulating backend restart)
@@ -263,14 +261,12 @@ class TestOrphanedRunDetection:
 
     def test_active_run_not_marked_orphaned(self, db_client, sample_retell_config):
         """GET /runs/{id} should NOT mark active runs as orphaned."""
-        # Create agent
         agent_response = db_client.post(
             "/api/agents",
             json={"name": "Active Test Agent", "config": sample_retell_config},
         )
         agent_id = agent_response.json()["id"]
 
-        # Create run
         run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
@@ -372,17 +368,10 @@ class TestWebSocketStateMessage:
         return {"agent_id": agent_id, "test_ids": test_ids}
 
     def test_websocket_connection_receives_state_message(self, db_client, agent_with_tests):
-        """WebSocket connection should receive a valid state message with run data.
-
-        This test verifies the WebSocket endpoint works correctly:
-        1. Connection is accepted
-        2. State message is sent immediately after connection
-        3. State message contains valid run data with results
-        """
+        """WebSocket connection should receive a valid state message with run data."""
         agent_id = agent_with_tests["agent_id"]
         test_ids = agent_with_tests["test_ids"]
 
-        # Start a run via HTTP
         run_response = db_client.post(
             f"/api/agents/{agent_id}/runs",
             json={"test_ids": test_ids},
@@ -390,10 +379,8 @@ class TestWebSocketStateMessage:
         assert run_response.status_code == 200
         run_id = run_response.json()["id"]
 
-        # Connect to WebSocket - this is the key test
         # If the WebSocket handler fails (e.g., serialization error), this will raise
         with db_client.websocket_connect(f"/api/runs/{run_id}/ws") as websocket:
-            # Should receive state message immediately after connection
             data = websocket.receive_json()
 
             # Verify message structure
@@ -406,13 +393,11 @@ class TestWebSocketStateMessage:
             assert "started_at" in run_data, "Run should have 'started_at' field"
             assert run_data["agent_id"] == agent_id
 
-            # Results should exist (created by start_run)
             results = run_data["results"]
             assert len(results) == len(test_ids), (
                 f"Expected {len(test_ids)} results, got {len(results)}"
             )
 
-            # Verify each result has required fields (status may vary due to race)
             for result in results:
                 assert "id" in result
                 assert "test_case_id" in result
@@ -438,12 +423,10 @@ class TestWebSocketStateMessage:
         with db_client.websocket_connect(f"/api/runs/{run_id}/ws") as websocket:
             data = websocket.receive_json()
 
-            # If we got here, JSON parsing worked on the client side
-            # Also verify we can re-serialize it (round-trip test)
+            # Round-trip serialize to confirm no non-JSON values (e.g. datetime objects)
             reserialized = json.dumps(data)
             assert len(reserialized) > 0
 
-            # Verify datetime fields are strings, not datetime objects
             run_data = data["run"]
             assert isinstance(run_data["started_at"], str), "started_at should be ISO string"
             if run_data.get("completed_at"):
@@ -469,7 +452,6 @@ class TestWebSocketStateMessage:
         agent_id = agent_with_tests["agent_id"]
         test_ids = agent_with_tests["test_ids"]
 
-        # Start a run and wait for it to complete
         run_response = db_client.post(
             f"/api/agents/{agent_id}/runs",
             json={"test_ids": test_ids},
@@ -483,17 +465,14 @@ class TestWebSocketStateMessage:
             time.sleep(0.5)
             max_wait -= 1
 
-        # Verify run is complete
         run = db_client.get(f"/api/runs/{run_id}").json()
         assert run["completed_at"] is not None, "Run should be complete"
 
-        # Connect WebSocket - should receive state showing completion
         with db_client.websocket_connect(f"/api/runs/{run_id}/ws") as websocket:
             data = websocket.receive_json()
             assert data["type"] == "state"
             assert data["run"]["completed_at"] is not None
 
-            # Should also receive run_completed message
             data = websocket.receive_json()
             assert data["type"] == "run_completed"
 
@@ -505,14 +484,12 @@ class TestDiagnosisEndpoints:
     def failed_result(self, db_client, sample_retell_config):
         """Create an agent, test case, run, and failed result for testing."""
 
-        # Create agent with graph
         agent_response = db_client.post(
             "/api/agents",
             json={"name": "Diag Test Agent", "config": sample_retell_config},
         )
         agent_id = agent_response.json()["id"]
 
-        # Create test case
         test_case_repo = _get_test_case_repo(db_client)
         tc = TestCase(
             name="Billing test",
@@ -522,7 +499,6 @@ class TestDiagnosisEndpoints:
         tc_record = test_case_repo.create(agent_id, tc)
         tc_id = tc_record["id"]
 
-        # Create run + result
         run_repo = _get_run_repo(db_client)
         run = run_repo.create(agent_id)
         run_id = run["id"]
@@ -741,7 +717,6 @@ class TestDiagnosisEndpoints:
             )
 
         assert response.status_code == 200
-        # Verify the model override was passed through
         call_kwargs = mock_diag.call_args.kwargs
         assert call_kwargs["judge_model"] == "openai/gpt-4o"
 
@@ -770,7 +745,6 @@ class TestDiagnosisEndpoints:
             )
 
         assert response.status_code == 200
-        # Should use the default resolved judge model, not an override
         call_kwargs = mock_diag.call_args.kwargs
         assert call_kwargs["judge_model"] != "openai/gpt-4o"
 
@@ -810,11 +784,6 @@ class TestDiagnosisEndpoints:
             json={"changes": []},
         )
         assert response.status_code == 404
-
-
-# ---------------------------------------------------------------------------
-# RunRunner lifecycle + cancellation paths
-# ---------------------------------------------------------------------------
 
 
 class TestRunRunnerLifecycle:

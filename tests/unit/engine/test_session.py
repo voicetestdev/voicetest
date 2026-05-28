@@ -131,10 +131,8 @@ class TestMessageNodeMetadata:
 
         state = await runner.run(test_case, simulator)
 
-        # Check that messages have node_id in metadata
         for msg in state.transcript:
             assert "node_id" in msg.metadata
-            # Should be one of our node IDs
             assert msg.metadata["node_id"] in ["greeting", "farewell"]
 
 

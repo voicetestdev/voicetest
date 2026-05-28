@@ -139,9 +139,7 @@ class TestApplyFixToGraph:
                 rationale="test",
             )
         ]
-        # Should not raise, just skip the change
         result = apply_fix_to_graph(graph_with_general_prompt, changes)
-        # Graph should be unchanged (deep copy but same content)
         assert result.nodes["greeting"].state_prompt == "Greet the user warmly."
 
     def test_mismatched_transition_target_skipped(self, graph_with_general_prompt):

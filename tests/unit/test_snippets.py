@@ -112,7 +112,6 @@ class TestSuggestSnippets:
             b=f"{polite} Please verify the callers identity before helping.",
         )
         result = suggest_snippets(graph, min_length=20)
-        # Should have at least exact match for "Always be polite and professional"
         assert len(result.exact) > 0 or len(result.fuzzy) > 0
 
 

@@ -85,12 +85,10 @@ class TestImporterRegistry:
         assert detected is not None
         assert detected.source_type == "type1"
 
-        # Should find type2
         detected = registry.auto_detect({"type2_key": True})
         assert detected is not None
         assert detected.source_type == "type2"
 
-        # Should return None for unknown
         assert registry.auto_detect({"unknown": True}) is None
 
     def test_import_agent_with_explicit_source(self):

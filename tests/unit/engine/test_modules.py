@@ -286,7 +286,6 @@ class TestGlobalNodeTransitions:
         module = ConversationModule(graph)
         result = module.format_transitions("cancel")
 
-        # Should not include cancel -> cancel
         targets = {opt.target for opt in result}
         assert "cancel" not in targets
 

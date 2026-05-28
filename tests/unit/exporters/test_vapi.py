@@ -88,7 +88,6 @@ class TestVAPIAssistantLogicSplit:
         # has empty state_prompt so it shouldn't add noise
         model_messages = result["model"]["messages"]
         system_content = model_messages[0]["content"]
-        # Should not have consecutive blank lines from empty logic node
         assert "\n\n\n" not in system_content
 
 

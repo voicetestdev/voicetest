@@ -57,11 +57,9 @@ class TestWebSocketRealConnection:
         """
         ws_url = "ws://127.0.0.1:8000"
 
-        # Create an agent (auto-cleaned by api_client fixture)
         agent_data = await api_client.create_agent("WS Real Test", sample_retell_config)
         agent_id = agent_data["id"]
 
-        # Create a test case
         test_resp = await api_client.post(
             f"/api/agents/{agent_id}/tests",
             json={"name": "Test 1", "user_prompt": "Hello", "metrics": []},
@@ -69,7 +67,6 @@ class TestWebSocketRealConnection:
         assert test_resp.status_code == 200
         test_id = test_resp.json()["id"]
 
-        # Start a run
         run_resp = await api_client.post(
             f"/api/agents/{agent_id}/runs",
             json={"test_ids": [test_id]},
@@ -77,10 +74,9 @@ class TestWebSocketRealConnection:
         assert run_resp.status_code == 200
         run_id = run_resp.json()["id"]
 
-        # Connect via real WebSocket (simulating browser)
+        # Use a real WebSocket (simulating browser) rather than TestClient
         ws_endpoint = f"{ws_url}/api/runs/{run_id}/ws"
         async with websockets.connect(ws_endpoint, open_timeout=5) as ws:
-            # Should receive state message
             msg = await asyncio.wait_for(ws.recv(), timeout=5)
             data = json.loads(msg)
 

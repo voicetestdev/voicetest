@@ -109,10 +109,8 @@ class TestWhisperSTT:
     def test_whisper_transcribes_audio(self):
         """Whisper can transcribe audio (even if it's just silence/tone)."""
 
-        # Generate a simple audio file
         audio_data = generate_test_audio_wav()
 
-        # Send to Whisper API
         response = httpx.post(
             "http://localhost:8001/v1/audio/transcriptions",
             files={"file": ("test.wav", audio_data, "audio/wav")},
@@ -122,7 +120,6 @@ class TestWhisperSTT:
 
         print(f"Whisper response: {response.status_code} - {response.text}")
 
-        # Should get a response (even if empty transcription for a tone)
         assert response.status_code == 200
         data = response.json()
         assert "text" in data
@@ -160,7 +157,6 @@ class TestKokoroTTS:
         print(f"Kokoro response: {response.status_code}")
 
         assert response.status_code == 200
-        # Should return audio data
         assert len(response.content) > 0
 
 
@@ -193,21 +189,11 @@ class TestFullCallPipeline:
 
     @pytest.mark.asyncio
     async def test_agent_responds_to_user_audio(self, api_client):
-        """Agent processes user audio and generates a response.
+        """Agent processes user audio and generates a response."""
 
-        This test:
-        1. Starts a call
-        2. Connects to the room as a user via LiveKit
-        3. Publishes a synthetic audio track with speech
-        4. Waits for transcript updates
-        5. Verifies agent responded
-        """
-
-        # Create demo agent (auto-cleaned by api_client fixture)
         demo_data = await api_client.create_demo_agent()
         agent_id = demo_data["agent_id"]
 
-        # Start call
         start_response = await api_client.post(
             f"/api/agents/{agent_id}/calls/start",
         )
@@ -225,26 +211,21 @@ class TestFullCallPipeline:
         errors = []
 
         try:
-            # Connect to LiveKit room as user
             room = rtc.Room()
 
             await room.connect(livekit_url, user_token)
             print("User connected to room")
 
-            # Wait for agent to join
             await asyncio.sleep(2)
 
-            # Create and publish an audio track
             # Use AudioSource to push audio frames
             audio_source = rtc.AudioSource(48000, 1)  # 48kHz mono
             track = rtc.LocalAudioTrack.create_audio_track("microphone", audio_source)
 
-            # Publish the track
             options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
             await room.local_participant.publish_track(track, options)
             print("Audio track published")
 
-            # Generate some audio frames (silence for now - real test would use TTS audio)
             # Push a few seconds of silence/low-level audio
             samples_per_frame = 480  # 10ms at 48kHz
             frame_data = bytes(samples_per_frame * 2)  # 16-bit silence
@@ -261,17 +242,13 @@ class TestFullCallPipeline:
 
             print("Audio frames sent")
 
-            # Connect to WebSocket for transcript updates
-
             ws_url = f"ws://localhost:8000/api/calls/{call_id}/ws"
 
             async with websockets.connect(ws_url) as ws:
-                # Read initial state
                 msg = await asyncio.wait_for(ws.recv(), timeout=5)
                 data = json.loads(msg)
                 print(f"WS initial: {data.get('type')}")
 
-                # Wait for transcript updates
                 start_time = time.time()
                 timeout_secs = 15
 
@@ -299,14 +276,11 @@ class TestFullCallPipeline:
             await room.disconnect()
 
         finally:
-            # End the call
             await api_client.post(f"/api/calls/{call_id}/end")
 
-        # Report results
         print(f"Transcripts collected: {transcripts}")
         print(f"Errors: {errors}")
 
-        # Verify no errors occurred during the call
         assert not errors, f"Errors during call: {errors}"
 
     @pytest.mark.asyncio
@@ -317,7 +291,6 @@ class TestFullCallPipeline:
         The agent should transcribe it and generate a response.
         """
 
-        # First, generate speech audio using Kokoro
         async with httpx.AsyncClient() as http:
             tts_response = await http.post(
                 "http://localhost:8002/v1/audio/speech",
@@ -334,7 +307,6 @@ class TestFullCallPipeline:
 
         print(f"Generated {len(speech_audio)} bytes of speech audio")
 
-        # Create demo agent (auto-cleaned by api_client fixture)
         demo_data = await api_client.create_demo_agent()
         agent_id = demo_data["agent_id"]
 
@@ -357,9 +329,8 @@ class TestFullCallPipeline:
             await room.connect(livekit_url, user_token)
             print("User connected to room")
 
-            await asyncio.sleep(2)  # Wait for agent
+            await asyncio.sleep(2)
 
-            # Create audio source and track
             # Kokoro outputs 24kHz audio by default
             sample_rate = 24000
             audio_source = rtc.AudioSource(sample_rate, 1)
@@ -369,7 +340,6 @@ class TestFullCallPipeline:
             await room.local_participant.publish_track(track, options)
             print("Audio track published")
 
-            # Send the speech audio in chunks
             samples_per_frame = sample_rate // 100  # 10ms frames
             bytes_per_frame = samples_per_frame * 2  # 16-bit audio
 
@@ -390,10 +360,7 @@ class TestFullCallPipeline:
 
             print("Speech audio sent")
 
-            # Wait for processing
             await asyncio.sleep(3)
-
-            # Check for transcripts via WebSocket
 
             ws_url = f"ws://localhost:8000/api/calls/{call_id}/ws"
 
@@ -415,7 +382,6 @@ class TestFullCallPipeline:
 
                         if data.get("type") == "transcript_update":
                             transcripts = data.get("transcript", [])
-                            # Look for agent response
                             agent_msgs = [t for t in transcripts if t.get("role") == "assistant"]
                             if agent_msgs:
                                 print(f"Agent responded: {agent_msgs}")
@@ -426,7 +392,6 @@ class TestFullCallPipeline:
                             break
 
                     except TimeoutError:
-                        # Print status periodically
                         elapsed = time.time() - start_time
                         print(f"Waiting for agent response... ({elapsed:.1f}s)")
                         continue
@@ -455,11 +420,9 @@ class TestFullCallPipeline:
     async def test_call_websocket_receives_status(self, api_client):
         """WebSocket receives call status updates."""
 
-        # Create demo agent (auto-cleaned by api_client fixture)
         demo_data = await api_client.create_demo_agent()
         agent_id = demo_data["agent_id"]
 
-        # Start call
         start_response = await api_client.post(
             f"/api/agents/{agent_id}/calls/start",
         )
@@ -471,7 +434,6 @@ class TestFullCallPipeline:
             ws_url = f"ws://localhost:8000/api/calls/{call_id}/ws"
 
             async with websockets.connect(ws_url) as ws:
-                # Should receive initial state
                 msg = await asyncio.wait_for(ws.recv(), timeout=5)
                 data = json.loads(msg)
 

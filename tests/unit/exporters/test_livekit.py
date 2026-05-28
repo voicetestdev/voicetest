@@ -48,7 +48,6 @@ class TestLiveKitLogicSplit:
     def test_else_branch_in_routing_code(self, logic_split_graph):
         """Always/else condition should generate an else branch."""
         result = export_livekit_code(logic_split_graph)
-        # Should have else clause for the fallback
         assert "else" in result.lower()
 
     def test_logic_node_targets_have_classes(self, logic_split_graph):

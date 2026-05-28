@@ -27,12 +27,7 @@ def _server_reachable(host: str = "127.0.0.1", port: int = 8000) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# Async variant (for @pytest.mark.asyncio tests)
-# ---------------------------------------------------------------------------
-
-
-class TrackedClient:
+class AsyncTrackedClient:
     """Async HTTP client that records created agent IDs for auto-cleanup."""
 
     def __init__(self, base_url: str = "http://127.0.0.1:8000"):
@@ -81,23 +76,18 @@ class TrackedClient:
 
 @pytest.fixture
 async def api_client():
-    """Async TrackedClient that auto-cleans agents on teardown.
+    """Async client that auto-cleans agents on teardown.
 
     Skips the test if the backend server is not running on port 8000.
     """
     if not _server_reachable():
         pytest.skip("Backend server not running on port 8000")
 
-    client = TrackedClient()
+    client = AsyncTrackedClient()
     try:
         yield client
     finally:
         await client.cleanup()
-
-
-# ---------------------------------------------------------------------------
-# Sync variant (for non-async tests that hit a running server)
-# ---------------------------------------------------------------------------
 
 
 class SyncTrackedClient:
@@ -149,7 +139,7 @@ class SyncTrackedClient:
 
 @pytest.fixture
 def sync_api_client():
-    """Sync TrackedClient that auto-cleans agents on teardown.
+    """Sync client that auto-cleans agents on teardown.
 
     Skips the test if the backend server is not running on port 8000.
     """
