@@ -7,6 +7,7 @@ import pytest
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 
 
 class TestAgentsCRUD:
@@ -391,7 +392,9 @@ class TestSnippetEndpoints:
         for node_id, prompt in node_prompts.items():
             if first_id is None:
                 first_id = node_id
-            nodes[node_id] = AgentNode(id=node_id, state_prompt=prompt, transitions=[])
+            nodes[node_id] = AgentNode(
+                id=node_id, state_prompt=prompt, transitions=[], node_type=NodeType.CONVERSATION
+            )
 
         return AgentGraph(
             nodes=nodes,

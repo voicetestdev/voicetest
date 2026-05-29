@@ -4,6 +4,7 @@ import pytest
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.diagnosis import PromptChange
@@ -33,11 +34,13 @@ def graph_with_general_prompt():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "billing": AgentNode(
                 id="billing",
                 state_prompt="Help with billing inquiries.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",

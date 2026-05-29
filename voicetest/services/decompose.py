@@ -3,6 +3,7 @@
 from voicetest.judges.decompose import DecomposeJudge
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.decompose import DecompositionPlan
 from voicetest.models.decompose import DecompositionResult
 from voicetest.models.decompose import OrchestratorManifest
@@ -143,6 +144,7 @@ class DecomposeService:
             nodes[node_id] = AgentNode(
                 id=node_id,
                 state_prompt=segment.segment_text,
+                node_type=NodeType.CONVERSATION,
                 transitions=[],
             )
 

@@ -26,8 +26,9 @@ class TestFormatTransitions:
                             condition=TransitionCondition(type="llm_prompt", value="go to b"),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "b": AgentNode(id="b", state_prompt="Help."),
+                "b": AgentNode(id="b", state_prompt="Help.", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",
@@ -54,8 +55,9 @@ class TestFormatTransitions:
                             description="Route to help desk",
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "b": AgentNode(id="b", state_prompt="Help."),
+                "b": AgentNode(id="b", state_prompt="Help.", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",
@@ -90,10 +92,11 @@ class TestFormatTransitions:
                             condition=TransitionCondition(type="tool_call", value="lookup_user"),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "b": AgentNode(id="b", state_prompt="B."),
-                "c": AgentNode(id="c", state_prompt="C."),
-                "d": AgentNode(id="d", state_prompt="D."),
+                "b": AgentNode(id="b", state_prompt="B.", node_type=NodeType.CONVERSATION),
+                "c": AgentNode(id="c", state_prompt="C.", node_type=NodeType.CONVERSATION),
+                "d": AgentNode(id="d", state_prompt="D.", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",
@@ -119,8 +122,9 @@ class TestFormatTransitions:
                             condition=TransitionCondition(type="always", value=""),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "b": AgentNode(id="b", state_prompt="B."),
+                "b": AgentNode(id="b", state_prompt="B.", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",
@@ -134,7 +138,9 @@ class TestFormatTransitions:
     def test_returns_empty_list_for_no_transitions(self):
         graph = AgentGraph(
             nodes={
-                "a": AgentNode(id="a", state_prompt="Greet.", transitions=[]),
+                "a": AgentNode(
+                    id="a", state_prompt="Greet.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="a",
             source_type="custom",
@@ -147,7 +153,9 @@ class TestFormatTransitions:
     def test_returns_empty_list_for_unknown_node(self):
         graph = AgentGraph(
             nodes={
-                "a": AgentNode(id="a", state_prompt="Greet.", transitions=[]),
+                "a": AgentNode(
+                    id="a", state_prompt="Greet.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="a",
             source_type="custom",
@@ -169,8 +177,9 @@ class TestFormatTransitions:
                             condition=TransitionCondition(type="llm_prompt", value="go to b"),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "b": AgentNode(id="b", state_prompt="Help."),
+                "b": AgentNode(id="b", state_prompt="Help.", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",
@@ -199,11 +208,13 @@ class TestGlobalNodeTransitions:
                             ),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "order": AgentNode(
                     id="order",
                     state_prompt="Take order.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "cancel": AgentNode(
                     id="cancel",
@@ -221,6 +232,7 @@ class TestGlobalNodeTransitions:
                             ),
                         ],
                     ),
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="greeting",
@@ -262,13 +274,14 @@ class TestGlobalNodeTransitions:
                         ),
                     ],
                 ),
-                "a": AgentNode(id="a", state_prompt="A."),
+                "a": AgentNode(id="a", state_prompt="A.", node_type=NodeType.CONVERSATION),
                 "cancel": AgentNode(
                     id="cancel",
                     state_prompt="Cancel.",
                     global_node_setting=GlobalNodeSetting(
                         condition="Caller wants to cancel",
                     ),
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="router",
@@ -320,8 +333,9 @@ class TestGlobalNodeTransitions:
                             condition=TransitionCondition(type="llm_prompt", value="go to b"),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "b": AgentNode(id="b", state_prompt="Help."),
+                "b": AgentNode(id="b", state_prompt="Help.", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",

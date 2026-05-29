@@ -6,6 +6,7 @@ from voicetest.importers.base import ImporterInfo
 from voicetest.importers.registry import ImporterRegistry
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 
 
 class TestImporterRegistry:
@@ -27,7 +28,9 @@ class TestImporterRegistry:
 
             def import_agent(self, path_or_config) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", state_prompt="test")},
+                    nodes={
+                        "n": AgentNode(id="n", state_prompt="test", node_type=NodeType.CONVERSATION)
+                    },
                     entry_node_id="n",
                     source_type="mock",
                 )
@@ -54,7 +57,9 @@ class TestImporterRegistry:
 
             def import_agent(self, path_or_config) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", state_prompt="t1")},
+                    nodes={
+                        "n": AgentNode(id="n", state_prompt="t1", node_type=NodeType.CONVERSATION)
+                    },
                     entry_node_id="n",
                     source_type="type1",
                 )
@@ -72,7 +77,9 @@ class TestImporterRegistry:
 
             def import_agent(self, path_or_config) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", state_prompt="t2")},
+                    nodes={
+                        "n": AgentNode(id="n", state_prompt="t2", node_type=NodeType.CONVERSATION)
+                    },
                     entry_node_id="n",
                     source_type="type2",
                 )
@@ -107,7 +114,11 @@ class TestImporterRegistry:
 
             def import_agent(self, path_or_config) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", state_prompt="imported")},
+                    nodes={
+                        "n": AgentNode(
+                            id="n", state_prompt="imported", node_type=NodeType.CONVERSATION
+                        )
+                    },
                     entry_node_id="n",
                     source_type="test",
                 )
@@ -133,7 +144,9 @@ class TestImporterRegistry:
 
             def import_agent(self, path_or_config) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", state_prompt="auto")},
+                    nodes={
+                        "n": AgentNode(id="n", state_prompt="auto", node_type=NodeType.CONVERSATION)
+                    },
                     entry_node_id="n",
                     source_type="auto",
                 )
@@ -171,7 +184,9 @@ class TestImporterRegistry:
 
             def import_agent(self, p) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", state_prompt="")},
+                    nodes={
+                        "n": AgentNode(id="n", state_prompt="", node_type=NodeType.CONVERSATION)
+                    },
                     entry_node_id="n",
                     source_type="imp1",
                 )
@@ -189,7 +204,9 @@ class TestImporterRegistry:
 
             def import_agent(self, p) -> AgentGraph:
                 return AgentGraph(
-                    nodes={"n": AgentNode(id="n", state_prompt="")},
+                    nodes={
+                        "n": AgentNode(id="n", state_prompt="", node_type=NodeType.CONVERSATION)
+                    },
                     entry_node_id="n",
                     source_type="imp2",
                 )

@@ -15,6 +15,7 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import GlobalMetric
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.agent import NodeType
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
@@ -72,6 +73,7 @@ def sample_graph():
                 name="Greeting",
                 state_prompt="Say hello",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             )
         },
     )

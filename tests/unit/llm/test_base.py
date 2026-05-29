@@ -17,6 +17,7 @@ from voicetest.llm import call_llm
 from voicetest.llm.base import _create_lm
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.test_case import RunOptions
@@ -247,8 +248,9 @@ class TestConversationEngineCacheSalt:
                             condition=TransitionCondition(type="llm_prompt", value="go to b"),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "b": AgentNode(id="b", state_prompt="Help."),
+                "b": AgentNode(id="b", state_prompt="Help.", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",
@@ -295,9 +297,12 @@ class TestConversationEngineCacheSalt:
                             )
                             for t in targets
                         ],
+                        node_type=NodeType.CONVERSATION,
                     ),
-                    "b": AgentNode(id="b", state_prompt="Help."),
-                    "c": AgentNode(id="c", state_prompt="Support."),
+                    "b": AgentNode(id="b", state_prompt="Help.", node_type=NodeType.CONVERSATION),
+                    "c": AgentNode(
+                        id="c", state_prompt="Support.", node_type=NodeType.CONVERSATION
+                    ),
                 },
                 entry_node_id="a",
                 source_type="custom",
@@ -337,7 +342,7 @@ class TestConversationEngineNoCache:
 
         graph = AgentGraph(
             nodes={
-                "a": AgentNode(id="a", state_prompt="Greet."),
+                "a": AgentNode(id="a", state_prompt="Greet.", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",
@@ -367,7 +372,7 @@ class TestConversationEngineNoCache:
 
         graph = AgentGraph(
             nodes={
-                "a": AgentNode(id="a", state_prompt="Greet."),
+                "a": AgentNode(id="a", state_prompt="Greet.", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",

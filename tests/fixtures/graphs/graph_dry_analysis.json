@@ -3,6 +3,7 @@
     "greeting": {
       "id": "greeting",
       "state_prompt": "Welcome {{caller_name}} to the Meridian Insurance claims department and thank them for calling. All calls are recorded for quality assurance and training purposes. Ask how you can assist them today and listen carefully to understand their specific needs. Route them to the appropriate department based on their initial request.",
+      "node_type": "conversation",
       "transitions": [
         {
           "target_node_id": "verify_identity",
@@ -19,6 +20,7 @@
     "verify_identity": {
       "id": "verify_identity",
       "state_prompt": "Please verify the caller's identity before sharing any account information. Ask for their policy number, date of birth, and the last four digits of their social security number. Confirm all details with the caller before making any changes to the policy. All calls are recorded for quality assurance and training purposes.",
+      "node_type": "conversation",
       "transitions": [
         {
           "target_node_id": "new_claim",
@@ -47,6 +49,7 @@
     "new_claim": {
       "id": "new_claim",
       "state_prompt": "Guide the caller through filing a new insurance claim step by step. Collect the details about the incident including date, location, and a thorough description of all damages. All calls are recorded for quality assurance and training purposes. If the customer becomes frustrated, remain calm and empathetic while addressing their issues. Thank you for choosing Meridian Insurance, and have a wonderful day.",
+      "node_type": "conversation",
       "transitions": [
         {
           "target_node_id": "closing",
@@ -73,6 +76,7 @@
     "claim_status": {
       "id": "claim_status",
       "state_prompt": "Please verify the caller's identity before sharing any account information. Look up the claim using the provided claim number or policy number and review all associated documentation. Provide a clear and detailed update on the current status of their claim including any pending actions required by the policyholder.",
+      "node_type": "conversation",
       "transitions": [
         {
           "target_node_id": "closing",
@@ -97,6 +101,7 @@
     "billing": {
       "id": "billing",
       "state_prompt": "Please verify the customer's identity before sharing any account details. Help the caller understand their premium breakdown and current payment schedule in detail. Confirm all details with the customer before making any changes to the account. Thank you for choosing Meridian Insurance, and have a wonderful day.",
+      "node_type": "conversation",
       "transitions": [
         {
           "target_node_id": "closing",
@@ -121,6 +126,7 @@
     "closing": {
       "id": "closing",
       "state_prompt": "Summarize all the actions taken during this call and confirm the next steps with the caller before disconnecting. Thank you for choosing Meridian Insurance, and have a wonderful day. Ask if there is anything else you can help with before ending the conversation for today.",
+      "node_type": "conversation",
       "transitions": [],
       "tools": [],
       "metadata": {}

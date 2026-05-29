@@ -9,6 +9,7 @@ from voicetest.exporters.telnyx import export_telnyx_config
 from voicetest.importers.telnyx import TelnyxImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -70,6 +71,7 @@ class TestTelnyxExporter:
                     tools=[],
                     transitions=[],
                     metadata={"greeting": "Hi there!"},
+                    node_type=NodeType.CONVERSATION,
                 )
             },
             entry_node_id="main",
@@ -110,6 +112,7 @@ class TestTelnyxExporter:
                     ],
                     transitions=[],
                     metadata={},
+                    node_type=NodeType.CONVERSATION,
                 )
             },
             entry_node_id="main",
@@ -138,6 +141,7 @@ class TestTelnyxExporter:
                     ],
                     transitions=[],
                     metadata={},
+                    node_type=NodeType.CONVERSATION,
                 )
             },
             entry_node_id="main",
@@ -170,6 +174,7 @@ class TestTelnyxExporter:
                         ),
                     ],
                     metadata={},
+                    node_type=NodeType.CONVERSATION,
                 )
             },
             entry_node_id="main",
@@ -198,6 +203,7 @@ class TestTelnyxExporter:
                     ],
                     transitions=[],
                     metadata={},
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "n2": AgentNode(
                     id="n2",
@@ -207,6 +213,7 @@ class TestTelnyxExporter:
                     ],
                     transitions=[],
                     metadata={},
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="n1",
@@ -287,6 +294,7 @@ def sample_graph_with_tools():
                 ],
                 transitions=[],
                 metadata={},
+                node_type=NodeType.CONVERSATION,
             )
         },
         entry_node_id="main",
@@ -306,6 +314,7 @@ def sample_graph_with_metadata():
                 tools=[],
                 transitions=[],
                 metadata={},
+                node_type=NodeType.CONVERSATION,
             )
         },
         entry_node_id="main",

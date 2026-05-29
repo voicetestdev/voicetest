@@ -6,6 +6,7 @@ from voicetest.exporters.bland import export_bland_config
 from voicetest.importers.bland import BlandImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 
 
@@ -69,6 +70,7 @@ class TestBlandExporter:
                     tools=[],
                     transitions=[],
                     metadata={"first_sentence": "Hi there!"},
+                    node_type=NodeType.CONVERSATION,
                 )
             },
             entry_node_id="main",
@@ -115,6 +117,7 @@ def sample_graph_with_tools():
                 ],
                 transitions=[],
                 metadata={},
+                node_type=NodeType.CONVERSATION,
             )
         },
         entry_node_id="main",
@@ -134,6 +137,7 @@ def sample_graph_with_metadata():
                 tools=[],
                 transitions=[],
                 metadata={},
+                node_type=NodeType.CONVERSATION,
             )
         },
         entry_node_id="main",

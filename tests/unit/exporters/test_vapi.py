@@ -5,6 +5,7 @@ from voicetest.exporters.vapi import export_vapi_squad
 from voicetest.importers.vapi import VapiImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 
 
@@ -103,6 +104,7 @@ class TestVapiExporterBasic:
                     state_prompt="You are a helpful assistant.",
                     tools=[],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 )
             },
             entry_node_id="main",
@@ -135,6 +137,7 @@ class TestVapiExporterBasic:
                         )
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 )
             },
             entry_node_id="main",
@@ -161,6 +164,7 @@ class TestVapiExporterBasic:
                     state_prompt="You are a helpful assistant.",
                     tools=[],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 )
             },
             entry_node_id="main",
@@ -206,12 +210,14 @@ class TestVapiExporterMultiNode:
                     state_prompt="Node 1",
                     tools=[ToolDefinition(name="tool1", description="Tool 1", parameters={})],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "node2": AgentNode(
                     id="node2",
                     state_prompt="Node 2",
                     tools=[ToolDefinition(name="tool2", description="Tool 2", parameters={})],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="node1",

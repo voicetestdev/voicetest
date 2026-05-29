@@ -22,6 +22,7 @@ def setup(tmp_path, monkeypatch, container):
             "main": {
                 "id": "main",
                 "state_prompt": "Hello.",
+                "node_type": "conversation",
                 "transitions": [],
             }
         },

@@ -6,6 +6,7 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import GlobalMetric
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.agent import NodeType
 from voicetest.models.results import Message
 from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
@@ -27,6 +28,7 @@ def graph():
                 id="main",
                 state_prompt="You are a helpful assistant.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="main",

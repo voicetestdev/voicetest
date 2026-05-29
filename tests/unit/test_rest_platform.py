@@ -7,6 +7,7 @@ import pytest
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.platforms.bland import BlandPlatformClient
 from voicetest.platforms.livekit import LiveKitPlatformClient
 from voicetest.platforms.registry import PlatformRegistry
@@ -230,6 +231,7 @@ class TestSyncToPlatform:
                     id="main",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -254,6 +256,7 @@ class TestSyncToPlatform:
                     id="main",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -280,6 +283,7 @@ class TestSyncToPlatform:
                     id="main",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -310,6 +314,7 @@ class TestSyncToPlatform:
                     id="main",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -338,6 +343,7 @@ class TestSyncToPlatform:
                     id="main",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -364,6 +370,7 @@ class TestSyncToPlatform:
                     id="main",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -385,6 +392,7 @@ class TestSyncToPlatform:
                     id="main",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -412,6 +420,7 @@ class TestSyncToPlatform:
                     id="main",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -440,6 +449,7 @@ class TestSyncToPlatform:
                     id="main",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -485,6 +495,7 @@ class TestSyncToPlatform:
                     id="main",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",

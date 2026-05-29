@@ -7,6 +7,7 @@ from typing import Any
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -95,6 +96,7 @@ class LiveKitImporter:
             nodes["main"] = AgentNode(
                 id="main",
                 state_prompt="LiveKit agent (no agent classes found)",
+                node_type=NodeType.CONVERSATION,
                 tools=[],
                 transitions=[],
                 metadata={"livekit_raw": True},
@@ -144,6 +146,7 @@ class LiveKitImporter:
         return AgentNode(
             id=node_id,
             state_prompt=instructions,
+            node_type=NodeType.CONVERSATION,
             tools=tools,
             transitions=transitions,
             metadata={"livekit_class": class_def.name},

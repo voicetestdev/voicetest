@@ -397,11 +397,13 @@ def simple_graph():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "farewell": AgentNode(
                 id="farewell",
                 state_prompt="Say goodbye politely.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -419,6 +421,7 @@ def single_node_graph():
                 id="main",
                 state_prompt="You are a helpful assistant.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="main",
@@ -461,12 +464,14 @@ def graph_with_tools():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "lookup": AgentNode(
                 id="lookup",
                 state_prompt="Look up the user's account.",
                 tools=[lookup_tool, end_call_tool],
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -497,6 +502,7 @@ def multi_node_graph():
                         ),
                     ),
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "billing": AgentNode(
                 id="billing",
@@ -507,6 +513,7 @@ def multi_node_graph():
                         condition=TransitionCondition(type="llm_prompt", value="Billing resolved"),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "support": AgentNode(
                 id="support",
@@ -517,11 +524,13 @@ def multi_node_graph():
                         condition=TransitionCondition(type="llm_prompt", value="Support complete"),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "end": AgentNode(
                 id="end",
                 state_prompt="Thank the customer and end the call politely.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -540,6 +549,7 @@ def graph_with_metadata():
                 id="main",
                 state_prompt="You are a helpful assistant.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="main",
@@ -569,6 +579,7 @@ def graph_with_global_node():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "customize": AgentNode(
                 id="customize",
@@ -581,11 +592,13 @@ def graph_with_global_node():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "confirm": AgentNode(
                 id="confirm",
                 state_prompt="Read back the order and ask to confirm.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
             "cancel_request": AgentNode(
                 id="cancel_request",
@@ -603,6 +616,7 @@ def graph_with_global_node():
                         ),
                     ],
                 ),
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -628,11 +642,13 @@ def graph_with_multiple_global_nodes():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "order": AgentNode(
                 id="order",
                 state_prompt="Take the order.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
             "cancel_request": AgentNode(
                 id="cancel_request",
@@ -650,6 +666,7 @@ def graph_with_multiple_global_nodes():
                         ),
                     ],
                 ),
+                node_type=NodeType.CONVERSATION,
             ),
             "ask_specials": AgentNode(
                 id="ask_specials",
@@ -667,6 +684,7 @@ def graph_with_multiple_global_nodes():
                         ),
                     ],
                 ),
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -692,11 +710,13 @@ def graph_with_global_no_go_back():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "order": AgentNode(
                 id="order",
                 state_prompt="Take the order.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
             "emergency_end": AgentNode(
                 id="emergency_end",

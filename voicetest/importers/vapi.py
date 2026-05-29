@@ -12,6 +12,7 @@ from pydantic import field_validator
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -221,6 +222,7 @@ class VapiImporter:
             "main": AgentNode(
                 id="main",
                 state_prompt=system_prompt,
+                node_type=NodeType.CONVERSATION,
                 tools=tools,
                 transitions=transitions,
             )
@@ -282,6 +284,7 @@ class VapiImporter:
             nodes[node_id] = AgentNode(
                 id=node_id,
                 state_prompt=system_prompt,
+                node_type=NodeType.CONVERSATION,
                 tools=tools,
                 transitions=transitions,
                 metadata={"first_message": assistant.first_message}

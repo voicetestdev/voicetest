@@ -3,6 +3,7 @@
 from voicetest.exporters.layout import compute_layout
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 
@@ -25,6 +26,7 @@ def _make_graph(nodes_spec: dict, entry_node_id: str) -> AgentGraph:
             id=node_id,
             state_prompt=f"Prompt for {node_id}.",
             transitions=transitions,
+            node_type=NodeType.CONVERSATION,
         )
     return AgentGraph(
         nodes=nodes,

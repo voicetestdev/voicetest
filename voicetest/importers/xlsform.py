@@ -9,6 +9,7 @@ from openpyxl import load_workbook
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 
@@ -142,6 +143,7 @@ class XLSFormImporter:
             nodes[q_name] = AgentNode(
                 id=q_name,
                 state_prompt=state_prompt,
+                node_type=NodeType.CONVERSATION,
                 tools=[],
                 transitions=[],
                 metadata={
@@ -191,6 +193,7 @@ class XLSFormImporter:
                 "Thank the user for completing the survey. "
                 "Summarize their responses if appropriate and end the conversation politely."
             ),
+            node_type=NodeType.CONVERSATION,
             tools=[],
             transitions=[],
             metadata={"xlsform_type": "end"},

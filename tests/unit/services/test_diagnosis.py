@@ -5,6 +5,7 @@ import pytest
 from voicetest.judges.diagnosis import DiagnosisJudge
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.diagnosis import Diagnosis
@@ -31,6 +32,7 @@ def graph():
                         ),
                     ),
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "billing": AgentNode(
                 id="billing",
@@ -41,11 +43,13 @@ def graph():
                         condition=TransitionCondition(type="llm_prompt", value="Billing resolved"),
                     ),
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "end": AgentNode(
                 id="end",
                 state_prompt="Thank and close.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",

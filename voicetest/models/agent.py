@@ -19,6 +19,24 @@ class NodeType(StrEnum):
     FUNCTION = "function"
 
 
+def infer_node_type(
+    transitions: list["Transition"],
+    variables_to_extract: list["VariableExtraction"] | None = None,
+) -> NodeType:
+    """Guess a node's type from the shape of its transitions.
+
+    Equation-shaped routing (all edges are equation or always, with at least
+    one equation) maps to EXTRACT when there are variables to extract first,
+    LOGIC otherwise. Anything else is CONVERSATION. Importers whose source
+    format lacks an explicit type field call this to choose."""
+    if not transitions:
+        return NodeType.CONVERSATION
+    types = {t.condition.type for t in transitions}
+    if not types <= {"equation", "always"} or "equation" not in types:
+        return NodeType.CONVERSATION
+    return NodeType.EXTRACT if variables_to_extract else NodeType.LOGIC
+
+
 class EquationClause(BaseModel):
     """Single comparison clause in a deterministic equation condition."""
 
@@ -93,37 +111,12 @@ class AgentNode(BaseModel):
 
     id: str
     state_prompt: str
-    node_type: NodeType = NodeType.CONVERSATION
+    node_type: NodeType
     tools: list[ToolDefinition] = Field(default_factory=list)
     transitions: list[Transition] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     variables_to_extract: list[VariableExtraction] = Field(default_factory=list)
     global_node_setting: GlobalNodeSetting | None = None
-
-    def model_post_init(self, __context: Any) -> None:
-        """Infer node_type from structure when not explicitly set.
-
-        Provides backward compatibility for stored JSON that predates
-        the node_type field. Only runs inference when node_type is still
-        the default (CONVERSATION).
-
-        Note: model_copy(update=...) does NOT re-run model_post_init
-        in Pydantic v2. Any model_copy that changes the structural type
-        must include node_type in the update dict."""
-        if self.node_type != NodeType.CONVERSATION:
-            return
-        if self.variables_to_extract and self._has_equation_transitions():
-            self.node_type = NodeType.EXTRACT
-        elif self._has_equation_transitions():
-            self.node_type = NodeType.LOGIC
-
-    def _has_equation_transitions(self) -> bool:
-        """Check if transitions are equation-only (with optional always fallback)."""
-        if not self.transitions:
-            return False
-        return all(t.condition.type in ("equation", "always") for t in self.transitions) and any(
-            t.condition.type == "equation" for t in self.transitions
-        )
 
     def is_logic_node(self) -> bool:
         """Check if this is a logic/branch node."""

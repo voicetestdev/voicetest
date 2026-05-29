@@ -150,6 +150,7 @@ class RetellLLMImporter:
                     transitions=transitions,
                     tools=tools or [],
                     metadata={"state_index": i},
+                    node_type=NodeType.CONVERSATION,
                 )
 
             entry_node_id = llm_config.states[0].name
@@ -160,6 +161,7 @@ class RetellLLMImporter:
                 state_prompt=llm_config.general_prompt,
                 tools=tools or [],
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             )
             entry_node_id = "main"
 

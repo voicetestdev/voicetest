@@ -12,6 +12,7 @@ from voicetest.engine.session import NodeTracker
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import EquationClause
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.test_case import RunOptions
@@ -289,16 +290,19 @@ class TestToolMessagePropagation:
                             condition=TransitionCondition(type="always", value="Else"),
                         ),
                     ],
+                    node_type=NodeType.LOGIC,
                 ),
                 "support": AgentNode(
                     id="support",
                     state_prompt="VIP support.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "standard": AgentNode(
                     id="standard",
                     state_prompt="Standard.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="router",
@@ -363,16 +367,19 @@ class TestAutoProcessLogicNodes:
                             condition=TransitionCondition(type="always", value=""),
                         ),
                     ],
+                    node_type=NodeType.LOGIC,
                 ),
                 "adult_flow": AgentNode(
                     id="adult_flow",
                     state_prompt="Greet the adult patient.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "minor_flow": AgentNode(
                     id="minor_flow",
                     state_prompt="Ask for guardian.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="router",
@@ -470,6 +477,7 @@ class TestAutoProcessLogicNodes:
                             condition=TransitionCondition(type="always", value=""),
                         ),
                     ],
+                    node_type=NodeType.LOGIC,
                 ),
                 "check_status": AgentNode(
                     id="check_status",
@@ -490,21 +498,25 @@ class TestAutoProcessLogicNodes:
                             condition=TransitionCondition(type="always", value=""),
                         ),
                     ],
+                    node_type=NodeType.LOGIC,
                 ),
                 "active_flow": AgentNode(
                     id="active_flow",
                     state_prompt="Help active user.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "inactive_flow": AgentNode(
                     id="inactive_flow",
                     state_prompt="Reactivate account.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "rejected": AgentNode(
                     id="rejected",
                     state_prompt="Cannot proceed.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="check_age",
@@ -562,6 +574,7 @@ class TestAutoProcessLogicNodes:
                             condition=TransitionCondition(type="always", value=""),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "router": AgentNode(
                     id="router",
@@ -580,16 +593,19 @@ class TestAutoProcessLogicNodes:
                             condition=TransitionCondition(type="always", value=""),
                         ),
                     ],
+                    node_type=NodeType.LOGIC,
                 ),
                 "vip": AgentNode(
                     id="vip",
                     state_prompt="VIP support.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "standard": AgentNode(
                     id="standard",
                     state_prompt="Standard support.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="greeting",
@@ -661,11 +677,13 @@ class TestNoEmptyUserMessages:
                             ),
                         ),
                     ],
+                    node_type=NodeType.LOGIC,
                 ),
                 "main": AgentNode(
                     id="main",
                     state_prompt="Help the user.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="router",

@@ -28,6 +28,7 @@ def agent(client):
                     "main": {
                         "id": "main",
                         "state_prompt": "Hello",
+                        "node_type": "conversation",
                         "transitions": [],
                         "metadata": {},
                     }

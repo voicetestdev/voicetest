@@ -20,11 +20,13 @@ def agent_id(tmp_path, monkeypatch, container):
             "main": {
                 "id": "main",
                 "state_prompt": "Always be polite and professional.",
+                "node_type": "conversation",
                 "transitions": [],
             },
             "billing": {
                 "id": "billing",
                 "state_prompt": "Always be polite and professional. Handle billing.",
+                "node_type": "conversation",
                 "transitions": [],
             },
         },

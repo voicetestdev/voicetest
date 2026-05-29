@@ -11,6 +11,7 @@ from pydantic import Field
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 
 
@@ -111,6 +112,7 @@ class BlandImporter:
             node_id: AgentNode(
                 id=node_id,
                 state_prompt=config.prompt,
+                node_type=NodeType.CONVERSATION,
                 tools=tools,
                 transitions=[],
                 metadata={"first_sentence": config.first_sentence} if config.first_sentence else {},

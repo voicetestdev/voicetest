@@ -11,6 +11,7 @@ from pydantic import Field
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -162,6 +163,7 @@ class TelnyxImporter:
             node_id: AgentNode(
                 id=node_id,
                 state_prompt=config.instructions,
+                node_type=NodeType.CONVERSATION,
                 tools=tools,
                 transitions=transitions,
                 metadata=node_metadata,

@@ -7,6 +7,7 @@ import pytest
 from voicetest.judges.diagnosis import DiagnosisJudge
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.diagnosis import Diagnosis
@@ -43,6 +44,7 @@ def sample_graph():
                         ),
                     ),
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "billing": AgentNode(
                 id="billing",
@@ -53,6 +55,7 @@ def sample_graph():
                         condition=TransitionCondition(type="llm_prompt", value="Billing resolved"),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "support": AgentNode(
                 id="support",
@@ -63,11 +66,13 @@ def sample_graph():
                         condition=TransitionCondition(type="llm_prompt", value="Support complete"),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "end": AgentNode(
                 id="end",
                 state_prompt="Thank the customer and end the call politely.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -142,7 +147,9 @@ class TestFormatGraphFull:
     def test_no_general_prompt(self, judge):
         graph = AgentGraph(
             nodes={
-                "main": AgentNode(id="main", state_prompt="Hello", transitions=[]),
+                "main": AgentNode(
+                    id="main", state_prompt="Hello", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="main",
             source_type="custom",

@@ -2,6 +2,7 @@
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.util.templating import expand_graph_snippets
 from voicetest.util.templating import expand_snippets
 from voicetest.util.templating import extract_snippet_refs
@@ -169,11 +170,13 @@ class TestExpandGraphSnippets:
                     id="a",
                     state_prompt="Node A: {%disclaimer%}",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "b": AgentNode(
                     id="b",
                     state_prompt="Node B: {%disclaimer%}",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="a",
@@ -196,6 +199,7 @@ class TestExpandGraphSnippets:
                     id="a",
                     state_prompt="{%snip%}",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="a",
@@ -216,6 +220,7 @@ class TestExpandGraphSnippets:
                     id="a",
                     state_prompt="plain text",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="a",

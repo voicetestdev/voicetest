@@ -3,6 +3,7 @@
     "main": {
       "id": "main",
       "state_prompt": "Hello {{customer_name}}, your account is {{account_status}}.",
+      "node_type": "conversation",
       "transitions": [],
       "tools": [],
       "metadata": {}

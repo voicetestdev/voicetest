@@ -6,6 +6,7 @@ from voicetest.judges.flow import FlowJudge
 from voicetest.judges.flow import FlowResult
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.results import Message
@@ -33,6 +34,7 @@ class TestFlowJudge:
                     id="greeting",
                     state_prompt="Greet the user",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 )
             },
             entry_node_id="greeting",
@@ -69,9 +71,20 @@ class TestFlowJudge:
                             ),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "verify": AgentNode(id="verify", state_prompt="Verify identity", transitions=[]),
-                "billing": AgentNode(id="billing", state_prompt="Handle billing", transitions=[]),
+                "verify": AgentNode(
+                    id="verify",
+                    state_prompt="Verify identity",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "billing": AgentNode(
+                    id="billing",
+                    state_prompt="Handle billing",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
             },
             entry_node_id="greeting",
             source_type="test",

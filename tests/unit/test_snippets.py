@@ -2,6 +2,7 @@
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.util.snippets import find_repeated_text
 from voicetest.util.snippets import find_similar_text
 from voicetest.util.snippets import suggest_snippets
@@ -14,7 +15,9 @@ def _make_graph(**node_prompts: str) -> AgentGraph:
     for node_id, prompt in node_prompts.items():
         if first_id is None:
             first_id = node_id
-        nodes[node_id] = AgentNode(id=node_id, state_prompt=prompt, transitions=[])
+        nodes[node_id] = AgentNode(
+            id=node_id, state_prompt=prompt, transitions=[], node_type=NodeType.CONVERSATION
+        )
     return AgentGraph(
         nodes=nodes,
         entry_node_id=first_id or "a",
