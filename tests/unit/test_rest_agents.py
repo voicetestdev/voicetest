@@ -8,6 +8,7 @@ import pytest
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import NodeType
+from voicetest.storage.repositories import AgentRepository
 
 
 class TestAgentsCRUD:
@@ -149,6 +150,32 @@ class TestAgentsCRUD:
     def test_get_nonexistent_agent(self, db_client):
         response = db_client.get("/api/agents/nonexistent-id")
         assert response.status_code == 404
+
+    def test_get_agent_graph_with_stale_schema_returns_400(self, db_client):
+        repo = db_client.app.state.container.resolve(AgentRepository)
+        record = repo.create(
+            name="Legacy",
+            source_type="custom",
+            graph_json=json.dumps(
+                {
+                    "nodes": {
+                        "greeting": {
+                            "id": "greeting",
+                            "state_prompt": "Hi",
+                            "transitions": [],
+                        },
+                    },
+                    "entry_node_id": "greeting",
+                    "source_type": "custom",
+                    "source_metadata": {},
+                }
+            ),
+        )
+
+        response = db_client.get(f"/api/agents/{record['id']}/graph")
+
+        assert response.status_code == 400
+        assert "migrate-node-types" in response.json()["detail"]
 
     def test_update_agent(self, db_client, sample_retell_config):
         create_response = db_client.post(

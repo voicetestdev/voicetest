@@ -119,6 +119,10 @@ class AgentService:
         """Delete an agent by ID."""
         self._repo.delete(agent_id)
 
+    def migrate_node_types(self) -> dict:
+        """Backfill `node_type` on stored graphs that predate the required field."""
+        return self._repo.migrate_node_types()
+
     def load_graph(self, agent_id: str) -> tuple[dict, AgentGraph]:
         """Load agent record and its graph (linked file first, else DB)."""
         agent = self._repo.get(agent_id)

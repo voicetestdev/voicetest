@@ -770,6 +770,30 @@ def import_call(ctx, agent_id: str, transcript: Path, format_: str):
 
 
 # ---------------------------------------------------------------------------
+# migrate-node-types (one-shot schema migration)
+# ---------------------------------------------------------------------------
+
+
+@main.command("migrate-node-types")
+@click.pass_context
+def migrate_node_types(ctx):
+    """Backfill `node_type` on stored graphs that predate the required field.
+
+    Walks every agent with a stored `graph_json`, applies structural inference
+    to any node missing `node_type`, and re-saves. Idempotent — safe to run
+    repeatedly. Linked-file agents are untouched."""
+    json_mode = ctx.obj.get("json", False)
+    result = _services().agents.migrate_node_types()
+    if json_mode:
+        _echo(json.dumps(result))
+        return
+    _echo(
+        f"Scanned {result['agents_scanned']} agents, "
+        f"updated {result['agents_updated']} (touched {result['nodes_updated']} nodes)."
+    )
+
+
+# ---------------------------------------------------------------------------
 # replay (top-level)
 # ---------------------------------------------------------------------------
 

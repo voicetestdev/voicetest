@@ -9,12 +9,17 @@ from uuid import NAMESPACE_URL
 from uuid import uuid4
 from uuid import uuid5
 
+from pydantic import ValidationError
 from sqlalchemy import case
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from voicetest.exceptions import StaleGraphSchemaError
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.agent import Transition
+from voicetest.models.agent import VariableExtraction
+from voicetest.models.agent import infer_node_type
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import TestCase
 from voicetest.storage.linked_file import read_json
@@ -28,6 +33,12 @@ from voicetest.util.pathutil import resolve_path
 
 
 logger = logging.getLogger(__name__)
+
+
+def _is_missing_node_type(err: ValidationError) -> bool:
+    """True iff every validation error is a missing `node_type` field."""
+    errs = err.errors()
+    return bool(errs) and all(e["type"] == "missing" and e["loc"][-1] == "node_type" for e in errs)
 
 
 def _serialize_datetime(dt: datetime | None) -> str | None:
@@ -192,7 +203,16 @@ class AgentRepository:
             raise ValueError(f"Agent not found: {agent_id}")
 
         if agent.graph_json:
-            return AgentGraph.model_validate_json(agent.graph_json)
+            try:
+                return AgentGraph.model_validate_json(agent.graph_json)
+            except ValidationError as e:
+                if _is_missing_node_type(e):
+                    raise StaleGraphSchemaError(
+                        f"Agent {agent_id} stored graph predates the required "
+                        "`node_type` field. Run `voicetest migrate-node-types` "
+                        "to update stored graphs."
+                    ) from e
+                raise
 
         if agent.source_path:
             path = resolve_path(agent.source_path)
@@ -206,6 +226,45 @@ class AgentRepository:
         """Return the raw stored graph_json column for an agent, or None."""
         agent = self.session.get(Agent, agent_id)
         return agent.graph_json if agent else None
+
+    def migrate_node_types(self) -> dict:
+        """Backfill `node_type` on stored graphs that predate the required field.
+
+        Walks every agent with a non-null `graph_json`, decodes it, applies
+        `infer_node_type` to any node missing the field, and re-serializes.
+        Returns a summary: total agents scanned, agents updated, nodes touched."""
+        agents = self.session.query(Agent).filter(Agent.graph_json.isnot(None)).all()
+        agents_updated = 0
+        nodes_updated = 0
+
+        for agent in agents:
+            data = json.loads(agent.graph_json)
+            nodes = data.get("nodes") or {}
+            touched = False
+            for node in nodes.values():
+                if "node_type" in node:
+                    continue
+                transitions = [Transition.model_validate(t) for t in node.get("transitions", [])]
+                variables = [
+                    VariableExtraction.model_validate(v)
+                    for v in node.get("variables_to_extract", [])
+                ]
+                node["node_type"] = infer_node_type(transitions, variables).value
+                touched = True
+                nodes_updated += 1
+            if touched:
+                agent.graph_json = json.dumps(data)
+                agent.updated_at = datetime.now(UTC)
+                agents_updated += 1
+
+        if agents_updated:
+            self.session.commit()
+
+        return {
+            "agents_scanned": len(agents),
+            "agents_updated": agents_updated,
+            "nodes_updated": nodes_updated,
+        }
 
     def _to_dict(self, agent: Agent) -> dict:
         """Convert Agent model to dictionary for API responses.

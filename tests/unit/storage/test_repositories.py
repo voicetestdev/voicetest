@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from voicetest.exceptions import StaleGraphSchemaError
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import GlobalMetric
@@ -244,6 +245,88 @@ class TestAgentRepository:
 
         with pytest.raises(FileNotFoundError):
             agent_repo.load_graph(record["id"])
+
+    def test_load_graph_legacy_missing_node_type_raises_stale_schema(self, agent_repo):
+        legacy_graph_json = json.dumps(
+            {
+                "nodes": {
+                    "greeting": {
+                        "id": "greeting",
+                        "state_prompt": "Hello",
+                        "transitions": [],
+                    },
+                },
+                "entry_node_id": "greeting",
+                "source_type": "custom",
+                "source_metadata": {},
+            }
+        )
+        record = agent_repo.create(
+            name="Legacy",
+            source_type="custom",
+            graph_json=legacy_graph_json,
+        )
+
+        with pytest.raises(StaleGraphSchemaError, match="migrate-node-types"):
+            agent_repo.load_graph(record["id"])
+
+    def test_migrate_node_types_backfills_missing_field(self, agent_repo):
+        legacy_graph_json = json.dumps(
+            {
+                "nodes": {
+                    "greeting": {
+                        "id": "greeting",
+                        "state_prompt": "Hi",
+                        "transitions": [],
+                    },
+                    "router": {
+                        "id": "router",
+                        "state_prompt": "",
+                        "transitions": [
+                            {
+                                "target_node_id": "premium",
+                                "condition": {
+                                    "type": "equation",
+                                    "value": "tier == vip",
+                                    "equations": [
+                                        {"left": "tier", "operator": "==", "right": "vip"}
+                                    ],
+                                },
+                            },
+                        ],
+                    },
+                },
+                "entry_node_id": "greeting",
+                "source_type": "custom",
+                "source_metadata": {},
+            }
+        )
+        record = agent_repo.create(
+            name="Legacy",
+            source_type="custom",
+            graph_json=legacy_graph_json,
+        )
+
+        result = agent_repo.migrate_node_types()
+        assert result["agents_updated"] == 1
+        assert result["nodes_updated"] == 2
+
+        graph = agent_repo.load_graph(record["id"])
+        assert graph.nodes["greeting"].node_type.value == "conversation"
+        assert graph.nodes["router"].node_type.value == "logic"
+
+    def test_migrate_node_types_is_idempotent(self, agent_repo, sample_graph):
+        agent_repo.create(
+            name="Current",
+            source_type="custom",
+            graph_json=sample_graph.model_dump_json(),
+        )
+
+        first = agent_repo.migrate_node_types()
+        second = agent_repo.migrate_node_types()
+
+        assert first["nodes_updated"] == 0
+        assert second["nodes_updated"] == 0
 
     def test_create_agent_with_metrics_config(self, agent_repo):
         metrics_config = MetricsConfig(

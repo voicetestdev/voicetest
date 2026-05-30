@@ -34,6 +34,7 @@ from starlette.websockets import WebSocketState
 from voicetest.container import create_container
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
+from voicetest.exceptions import StaleGraphSchemaError
 from voicetest.importers.transcripts.retell import parse_retell_file
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import GlobalMetric
@@ -636,6 +637,8 @@ async def get_agent_graph(
         raise HTTPException(status_code=404, detail=str(e)) from None
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+    except StaleGraphSchemaError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
     if not_modified:
         return Response(status_code=304)

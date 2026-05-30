@@ -131,6 +131,7 @@ CLI_SURFACED = {
     "AgentService.delete_agent",
     "AgentService.load_graph",
     "AgentService.save_graph",
+    "AgentService.migrate_node_types",
     # Discovery
     "DiscoveryService.list_importers",
     "DiscoveryService.list_export_formats",
