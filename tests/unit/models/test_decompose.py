@@ -2,6 +2,7 @@
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.decompose import DecompositionPlan
 from voicetest.models.decompose import DecompositionResult
 from voicetest.models.decompose import HandoffRule
@@ -260,6 +261,7 @@ class TestDecompositionResult:
                     id="greeting",
                     state_prompt="Hello",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="greeting",
@@ -302,7 +304,9 @@ class TestDecompositionResult:
     def test_serialization_roundtrip(self):
         sub_graph = AgentGraph(
             nodes={
-                "n1": AgentNode(id="n1", state_prompt="Node 1", transitions=[]),
+                "n1": AgentNode(
+                    id="n1", state_prompt="Node 1", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="n1",
             source_type="custom",

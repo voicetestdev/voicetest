@@ -16,8 +16,7 @@ class FlowValidationSignature(dspy.Signature):
     Given an agent graph (nodes with instructions and transitions),
     a conversation transcript, and the sequence of nodes visited,
     determine if the transitions between nodes were appropriate
-    given what was said in the conversation.
-    """
+    given what was said in the conversation."""
 
     graph_structure: str = dspy.InputField(
         desc="Agent graph: nodes with their instructions and valid transitions"
@@ -48,18 +47,9 @@ class FlowResult:
 
 
 class FlowJudge:
-    """Evaluate if conversation flow through agent graph was logical.
-
-    Uses LLM to semantically validate that node transitions make sense
-    given the conversation content and graph structure.
-    """
+    """Evaluate if conversation flow through agent graph was logical."""
 
     def __init__(self, model: str):
-        """Initialize the judge.
-
-        Args:
-            model: LLM model to use for evaluation.
-        """
         self.model = model
 
         self._mock_mode = False
@@ -72,17 +62,7 @@ class FlowJudge:
         nodes_visited: list[str],
         on_error: OnErrorCallback | None = None,
     ) -> FlowResult:
-        """Evaluate if conversation flow was logical.
-
-        Args:
-            graph: Agent graph to validate against.
-            transcript: Conversation transcript.
-            nodes_visited: Sequence of node IDs visited.
-            on_error: Optional callback for retry notifications.
-
-        Returns:
-            FlowResult with validity, issues, and reasoning.
-        """
+        """Evaluate if conversation flow was logical."""
         if self._mock_mode and self._mock_result:
             return self._mock_result
 

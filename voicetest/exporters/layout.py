@@ -13,17 +13,12 @@ X_START = 0
 def compute_layout(graph: AgentGraph) -> dict[str, dict[str, float]]:
     """Compute display positions for all nodes in the graph.
 
-    Uses BFS from the entry node to assign each node a layer (depth).
-    Nodes in the same layer are spread vertically, centered on y=0.
-    Unreachable nodes are appended to the last layer + 1.
-
-    Returns:
-        Mapping of node_id to {"x": float, "y": float}.
-    """
+    BFS from the entry node assigns each node a layer (depth). Nodes in the
+    same layer are spread vertically, centered on y=0. Unreachable nodes go
+    in an extra layer past the deepest reached."""
     layers: dict[int, list[str]] = {}
     visited: dict[str, int] = {}
 
-    # BFS from entry node
     queue: deque[tuple[str, int]] = deque()
     queue.append((graph.entry_node_id, 0))
     visited[graph.entry_node_id] = 0
@@ -42,13 +37,11 @@ def compute_layout(graph: AgentGraph) -> dict[str, dict[str, float]]:
                 visited[target] = depth + 1
                 queue.append((target, depth + 1))
 
-    # Place unreachable nodes in an extra layer
     max_layer = max(layers.keys()) if layers else 0
     unreachable = [nid for nid in graph.nodes if nid not in visited]
     if unreachable:
         layers[max_layer + 1] = unreachable
 
-    # Convert layers to positions
     positions: dict[str, dict[str, float]] = {}
     for depth, node_ids in layers.items():
         x = X_START + depth * X_SPACING

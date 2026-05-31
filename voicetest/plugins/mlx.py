@@ -39,8 +39,7 @@ class MlxTTSCapabilities:
 class MlxWhisperSTT(stt.STT):
     """Speech-to-text using Whisper via mlx-audio.
 
-    Runs on Apple Silicon with Metal acceleration.
-    """
+    Runs on Apple Silicon with Metal acceleration."""
 
     def __init__(
         self,
@@ -143,8 +142,7 @@ class MlxWhisperSTT(stt.STT):
 class MlxKokoroTTS(tts.TTS):
     """Text-to-speech using Kokoro via mlx-audio.
 
-    Runs on Apple Silicon with Metal acceleration.
-    """
+    Runs on Apple Silicon with Metal acceleration."""
 
     def __init__(
         self,

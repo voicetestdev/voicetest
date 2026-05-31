@@ -9,19 +9,13 @@ from openpyxl import load_workbook
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 
 
 class XLSFormImporter:
-    """Import XLSForm Excel files as voice agent flows.
-
-    XLSForm is a standard for authoring forms in Excel. This importer
-    converts survey questions into conversation nodes where:
-    - Each question becomes a node that asks the user for input
-    - Skip logic (relevant column) becomes transition conditions
-    - Select questions branch based on user choices
-    """
+    """Import XLSForm Excel files as voice agent flows."""
 
     @property
     def source_type(self) -> str:
@@ -116,7 +110,6 @@ class XLSFormImporter:
         question_order: list[str] = []
         relevance_map: dict[str, str] = {}
 
-        # First pass: create nodes for each question
         group_stack: list[str] = []
         for row in survey_rows:
             q_type = str(row.get("type", "")).strip().lower()
@@ -129,7 +122,6 @@ class XLSFormImporter:
             if not q_name:
                 continue
 
-            # Handle group start/end
             if q_type == "begin_group" or q_type == "begin group":
                 group_stack.append(q_name)
                 continue
@@ -138,11 +130,9 @@ class XLSFormImporter:
                     group_stack.pop()
                 continue
 
-            # Skip non-question types
             if q_type in ("calculate", "hidden", "start", "end", "deviceid", "today"):
                 continue
 
-            # Build state prompt for this node
             state_prompt = self._build_node_instructions(
                 q_type, q_name, q_label, q_hint, q_required, choices
             )
@@ -153,6 +143,7 @@ class XLSFormImporter:
             nodes[q_name] = AgentNode(
                 id=q_name,
                 state_prompt=state_prompt,
+                node_type=NodeType.CONVERSATION,
                 tools=[],
                 transitions=[],
                 metadata={
@@ -165,7 +156,6 @@ class XLSFormImporter:
             if q_relevant:
                 relevance_map[q_name] = str(q_relevant)
 
-        # Second pass: create transitions
         for i, q_name in enumerate(question_order):
             node = nodes[q_name]
             next_questions = self._find_next_questions(q_name, i, question_order, relevance_map)
@@ -183,7 +173,6 @@ class XLSFormImporter:
                         )
                     )
 
-        # Add end transition to last node
         if question_order and question_order[-1] in nodes:
             last_node = nodes[question_order[-1]]
             if not last_node.transitions:
@@ -198,13 +187,13 @@ class XLSFormImporter:
                     )
                 )
 
-        # Add end node
         nodes["__end__"] = AgentNode(
             id="__end__",
             state_prompt=(
                 "Thank the user for completing the survey. "
                 "Summarize their responses if appropriate and end the conversation politely."
             ),
+            node_type=NodeType.CONVERSATION,
             tools=[],
             transitions=[],
             metadata={"xlsform_type": "end"},
@@ -219,7 +208,7 @@ class XLSFormImporter:
             source_metadata={
                 "form_name": settings.get("form_title", form_name),
                 "form_id": settings.get("form_id", form_name),
-                "general_prompt": "",  # XLSForm surveys don't have separate general prompt
+                "general_prompt": "",
             },
         )
 
@@ -241,7 +230,6 @@ class XLSFormImporter:
         if q_hint:
             parts.append(f"If they need help, explain: {q_hint}")
 
-        # Add type-specific instructions
         if q_type == "integer":
             parts.append("Expect a whole number response.")
         elif q_type == "decimal":
@@ -283,13 +271,9 @@ class XLSFormImporter:
         question_order: list[str],
         relevance_map: dict[str, str],
     ) -> list[tuple[str, str]]:
-        """Find possible next questions with their conditions.
-
-        Returns list of (next_question_name, condition_description) tuples.
-        """
+        """Find possible next questions with their conditions."""
         next_questions: list[tuple[str, str]] = []
 
-        # Look at all following questions
         for i in range(current_index + 1, len(question_order)):
             next_q = question_order[i]
             relevant = relevance_map.get(next_q, "")
@@ -299,21 +283,14 @@ class XLSFormImporter:
                 if condition:
                     next_questions.append((next_q, condition))
             else:
-                # No relevance condition - this is the default next
+                # Default next question when none of the relevance conditions match
                 next_questions.append((next_q, ""))
                 break
 
         return next_questions if next_questions else []
 
     def _parse_relevant_condition(self, relevant: str, current_var: str) -> str:
-        """Convert XLSForm relevant expression to natural language condition.
-
-        Examples:
-            ${has_appt} = 'yes' -> "User answered 'yes' to has_appt"
-            selected(${symptoms}, 'fever') -> "User selected 'fever' for symptoms"
-            ${age} > 18 -> "age is greater than 18"
-        """
-        # Extract variable references
+        """Convert XLSForm relevant expression to natural language condition."""
         var_pattern = r"\$\{([^}]+)\}"
         vars_used = re.findall(var_pattern, relevant)
 
@@ -336,7 +313,6 @@ class XLSFormImporter:
             var_name, value = sel_match.groups()
             return f"User selected '{value}' for {var_name}"
 
-        # Numeric comparisons
         num_match = re.match(r"\$\{([^}]+)\}\s*([<>=!]+)\s*(\d+)", relevant)
         if num_match:
             var_name, op, value = num_match.groups()
@@ -350,7 +326,6 @@ class XLSFormImporter:
             }.get(op, op)
             return f"{var_name} {op_text} {value}"
 
-        # Fallback: return a generic condition
         if vars_used:
             return f"Based on {', '.join(vars_used)}: {relevant}"
 

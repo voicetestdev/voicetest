@@ -1,0 +1,73 @@
+{
+  "conversation_flow_id": "cf_pizza_order_001",
+  "version": 1,
+  "start_node_id": "greeting",
+  "nodes": [
+    {
+      "id": "greeting",
+      "type": "conversation",
+      "name": "Greeting",
+      "instruction": {
+        "type": "prompt",
+        "text": "Greet the caller and ask what pizza they would like to order."
+      },
+      "edges": [
+        {
+          "id": "edge-greet-to-tool",
+          "destination_node_id": "submit_order",
+          "transition_condition": {
+            "type": "prompt",
+            "prompt": "Caller specified what pizza they want"
+          }
+        }
+      ]
+    },
+    {
+      "id": "submit_order",
+      "type": "function",
+      "name": "Submit Order to Kitchen",
+      "tool_id": "tool_order_001",
+      "tool_type": "local",
+      "speak_during_execution": false,
+      "wait_for_result": false,
+      "edges": [],
+      "else_edge": {
+        "id": "edge-tool-else",
+        "destination_node_id": "confirm_order",
+        "transition_condition": {
+          "type": "prompt",
+          "prompt": "Else"
+        }
+      },
+      "display_position": {"x": 400, "y": 150}
+    },
+    {
+      "id": "confirm_order",
+      "type": "conversation",
+      "name": "Confirm Order",
+      "instruction": {
+        "type": "prompt",
+        "text": "Tell the caller their pizza order is in and give an estimated ready time, then end the call."
+      },
+      "edges": []
+    }
+  ],
+  "tools": [
+    {
+      "type": "custom",
+      "tool_id": "tool_order_001",
+      "name": "submit-order-to-kitchen",
+      "description": "Send the pizza order to the kitchen ticketing system.",
+      "url": "https://example.invalid/orders",
+      "method": "POST",
+      "headers": {},
+      "parameter_type": "json",
+      "query_params": {},
+      "timeout_ms": 30000,
+      "speak_after_execution": false,
+      "speak_during_execution": false,
+      "response_variables": {},
+      "args_at_root": false
+    }
+  ]
+}

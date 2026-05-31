@@ -1,11 +1,4 @@
-"""REST API for voicetest.
-
-Transport adapter over the service layer. All business logic lives in
-voicetest.services — this module handles HTTP/WebSocket concerns.
-
-Run with: voicetest serve
-Or: uvicorn voicetest.web.rest:app --reload
-"""
+"""REST API for voicetest."""
 
 from collections.abc import AsyncIterator
 import contextlib
@@ -41,6 +34,7 @@ from starlette.websockets import WebSocketState
 from voicetest.container import create_container
 from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
+from voicetest.exceptions import StaleGraphSchemaError
 from voicetest.importers.transcripts.retell import parse_retell_file
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import GlobalMetric
@@ -97,8 +91,7 @@ def _resolve[T](http_request: Request, cls: type[T]) -> T:
 
     `app.state.container` is set by the lifespan handler. Endpoints use this helper
     instead of holding services in module globals so per-request scoping (notably
-    Postgres Session) works.
-    """
+    Postgres Session) works."""
     return http_request.app.state.container.resolve(cls)
 
 
@@ -106,8 +99,7 @@ def _db_session(http_request: Request) -> Session:
     """Resolve the DB session and recover from a failed-transaction state.
 
     DuckDB uses a singleton session; if its transaction failed, roll back so
-    the next query starts clean.
-    """
+    the next query starts clean."""
     session = _resolve(http_request, Session)
     if not session.is_active:
         session.rollback()
@@ -187,8 +179,7 @@ def _register_linked_agent(
 def _find_web_dist() -> Path | None:
     """Find the web dist folder at <repo-root>/web/dist.
 
-    This file lives at voicetest/web/rest.py, so the repo root is two parents up.
-    """
+    This file lives at voicetest/web/rest.py, so the repo root is two parents up."""
     dist = Path(__file__).parent.parent.parent / "web" / "dist"
     return dist if dist.exists() else None
 
@@ -202,8 +193,7 @@ async def _lifespan(app: FastAPI):
 
     Tests that need to override services pre-populate ``app.state.container``
     before the lifespan runs; in that case we respect their container and
-    just run the dependent startup steps against it.
-    """
+    just run the dependent startup steps against it."""
     if not hasattr(app.state, "container"):
         app.state.container = create_container()
     init_storage(app.state.container)
@@ -376,8 +366,7 @@ class UpdatePromptRequest(BaseModel):
 
     - node_id=None: updates source_metadata.general_prompt
     - node_id set, transition_target_id=None: updates node's state_prompt
-    - node_id set, transition_target_id set: updates transition condition value
-    """
+    - node_id set, transition_target_id set: updates transition condition value"""
 
     node_id: str | None = None
     prompt_text: str
@@ -640,8 +629,7 @@ async def get_agent_graph(
     """Get the AgentGraph for an agent.
 
     For linked agents (source_path), uses file mtime for ETag-based caching.
-    Returns 304 Not Modified if the file hasn't changed.
-    """
+    Returns 304 Not Modified if the file hasn't changed."""
     svc = _resolve(http_request, AgentService)
     try:
         graph, etag, not_modified = svc.get_graph_with_etag(agent_id, if_none_match)
@@ -649,6 +637,8 @@ async def get_agent_graph(
         raise HTTPException(status_code=404, detail=str(e)) from None
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
+    except StaleGraphSchemaError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
     if not_modified:
         return Response(status_code=304)
@@ -665,8 +655,7 @@ async def get_agent_variables(agent_id: str, http_request: Request) -> dict:
     """Extract dynamic variable names from agent prompts.
 
     Scans general_prompt and all node state_prompt values for {{var}} placeholders.
-    Returns unique variable names in first-appearance order.
-    """
+    Returns unique variable names in first-appearance order."""
     svc = _resolve(http_request, AgentService)
     try:
         variables = svc.get_variables(agent_id)
@@ -687,8 +676,7 @@ def _require_agent(http_request: Request, agent_id: str) -> dict:
 async def _saved_upload(file: UploadFile) -> AsyncIterator[Path]:
     """Save an UploadFile to a temp path; remove it on exit.
 
-    Yields the Path. Raises HTTPException(400) if no filename was provided.
-    """
+    Yields the Path. Raises HTTPException(400) if no filename was provided."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
     suffix = Path(file.filename).suffix
@@ -790,8 +778,7 @@ async def import_call(
 
     The uploaded file's content is parsed by a platform-specific adapter
     (currently Retell only). Each conversation in the file becomes one Result
-    inside the created Run, with status="imported" and no test_case_id linkage.
-    """
+    inside the created Run, with status="imported" and no test_case_id linkage."""
     _require_agent(http_request, agent_id)
 
     if format not in _SUPPORTED_TRANSCRIPT_FORMATS:
@@ -886,8 +873,7 @@ async def update_prompt(
 
     When node_id is None, updates source_metadata.general_prompt.
     When node_id is set, updates that node's state_prompt.
-    For linked-file agents, writes back to the source file on disk.
-    """
+    For linked-file agents, writes back to the source file on disk."""
     try:
         return _resolve(http_request, AgentService).update_prompt(
             agent_id,
@@ -989,8 +975,7 @@ async def link_test_file(
     """Link a JSON test file to an agent.
 
     The file must exist, contain valid JSON, and be a JSON array.
-    Tests from the file will appear alongside DB tests via list_for_agent_with_linked.
-    """
+    Tests from the file will appear alongside DB tests via list_for_agent_with_linked."""
     try:
         return _resolve(http_request, TestCaseService).link_test_file(agent_id, request.path)
     except FileNotFoundError as e:
@@ -1005,8 +990,7 @@ async def link_test_file(
 async def unlink_test_file(agent_id: str, path: str, http_request: Request) -> dict:
     """Unlink a test file from an agent.
 
-    Removes the path from tests_paths. The file itself is not deleted.
-    """
+    Removes the path from tests_paths. The file itself is not deleted."""
     try:
         return _resolve(http_request, TestCaseService).unlink_test_file(agent_id, path)
     except (ValueError, FileNotFoundError) as e:
@@ -1033,8 +1017,7 @@ async def create_test_case(
     """Create a test case for an agent.
 
     If the agent has linked test files, the test is appended to the first file.
-    Otherwise it is stored in the database.
-    """
+    Otherwise it is stored in the database."""
     test_case = TestCase(
         name=request.name,
         user_prompt=request.user_prompt,
@@ -1098,8 +1081,7 @@ class LoadDemoResponse(BaseModel):
 async def load_demo(http_request: Request) -> LoadDemoResponse:
     """Load demo agent and tests into the database.
 
-    If the demo agent already exists, returns its info without creating duplicates.
-    """
+    If the demo agent already exists, returns its info without creating duplicates."""
     demo_agent_config = get_demo_agent()
     demo_tests = get_demo_tests()
 
@@ -1209,8 +1191,7 @@ def _cleanup_orphaned_run(http_request: Request, run_id: str, result_ids: list[s
     no-ops if the rows were already finalized by an earlier cleanup. DB
     errors are logged and swallowed: the in-memory response dict is
     already correctly patched, so the client gets the right view even if
-    persistence fails — and the next GET will re-attempt the cleanup.
-    """
+    persistence fails — and the next GET will re-attempt the cleanup."""
     _logger.info("orphan-cleanup start run=%s n_results=%d", run_id, len(result_ids))
     try:
         session = _db_session(http_request)
@@ -1249,8 +1230,7 @@ async def replay_run(source_run_id: str, http_request: Request) -> dict:
 
     Loads the source Run, drives a fresh conversation per source Result using
     the source's recorded user turns as a script, and persists the live
-    conversations as a new Run.
-    """
+    conversations as a new Run."""
     run_svc = _resolve(http_request, RunService)
     source = run_svc.get_run(source_run_id)
     if not source:
@@ -1269,8 +1249,7 @@ async def audio_eval_result(result_id: str, http_request: Request) -> dict:
     """Run audio evaluation on an existing test result.
 
     Performs TTS->STT round-trip on assistant messages and re-evaluates
-    metrics using the "heard" text.
-    """
+    metrics using the "heard" text."""
     run_svc = _resolve(http_request, RunService)
     tc_svc = _resolve(http_request, TestCaseService)
 
@@ -1319,14 +1298,7 @@ async def audio_eval_result(result_id: str, http_request: Request) -> dict:
 def _load_result_context(
     http_request: Request, result_id: str
 ) -> tuple[dict, "TestCase", AgentGraph]:
-    """Load result, test case, and agent graph for diagnosis endpoints.
-
-    Returns:
-        Tuple of (result_dict, test_case, agent_graph).
-
-    Raises:
-        HTTPException on missing data.
-    """
+    """Load result, test case, and agent graph for diagnosis endpoints."""
     run_svc = _resolve(http_request, RunService)
     tc_svc = _resolve(http_request, TestCaseService)
 
@@ -1364,8 +1336,7 @@ async def diagnose_result(result_id: str, http_request: Request) -> dict:
     Analyzes the graph structure, transcript, and failed metrics to identify
     the root cause and propose concrete prompt/transition changes.
 
-    Optional body: {"model": "provider/model-name"} to override the judge model.
-    """
+    Optional body: {"model": "provider/model-name"} to override the judge model."""
     result_dict, test_case, graph = _load_result_context(http_request, result_id)
 
     try:
@@ -1396,8 +1367,7 @@ async def diagnose_result(result_id: str, http_request: Request) -> dict:
 async def apply_fix(result_id: str, body: dict, http_request: Request) -> dict:
     """Apply proposed changes to a copy of the graph and rerun the test.
 
-    Non-destructive: does not persist changes.
-    """
+    Non-destructive: does not persist changes."""
     result_dict, test_case, graph = _load_result_context(http_request, result_id)
 
     changes = [PromptChangeModel.model_validate(c) for c in body.get("changes", [])]
@@ -1432,8 +1402,7 @@ async def revise_fix_endpoint(result_id: str, body: dict, http_request: Request)
 
     Given the original diagnosis and previous changes, produce a revised fix.
 
-    Optional body field: "model" to override the judge model.
-    """
+    Optional body field: "model" to override the judge model."""
     result_dict, test_case, graph = _load_result_context(http_request, result_id)
 
     diagnosis = DiagnosisModel.model_validate(body["diagnosis"])
@@ -1455,8 +1424,7 @@ async def revise_fix_endpoint(result_id: str, body: dict, http_request: Request)
 async def save_fix(agent_id: str, body: dict, http_request: Request) -> dict:
     """Persist proposed changes to the agent graph.
 
-    Applies changes and saves the modified graph.
-    """
+    Applies changes and saves the modified graph."""
     agent, graph = _load_agent_graph(http_request, agent_id)
     changes = [PromptChangeModel.model_validate(c) for c in body.get("changes", [])]
 
@@ -1646,8 +1614,7 @@ async def start_call(
     """Start a live voice call with an agent.
 
     Creates a LiveKit room and spawns an agent worker subprocess.
-    Returns connection info including a token for the browser to join.
-    """
+    Returns connection info including a token for the browser to join."""
     try:
         _agent, graph = _resolve(http_request, AgentService).load_graph(agent_id)
     except (FileNotFoundError, ValueError) as e:
@@ -1774,8 +1741,7 @@ async def start_chat(
     """Start a text chat session with an agent.
 
     Creates a ConversationEngine in-process (no LiveKit or subprocess needed).
-    Returns a chat_id for WebSocket connection.
-    """
+    Returns a chat_id for WebSocket connection."""
     try:
         _agent, graph = _resolve(http_request, AgentService).load_graph(agent_id)
     except (FileNotFoundError, ValueError) as e:

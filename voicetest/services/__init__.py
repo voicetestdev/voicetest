@@ -1,11 +1,4 @@
-"""Service layer for voicetest.
-
-Services own all business logic. CLI, TUI, and REST are transport adapters
-that receive services from the composition root (entry-point container build).
-
-This package re-exports the service classes for convenience. The `AppServices`
-bag (CLI/TUI's typed service container) lives in `app_services.py`.
-"""
+"""Service layer for voicetest."""
 
 from voicetest.services.agents import AgentService
 from voicetest.services.app_services import AppServices

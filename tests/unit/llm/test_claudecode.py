@@ -107,7 +107,6 @@ class TestClaudeCodeLMCall:
             lm = ClaudeCodeLM(cache=False)
             lm("prompt")
 
-            # Check the env kwarg doesn't contain ANTHROPIC_API_KEY
             call_kwargs = mock_run.call_args[1]
             assert "env" in call_kwargs
             assert "ANTHROPIC_API_KEY" not in call_kwargs["env"]
@@ -438,10 +437,9 @@ class TestClaudeCodeLMCaching:
             patch("subprocess.run", return_value=mock_result) as mock_run,
         ):
             lm = ClaudeCodeLM()
-            # First call — cache miss, hits CLI
+            # First call hits CLI (cache miss); second is served from cache
             result1 = lm(prompt="cache_test_unique_1")
             assert mock_run.call_count == 1
-            # Second identical call — cache hit, no CLI call
             result2 = lm(prompt="cache_test_unique_1")
             assert mock_run.call_count == 1
             assert result1 == result2

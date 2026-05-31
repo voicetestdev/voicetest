@@ -18,14 +18,13 @@ class TestImportCallEndpoint:
         assert response.status_code == 200
         run = response.json()
         assert run["agent_id"] == agent_id
-        assert run["completed_at"] is not None  # imports are marked complete immediately
+        assert run["completed_at"] is not None
         assert len(run["results"]) == 1
         result = run["results"][0]
         assert result["status"] == "imported"
         assert result["test_name"] == "call_001"
         assert result["test_case_id"] is None
         assert result["call_id"] is None
-        # Transcript is stored on the result
         assert len(result["transcript_json"]) == 2
 
     def test_import_array_of_calls(self, db_client, make_agent, sample_retell_config, retell_call):
@@ -118,7 +117,6 @@ class TestReplayEndpoint:
     ):
         """An empty source run can't be replayed — service should reject."""
         agent_id = make_agent(config=sample_retell_config)["id"]
-        # Create an empty run via the service (no results)
         empty_run = resolved(RunService).create_run(agent_id)
 
         response = db_client.post(f"/api/runs/{empty_run['id']}/replay")
@@ -144,7 +142,6 @@ class TestReplayEndpoint:
         )
         source_run_id = import_response.json()["id"]
 
-        # Replay it
         response = db_client.post(f"/api/runs/{source_run_id}/replay")
 
         assert response.status_code == 200, response.text
@@ -155,8 +152,5 @@ class TestReplayEndpoint:
         result = replay["results"][0]
         assert result["test_name"].startswith("Replay of ")
         assert result["status"] == "pass"
-        # The replay's transcript came from the runner (user turns from source,
-        # agent turns from the stub).
         assert len(result["transcript_json"]) > 0
-        # The stub captured one simulator invocation
         assert len(stub_conversation_runner) == 1

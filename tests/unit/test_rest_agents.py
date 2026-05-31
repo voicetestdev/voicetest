@@ -7,6 +7,8 @@ import pytest
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
+from voicetest.storage.repositories import AgentRepository
 
 
 class TestAgentsCRUD:
@@ -56,7 +58,6 @@ class TestAgentsCRUD:
         agent_file = tmp_path / "agent.json"
         agent_file.write_text(json.dumps(sample_retell_config))
 
-        # Use a relative path
         monkeypatch.chdir(tmp_path)
         response = db_client.post(
             "/api/agents",
@@ -68,7 +69,6 @@ class TestAgentsCRUD:
         assert response.status_code == 200
 
         agent = response.json()
-        # Path should be stored as absolute
         assert os.path.isabs(agent["source_path"])
         assert agent["source_path"] == str(agent_file.resolve())
 
@@ -106,11 +106,9 @@ class TestAgentsCRUD:
             },
         )
         assert response.status_code == 400
-        # Auto-detection fails on invalid JSON before parsing
         assert "Could not auto-detect" in response.json()["detail"]
 
     def test_create_agent_invalid_config_json(self, db_client, tmp_path, sample_retell_config):
-        # Valid JSON but missing required fields
         bad_config = {"nodes": []}
         bad_file = tmp_path / "bad_config.json"
         bad_file.write_text(json.dumps(bad_config))
@@ -152,6 +150,32 @@ class TestAgentsCRUD:
     def test_get_nonexistent_agent(self, db_client):
         response = db_client.get("/api/agents/nonexistent-id")
         assert response.status_code == 404
+
+    def test_get_agent_graph_with_stale_schema_returns_400(self, db_client):
+        repo = db_client.app.state.container.resolve(AgentRepository)
+        record = repo.create(
+            name="Legacy",
+            source_type="custom",
+            graph_json=json.dumps(
+                {
+                    "nodes": {
+                        "greeting": {
+                            "id": "greeting",
+                            "state_prompt": "Hi",
+                            "transitions": [],
+                        },
+                    },
+                    "entry_node_id": "greeting",
+                    "source_type": "custom",
+                    "source_metadata": {},
+                }
+            ),
+        )
+
+        response = db_client.get(f"/api/agents/{record['id']}/graph")
+
+        assert response.status_code == 400
+        assert "migrate-node-types" in response.json()["detail"]
 
     def test_update_agent(self, db_client, sample_retell_config):
         create_response = db_client.post(
@@ -395,7 +419,9 @@ class TestSnippetEndpoints:
         for node_id, prompt in node_prompts.items():
             if first_id is None:
                 first_id = node_id
-            nodes[node_id] = AgentNode(id=node_id, state_prompt=prompt, transitions=[])
+            nodes[node_id] = AgentNode(
+                id=node_id, state_prompt=prompt, transitions=[], node_type=NodeType.CONVERSATION
+            )
 
         return AgentGraph(
             nodes=nodes,
@@ -427,7 +453,6 @@ class TestSnippetEndpoints:
         )
         assert response.status_code == 200
 
-        # Verify it's persisted
         get_response = db_client.get(f"/api/agents/{agent_id}/snippets")
         assert get_response.json()["snippets"]["greeting"] == "Hello world!"
 
@@ -438,7 +463,6 @@ class TestSnippetEndpoints:
         response = db_client.delete(f"/api/agents/{agent_id}/snippets/greeting")
         assert response.status_code == 200
 
-        # Verify it's gone
         get_response = db_client.get(f"/api/agents/{agent_id}/snippets")
         assert "greeting" not in get_response.json()["snippets"]
 
@@ -477,11 +501,9 @@ class TestSnippetEndpoints:
         assert response.status_code == 200
         data = response.json()
 
-        # Snippet should be added to the graph
         assert "tone" in data["snippets"]
         assert data["snippets"]["tone"] == "Always be polite."
 
-        # The text should be replaced with refs in prompts
         assert "{%tone%}" in data["nodes"]["a"]["state_prompt"]
         assert "{%tone%}" in data["nodes"]["b"]["state_prompt"]
 
@@ -492,7 +514,6 @@ class TestSnippetEndpoints:
         )
         make_agent(name="Snippet Test Agent", graph=graph)
 
-        # Export with expanded=True should resolve snippet refs
         response = db_client.post(
             "/api/agents/export",
             json={

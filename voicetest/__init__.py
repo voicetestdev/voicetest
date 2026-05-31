@@ -2,7 +2,8 @@
 
 __version__ = "0.1.0"
 
-# Lightweight imports only - heavy dependencies are imported lazily
+# Lightweight imports only — heavy dependencies (litellm, dspy, livekit) are
+# imported lazily downstream so CLI startup stays fast.
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import Transition

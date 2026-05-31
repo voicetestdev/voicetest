@@ -21,14 +21,7 @@ _SNIPPET_PATTERN = re.compile(r"\{%\s*(\w+)\s*%\}")
 
 
 def extract_variables(text: str) -> list[str]:
-    """Extract unique {{var}} placeholder names from text, preserving first-appearance order.
-
-    Args:
-        text: The text containing {{var}} placeholders.
-
-    Returns:
-        List of unique variable names in first-appearance order.
-    """
+    """Extract unique {{var}} placeholder names from text, preserving first-appearance order."""
     raw_names = [m.strip() for m in _VAR_PATTERN.findall(text)]
     return list(dict.fromkeys(raw_names))
 
@@ -36,13 +29,7 @@ def extract_variables(text: str) -> list[str]:
 def substitute_variables(text: str, variables: dict[str, Any]) -> str:
     """Substitute {{var}} placeholders in text with values from variables dict.
 
-    Args:
-        text: The text containing {{var}} placeholders.
-        variables: Dictionary mapping variable names to values.
-
-    Returns:
-        Text with all placeholders replaced. Unknown variables are left unchanged.
-    """
+    Unknown variables are left unchanged."""
     if not variables:
         return text
 
@@ -58,13 +45,7 @@ def substitute_variables(text: str, variables: dict[str, Any]) -> str:
 def expand_snippets(text: str, snippets: dict[str, str]) -> str:
     """Replace {%name%} references with snippet content.
 
-    Args:
-        text: The text containing {%name%} references.
-        snippets: Dictionary mapping snippet names to content.
-
-    Returns:
-        Text with known snippet refs replaced. Unknown refs are left unchanged.
-    """
+    Unknown refs are left unchanged."""
     if not snippets:
         return text
 
@@ -78,39 +59,20 @@ def expand_snippets(text: str, snippets: dict[str, str]) -> str:
 
 
 def extract_snippet_refs(text: str) -> list[str]:
-    """Extract unique {%name%} snippet references from text, preserving first-appearance order.
-
-    Args:
-        text: The text containing {%name%} references.
-
-    Returns:
-        List of unique snippet names in first-appearance order.
-    """
+    """Extract unique {%name%} snippet references from text, preserving first-appearance order."""
     raw_names = [m.strip() for m in _SNIPPET_PATTERN.findall(text)]
     return list(dict.fromkeys(raw_names))
 
 
 def expand_graph_snippets(graph: AgentGraph) -> AgentGraph:
-    """Return a deep copy of the graph with all {%ref%} resolved in prompts.
-
-    Expands snippet references in general_prompt and every node's state_prompt.
-    The returned copy has an empty snippets dict.
-
-    Args:
-        graph: The agent graph containing snippets and prompt text.
-
-    Returns:
-        A deep copy with all snippet refs resolved and snippets dict emptied.
-    """
+    """Return a deep copy of the graph with all {%ref%} resolved in prompts."""
     expanded = copy.deepcopy(graph)
     snippets = expanded.snippets
 
-    # Expand general_prompt in source_metadata
     general_prompt = expanded.source_metadata.get("general_prompt")
     if general_prompt and isinstance(general_prompt, str):
         expanded.source_metadata["general_prompt"] = expand_snippets(general_prompt, snippets)
 
-    # Expand each node's state_prompt
     for node in expanded.nodes.values():
         if node.state_prompt:
             node.state_prompt = expand_snippets(node.state_prompt, snippets)

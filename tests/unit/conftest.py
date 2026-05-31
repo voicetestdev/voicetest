@@ -69,10 +69,7 @@ def db_client(tmp_path, monkeypatch):
 
 @pytest.fixture
 def resolved(db_client):
-    """Resolve a service/repository from the db_client's container.
-
-    Shorthand for `db_client.app.state.container.resolve(X)`.
-    """
+    """Resolve a service/repository from the db_client's container."""
 
     def _resolve(cls):
         return db_client.app.state.container.resolve(cls)
@@ -149,20 +146,9 @@ def sample_retell_config_path(retell_fixtures_dir: Path) -> Path:
     return retell_fixtures_dir / "sample_config.json"
 
 
-# ---------------------------------------------------------------------------
-# Fixtures for the call-transcript import + replay feature
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def retell_call():
-    """Factory fixture: build a minimal Retell call object.
-
-    Usage:
-        retell_call()                     # default call_id="call_001"
-        retell_call("call_a")             # custom id
-        retell_call("call_a", duration_ms=999)  # override any field
-    """
+    """Factory fixture: build a minimal Retell call object."""
 
     def _build(call_id: str = "call_001", **overrides) -> dict:
         payload = {
@@ -303,6 +289,19 @@ def sample_retell_config_logic_split_path(retell_fixtures_dir: Path) -> Path:
 
 
 @pytest.fixture
+def sample_retell_config_function_node(retell_fixtures_dir: Path) -> dict:
+    """Load Retell CF configuration with a function (tool-call) node."""
+    config_path = retell_fixtures_dir / "sample_config_function_node.json"
+    return json.loads(config_path.read_text())
+
+
+@pytest.fixture
+def sample_retell_config_function_node_path(retell_fixtures_dir: Path) -> Path:
+    """Return path to Retell CF configuration with a function node."""
+    return retell_fixtures_dir / "sample_config_function_node.json"
+
+
+@pytest.fixture
 def sample_retell_config_extract_variables(retell_fixtures_dir: Path) -> dict:
     """Load Retell CF configuration with extract_dynamic_variables node."""
     config_path = retell_fixtures_dir / "sample_config_extract_variables.json"
@@ -398,11 +397,13 @@ def simple_graph():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "farewell": AgentNode(
                 id="farewell",
                 state_prompt="Say goodbye politely.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -420,6 +421,7 @@ def single_node_graph():
                 id="main",
                 state_prompt="You are a helpful assistant.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="main",
@@ -462,12 +464,14 @@ def graph_with_tools():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "lookup": AgentNode(
                 id="lookup",
                 state_prompt="Look up the user's account.",
                 tools=[lookup_tool, end_call_tool],
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -498,6 +502,7 @@ def multi_node_graph():
                         ),
                     ),
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "billing": AgentNode(
                 id="billing",
@@ -508,6 +513,7 @@ def multi_node_graph():
                         condition=TransitionCondition(type="llm_prompt", value="Billing resolved"),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "support": AgentNode(
                 id="support",
@@ -518,11 +524,13 @@ def multi_node_graph():
                         condition=TransitionCondition(type="llm_prompt", value="Support complete"),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "end": AgentNode(
                 id="end",
                 state_prompt="Thank the customer and end the call politely.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -541,6 +549,7 @@ def graph_with_metadata():
                 id="main",
                 state_prompt="You are a helpful assistant.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="main",
@@ -570,6 +579,7 @@ def graph_with_global_node():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "customize": AgentNode(
                 id="customize",
@@ -582,11 +592,13 @@ def graph_with_global_node():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "confirm": AgentNode(
                 id="confirm",
                 state_prompt="Read back the order and ask to confirm.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
             "cancel_request": AgentNode(
                 id="cancel_request",
@@ -604,6 +616,7 @@ def graph_with_global_node():
                         ),
                     ],
                 ),
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -629,11 +642,13 @@ def graph_with_multiple_global_nodes():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "order": AgentNode(
                 id="order",
                 state_prompt="Take the order.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
             "cancel_request": AgentNode(
                 id="cancel_request",
@@ -651,6 +666,7 @@ def graph_with_multiple_global_nodes():
                         ),
                     ],
                 ),
+                node_type=NodeType.CONVERSATION,
             ),
             "ask_specials": AgentNode(
                 id="ask_specials",
@@ -668,6 +684,7 @@ def graph_with_multiple_global_nodes():
                         ),
                     ],
                 ),
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -693,11 +710,13 @@ def graph_with_global_no_go_back():
                         ),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "order": AgentNode(
                 id="order",
                 state_prompt="Take the order.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
             "emergency_end": AgentNode(
                 id="emergency_end",

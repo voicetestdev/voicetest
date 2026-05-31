@@ -35,11 +35,7 @@ class PlatformService:
         ]
 
     def get_status(self, platform: str) -> dict:
-        """Check if a platform API key is configured.
-
-        Raises:
-            ValueError: If platform is invalid.
-        """
+        """Check if a platform API key is configured."""
         self._validate_platform(platform)
         return {
             "configured": self._is_configured(platform),
@@ -47,11 +43,7 @@ class PlatformService:
         }
 
     def configure(self, platform: str, api_key: str, api_secret: str | None = None) -> dict:
-        """Configure platform credentials.
-
-        Raises:
-            ValueError: If platform is invalid or already configured.
-        """
+        """Configure platform credentials."""
         self._validate_platform(platform)
 
         if self._is_configured(platform):
@@ -76,20 +68,12 @@ class PlatformService:
         return {"configured": True, "platform": platform}
 
     def list_remote_agents(self, platform: str) -> list[dict]:
-        """List agents from a remote platform.
-
-        Raises:
-            ValueError: If platform is invalid or not configured.
-        """
+        """List agents from a remote platform."""
         platform_client, client = self._get_configured_client(platform)
         return platform_client.list_agents(client)
 
     def import_from_platform(self, platform: str, agent_id: str) -> AgentGraph:
-        """Import an agent from a remote platform by ID.
-
-        Raises:
-            ValueError: If platform is invalid, not configured, or import fails.
-        """
+        """Import an agent from a remote platform by ID."""
         platform_client, client = self._get_configured_client(platform)
         config = platform_client.get_agent(client, agent_id)
         importer = self._registry.get_importer(platform)
@@ -98,14 +82,7 @@ class PlatformService:
         return importer.import_agent(config)
 
     def export_to_platform(self, platform: str, graph: AgentGraph, name: str | None = None) -> dict:
-        """Export an agent graph to a remote platform.
-
-        Returns:
-            Dict with id, name, platform.
-
-        Raises:
-            ValueError: If platform is invalid, not configured, or export fails.
-        """
+        """Export an agent graph to a remote platform."""
         platform_client, client = self._get_configured_client(platform)
         exporter = self._registry.get_exporter(platform)
         if not exporter:
@@ -166,14 +143,7 @@ class PlatformService:
         return {"can_sync": True, "platform": source_type, "remote_id": remote_id}
 
     def sync_to_platform(self, agent_id: str, graph: AgentGraph) -> dict:
-        """Sync an agent to its source platform.
-
-        Returns:
-            Dict with id, name, platform, synced.
-
-        Raises:
-            ValueError: If sync is not possible.
-        """
+        """Sync an agent to its source platform."""
         source_metadata = graph.source_metadata or {}
         source_type = graph.source_type
 
@@ -217,11 +187,7 @@ class PlatformService:
         return self._registry.is_configured(platform, settings)
 
     def _get_configured_client(self, platform: str) -> tuple[Any, Any]:
-        """Get validated, configured platform client and SDK client.
-
-        Raises:
-            ValueError: If platform invalid or not configured.
-        """
+        """Get validated, configured platform client and SDK client."""
         self._validate_platform(platform)
         if not self._is_configured(platform):
             raise ValueError(f"{platform} API key not configured")

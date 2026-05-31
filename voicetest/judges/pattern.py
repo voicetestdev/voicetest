@@ -24,8 +24,7 @@ def compile_pattern(pattern: str, engine: str = "fnmatch") -> re.Pattern:
 
     For re2: delegates to google-re2 which guarantees linear-time matching.
 
-    Returns a compiled pattern with a .search() method.
-    """
+    Returns a compiled pattern with a .search() method."""
     if engine == "re2":
         return _compile_re2(pattern)
     return _compile_fnmatch(pattern)
@@ -36,8 +35,7 @@ def _compile_fnmatch(pattern: str) -> re.Pattern:
 
     fnmatch.translate() produces an anchored regex (\\A...\\Z). We strip the
     anchors so the pattern matches anywhere in the text, consistent with how
-    re.search() behaves.
-    """
+    re.search() behaves."""
     translated = fnmatch.translate(pattern)
 
     # fnmatch.translate wraps output in (?s:\\A...\\Z) — strip anchors
@@ -57,8 +55,7 @@ def _compile_re2(pattern: str) -> re.Pattern:
     """Compile a regex pattern using google-re2 for linear-time matching.
 
     Uses inline (?i) flag for case-insensitivity since google-re2
-    does not expose module-level flag constants like re.IGNORECASE.
-    """
+    does not expose module-level flag constants like re.IGNORECASE."""
     try:
         import re2  # noqa:PLC0415
     except ImportError:

@@ -7,6 +7,7 @@ import pytest
 from voicetest.judges.decompose import DecomposeJudge
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.decompose import DecompositionPlan
 from voicetest.models.decompose import HandoffRule
 from voicetest.models.decompose import SubAgentSpec
@@ -26,6 +27,7 @@ def monolithic_graph():
                 id="main",
                 state_prompt="Handle everything: greet, verify identity, schedule, close.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="main",
@@ -98,7 +100,9 @@ class TestFormatGraphFull:
     def test_no_general_prompt(self, judge):
         graph = AgentGraph(
             nodes={
-                "main": AgentNode(id="main", state_prompt="Hello", transitions=[]),
+                "main": AgentNode(
+                    id="main", state_prompt="Hello", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="main",
             source_type="custom",

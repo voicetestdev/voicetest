@@ -20,8 +20,7 @@ def get_compose_path() -> Generator[Path, None, None]:
     Usage::
 
         with get_compose_path() as compose_path:
-            subprocess.run(["docker", "compose", "-f", str(compose_path), "up", "-d"])
-    """
+            subprocess.run(["docker", "compose", "-f", str(compose_path), "up", "-d"])"""
     compose_ref = resources.files("voicetest.compose").joinpath("docker-compose.yml")
     with resources.as_file(compose_ref) as path:
         yield path

@@ -40,8 +40,7 @@ class RetellPlatformClient:
 
         Built-in tool types like end_call and transfer_call are managed
         internally by Retell and must not be sent via the API. Filters by
-        both declared type and well-known built-in tool names.
-        """
+        both declared type and well-known built-in tool names."""
         return [
             t
             for t in tools
@@ -52,8 +51,7 @@ class RetellPlatformClient:
     def prepare_config_for_api(config: dict[str, Any]) -> dict[str, Any]:
         """Prepare an exported config dict for the Retell create/update API.
 
-        Strips read-only fields and filters tools to API-accepted types.
-        """
+        Strips read-only fields and filters tools to API-accepted types."""
         prepared = {k: v for k, v in config.items() if k not in _READONLY_FIELDS}
         if "tools" in prepared:
             prepared["tools"] = RetellPlatformClient.filter_tools_for_api(prepared["tools"])
@@ -83,31 +81,14 @@ class RetellPlatformClient:
         return export_retell_cf
 
     def get_client(self, api_key: str | None = None) -> Retell:
-        """Get a configured Retell SDK client.
-
-        Args:
-            api_key: Retell API key. Defaults to RETELL_API_KEY env var.
-
-        Returns:
-            Configured Retell client.
-
-        Raises:
-            ValueError: If no API key available.
-        """
+        """Get a configured Retell SDK client."""
         key = api_key or os.environ.get(self.env_key)
         if not key:
             raise ValueError(f"{self.env_key} not set")
         return Retell(api_key=key)
 
     def list_agents(self, client: Retell) -> list[dict[str, Any]]:
-        """List conversation flows from Retell.
-
-        Args:
-            client: Retell SDK client.
-
-        Returns:
-            List of dicts with id and name fields.
-        """
+        """List conversation flows from Retell."""
         flows = client.conversation_flow.list()
         return [
             {
@@ -118,33 +99,14 @@ class RetellPlatformClient:
         ]
 
     def get_agent(self, client: Retell, agent_id: str) -> dict[str, Any]:
-        """Get a conversation flow by ID.
-
-        Args:
-            client: Retell SDK client.
-            agent_id: Conversation flow ID.
-
-        Returns:
-            Flow configuration dict.
-        """
+        """Get a conversation flow by ID."""
         flow = client.conversation_flow.retrieve(agent_id)
         return flow.model_dump()
 
     def create_agent(
         self, client: Retell, config: dict[str, Any], name: str | None = None
     ) -> dict[str, Any]:
-        """Create a conversation flow in Retell.
-
-        Note: Retell API does not support naming flows on creation.
-
-        Args:
-            client: Retell SDK client.
-            config: Flow configuration (from export_retell_cf).
-            name: Ignored - Retell doesn't support naming on create.
-
-        Returns:
-            Dict with id, name, and platform fields.
-        """
+        """Create a conversation flow in Retell."""
         prepared = self.prepare_config_for_api(config)
         flow = client.conversation_flow.create(**prepared)
         return {
@@ -154,12 +116,7 @@ class RetellPlatformClient:
         }
 
     def delete_agent(self, client: Retell, agent_id: str) -> None:
-        """Delete a conversation flow from Retell.
-
-        Args:
-            client: Retell SDK client.
-            agent_id: Conversation flow ID.
-        """
+        """Delete a conversation flow from Retell."""
         client.conversation_flow.delete(agent_id)
 
     @property
@@ -173,16 +130,7 @@ class RetellPlatformClient:
         return "conversation_flow_id"
 
     def update_agent(self, client: Retell, agent_id: str, config: dict[str, Any]) -> dict[str, Any]:
-        """Update an existing conversation flow in Retell.
-
-        Args:
-            client: Retell SDK client.
-            agent_id: Conversation flow ID.
-            config: Flow configuration (from export_retell_cf).
-
-        Returns:
-            Dict with id, name, and platform fields.
-        """
+        """Update an existing conversation flow in Retell."""
         prepared = self.prepare_config_for_api(config)
         flow = client.conversation_flow.update(agent_id, **prepared)
         return {
@@ -193,15 +141,5 @@ class RetellPlatformClient:
 
 
 def get_client(api_key: str | None = None) -> Retell:
-    """Get a configured Retell SDK client.
-
-    Args:
-        api_key: Retell API key. Defaults to RETELL_API_KEY env var.
-
-    Returns:
-        Configured Retell client.
-
-    Raises:
-        ValueError: If no API key available.
-    """
+    """Get a configured Retell SDK client."""
     return RetellPlatformClient().get_client(api_key)

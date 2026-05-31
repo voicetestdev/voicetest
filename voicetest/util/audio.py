@@ -1,10 +1,4 @@
-"""TTS→STT round-trip for evaluating spoken content fidelity.
-
-Synthesizes agent messages to audio via TTS, then transcribes back via STT.
-The resulting "heard" text reveals how a caller would actually perceive the
-agent's output — catching pronunciation issues with phone numbers, addresses,
-confirmation codes, etc.
-"""
+"""TTS→STT round-trip for evaluating spoken content fidelity."""
 
 import copy
 import logging
@@ -19,11 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class AudioRoundTrip:
-    """TTS→STT round-trip using OpenAI-compatible APIs.
-
-    Uses Kokoro (TTS) and faster-whisper-server (STT), both exposing
-    OpenAI-compatible endpoints.
-    """
+    """TTS→STT round-trip using OpenAI-compatible APIs."""
 
     def __init__(
         self,
@@ -79,11 +69,7 @@ class AudioRoundTrip:
         return response.json()["text"]
 
     async def transform_transcript(self, transcript: list[Message]) -> list[Message]:
-        """Round-trip all assistant messages, storing results in metadata["heard"].
-
-        User messages pass through unchanged. The original message content
-        is preserved — metadata["heard"] captures what was actually heard.
-        """
+        """Round-trip all assistant messages, storing results in metadata["heard"]."""
         result = copy.deepcopy(transcript)
         for msg in result:
             if msg.role == "assistant" and msg.content.strip():

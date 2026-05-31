@@ -4,6 +4,7 @@ import pytest
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 
@@ -25,6 +26,7 @@ def three_node_graph() -> AgentGraph:
                         ),
                     ),
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "help": AgentNode(
                 id="help",
@@ -38,11 +40,13 @@ def three_node_graph() -> AgentGraph:
                         ),
                     ),
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "closing": AgentNode(
                 id="closing",
                 state_prompt="Thank the user and end the conversation.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",

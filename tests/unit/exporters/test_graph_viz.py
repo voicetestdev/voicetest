@@ -8,6 +8,7 @@ from voicetest.models.agent import AgentNode
 from voicetest.models.agent import EquationClause
 from voicetest.models.agent import GlobalNodeSetting
 from voicetest.models.agent import GoBackCondition
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -34,6 +35,7 @@ def graph_with_end_call() -> AgentGraph:
                         parameters={},
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "closing": AgentNode(
                 id="closing",
@@ -46,6 +48,7 @@ def graph_with_end_call() -> AgentGraph:
                         parameters={},
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -96,6 +99,7 @@ class TestExportMermaid:
                     id='node_with_"quotes"',
                     state_prompt="Test instructions",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 )
             },
             entry_node_id='node_with_"quotes"',
@@ -120,11 +124,13 @@ class TestExportMermaid:
                             condition=TransitionCondition(type="llm_prompt", value="user confirms"),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "step_two_continue": AgentNode(
                     id="step_two_continue",
                     state_prompt="Continue to next step",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="step_one_start",
@@ -199,6 +205,7 @@ class TestMermaidLogicNode:
                             ),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "router": AgentNode(
                     id="router",
@@ -224,16 +231,19 @@ class TestMermaidLogicNode:
                         ),
                     ],
                     metadata={"retell_type": "logic_split", "name": "Account Router"},
+                    node_type=NodeType.LOGIC,
                 ),
                 "premium": AgentNode(
                     id="premium",
                     state_prompt="Handle premium customer.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "standard": AgentNode(
                     id="standard",
                     state_prompt="Handle standard customer.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="start",
@@ -278,9 +288,14 @@ class TestMermaidLogicNode:
                         ),
                     ],
                     metadata={"retell_type": "branch"},
+                    node_type=NodeType.LOGIC,
                 ),
-                "a": AgentNode(id="a", state_prompt="A", transitions=[]),
-                "b": AgentNode(id="b", state_prompt="B", transitions=[]),
+                "a": AgentNode(
+                    id="a", state_prompt="A", transitions=[], node_type=NodeType.CONVERSATION
+                ),
+                "b": AgentNode(
+                    id="b", state_prompt="B", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="branch1",
             source_type="retell",
@@ -308,11 +323,13 @@ class TestMermaidGlobalNode:
                             ),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "order": AgentNode(
                     id="order",
                     state_prompt="Take the order.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "cancel": AgentNode(
                     id="cancel",
@@ -330,6 +347,7 @@ class TestMermaidGlobalNode:
                             ),
                         ],
                     ),
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="greeting",
@@ -371,16 +389,18 @@ class TestMermaidGlobalNode:
         """All global nodes get the stroke style."""
         graph = AgentGraph(
             nodes={
-                "main": AgentNode(id="main", state_prompt="Main."),
+                "main": AgentNode(id="main", state_prompt="Main.", node_type=NodeType.CONVERSATION),
                 "faq": AgentNode(
                     id="faq",
                     state_prompt="FAQ.",
                     global_node_setting=GlobalNodeSetting(condition="User asks FAQ"),
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "cancel": AgentNode(
                     id="cancel",
                     state_prompt="Cancel.",
                     global_node_setting=GlobalNodeSetting(condition="User cancels"),
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",

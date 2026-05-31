@@ -1,8 +1,4 @@
-"""Test case models for defining voice agent tests.
-
-Test cases define user personas, success metrics, and flow constraints
-for evaluating agent behavior. Format matches Retell AI exported tests.
-"""
+"""Test case models for defining voice agent tests."""
 
 from typing import Any
 from typing import Literal
@@ -15,13 +11,7 @@ TestType = Literal["llm", "rule"]
 
 
 class RunOptions(BaseModel):
-    """Options for test execution.
-
-    LLM model strings use LiteLLM format: "provider/model"
-    Examples: "groq/llama-3.1-8b-instant", "openai/gpt-4o-mini"
-
-    Model fields are Optional - None means not configured (will use defaults).
-    """
+    """Options for test execution."""
 
     max_turns: int = 50
     turn_timeout_seconds: float = 60.0
@@ -33,37 +23,13 @@ class RunOptions(BaseModel):
     no_cache: bool = False
     pattern_engine: str = "fnmatch"
 
-    # LLM model configuration (None = not configured, use defaults)
     agent_model: str | None = None
     simulator_model: str | None = None
     judge_model: str | None = None
 
 
 class TestCase(BaseModel):
-    """Single test case definition.
-
-    Two test types are supported:
-
-    1. LLM tests (type="llm"): Use an LLM judge to evaluate semantic metrics.
-       {
-           "name": "Billing inquiry",
-           "user_prompt": "Ask about a charge on your bill...",
-           "metrics": ["Agent was helpful and professional"],
-           "type": "llm"
-       }
-
-    2. Rule tests (type="rule"): Use deterministic pattern matching.
-       {
-           "name": "Greeting check",
-           "user_prompt": "Say hello",
-           "includes": ["welcome", "help"],
-           "excludes": ["goodbye"],
-           "patterns": ["REF-[A-Z0-9]+"],
-           "type": "rule"
-       }
-
-    Legacy type values "simulation" and "unit" are mapped to "llm" and "rule".
-    """
+    """Single test case definition."""
 
     name: str
     user_prompt: str
@@ -74,10 +40,8 @@ class TestCase(BaseModel):
     creation_timestamp: int | None = None
     user_modified_timestamp: int | None = None
 
-    # LLM test fields
     metrics: list[str] = Field(default_factory=list)
 
-    # Rule test fields
     includes: list[str] = Field(default_factory=list)
     excludes: list[str] = Field(default_factory=list)
     patterns: list[str] = Field(default_factory=list)

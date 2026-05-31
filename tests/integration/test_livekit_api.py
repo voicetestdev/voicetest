@@ -233,8 +233,6 @@ class TestLiveKitExportToPlatform:
             assert data["id"] is not None
             assert data["name"] is not None
 
-            # Clean up - delete the deployed agent
-
             try:
                 lk = LiveKitPlatformClient()
                 credentials = lk.get_client()

@@ -27,6 +27,7 @@ def custom_config_path(tmp_path):
             "main": {
                 "id": "main",
                 "state_prompt": "You are a helpful assistant.",
+                "node_type": "conversation",
                 "transitions": [],
                 "tools": [],
                 "metadata": {},
@@ -49,6 +50,7 @@ class TestImportAgent:
                 "main": {
                     "id": "main",
                     "state_prompt": "Hello.",
+                    "node_type": "conversation",
                     "transitions": [],
                 }
             },
@@ -79,6 +81,7 @@ class TestCreateAgent:
                 "main": {
                     "id": "main",
                     "state_prompt": "Hello.",
+                    "node_type": "conversation",
                     "transitions": [],
                 }
             },
@@ -149,6 +152,7 @@ class TestLoadAndSaveGraph:
                 "main": {
                     "id": "main",
                     "state_prompt": "Original prompt.",
+                    "node_type": "conversation",
                     "transitions": [],
                 }
             },
@@ -229,11 +233,13 @@ class TestUpdateGlobalNodeSetting:
                 "main": {
                     "id": "main",
                     "state_prompt": "Hello.",
+                    "node_type": "conversation",
                     "transitions": [],
                 },
                 "cancel": {
                     "id": "cancel",
                     "state_prompt": "Cancel.",
+                    "node_type": "conversation",
                     "transitions": [],
                 },
             },
@@ -350,6 +356,7 @@ class TestGetVariables:
                 "main": {
                     "id": "main",
                     "state_prompt": "No variables here.",
+                    "node_type": "conversation",
                     "transitions": [],
                 }
             },
@@ -369,6 +376,7 @@ class TestMetricsConfig:
                 "main": {
                     "id": "main",
                     "state_prompt": "Hello.",
+                    "node_type": "conversation",
                     "transitions": [],
                 }
             },
@@ -386,6 +394,7 @@ class TestMetricsConfig:
                 "main": {
                     "id": "main",
                     "state_prompt": "Hello.",
+                    "node_type": "conversation",
                     "transitions": [],
                 }
             },

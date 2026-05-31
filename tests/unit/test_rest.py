@@ -112,11 +112,9 @@ class TestExportEndpoint:
     """Tests for agent export endpoint."""
 
     def test_export_mermaid(self, client, sample_retell_config):
-        # First import
         import_response = client.post("/api/agents/import", json={"config": sample_retell_config})
         graph = import_response.json()
 
-        # Then export
         response = client.post("/api/agents/export", json={"graph": graph, "format": "mermaid"})
         assert response.status_code == 200
 
@@ -177,21 +175,17 @@ class TestRunEndpoints:
     """Tests for test run endpoints."""
 
     def test_run_single_test(self, client, sample_retell_config):
-        # Import agent
         import_response = client.post("/api/agents/import", json={"config": sample_retell_config})
         graph = import_response.json()
 
-        # Create test case (Retell format)
         test_case = {
             "name": "API test",
             "user_prompt": "When asked, say Test. Say hello.",
             "metrics": ["Agent responded."],
         }
 
-        # Run test (will use mock mode internally due to test environment)
         response = client.post("/api/runs/single", json={"graph": graph, "test_case": test_case})
 
-        # Should succeed even if test itself fails (it returns a result)
         assert response.status_code == 200
         result = response.json()
         assert result["test_id"] == "API test"
@@ -276,7 +270,7 @@ class TestSettingsEndpoint:
         settings = response.json()
         assert "models" in settings
         assert "run" in settings
-        assert settings["models"]["agent"] is None  # default is None
+        assert settings["models"]["agent"] is None
 
     def test_update_settings(self, client, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -301,7 +295,6 @@ class TestSettingsEndpoint:
         assert result["models"]["agent"] == "anthropic/claude-3-haiku"
         assert result["run"]["max_turns"] == 10
 
-        # Verify it persisted
         get_response = client.get("/api/settings")
         assert get_response.json()["models"]["agent"] == "anthropic/claude-3-haiku"
 
@@ -377,7 +370,6 @@ class TestUpdateMetadataEndpoint:
         result = response.json()
         assert result["source_metadata"]["custom_field"] == "custom_value"
         assert result["source_metadata"]["version"] == 99
-        # Original metadata should still be present
         assert "conversation_flow_id" in result["source_metadata"]
 
     def test_update_metadata_returns_404_for_missing_agent(self, db_client):

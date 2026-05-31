@@ -1,8 +1,4 @@
-"""Claude Code CLI LLM provider.
-
-Uses Claude Code CLI with Max subscription quota by ensuring the API key
-environment variable is not set.
-"""
+"""Claude Code CLI LLM provider."""
 
 import json
 import logging
@@ -33,24 +29,14 @@ DEFAULT_CLAUDECODE_TIMEOUT = 600
 class ClaudeCodeLM(dspy.LM):
     """LLM provider using Claude Code CLI.
 
-    This allows voicetest users with Claude Code installed to use it
-    as their LLM backend without separate API key configuration.
-
     Uses Max subscription quota by clearing ANTHROPIC_API_KEY from the
-    subprocess environment.
-
-    Model strings:
-        - claudecode/sonnet → Claude Sonnet
-        - claudecode/opus → Claude Opus
-        - claudecode/haiku → Claude Haiku
-    """
+    subprocess environment."""
 
     # Claude Code sessions add their own formatting context which interferes
     # with JSON/BAML adapters. Use ChatAdapter (text format) instead.
     preferred_adapter = ChatAdapter()
 
     def __init__(self, model: str = "claudecode/sonnet", **kwargs):
-        # Initialize parent class with model string
         super().__init__(model=model, **kwargs)
         self.variant = model.split("/", 1)[1] if "/" in model else model
         self._check_available()
@@ -87,17 +73,7 @@ class ClaudeCodeLM(dspy.LM):
         messages: list[dict[str, Any]] | None = None,
         **kwargs,
     ) -> list[dict[str, Any]]:
-        """Send prompt to Claude Code CLI, with DSPy cache integration.
-
-        Args:
-            prompt: Direct prompt string (used if messages not provided)
-            messages: Chat messages in OpenAI format (takes precedence)
-            **kwargs: Additional arguments (timeout supported)
-
-        Returns:
-            List with single dict containing response
-        """
-        # Build the request dict for cache key computation
+        """Send prompt to Claude Code CLI, with DSPy cache integration."""
         messages = messages or [{"role": "user", "content": prompt}]
         request = {
             "model": self.model,
@@ -138,8 +114,8 @@ class ClaudeCodeLM(dspy.LM):
         messages = request.get("messages", [])
         prompt_text = self._messages_to_prompt(messages)
 
-        # Create environment without ANTHROPIC_API_KEY to use Max quota
-        # Also unset CLAUDECODE to allow nested sessions
+        # Clear ANTHROPIC_API_KEY to use Max subscription quota; clear CLAUDECODE
+        # to allow nested sessions.
         env = os.environ.copy()
         env.pop("ANTHROPIC_API_KEY", None)
         env.pop("CLAUDECODE", None)
@@ -161,7 +137,6 @@ class ClaudeCodeLM(dspy.LM):
                 llm_provider="claudecode",
             ) from err
 
-        # Try to parse JSON response (Claude Code outputs JSON even on errors)
         try:
             response = json.loads(result.stdout)
         except json.JSONDecodeError as err:
@@ -171,7 +146,6 @@ class ClaudeCodeLM(dspy.LM):
                 ) from err
             raise
 
-        # Check for error in JSON response
         if response.get("is_error"):
             error_msg = response.get("result", "unknown error")
             # "You've hit your limit · resets 3pm (America/New_York)"

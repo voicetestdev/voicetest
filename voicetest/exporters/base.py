@@ -9,11 +9,7 @@ from voicetest.models.agent import AgentGraph
 
 @runtime_checkable
 class Exporter(Protocol):
-    """Protocol for agent graph exporters.
-
-    Exporters convert the unified AgentGraph representation to
-    platform-specific formats.
-    """
+    """Protocol for agent graph exporters."""
 
     @property
     def format_id(self) -> str:

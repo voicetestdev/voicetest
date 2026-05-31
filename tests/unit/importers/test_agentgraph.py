@@ -3,6 +3,7 @@
 from voicetest.importers.agentgraph import AgentGraphImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 
 
 class TestAgentGraphImporter:
@@ -67,7 +68,7 @@ class TestAgentGraphImporter:
 
         config = {
             "nodes": {
-                "start": {"id": "start", "state_prompt": "Hello"},
+                "start": {"id": "start", "state_prompt": "Hello", "node_type": "conversation"},
             },
             "entry_node_id": "start",
             "source_type": "test",
@@ -83,7 +84,11 @@ class TestAgentGraphImporter:
         importer = AgentGraphImporter()
 
         sample_graph = AgentGraph(
-            nodes={"greeting": AgentNode(id="greeting", state_prompt="Hi")},
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting", state_prompt="Hi", node_type=NodeType.CONVERSATION
+                )
+            },
             entry_node_id="greeting",
             source_type="agentgraph",
         )

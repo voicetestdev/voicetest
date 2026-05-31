@@ -61,12 +61,14 @@ def graph_with_tools() -> AgentGraph:
                         ),
                     ),
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "lookup": AgentNode(
                 id="lookup",
                 state_prompt="Look up the user's account.",
                 tools=[lookup_tool, transfer_tool],
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -83,6 +85,7 @@ def graph_with_metadata() -> AgentGraph:
                 id="main",
                 state_prompt="You are a helpful assistant.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="main",
@@ -115,6 +118,7 @@ class TestTerminalToolSynthesis:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -141,6 +145,7 @@ class TestTerminalToolSynthesis:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -174,6 +179,7 @@ class TestTerminalToolSynthesis:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "help": AgentNode(
                     id="help",
@@ -186,6 +192,7 @@ class TestTerminalToolSynthesis:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="greeting",
@@ -221,6 +228,7 @@ class TestTerminalToolSynthesis:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "help": AgentNode(
                     id="help",
@@ -233,6 +241,7 @@ class TestTerminalToolSynthesis:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="greeting",
@@ -270,6 +279,7 @@ class TestTerminalToolSynthesis:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -299,6 +309,7 @@ class TestTerminalToolSynthesis:
                         ),
                     ],
                     metadata={"retell_type": "conversation"},
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "end_node": AgentNode(
                     id="end_node",
@@ -338,6 +349,7 @@ class TestTerminalToolSynthesis:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -582,11 +594,13 @@ class TestRetellCFExporter:
                             ),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "success": AgentNode(
                     id="success",
                     state_prompt="Success!",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="check",
@@ -666,6 +680,7 @@ class TestRetellCFExporter:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -686,6 +701,7 @@ class TestRetellCFExporter:
                     id="main",
                     state_prompt="Hello.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -705,11 +721,13 @@ class TestRetellCFExporter:
                     id="intro",
                     state_prompt="Greet the user.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "other": AgentNode(
                     id="other",
                     state_prompt="Help the user.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="intro",
@@ -734,6 +752,7 @@ class TestRetellCFExporter:
                     id="intro",
                     state_prompt="Greet the user.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="intro",
@@ -760,6 +779,7 @@ class TestRetellCFExporter:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -767,9 +787,7 @@ class TestRetellCFExporter:
         )
 
         result = export_retell_cf(graph)
-        # Should not be in tools
         assert not any(t["name"] == "transfer_to_nurse" for t in result["tools"])
-        # Should be a node
         transfer_nodes = [n for n in result["nodes"] if n["type"] == "transfer_call"]
         assert len(transfer_nodes) == 1
         node = transfer_nodes[0]
@@ -797,6 +815,7 @@ class TestRetellCFExporter:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -804,9 +823,7 @@ class TestRetellCFExporter:
         )
 
         result = export_retell_cf(graph)
-        # Should not be in tools
         assert not any(t["name"] == "end_call" for t in result["tools"])
-        # Should be a node
         end_nodes = [n for n in result["nodes"] if n["type"] == "end"]
         assert len(end_nodes) == 1
 
@@ -823,6 +840,7 @@ class TestRetellCFExporter:
                             condition=TransitionCondition(type="llm_prompt", value="go to shared"),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "node_b": AgentNode(
                     id="node_b",
@@ -835,11 +853,13 @@ class TestRetellCFExporter:
                             ),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "shared_target": AgentNode(
                     id="shared_target",
                     state_prompt="Shared target.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="node_a",
@@ -897,6 +917,7 @@ class TestRetellCFExporter:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -960,6 +981,7 @@ class TestRetellCFExporter:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -991,8 +1013,11 @@ class TestDisplayPosition:
                             condition=TransitionCondition(type="llm_prompt", value="go"),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "b": AgentNode(id="b", state_prompt="Node B.", transitions=[]),
+                "b": AgentNode(
+                    id="b", state_prompt="Node B.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="a",
             source_type="test",
@@ -1018,6 +1043,7 @@ class TestDisplayPosition:
                             condition=TransitionCondition(type="llm_prompt", value="go"),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "mid": AgentNode(
                     id="mid",
@@ -1028,11 +1054,13 @@ class TestDisplayPosition:
                             condition=TransitionCondition(type="llm_prompt", value="go"),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "end_node": AgentNode(
                     id="end_node",
                     state_prompt="End.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="start",
@@ -1058,6 +1086,7 @@ class TestDisplayPosition:
                         "retell_type": "conversation",
                         "display_position": {"x": 999, "y": 888},
                     },
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="a",
@@ -1074,7 +1103,9 @@ class TestDisplayPosition:
         """Flow-level begin_tag_display_position is emitted."""
         graph = AgentGraph(
             nodes={
-                "main": AgentNode(id="main", state_prompt="Main.", transitions=[]),
+                "main": AgentNode(
+                    id="main", state_prompt="Main.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="main",
             source_type="test",
@@ -1090,7 +1121,9 @@ class TestDisplayPosition:
         """begin_tag_display_position from source_metadata is preserved."""
         graph = AgentGraph(
             nodes={
-                "main": AgentNode(id="main", state_prompt="Main.", transitions=[]),
+                "main": AgentNode(
+                    id="main", state_prompt="Main.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="main",
             source_type="retell",
@@ -1119,6 +1152,7 @@ class TestDisplayPosition:
                         ),
                     ],
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -1136,7 +1170,9 @@ class TestDisplayPosition:
         """When export.layout is False, no display_position is emitted."""
         graph = AgentGraph(
             nodes={
-                "a": AgentNode(id="a", state_prompt="Node A.", transitions=[]),
+                "a": AgentNode(
+                    id="a", state_prompt="Node A.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="a",
             source_type="test",
@@ -1205,7 +1241,6 @@ class TestLogicSplitExport:
         greeting = next(n for n in result["nodes"] if n["id"] == "greeting")
         assert greeting["type"] == "conversation"
         assert "else_edge" not in greeting
-        # Should have an edge to the router
         assert any(e["destination_node_id"] == "router" for e in greeting["edges"])
 
     def test_roundtrip_logic_split(self, logic_split_graph):
@@ -1226,6 +1261,74 @@ class TestLogicSplitExport:
         assert always_transitions[0].target_node_id == "standard"
 
 
+class TestFunctionNodeExport:
+    """Function (tool-call) nodes export with type=function and their
+    always transition becomes else_edge, mirroring logic_split's shape.
+    """
+
+    @pytest.fixture
+    def function_node_graph(self):
+        return AgentGraph(
+            nodes={
+                "greeting": AgentNode(
+                    id="greeting",
+                    state_prompt="Greet the caller.",
+                    transitions=[
+                        Transition(
+                            target_node_id="process_refill",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="User confirmed refill"
+                            ),
+                        ),
+                    ],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "process_refill": AgentNode(
+                    id="process_refill",
+                    state_prompt="",
+                    node_type=NodeType.FUNCTION,
+                    transitions=[
+                        Transition(
+                            target_node_id="confirm",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    metadata={"retell_type": "function", "name": "Process Refill Request"},
+                ),
+                "confirm": AgentNode(
+                    id="confirm",
+                    state_prompt="Confirm and end.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+            },
+            entry_node_id="greeting",
+            source_type="retell",
+        )
+
+    def test_function_node_exported_as_function_type(self, function_node_graph):
+        result = export_retell_cf(function_node_graph)
+        process = _find_node(result["nodes"], "process_refill")
+        assert process["type"] == "function"
+
+    def test_function_node_always_transition_becomes_else_edge(self, function_node_graph):
+        result = export_retell_cf(function_node_graph)
+        process = _find_node(result["nodes"], "process_refill")
+        assert "else_edge" in process
+        assert process["else_edge"]["destination_node_id"] == "confirm"
+
+    def test_function_node_roundtrip(self, function_node_graph):
+        """import → export → re-import preserves the function node type."""
+        exported = export_retell_cf(function_node_graph)
+        reimported = RetellImporter().import_agent(exported)
+        process = reimported.nodes["process_refill"]
+        assert process.node_type == NodeType.FUNCTION
+        assert process.is_function_node()
+        always_transitions = [t for t in process.transitions if t.condition.type == "always"]
+        assert len(always_transitions) == 1
+        assert always_transitions[0].target_node_id == "confirm"
+
+
 class TestExportAlwaysEdge:
     """Tests for exporting always_edge on conversation nodes."""
 
@@ -1242,12 +1345,14 @@ class TestExportAlwaysEdge:
                         ),
                     ],
                     metadata={"retell_type": "conversation"},
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "end": AgentNode(
                     id="end",
                     state_prompt="End.",
                     transitions=[],
                     metadata={"retell_type": "end"},
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -1282,9 +1387,14 @@ class TestExportAlwaysEdge:
                         ),
                     ],
                     metadata={"retell_type": "logic_split"},
+                    node_type=NodeType.LOGIC,
                 ),
-                "a": AgentNode(id="a", state_prompt="A.", transitions=[]),
-                "b": AgentNode(id="b", state_prompt="B.", transitions=[]),
+                "a": AgentNode(
+                    id="a", state_prompt="A.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
+                "b": AgentNode(
+                    id="b", state_prompt="B.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="router",
             source_type="retell",
@@ -1313,6 +1423,7 @@ class TestExportExtractNodes:
                             ),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "extract_dob": AgentNode(
                     id="extract_dob",
@@ -1353,9 +1464,20 @@ class TestExportExtractNodes:
                         "retell_type": "extract_dynamic_variables",
                         "name": "Extract DOB",
                     },
+                    node_type=NodeType.EXTRACT,
                 ),
-                "match": AgentNode(id="match", state_prompt="Verified.", transitions=[]),
-                "no_match": AgentNode(id="no_match", state_prompt="Not verified.", transitions=[]),
+                "match": AgentNode(
+                    id="match",
+                    state_prompt="Verified.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "no_match": AgentNode(
+                    id="no_match",
+                    state_prompt="Not verified.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
             },
             entry_node_id="ask_dob",
             source_type="retell",
@@ -1421,9 +1543,17 @@ class TestExportLogicalOperator:
                         ),
                     ],
                     metadata={"retell_type": "logic_split"},
+                    node_type=NodeType.LOGIC,
                 ),
-                "match": AgentNode(id="match", state_prompt="M.", transitions=[]),
-                "fallback": AgentNode(id="fallback", state_prompt="F.", transitions=[]),
+                "match": AgentNode(
+                    id="match", state_prompt="M.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
+                "fallback": AgentNode(
+                    id="fallback",
+                    state_prompt="F.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
             },
             entry_node_id="router",
             source_type="retell",
@@ -1460,9 +1590,17 @@ class TestExportLogicalOperator:
                         ),
                     ],
                     metadata={"retell_type": "logic_split"},
+                    node_type=NodeType.LOGIC,
                 ),
-                "match": AgentNode(id="match", state_prompt="M.", transitions=[]),
-                "fallback": AgentNode(id="fallback", state_prompt="F.", transitions=[]),
+                "match": AgentNode(
+                    id="match", state_prompt="M.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
+                "fallback": AgentNode(
+                    id="fallback",
+                    state_prompt="F.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
             },
             entry_node_id="router",
             source_type="retell",
@@ -1522,7 +1660,7 @@ class TestRetellCFExporterGlobalNodes:
     def test_global_node_with_empty_go_backs(self):
         graph = AgentGraph(
             nodes={
-                "main": AgentNode(id="main", state_prompt="Main."),
+                "main": AgentNode(id="main", state_prompt="Main.", node_type=NodeType.CONVERSATION),
                 "emergency": AgentNode(
                     id="emergency",
                     state_prompt="Emergency.",

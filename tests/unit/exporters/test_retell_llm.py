@@ -6,6 +6,7 @@ from voicetest.exporters.retell_llm import export_retell_llm
 from voicetest.importers.retell_llm import RetellLLMImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -45,12 +46,14 @@ def graph_with_tools() -> AgentGraph:
                         ),
                     ),
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
             "lookup": AgentNode(
                 id="lookup",
                 state_prompt="Look up the user's account.",
                 tools=[lookup_tool, end_call_tool],
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="greeting",
@@ -67,6 +70,7 @@ def graph_with_metadata() -> AgentGraph:
                 id="main",
                 state_prompt="You are a helpful assistant.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="main",

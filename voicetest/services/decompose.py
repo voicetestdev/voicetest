@@ -3,6 +3,7 @@
 from voicetest.judges.decompose import DecomposeJudge
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.decompose import DecompositionPlan
 from voicetest.models.decompose import DecompositionResult
 from voicetest.models.decompose import OrchestratorManifest
@@ -28,19 +29,7 @@ class DecomposeService:
         _mock_refined_prompt: str | None = None,
         _mock_node_prompts: dict[str, str] | None = None,
     ) -> DecompositionResult:
-        """Full pipeline: analyze -> refine each sub-agent -> build graphs + manifest.
-
-        Args:
-            graph: The agent graph to decompose.
-            model: LLM model for analysis and refinement. Reads from settings if None.
-            num_agents: Requested number of sub-agents (0 = LLM decides).
-            _mock_plan: For testing — bypass LLM analyze step.
-            _mock_refined_prompt: For testing — bypass LLM refine step.
-            _mock_node_prompts: For testing — bypass LLM refine step.
-
-        Returns:
-            DecompositionResult with plan, sub-graphs, and manifest.
-        """
+        """Full pipeline: analyze -> refine each sub-agent -> build graphs + manifest."""
         if model is None:
             model = resolve_model(self._settings.get_settings().models.judge)
         judge = DecomposeJudge(model)
@@ -82,17 +71,7 @@ class DecomposeService:
         """Build one sub-agent's AgentGraph.
 
         Multi-node case: deep copy, prune to assigned nodes, filter transitions.
-        Monolithic case: create nodes from prompt_segments.
-
-        Args:
-            graph: The original full agent graph.
-            spec: Sub-agent specification with assigned node IDs.
-            refined_general_prompt: Refined general prompt for this sub-agent.
-            node_prompts: Refined state prompts for specific nodes.
-
-        Returns:
-            A sub-agent AgentGraph.
-        """
+        Monolithic case: create nodes from prompt_segments."""
         has_new_nodes = any(nid.startswith("NEW:") for nid in spec.node_ids)
 
         if has_new_nodes:
@@ -101,14 +80,7 @@ class DecomposeService:
         return self._build_multi_node_sub_graph(graph, spec, refined_general_prompt, node_prompts)
 
     def build_manifest(self, plan: DecompositionPlan) -> OrchestratorManifest:
-        """Build orchestrator manifest from plan.
-
-        Args:
-            plan: The decomposition plan.
-
-        Returns:
-            OrchestratorManifest with entry agent, sub-agent entries, and handoff rules.
-        """
+        """Build orchestrator manifest from plan."""
         entries = [
             SubAgentManifestEntry(
                 sub_agent_id=sa.sub_agent_id,
@@ -172,6 +144,7 @@ class DecomposeService:
             nodes[node_id] = AgentNode(
                 id=node_id,
                 state_prompt=segment.segment_text,
+                node_type=NodeType.CONVERSATION,
                 transitions=[],
             )
 

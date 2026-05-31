@@ -1,8 +1,4 @@
-"""Centralized LLM call handling.
-
-All LLM calls should go through this module to ensure consistent
-retry behavior, error handling, and future enhancements.
-"""
+"""Centralized LLM call handling."""
 
 from voicetest.llm.base import OnTokenCallback
 from voicetest.llm.base import _call_llm_streaming

@@ -1,7 +1,5 @@
 """Tests for voicetest.models.agent module."""
 
-import json
-
 from pydantic import ValidationError
 import pytest
 
@@ -17,6 +15,7 @@ from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.agent import VariableExtraction
+from voicetest.models.agent import infer_node_type
 
 
 class TestTransitionCondition:
@@ -89,7 +88,11 @@ class TestAgentNode:
     """Tests for AgentNode model."""
 
     def test_create_basic_node(self):
-        node = AgentNode(id="greeting", state_prompt="Greet the customer warmly.")
+        node = AgentNode(
+            id="greeting",
+            state_prompt="Greet the customer warmly.",
+            node_type=NodeType.CONVERSATION,
+        )
         assert node.id == "greeting"
         assert node.state_prompt == "Greet the customer warmly."
         assert node.tools == []
@@ -114,6 +117,7 @@ class TestAgentNode:
                     ),
                 ),
             ],
+            node_type=NodeType.CONVERSATION,
         )
         assert len(node.transitions) == 2
         assert node.transitions[0].target_node_id == "billing"
@@ -130,6 +134,7 @@ class TestAgentNode:
                     parameters={"type": "object", "properties": {}},
                 )
             ],
+            node_type=NodeType.CONVERSATION,
         )
         assert len(node.tools) == 1
         assert node.tools[0].name == "get_account"
@@ -139,6 +144,7 @@ class TestAgentNode:
             id="greeting",
             state_prompt="Greet",
             metadata={"retell_type": "conversation", "custom_field": 123},
+            node_type=NodeType.CONVERSATION,
         )
         assert node.metadata["retell_type"] == "conversation"
         assert node.metadata["custom_field"] == 123
@@ -149,8 +155,10 @@ class TestAgentGraph:
 
     def test_create_simple_graph(self):
         nodes = {
-            "greeting": AgentNode(id="greeting", state_prompt="Hello!"),
-            "end": AgentNode(id="end", state_prompt="Goodbye!"),
+            "greeting": AgentNode(
+                id="greeting", state_prompt="Hello!", node_type=NodeType.CONVERSATION
+            ),
+            "end": AgentNode(id="end", state_prompt="Goodbye!", node_type=NodeType.CONVERSATION),
         }
         graph = AgentGraph(nodes=nodes, entry_node_id="greeting", source_type="custom")
         assert len(graph.nodes) == 2
@@ -160,8 +168,10 @@ class TestAgentGraph:
 
     def test_get_entry_node(self):
         nodes = {
-            "start": AgentNode(id="start", state_prompt="Start here"),
-            "end": AgentNode(id="end", state_prompt="End here"),
+            "start": AgentNode(
+                id="start", state_prompt="Start here", node_type=NodeType.CONVERSATION
+            ),
+            "end": AgentNode(id="end", state_prompt="End here", node_type=NodeType.CONVERSATION),
         }
         graph = AgentGraph(nodes=nodes, entry_node_id="start", source_type="retell")
         entry = graph.get_entry_node()
@@ -170,8 +180,8 @@ class TestAgentGraph:
 
     def test_get_node(self):
         nodes = {
-            "a": AgentNode(id="a", state_prompt="Node A"),
-            "b": AgentNode(id="b", state_prompt="Node B"),
+            "a": AgentNode(id="a", state_prompt="Node A", node_type=NodeType.CONVERSATION),
+            "b": AgentNode(id="b", state_prompt="Node B", node_type=NodeType.CONVERSATION),
         }
         graph = AgentGraph(nodes=nodes, entry_node_id="a", source_type="custom")
 
@@ -181,7 +191,7 @@ class TestAgentGraph:
 
     def test_graph_with_source_metadata(self):
         graph = AgentGraph(
-            nodes={"n": AgentNode(id="n", state_prompt="Test")},
+            nodes={"n": AgentNode(id="n", state_prompt="Test", node_type=NodeType.CONVERSATION)},
             entry_node_id="n",
             source_type="retell",
             source_metadata={"conversation_flow_id": "flow-123", "version": 2},
@@ -201,8 +211,9 @@ class TestAgentGraph:
                             condition=TransitionCondition(type="llm_prompt", value="User is done"),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "end": AgentNode(id="end", state_prompt="Bye"),
+                "end": AgentNode(id="end", state_prompt="Bye", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="start",
             source_type="custom",
@@ -252,95 +263,13 @@ class TestTransitionConditionLogicalOperator:
 
 
 class TestNodeType:
-    """Tests for NodeType enum and model_post_init inference."""
+    """Tests for NodeType enum."""
 
-    def test_default_is_conversation(self):
-        node = AgentNode(id="greeting", state_prompt="Hello")
-        assert node.node_type == NodeType.CONVERSATION
+    def test_node_type_is_required(self):
+        with pytest.raises(ValidationError):
+            AgentNode(id="greeting", state_prompt="Hello")
 
-    def test_infers_logic_from_equation_transitions(self):
-        node = AgentNode(
-            id="router",
-            state_prompt="",
-            transitions=[
-                Transition(
-                    target_node_id="a",
-                    condition=TransitionCondition(
-                        type="equation",
-                        value="x == 1",
-                        equations=[EquationClause(left="x", operator="==", right="1")],
-                    ),
-                ),
-                Transition(
-                    target_node_id="b",
-                    condition=TransitionCondition(type="always", value="Else"),
-                ),
-            ],
-        )
-        assert node.node_type == NodeType.LOGIC
-
-    def test_infers_extract_from_variables_and_equations(self):
-        node = AgentNode(
-            id="extract",
-            state_prompt="",
-            variables_to_extract=[
-                VariableExtraction(name="month", description="Month"),
-            ],
-            transitions=[
-                Transition(
-                    target_node_id="match",
-                    condition=TransitionCondition(
-                        type="equation",
-                        value="month == January",
-                        equations=[EquationClause(left="month", operator="==", right="January")],
-                    ),
-                ),
-                Transition(
-                    target_node_id="fallback",
-                    condition=TransitionCondition(type="always", value="Else"),
-                ),
-            ],
-        )
-        assert node.node_type == NodeType.EXTRACT
-
-    def test_variables_without_equations_stays_conversation(self):
-        node = AgentNode(
-            id="extract",
-            state_prompt="",
-            variables_to_extract=[
-                VariableExtraction(name="month", description="Month"),
-            ],
-            transitions=[
-                Transition(
-                    target_node_id="next",
-                    condition=TransitionCondition(type="llm_prompt", value="go next"),
-                ),
-            ],
-        )
-        assert node.node_type == NodeType.CONVERSATION
-
-    def test_end_call_tool_does_not_infer_end_type(self):
-        """Nodes with end_call tools are NOT end nodes — they're conversation nodes
-        that have an end_call tool available. Only explicitly typed nodes are END."""
-
-        node = AgentNode(
-            id="main",
-            state_prompt="Help the user.",
-            tools=[ToolDefinition(name="end_call", description="End", type="end_call")],
-        )
-        assert node.node_type == NodeType.CONVERSATION
-
-    def test_transfer_tool_does_not_infer_transfer_type(self):
-        """Same as end_call: transfer tools don't make a node a TRANSFER node."""
-
-        node = AgentNode(
-            id="main",
-            state_prompt="Help the user.",
-            tools=[ToolDefinition(name="transfer", description="Transfer", type="transfer_call")],
-        )
-        assert node.node_type == NodeType.CONVERSATION
-
-    def test_explicit_type_overrides_inference(self):
+    def test_explicit_type_respected(self):
         node = AgentNode(
             id="special",
             state_prompt="Has a prompt but is an end node",
@@ -356,24 +285,6 @@ class TestNodeType:
         restored = AgentNode.model_validate_json(json_str)
         assert restored.node_type == NodeType.END
 
-    def test_backward_compat_json_without_node_type(self):
-        """Old JSON without node_type field should infer logic/extract from structure."""
-
-        old_json = json.dumps(
-            {
-                "id": "router",
-                "state_prompt": "",
-                "transitions": [
-                    {
-                        "target_node_id": "a",
-                        "condition": {"type": "equation", "value": "x == 1"},
-                    },
-                ],
-            }
-        )
-        node = AgentNode.model_validate_json(old_json)
-        assert node.node_type == NodeType.LOGIC
-
     def test_model_copy_preserves_node_type(self):
         node = AgentNode(id="end", state_prompt="", node_type=NodeType.END)
         copied = node.model_copy(update={"state_prompt": "Goodbye"})
@@ -385,6 +296,73 @@ class TestNodeType:
         assert str(NodeType.EXTRACT) == "extract"
         assert str(NodeType.END) == "end"
         assert str(NodeType.TRANSFER) == "transfer"
+        assert str(NodeType.FUNCTION) == "function"
+
+    def test_function_type_round_trip(self):
+        """An explicit FUNCTION node survives JSON round-trip and predicates correctly."""
+        node = AgentNode(id="tool", state_prompt="", node_type=NodeType.FUNCTION)
+        assert node.is_function_node()
+
+        restored = AgentNode.model_validate_json(node.model_dump_json())
+        assert restored.node_type == NodeType.FUNCTION
+        assert restored.is_function_node()
+
+
+class TestInferNodeType:
+    """Tests for the structural inference helper."""
+
+    def test_no_transitions_is_conversation(self):
+        assert infer_node_type([]) == NodeType.CONVERSATION
+
+    def test_equation_only_is_logic(self):
+        transitions = [
+            Transition(
+                target_node_id="a",
+                condition=TransitionCondition(
+                    type="equation",
+                    value="x == 1",
+                    equations=[EquationClause(left="x", operator="==", right="1")],
+                ),
+            ),
+            Transition(
+                target_node_id="b",
+                condition=TransitionCondition(type="always", value="Else"),
+            ),
+        ]
+        assert infer_node_type(transitions) == NodeType.LOGIC
+
+    def test_equation_plus_variables_is_extract(self):
+        transitions = [
+            Transition(
+                target_node_id="a",
+                condition=TransitionCondition(
+                    type="equation",
+                    value="month == January",
+                    equations=[EquationClause(left="month", operator="==", right="January")],
+                ),
+            ),
+        ]
+        variables = [VariableExtraction(name="month", description="Month")]
+        assert infer_node_type(transitions, variables) == NodeType.EXTRACT
+
+    def test_llm_prompt_transitions_are_conversation(self):
+        transitions = [
+            Transition(
+                target_node_id="next",
+                condition=TransitionCondition(type="llm_prompt", value="go next"),
+            ),
+        ]
+        assert infer_node_type(transitions) == NodeType.CONVERSATION
+
+    def test_variables_without_equations_is_conversation(self):
+        transitions = [
+            Transition(
+                target_node_id="next",
+                condition=TransitionCondition(type="llm_prompt", value="go next"),
+            ),
+        ]
+        variables = [VariableExtraction(name="month", description="Month")]
+        assert infer_node_type(transitions, variables) == NodeType.CONVERSATION
 
 
 class TestGlobalNodeSetting:
@@ -426,7 +404,7 @@ class TestGlobalNodeSetting:
         assert setting.go_back_conditions == []
 
     def test_agent_node_global_setting_none_by_default(self):
-        node = AgentNode(id="main", state_prompt="Help.")
+        node = AgentNode(id="main", state_prompt="Help.", node_type=NodeType.CONVERSATION)
         assert node.global_node_setting is None
 
     def test_agent_node_with_global_setting(self):
@@ -436,6 +414,7 @@ class TestGlobalNodeSetting:
             global_node_setting=GlobalNodeSetting(
                 condition="User wants to cancel",
             ),
+            node_type=NodeType.CONVERSATION,
         )
         assert node.global_node_setting is not None
         assert node.global_node_setting.condition == "User wants to cancel"
@@ -443,8 +422,8 @@ class TestGlobalNodeSetting:
     def test_agent_graph_global_nodes_empty(self):
         graph = AgentGraph(
             nodes={
-                "a": AgentNode(id="a", state_prompt="A."),
-                "b": AgentNode(id="b", state_prompt="B."),
+                "a": AgentNode(id="a", state_prompt="A.", node_type=NodeType.CONVERSATION),
+                "b": AgentNode(id="b", state_prompt="B.", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",
@@ -454,13 +433,14 @@ class TestGlobalNodeSetting:
     def test_agent_graph_global_nodes_returns_marked_nodes(self):
         graph = AgentGraph(
             nodes={
-                "a": AgentNode(id="a", state_prompt="A."),
+                "a": AgentNode(id="a", state_prompt="A.", node_type=NodeType.CONVERSATION),
                 "cancel": AgentNode(
                     id="cancel",
                     state_prompt="Cancel.",
                     global_node_setting=GlobalNodeSetting(
                         condition="User wants to cancel",
                     ),
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "faq": AgentNode(
                     id="faq",
@@ -468,6 +448,7 @@ class TestGlobalNodeSetting:
                     global_node_setting=GlobalNodeSetting(
                         condition="User asks a question",
                     ),
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="a",
@@ -479,7 +460,7 @@ class TestGlobalNodeSetting:
     def test_global_node_setting_json_round_trip(self):
         graph = AgentGraph(
             nodes={
-                "main": AgentNode(id="main", state_prompt="Main."),
+                "main": AgentNode(id="main", state_prompt="Main.", node_type=NodeType.CONVERSATION),
                 "global": AgentNode(
                     id="global",
                     state_prompt="Global.",
@@ -495,6 +476,7 @@ class TestGlobalNodeSetting:
                             ),
                         ],
                     ),
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",

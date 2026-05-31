@@ -96,14 +96,12 @@ def create_container() -> punq.Container:
 
     db_url = os.environ.get("DATABASE_URL")
 
-    # Engine (singleton)
     container.register(
         Engine,
         factory=lambda: create_db_engine(db_url),
         scope=punq.Scope.singleton,
     )
 
-    # Session factory (singleton)
     container.register(
         sessionmaker,
         factory=lambda: get_session_factory(container.resolve(Engine)),
@@ -129,7 +127,6 @@ def create_container() -> punq.Container:
     # Singleton scope: its cache (mtime-guarded) only helps if the instance survives.
     container.register(SettingsService, scope=punq.Scope.singleton)
 
-    # Registries (singletons)
     container.register(
         ImporterRegistry, factory=_create_importer_registry, scope=punq.Scope.singleton
     )
@@ -142,7 +139,6 @@ def create_container() -> punq.Container:
         PlatformRegistry, factory=_create_platform_registry, scope=punq.Scope.singleton
     )
 
-    # Repositories (punq auto-injects the session)
     container.register(AgentRepository)
     container.register(TestCaseRepository)
     container.register(RunRepository)

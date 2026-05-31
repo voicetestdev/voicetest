@@ -4,6 +4,7 @@ import pytest
 
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.decompose import DecompositionPlan
 from voicetest.models.decompose import HandoffRule
 from voicetest.models.decompose import PromptSegment
@@ -25,6 +26,7 @@ def monolithic_graph():
                 id="main",
                 state_prompt="Handle everything.",
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             ),
         },
         entry_node_id="main",

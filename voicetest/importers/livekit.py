@@ -1,7 +1,4 @@
-"""LiveKit Python agent file importer.
-
-Parses Python agent files using AST to extract AgentGraph structure.
-"""
+"""LiveKit Python agent file importer."""
 
 import ast
 from pathlib import Path
@@ -10,6 +7,7 @@ from typing import Any
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -30,12 +28,7 @@ class LiveKitImporter:
         )
 
     def can_import(self, path_or_config: str | Path | dict) -> bool:
-        """Detect LiveKit agent Python files.
-
-        Looks for:
-        - from livekit.agents import Agent
-        - class definitions that inherit from Agent
-        """
+        """Detect LiveKit agent Python files."""
         if isinstance(path_or_config, dict):
             return self._can_import_dict(path_or_config)
 
@@ -103,6 +96,7 @@ class LiveKitImporter:
             nodes["main"] = AgentNode(
                 id="main",
                 state_prompt="LiveKit agent (no agent classes found)",
+                node_type=NodeType.CONVERSATION,
                 tools=[],
                 transitions=[],
                 metadata={"livekit_raw": True},
@@ -115,7 +109,7 @@ class LiveKitImporter:
             source_type="livekit",
             source_metadata={
                 "original_code_hash": hash(content),
-                "general_prompt": "",  # LiveKit agents don't have separate general prompt
+                "general_prompt": "",
             },
         )
 
@@ -152,6 +146,7 @@ class LiveKitImporter:
         return AgentNode(
             id=node_id,
             state_prompt=instructions,
+            node_type=NodeType.CONVERSATION,
             tools=tools,
             transitions=transitions,
             metadata={"livekit_class": class_def.name},
@@ -199,11 +194,7 @@ class LiveKitImporter:
     def _parse_function_tool(
         self, func_def: ast.FunctionDef | ast.AsyncFunctionDef
     ) -> tuple[ToolDefinition | None, Transition | None]:
-        """Parse a @function_tool decorated method.
-
-        Returns:
-            Tuple of (tool_definition, transition_if_any).
-        """
+        """Parse a @function_tool decorated method."""
         docstring = ast.get_docstring(func_def) or ""
 
         returns_agent = self._returns_agent_instance(func_def)

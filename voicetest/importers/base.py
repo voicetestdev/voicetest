@@ -10,11 +10,7 @@ from voicetest.models.agent import AgentGraph
 
 @runtime_checkable
 class SourceImporter(Protocol):
-    """Protocol for agent config importers.
-
-    Importers convert platform-specific agent configurations to the
-    unified AgentGraph representation.
-    """
+    """Protocol for agent config importers."""
 
     @property
     def source_type(self) -> str:

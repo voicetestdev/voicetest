@@ -148,7 +148,6 @@ class TestPlatformImportAgent:
             json={},
         )
 
-        # Should return an error (4xx or 5xx)
         assert response.status_code >= 400
 
 

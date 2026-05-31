@@ -12,6 +12,7 @@ from pydantic import field_validator
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -154,11 +155,9 @@ class VapiImporter:
         try:
             config = self._load_config(path_or_config)
 
-            # Check for squad format (has members array)
             if "members" in config and isinstance(config.get("members"), list):
                 return self._is_vapi_squad(config)
 
-            # Check for single assistant format
             return self._is_vapi_assistant(config)
         except Exception:
             return False
@@ -169,7 +168,6 @@ class VapiImporter:
         if not members:
             return False
 
-        # Check first member has assistant or assistantId
         first_member = members[0]
         return "assistant" in first_member or "assistantId" in first_member
 
@@ -180,7 +178,6 @@ class VapiImporter:
         has_first_message = "firstMessage" in config
         has_vapi_tools = "tools" in config and isinstance(config.get("tools"), list)
 
-        # Check tool structure is VAPI style (has function.name or type=handoff)
         if has_vapi_tools and config.get("tools"):
             first_tool = config["tools"][0]
             has_vapi_tool_structure = isinstance(first_tool, dict) and (
@@ -190,7 +187,6 @@ class VapiImporter:
         else:
             has_vapi_tool_structure = True
 
-        # Distinguish from Retell formats
         is_not_retell_llm = "general_prompt" not in config and "llm_id" not in config
         is_not_retell_cf = "start_node_id" not in config and "nodes" not in config
 
@@ -205,41 +201,35 @@ class VapiImporter:
         """Convert VAPI assistant or squad JSON to AgentGraph."""
         raw_config = self._load_config(path_or_config)
 
-        # Check if this is a squad
         if "members" in raw_config and isinstance(raw_config.get("members"), list):
             return self._import_squad(raw_config)
 
-        # Single assistant
         return self._import_assistant(raw_config)
 
     def _import_assistant(self, raw_config: dict) -> AgentGraph:
         """Import a single VAPI assistant."""
         assistant = VapiAssistant.model_validate(raw_config)
 
-        # Extract system prompt from model.messages
         system_prompt = self._extract_system_prompt(assistant)
 
-        # Get all tools (from both assistant.tools and model.tools)
         all_tools = list(assistant.tools)
         if assistant.model and assistant.model.tools:
             all_tools.extend(assistant.model.tools)
 
-        # Convert tools, extracting handoffs as transitions
         tools, transitions = self._process_tools(all_tools)
 
-        # Create single node
         nodes = {
             "main": AgentNode(
                 id="main",
                 state_prompt=system_prompt,
+                node_type=NodeType.CONVERSATION,
                 tools=tools,
                 transitions=transitions,
             )
         }
 
-        # Build source metadata
         source_metadata = self._build_assistant_metadata(assistant)
-        source_metadata["general_prompt"] = ""  # VAPI has no separate general prompt
+        source_metadata["general_prompt"] = ""
 
         return AgentGraph(
             nodes=nodes,
@@ -254,13 +244,12 @@ class VapiImporter:
 
         nodes: dict[str, AgentNode] = {}
         entry_node_id: str | None = None
-        assistant_names: dict[str, str] = {}  # Map assistant IDs to names
+        assistant_names: dict[str, str] = {}
 
-        # First pass: create nodes and build name mapping
         for i, member in enumerate(squad.members):
             assistant = member.assistant
             if not assistant:
-                # Skip members that reference external assistants by ID only
+                # External assistants are referenced by ID only; record so transitions resolve
                 if member.assistant_id:
                     assistant_names[member.assistant_id] = member.assistant_id
                 continue
@@ -270,18 +259,14 @@ class VapiImporter:
                 assistant_names[assistant.id] = node_id
             assistant_names[assistant.name] = node_id
 
-            # Extract system prompt
             system_prompt = self._extract_system_prompt(assistant)
 
-            # Get all tools
             all_tools = list(assistant.tools)
             if assistant.model and assistant.model.tools:
                 all_tools.extend(assistant.model.tools)
 
-            # Convert tools, extracting handoffs as transitions
             tools, transitions = self._process_tools(all_tools)
 
-            # Add transitions from member-level assistantDestinations
             for dest in member.assistant_destinations:
                 target = dest.assistant_name or dest.assistant_id or ""
                 if target:
@@ -299,6 +284,7 @@ class VapiImporter:
             nodes[node_id] = AgentNode(
                 id=node_id,
                 state_prompt=system_prompt,
+                node_type=NodeType.CONVERSATION,
                 tools=tools,
                 transitions=transitions,
                 metadata={"first_message": assistant.first_message}
@@ -306,20 +292,17 @@ class VapiImporter:
                 else {},
             )
 
-            # First member is entry node
             if entry_node_id is None:
                 entry_node_id = node_id
 
-        # Second pass: resolve transition targets to actual node IDs
         for node in nodes.values():
             for transition in node.transitions:
                 if transition.target_node_id in assistant_names:
                     transition.target_node_id = assistant_names[transition.target_node_id]
 
-        # Build source metadata
         source_metadata: dict[str, Any] = {
             "is_squad": True,
-            "general_prompt": "",  # VAPI has no separate general prompt
+            "general_prompt": "",
         }
         if squad.id:
             source_metadata["squad_id"] = squad.id
@@ -350,7 +333,6 @@ class VapiImporter:
 
         for tool in tools:
             if tool.type == "handoff":
-                # Handoff tool becomes transitions
                 for dest in tool.destinations:
                     target = dest.assistant_name or dest.assistant_id or ""
                     if target:
@@ -365,7 +347,6 @@ class VapiImporter:
                             )
                         )
             elif tool.function:
-                # Regular function tool
                 regular_tools.append(
                     ToolDefinition(
                         name=tool.function.name,

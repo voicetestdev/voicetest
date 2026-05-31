@@ -1,9 +1,5 @@
 """Centralized path validation for user-supplied filesystem paths.
 
-All user-provided paths (API requests, CLI args, linked files, URL segments)
-flow through resolve_path(), resolve_file(), or resolve_within() to normalize,
-resolve, and validate against an allowed base directory.
-
 The allowed base defaults to "/" (unrestricted) and can be narrowed via the
 VOICETEST_ALLOWED_BASE environment variable.
 """
@@ -20,13 +16,7 @@ def _allowed_base() -> Path:
 
 
 def resolve_path(raw: str, base: Path | None = None) -> Path:
-    """Normalize, resolve, and validate an absolute path against a base directory.
-
-    Collapses '..' segments via normpath, resolves symlinks to a canonical
-    absolute path, and rejects paths outside the given base directory.
-
-    For user-supplied absolute filesystem paths (API requests, CLI args).
-    """
+    """Normalize, resolve, and validate an absolute path against a base directory."""
     if not raw or not raw.strip():
         raise HTTPException(status_code=400, detail="Path must not be empty")
 
@@ -44,12 +34,7 @@ def resolve_path(raw: str, base: Path | None = None) -> Path:
 
 
 def resolve_within(raw: str, base: Path) -> Path:
-    """Resolve a relative path segment within a base directory.
-
-    Joins raw with base, resolves to a canonical path, and rejects
-    results that escape the base (e.g. via '..' traversal). For URL
-    path segments served relative to a known root directory.
-    """
+    """Resolve a relative path segment within a base directory."""
     resolved = (base / raw).resolve()
 
     if not resolved.is_relative_to(base.resolve()):
@@ -62,11 +47,7 @@ def resolve_within(raw: str, base: Path) -> Path:
 
 
 def resolve_file(raw: str) -> Path:
-    """Resolve a user-supplied path and validate it points to an existing regular file.
-
-    Delegates to resolve_path() for normalization and base-directory checks,
-    then verifies the target exists and is a regular file.
-    """
+    """Resolve a user-supplied path and validate it points to an existing regular file."""
     resolved = resolve_path(raw)
 
     if not resolved.exists():

@@ -30,17 +30,7 @@ class EvaluationService:
         judge_model: str | None = None,
         _mock_mode: bool = False,
     ) -> list[MetricResult]:
-        """Evaluate an existing transcript against metrics (no simulation).
-
-        Args:
-            transcript: Conversation transcript to evaluate.
-            metrics: List of metric criteria strings.
-            judge_model: LLM model for evaluation. Reads from settings if None.
-            _mock_mode: If True, use mock responses (for testing).
-
-        Returns:
-            List of MetricResult objects.
-        """
+        """Evaluate an existing transcript against metrics (no simulation)."""
         if judge_model is None:
             judge_model = resolve_model(self._settings.get_settings().models.judge)
         judge = MetricJudge(judge_model)
@@ -64,17 +54,7 @@ class EvaluationService:
         """Run audio evaluation on an existing transcript.
 
         Performs TTS->STT round-trip on assistant messages and re-evaluates
-        metrics using the "heard" text.
-
-        Args:
-            transcript: Conversation transcript to evaluate.
-            test_case: Test case with metrics/rules to evaluate against.
-            metrics_config: Optional agent metrics config for global metrics.
-            judge_model: LLM model for evaluation. Reads from settings if None.
-
-        Returns:
-            Tuple of (transformed transcript, audio metric results).
-        """
+        metrics using the "heard" text."""
         settings = self._settings.get_settings()
 
         audio_rt = AudioRoundTrip.from_settings(settings)

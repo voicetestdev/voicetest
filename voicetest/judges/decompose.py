@@ -21,8 +21,7 @@ class AnalyzeGraphSignature(dspy.Signature):
 
     Examine the graph structure, prompts, and transitions to identify logical
     groupings of nodes that form coherent sub-agents. Determine handoff
-    conditions between them.
-    """
+    conditions between them."""
 
     graph_structure: str = dspy.InputField(
         desc="Full agent graph with prompt texts, node definitions, and transitions"
@@ -58,8 +57,7 @@ class RefineGeneralPromptSignature(dspy.Signature):
     """Refine the general prompt for a sub-agent so it works independently.
 
     Distribute relevant context from the original general prompt into a
-    focused general prompt for this sub-agent.
-    """
+    focused general prompt for this sub-agent."""
 
     original_graph_structure: str = dspy.InputField(desc="Full original agent graph for context")
     sub_agent_spec: str = dspy.InputField(
@@ -78,8 +76,7 @@ class RefineNodePromptSignature(dspy.Signature):
     """Refine the state prompt for a single node in a sub-agent.
 
     Given the original graph context and the node's purpose, produce a
-    state prompt that lets this node operate as part of a sub-agent.
-    """
+    state prompt that lets this node operate as part of a sub-agent."""
 
     original_graph_structure: str = dspy.InputField(desc="Full original agent graph for context")
     sub_agent_description: str = dspy.InputField(
@@ -97,16 +94,11 @@ class RefineNodePromptSignature(dspy.Signature):
 
 
 class DecomposeJudge:
-    """Analyze agent graphs and propose decompositions into sub-agents.
-
-    Uses LLM to identify logical groupings and refine prompts for
-    independent operation.
-    """
+    """Analyze agent graphs and propose decompositions into sub-agents."""
 
     def __init__(self, model: str):
         self.model = model
 
-        # Mock mode for testing without LLM calls
         self._mock_mode = False
         self._mock_plan: DecompositionPlan | None = None
         self._mock_refined_prompt: str | None = None
@@ -152,11 +144,7 @@ class DecomposeJudge:
         """Refine prompts for a sub-agent to work independently.
 
         Makes separate LLM calls for the general prompt and each node prompt
-        to avoid output schema confusion.
-
-        Returns:
-            Tuple of (refined_general_prompt, {node_id: refined_state_prompt}).
-        """
+        to avoid output schema confusion."""
         if self._mock_mode:
             return (
                 self._mock_refined_prompt or "",
@@ -166,12 +154,11 @@ class DecomposeJudge:
         formatted_graph = graph.format_graph()
         original_general = graph.source_metadata.get("general_prompt", "")
 
-        # Sanitize node IDs: strip "NEW:" prefix so the LLM sees clean IDs
+        # Strip "NEW:" prefix from node IDs so the LLM sees clean IDs
         spec_dump = sub_agent_spec.model_dump()
         clean_node_ids = [nid.removeprefix("NEW:") for nid in spec_dump.get("node_ids", [])]
         spec_dump["node_ids"] = clean_node_ids
 
-        # Refine general prompt
         general_result = await call_llm(
             self.model,
             RefineGeneralPromptSignature,
@@ -183,10 +170,8 @@ class DecomposeJudge:
             original_general_prompt=original_general,
         )
 
-        # Refine each node's state prompt individually
         node_prompts: dict[str, str] = {}
         for i, node_id in enumerate(clean_node_ids):
-            # Derive purpose from prompt_segments if available
             purpose = sub_agent_spec.description
             if sub_agent_spec.prompt_segments and i < len(sub_agent_spec.prompt_segments):
                 seg = sub_agent_spec.prompt_segments[i]

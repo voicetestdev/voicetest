@@ -7,6 +7,7 @@ import pytest
 from voicetest.importers.custom import CustomImporter
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 
 
 class TestCustomImporter:
@@ -38,8 +39,12 @@ class TestCustomImporter:
         def create_agent() -> AgentGraph:
             return AgentGraph(
                 nodes={
-                    "start": AgentNode(id="start", state_prompt="Hello"),
-                    "end": AgentNode(id="end", state_prompt="Goodbye"),
+                    "start": AgentNode(
+                        id="start", state_prompt="Hello", node_type=NodeType.CONVERSATION
+                    ),
+                    "end": AgentNode(
+                        id="end", state_prompt="Goodbye", node_type=NodeType.CONVERSATION
+                    ),
                 },
                 entry_node_id="start",
                 source_type="custom",
@@ -56,7 +61,9 @@ class TestCustomImporter:
 
         graph = importer.import_agent(
             lambda: AgentGraph(
-                nodes={"n": AgentNode(id="n", state_prompt="test")},
+                nodes={
+                    "n": AgentNode(id="n", state_prompt="test", node_type=NodeType.CONVERSATION)
+                },
                 entry_node_id="n",
                 source_type="custom",
             )

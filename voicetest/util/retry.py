@@ -27,8 +27,7 @@ class EmptyLLMOutputError(Exception):
     """Raised when an LLM returns None/empty for a required output field.
 
     Surfaced as a clear diagnostic instead of letting the None propagate
-    into downstream pydantic validation with an opaque stacktrace.
-    """
+    into downstream pydantic validation with an opaque stacktrace."""
 
     def __init__(self, field_name: str, model: str):
         self.field_name = field_name
@@ -38,7 +37,6 @@ class EmptyLLMOutputError(Exception):
         )
 
 
-# Callback type for error notifications
 OnErrorCallback = Callable[[RetryError], Awaitable[None] | None]
 
 # Exceptions that should trigger a retry. Callers must be idempotent — see
@@ -59,8 +57,7 @@ def _effective_max_attempts(
 ) -> int:
     """Return the smaller of the caller's max_attempts and any per-exception cap.
 
-    Walks the exception type's MRO so subclasses inherit caps from their parents.
-    """
+    Walks the exception type's MRO so subclasses inherit caps from their parents."""
     if not max_attempts_by_exception:
         return max_attempts
     for cls in type(exc).__mro__:
@@ -88,8 +85,7 @@ def _retry_decision(
     """Decide whether to retry after catching `exc` on the given attempt.
 
     Returns (retry_after, error_info) if the caller should sleep and retry,
-    or None if the caller should give up and re-raise.
-    """
+    or None if the caller should give up and re-raise."""
     effective_max = _effective_max_attempts(exc, max_attempts, max_attempts_by_exception)
     if attempt >= effective_max:
         return None
@@ -116,23 +112,9 @@ async def with_retry(
 
     Default delays: 1s, 2s, 4s, 8s, 16s, 32s, 60s = 123s total before giving up.
 
-    Args:
-        func: Async function to execute.
-        max_attempts: Maximum number of attempts.
-        base_delay: Initial delay in seconds.
-        max_delay: Maximum delay in seconds.
-        on_error: Optional callback for error notifications.
-        max_attempts_by_exception: Optional per-exception cap on attempts. Use
-            this to bound expensive failure modes (e.g. timeouts that cost the
-            full timeout per attempt) without changing the default budget for
-            cheap failures (e.g. rate limits). Subclasses inherit caps via MRO.
-
-    Returns:
-        Result of the function.
-
-    Raises:
-        The last error if all retries are exhausted.
-    """
+    max_attempts_by_exception lets callers bound expensive failure modes
+    (e.g. timeouts that cost the full timeout per attempt) without changing
+    the default budget for cheap failures. Subclasses inherit caps via MRO."""
     for attempt in range(1, max_attempts + 1):
         try:
             return await func()
@@ -158,25 +140,7 @@ def with_retry_sync(
     on_error: Callable[[RetryError], None] | None = None,
     max_attempts_by_exception: dict[type, int] | None = None,
 ):
-    """Execute a sync function with exponential backoff retry on rate limit errors.
-
-    Default delays: 1s, 2s, 4s, 8s, 16s, 32s, 60s = 123s total before giving up.
-
-    Args:
-        func: Sync function to execute.
-        max_attempts: Maximum number of attempts.
-        base_delay: Initial delay in seconds.
-        max_delay: Maximum delay in seconds.
-        on_error: Optional callback for error notifications (sync only).
-        max_attempts_by_exception: Optional per-exception cap on attempts. See
-            with_retry for details.
-
-    Returns:
-        Result of the function.
-
-    Raises:
-        The last error if all retries are exhausted.
-    """
+    """Execute a sync function with exponential backoff retry on rate limit errors."""
     for attempt in range(1, max_attempts + 1):
         try:
             return func()

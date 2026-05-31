@@ -12,12 +12,7 @@ class SettingsService:
     Single source of truth for settings access. Callers go through this
     service rather than calling load_settings() directly so apply_env() is
     guaranteed to run — endpoints making LLM calls need API keys from the
-    settings env block in os.environ.
-
-    Registered as a Punq singleton; the parsed settings are cached with a
-    file-mtime guard so the TOML isn't re-read on every call. `apply_env`
-    still runs every call, since env may change underneath us.
-    """
+    settings env block in os.environ."""
 
     def __init__(self) -> None:
         self._cached: Settings | None = None
@@ -40,7 +35,7 @@ class SettingsService:
     def update_settings(self, settings: Settings) -> Settings:
         """Update settings in .voicetest.toml."""
         save_settings(settings)
-        # Refresh the cache to the just-written values (avoids a re-read).
+        # Cache the just-written values so the next get_settings doesn't re-read
         self._cached = settings
         try:
             self._cached_mtime = get_settings_path().stat().st_mtime

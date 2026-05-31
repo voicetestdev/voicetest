@@ -72,7 +72,6 @@ class TestPluginCommands:
             content = md_file.read_text()
             assert content.startswith("---"), f"{md_file.name} missing YAML frontmatter"
 
-            # Extract frontmatter
             parts = content.split("---", 2)
             assert len(parts) >= 3, f"{md_file.name} has malformed frontmatter"
 
@@ -140,11 +139,9 @@ class TestInitClaudeCommand:
         assert (tmp_path / ".claude" / "commands").is_dir()
         assert (tmp_path / ".claude" / "skills").is_dir()
 
-        # Verify command files were copied
         assert (tmp_path / ".claude" / "commands" / "voicetest-run.md").exists()
         assert (tmp_path / ".claude" / "commands" / "voicetest-export.md").exists()
 
-        # Verify skill files were copied
         assert (tmp_path / ".claude" / "skills" / "voicetest" / "SKILL.md").exists()
 
 

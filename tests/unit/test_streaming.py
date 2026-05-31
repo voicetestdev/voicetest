@@ -5,6 +5,7 @@ import pytest
 from voicetest.engine.session import ConversationRunner
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.simulator.user_sim import SimulatorResponse
@@ -21,6 +22,7 @@ def simple_graph():
                 state_prompt="You are a helpful assistant. Respond briefly.",
                 tools=[],
                 transitions=[],
+                node_type=NodeType.CONVERSATION,
             )
         },
         entry_node_id="main",

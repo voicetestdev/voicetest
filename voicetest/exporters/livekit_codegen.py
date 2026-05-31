@@ -23,16 +23,9 @@ class LiveKitExporter:
 
 
 def export_livekit_code(graph: AgentGraph) -> str:
-    """Generate Python code for LiveKit agents from AgentGraph.
-
-    Args:
-        graph: The agent graph to export.
-
-    Returns:
-        Python source code string.
-    """
-    # Build map of logic node IDs to their transitions so predecessors
-    # can generate deterministic routing code instead of function tools.
+    """Generate Python code for LiveKit agents from AgentGraph."""
+    # Predecessors of logic nodes generate deterministic routing code instead
+    # of function tools.
     logic_nodes = {nid: node for nid, node in graph.nodes.items() if node.is_logic_node()}
 
     lines = [
@@ -42,14 +35,12 @@ def export_livekit_code(graph: AgentGraph) -> str:
         "",
     ]
 
-    # Generate agent classes, skipping logic split nodes
     for _node_id, node in graph.nodes.items():
         if node.is_logic_node():
             continue
         lines.extend(_generate_agent_class(node, graph, logic_nodes))
         lines.append("")
 
-    # Generate entry point
     lines.extend(
         [
             "",
@@ -70,7 +61,7 @@ def _generate_agent_class(
     """Generate code for a single agent class."""
     logic_nodes = logic_nodes or {}
 
-    # Only add general_prompt to entry node
+    # general_prompt is added only to the entry node so it isn't duplicated
     is_entry = node.id == graph.entry_node_id
     general_prompt = graph.source_metadata.get("general_prompt", "") if is_entry else ""
 
@@ -79,7 +70,6 @@ def _generate_agent_class(
     else:
         full_instructions = node.state_prompt or general_prompt
 
-    # Escape for triple-quoted string
     instructions = full_instructions.replace('"""', '\\"\\"\\"')
 
     lines = [
@@ -92,11 +82,9 @@ def _generate_agent_class(
         "        )",
     ]
 
-    # Generate transition tools
     for transition in node.transitions:
         target_id = transition.target_node_id
         if target_id in logic_nodes:
-            # Logic node: generate deterministic routing method
             lines.extend(_generate_logic_routing(target_id, logic_nodes[target_id]))
         else:
             condition = transition.condition.value.replace('"""', '\\"\\"\\"')
@@ -135,7 +123,6 @@ def _generate_logic_routing(
             lines.append(f"            return Agent_{target_id}(), ''")
         elif transition.condition.type == "equation":
             keyword = "if" if first else "elif"
-            # Build condition expression from equations
             condition_expr = _equation_to_python(transition)
             lines.append(f"        {keyword} {condition_expr}:")
             lines.append(f"            return Agent_{target_id}(), ''")
@@ -151,5 +138,4 @@ def _equation_to_python(transition) -> str:
         for eq in transition.condition.equations:
             parts.append(f"variables.get('{eq.left}') {eq.operator} '{eq.right}'")
         return " and ".join(parts)
-    # Fallback to the value string
     return f"# {transition.condition.value}"

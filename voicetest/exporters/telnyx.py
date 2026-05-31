@@ -26,20 +26,11 @@ class TelnyxExporter:
 
 
 def export_telnyx_config(graph: AgentGraph) -> dict[str, Any]:
-    """Export AgentGraph to Telnyx AI assistant configuration format.
-
-    Args:
-        graph: The agent graph to export.
-
-    Returns:
-        Dictionary in Telnyx AI assistant config format.
-    """
+    """Export AgentGraph to Telnyx AI assistant configuration format."""
     result: dict[str, Any] = {}
 
-    # Build instructions from graph
     result["instructions"] = _graph_to_instructions(graph)
 
-    # Collect tools from all nodes + convert transitions to handoff tools
     all_tools = _collect_all_tools(graph)
     handoff_tool = _transitions_to_handoff(graph)
 
@@ -52,16 +43,13 @@ def export_telnyx_config(graph: AgentGraph) -> dict[str, Any]:
     if telnyx_tools:
         result["tools"] = telnyx_tools
 
-    # Restore metadata from source
     if graph.source_metadata:
         _restore_metadata(result, graph.source_metadata)
 
-    # Check entry node metadata for greeting
     entry_node = graph.nodes.get(graph.entry_node_id)
     if entry_node and entry_node.metadata and "greeting" in entry_node.metadata:
         result["greeting"] = entry_node.metadata["greeting"]
 
-    # Set model from default_model if available and not already set
     if graph.default_model and "model" not in result:
         result["model"] = graph.default_model
 
@@ -69,11 +57,7 @@ def export_telnyx_config(graph: AgentGraph) -> dict[str, Any]:
 
 
 def _graph_to_instructions(graph: AgentGraph) -> str:
-    """Convert graph to instructions text.
-
-    Single-node graphs return the state prompt directly.
-    Multi-node graphs generate structured flow instructions.
-    """
+    """Convert graph to instructions text."""
     if len(graph.nodes) == 0:
         return ""
 
@@ -81,7 +65,6 @@ def _graph_to_instructions(graph: AgentGraph) -> str:
         node = list(graph.nodes.values())[0]
         return node.state_prompt
 
-    # Multi-node: serialize as structured flow
     parts = []
     parts.append(f"Start at: **{graph.entry_node_id}**\n")
 
@@ -157,7 +140,6 @@ def _convert_tool(tool: ToolDefinition) -> dict[str, Any]:
             },
         }
 
-    # Default: webhook tool
     webhook: dict[str, Any] = {
         "name": tool.name,
         "description": tool.description,

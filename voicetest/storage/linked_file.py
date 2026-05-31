@@ -1,8 +1,4 @@
-"""Shared file operations for linked resources (agents, tests).
-
-Provides ETag computation, file reading/writing for JSON-based
-resources that live on the filesystem and are referenced by path.
-"""
+"""Shared file operations for linked resources (agents, tests)."""
 
 import json
 from pathlib import Path
@@ -14,10 +10,7 @@ def compute_etag(resource_id: str, version: float | str) -> str:
 
 
 def check_file(path: str, resource_id: str) -> tuple[float, str]:
-    """Check that a file exists and return its (mtime, etag).
-
-    Raises FileNotFoundError if the file does not exist.
-    """
+    """Check that a file exists and return its (mtime, etag)."""
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"File not found: {path}")
@@ -28,11 +21,7 @@ def check_file(path: str, resource_id: str) -> tuple[float, str]:
 
 
 def read_json(path: str) -> list | dict:
-    """Read and parse a JSON file.
-
-    Raises FileNotFoundError if the file does not exist.
-    Raises json.JSONDecodeError if the file is not valid JSON.
-    """
+    """Read and parse a JSON file."""
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"File not found: {path}")

@@ -5,6 +5,7 @@
     "greeting": {
       "id": "greeting",
       "state_prompt": "Greet the caller and ask for their account number.",
+      "node_type": "conversation",
       "transitions": [
         {
           "target_node_id": "router",
@@ -23,6 +24,7 @@
     "router": {
       "id": "router",
       "state_prompt": "",
+      "node_type": "logic",
       "transitions": [
         {
           "target_node_id": "premium",
@@ -55,6 +57,7 @@
     "premium": {
       "id": "premium",
       "state_prompt": "Handle the premium customer with priority support.",
+      "node_type": "conversation",
       "transitions": [
         {
           "target_node_id": "farewell",
@@ -73,6 +76,7 @@
     "standard": {
       "id": "standard",
       "state_prompt": "Help the standard customer with their request.",
+      "node_type": "conversation",
       "transitions": [
         {
           "target_node_id": "farewell",
@@ -91,6 +95,7 @@
     "farewell": {
       "id": "farewell",
       "state_prompt": "Thank the caller and end the conversation.",
+      "node_type": "conversation",
       "transitions": [],
       "tools": [
         {

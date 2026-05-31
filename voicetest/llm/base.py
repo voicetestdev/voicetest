@@ -1,8 +1,4 @@
-"""Centralized LLM call handling.
-
-All LLM calls should go through this module to ensure consistent
-retry behavior, error handling, and future enhancements.
-"""
+"""Centralized LLM call handling."""
 
 import asyncio
 from collections.abc import Awaitable
@@ -29,22 +25,15 @@ _MAX_ATTEMPTS_BY_EXCEPTION: dict[type, int] = {
 }
 
 
-# Callback type for token updates: receives token string
 OnTokenCallback = Callable[[str], Awaitable[None] | None]
 
 
 def _create_lm(model: str, cache_salt: str | None = None, no_cache: bool = False) -> dspy.LM:
     """Create an LM instance for the given model string.
 
-    Handles custom providers like claudecode/ prefix.
-
-    Args:
-        model: LiteLLM model string.
-        cache_salt: Optional fingerprint injected into litellm metadata so it
-            participates in the DSPy cache key without appearing in the prompt.
-            Used by split-mode response calls to bust the cache when outbound
-            edges change.
-    """
+    cache_salt is injected into litellm metadata so it participates in the DSPy
+    cache key without appearing in the prompt, used by split-mode response
+    calls to bust the cache when outbound edges change."""
     if model.startswith("claudecode/"):
         extra_cc: dict = {}
         if cache_salt:
@@ -84,8 +73,7 @@ async def call_llm(
     The returned Prediction has a `_voicetest_lm` attribute holding the LM
     instance used for the call, so callers can pass it to
     `voicetest.util.cache.try_evict_last_call` if downstream validation detects a
-    poisoned cache entry.
-    """
+    poisoned cache entry."""
     if on_token:
         if not stream_field:
             raise ValueError("stream_field required when on_token is provided")

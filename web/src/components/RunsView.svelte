@@ -4,6 +4,7 @@
     currentRunWithResults,
     currentRunId,
     currentAgentId,
+    agentGraph,
     runHistory,
     cancelTest,
     cancelRun,
@@ -25,7 +26,7 @@
     PromptChange,
     AutoFixStopCondition,
   } from "../lib/types";
-  import { nextExpectedRole } from "../lib/types";
+  import { nextExpectedRole, displayRole } from "../lib/types";
   import { setFaviconState, resetFavicon } from "../lib/favicon";
   import { onDestroy } from "svelte";
 
@@ -813,7 +814,7 @@
                     </div>
                   {:else}
                     <div class="message" class:user={msg.role === "user"} class:agent={msg.role === "assistant"}>
-                      <span class="role">{msg.role === "assistant" ? "agent" : msg.role}</span>
+                      <span class="role">{displayRole(msg.role)}</span>
                       {#if msg.metadata?.heard && msg.role === "assistant"}
                         <div class="audio-diff">
                           {@html diffWords(msg.content, msg.metadata.heard as string)}
@@ -839,9 +840,12 @@
                       </span>
                     </div>
                   {:else}
-                    {@const nextRole = nextExpectedRole(transcript)}
-                    <div class="message {nextRole} typing">
-                      <span class="role">{nextRole}</span>
+                    {@const nextRole = nextExpectedRole(
+                      transcript,
+                      $agentGraph?.source_metadata?.start_speaker as string | undefined,
+                    )}
+                    <div class="message {displayRole(nextRole)} typing">
+                      <span class="role">{displayRole(nextRole)}</span>
                       <span class="content typing-dots">
                         <span>.</span><span>.</span><span>.</span>
                       </span>

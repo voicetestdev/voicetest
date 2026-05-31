@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from voicetest.importers.retell import RetellImporter
+from voicetest.models.agent import NodeType
 
 
 class TestRetellImporter:
@@ -727,6 +728,121 @@ class TestRetellImporterExtractDynamicVariables:
         assert "extract_dob" in graph.nodes
         assert "dob_match" in graph.nodes
         assert "dob_retry" in graph.nodes
+
+
+class TestRetellImporterFunctionNode:
+    """Tests for Retell CF importer handling function (tool-call) nodes.
+
+    Voicetest does not execute the underlying tool — see
+    voicetestdev/voicetest#51 — but the importer must still map the
+    Retell `function` type, preserve the tool definitions, and keep the
+    else_edge so the engine can route through.
+    """
+
+    def test_import_config_with_function_node(self, sample_retell_config_function_node):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_function_node)
+
+        assert graph.source_type == "retell"
+        assert graph.entry_node_id == "greeting"
+        assert "submit_order" in graph.nodes
+
+    def test_function_node_imports_with_function_type(self, sample_retell_config_function_node):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_function_node)
+
+        submit_order = graph.nodes["submit_order"]
+        assert submit_order.node_type == NodeType.FUNCTION
+        assert submit_order.is_function_node()
+
+    def test_function_node_preserves_retell_type_metadata(self, sample_retell_config_function_node):
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_function_node)
+
+        submit_order = graph.nodes["submit_order"]
+        assert submit_order.metadata["retell_type"] == "function"
+        assert submit_order.metadata["name"] == "Submit Order to Kitchen"
+
+    def test_function_node_else_edge_imported_as_always_transition(
+        self, sample_retell_config_function_node
+    ):
+        """else_edge becomes an `always`-type transition the engine can follow."""
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_function_node)
+
+        transitions = graph.nodes["submit_order"].transitions
+        always_transitions = [t for t in transitions if t.condition.type == "always"]
+        assert len(always_transitions) == 1
+        assert always_transitions[0].target_node_id == "confirm_order"
+
+    def test_tool_definition_imported_onto_every_node(self, sample_retell_config_function_node):
+        """Retell's top-level tools array attaches to every node (current behavior)."""
+        importer = RetellImporter()
+        graph = importer.import_agent(sample_retell_config_function_node)
+
+        tools = graph.nodes["submit_order"].tools
+        assert len(tools) == 1
+        assert tools[0].name == "submit-order-to-kitchen"
+        assert tools[0].tool_id == "tool_order_001"
+        assert tools[0].url == "https://example.invalid/orders"
+
+
+class TestRetellImporterNodeTypeAliases:
+    """Newer Retell CF exports emit `branch` and `function` node types that
+    older versions of voicetest's importer silently treated as conversation
+    nodes — wrong behavior, no error. These tests pin the correct mapping.
+    """
+
+    def _cf_with_node(self, node: dict) -> dict:
+        return {
+            "conversation_flow_id": "cf-1",
+            "start_node_id": "n",
+            "nodes": [node],
+            "tools": [],
+        }
+
+    def test_branch_node_imports_as_logic(self):
+        """Retell's `branch` type is the equation-router shape — map to LOGIC."""
+        importer = RetellImporter()
+        cf = self._cf_with_node(
+            {
+                "id": "n",
+                "type": "branch",
+                "edges": [],
+                "else_edge": {
+                    "id": "e1",
+                    "destination_node_id": "n",
+                    "transition_condition": {"type": "prompt", "prompt": "Else"},
+                },
+            }
+        )
+
+        graph = importer.import_agent(cf)
+
+        assert graph.nodes["n"].is_logic_node()
+
+    def test_function_node_imports_as_function(self):
+        """Retell's `function` (tool-call) type gets its own NodeType."""
+        importer = RetellImporter()
+        cf = self._cf_with_node(
+            {
+                "id": "n",
+                "type": "function",
+                "tool_id": "tool-1",
+                "tool_type": "local",
+                "edges": [],
+                "else_edge": {
+                    "id": "e1",
+                    "destination_node_id": "n",
+                    "transition_condition": {"type": "prompt", "prompt": "Else"},
+                },
+            }
+        )
+
+        graph = importer.import_agent(cf)
+
+        assert graph.nodes["n"].node_type == NodeType.FUNCTION
+        assert graph.nodes["n"].is_function_node()
 
 
 class TestRetellImporterOperatorField:

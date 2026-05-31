@@ -28,9 +28,12 @@ _MUSTACHE_RE = re.compile(r"^\{\{(.+?)\}\}$")
 _RETELL_TYPE_MAP: dict[str, NodeType] = {
     "conversation": NodeType.CONVERSATION,
     "logic_split": NodeType.LOGIC,
+    # Newer Retell CF exports emit `branch` for the equation-router shape.
+    "branch": NodeType.LOGIC,
     "extract_dynamic_variables": NodeType.EXTRACT,
     "end": NodeType.END,
     "transfer_call": NodeType.TRANSFER,
+    "function": NodeType.FUNCTION,
 }
 
 
@@ -175,13 +178,9 @@ def _unwrap_agent_envelope(
     """Extract the CF dict and agent envelope from a Retell UI agent wrapper.
 
     The Retell UI exports an agent envelope with the conversation flow
-    nested under ``conversationFlow``. This extracts the inner CF dict
-    and returns the remaining agent-level fields (voice_id, language, etc.)
-    as a separate envelope dict for round-trip preservation.
-
-    Returns:
-        Tuple of (cf_dict, agent_envelope_or_None).
-    """
+    nested under ``conversationFlow``. The agent-level fields (voice_id,
+    language, etc.) are returned as a separate envelope dict for round-trip
+    preservation."""
     if "conversationFlow" in config:
         cf_keys = {"conversationFlow"}
         envelope = {k: v for k, v in config.items() if k not in cf_keys}
@@ -274,7 +273,7 @@ class RetellImporter:
 
         source_metadata: dict[str, Any] = {
             "conversation_flow_id": retell.conversation_flow_id,
-            "general_prompt": retell.global_prompt or "",  # Stored separately
+            "general_prompt": retell.global_prompt or "",
         }
         if retell.version is not None:
             source_metadata["version"] = retell.version
@@ -295,7 +294,6 @@ class RetellImporter:
         if agent_envelope:
             source_metadata["agent_envelope"] = agent_envelope
 
-        # Extract default model from model_choice if available
         default_model = None
         if retell.model_choice and retell.model_choice.model:
             default_model = retell.model_choice.model
@@ -314,11 +312,7 @@ class RetellImporter:
         """Load config from path or return dict directly.
 
         Handles both bare CF dicts and the Retell UI agent wrapper format
-        where the CF lives under the ``conversationFlow`` key.
-
-        Returns:
-            Tuple of (cf_dict, agent_envelope_or_None).
-        """
+        where the CF lives under the ``conversationFlow`` key."""
         if isinstance(path_or_config, dict):
             return _unwrap_agent_envelope(path_or_config)
         path = Path(path_or_config)
@@ -345,7 +339,6 @@ class RetellImporter:
                     )
                     for eq in edge.transition_condition.equations
                 ]
-                # Build a readable value string from structured equations
                 joiner = " OR " if logical_operator == "or" else " AND "
                 parts = []
                 for eq in equation_clauses:
@@ -379,8 +372,7 @@ class RetellImporter:
         """Convert Retell tool to ToolDefinition.
 
         Transfer tools carry transfer_destination and transfer_option in
-        metadata so the CF exporter can emit proper transfer_call nodes.
-        """
+        metadata so the CF exporter can emit proper transfer_call nodes."""
         metadata: dict[str, Any] = {}
         if tool.transfer_destination:
             metadata["transfer_destination"] = tool.transfer_destination

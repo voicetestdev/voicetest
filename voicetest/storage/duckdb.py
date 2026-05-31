@@ -68,8 +68,7 @@ class DuckDBSessionMaker(sessionmaker):
     """sessionmaker that returns thread-safe sessions for DuckDB.
 
     Identical to the base sessionmaker except every returned Session is
-    instrumented with the lock-wrapping above before being handed out.
-    """
+    instrumented with the lock-wrapping above before being handed out."""
 
     def __call__(self, **kwargs) -> Session:
         return wrap_session(super().__call__(**kwargs))

@@ -54,16 +54,10 @@ class UserSimulator:
     """LLM-based user persona simulator.
 
     Generates realistic user messages based on a persona definition
-    following the Identity/Goal/Personality format.
-    """
+    following the Identity/Goal/Personality format."""
 
     def __init__(self, user_prompt: str, model: str):
-        """Initialize the simulator.
-
-        Args:
-            user_prompt: Persona definition in Identity/Goal/Personality format.
-            model: LLM model to use for generation.
-        """
+        """Initialize the simulator."""
         self.user_prompt = user_prompt
         self.model = model
 
@@ -78,16 +72,7 @@ class UserSimulator:
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
     ) -> SimulatorResponse | None:
-        """Generate next user message based on conversation so far.
-
-        Args:
-            transcript: Conversation history.
-            on_token: Optional callback for streaming tokens.
-            on_error: Optional callback for retryable errors.
-
-        Returns:
-            SimulatorResponse with the generated message, or None if mock responses exhausted.
-        """
+        """Generate next user message based on conversation so far."""
         # Mock mode for testing
         if self._mock_mode:
             if self._mock_index >= len(self._mock_responses):
@@ -104,16 +89,7 @@ class UserSimulator:
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
     ) -> SimulatorResponse | None:
-        """Generate response using LLM.
-
-        Args:
-            transcript: Conversation history.
-            on_token: Optional callback for streaming tokens.
-            on_error: Optional callback for retryable errors.
-
-        Returns:
-            SimulatorResponse with the generated message.
-        """
+        """Generate response using LLM."""
         user_prompt = self.user_prompt
         turn_number = len([m for m in transcript if m.role == "user"]) + 1
 
@@ -179,11 +155,7 @@ class UserSimulator:
         return "\n".join(lines)
 
     def _parse_persona(self) -> dict[str, str]:
-        """Parse Identity/Goal/Personality sections from user prompt.
-
-        Returns:
-            Dictionary with 'identity', 'goal', and 'personality' keys.
-        """
+        """Parse Identity/Goal/Personality sections from user prompt."""
         sections: dict[str, str] = {}
 
         # Pattern to match ## Section headers

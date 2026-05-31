@@ -29,25 +29,15 @@ def export_bland_config(graph: AgentGraph) -> dict[str, Any]:
     """Export AgentGraph to Bland AI inbound number configuration format.
 
     Bland AI uses a single prompt, so multi-node graphs are serialized
-    as structured text instructions describing the conversation flow.
-
-    Args:
-        graph: The agent graph to export.
-
-    Returns:
-        Dictionary in Bland AI inbound config format.
-    """
+    as structured text instructions describing the conversation flow."""
     result: dict[str, Any] = {}
 
-    # Build prompt from graph (serializes entire flow as text)
     result["prompt"] = _graph_to_prompt(graph)
 
-    # Collect all tools from all nodes
     all_tools = _collect_all_tools(graph)
     if all_tools:
         result["tools"] = [_convert_tool(t) for t in all_tools]
 
-    # Restore metadata from source
     if graph.source_metadata:
         if "phone_number" in graph.source_metadata:
             result["phone_number"] = graph.source_metadata["phone_number"]
@@ -70,7 +60,6 @@ def export_bland_config(graph: AgentGraph) -> dict[str, Any]:
         if "interruption_threshold" in graph.source_metadata:
             result["interruption_threshold"] = graph.source_metadata["interruption_threshold"]
 
-    # Check entry node metadata for first_sentence
     entry_node = graph.nodes.get(graph.entry_node_id)
     if entry_node and entry_node.metadata and "first_sentence" in entry_node.metadata:
         result["first_sentence"] = entry_node.metadata["first_sentence"]
@@ -79,25 +68,18 @@ def export_bland_config(graph: AgentGraph) -> dict[str, Any]:
 
 
 def _graph_to_prompt(graph: AgentGraph) -> str:
-    """Convert entire graph to a text prompt describing the conversation flow.
-
-    For single-node graphs, returns just the prompt.
-    For multi-node graphs, generates structured instructions.
-    """
+    """Convert entire graph to a text prompt describing the conversation flow."""
     general_prompt = graph.source_metadata.get("general_prompt", "")
 
-    # Empty graph: return general prompt or empty string
     if len(graph.nodes) == 0:
         return general_prompt or ""
 
-    # Single node: just combine general + state prompt
     if len(graph.nodes) == 1:
         node = list(graph.nodes.values())[0]
         if general_prompt and node.state_prompt:
             return f"{general_prompt}\n\n{node.state_prompt}"
         return node.state_prompt or general_prompt
 
-    # Multi-node: serialize as structured flow
     parts = []
 
     if general_prompt:
@@ -106,7 +88,6 @@ def _graph_to_prompt(graph: AgentGraph) -> str:
     parts.append("\n## Conversation Flow\n")
     parts.append(f"Start at: **{graph.entry_node_id}**\n")
 
-    # Build ordered list starting with entry node
     ordered_nodes = []
     if graph.entry_node_id in graph.nodes:
         ordered_nodes.append((graph.entry_node_id, graph.nodes[graph.entry_node_id]))

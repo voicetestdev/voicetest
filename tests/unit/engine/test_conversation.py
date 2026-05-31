@@ -1,5 +1,6 @@
 """Tests for voicetest.engine.conversation module."""
 
+import logging
 from unittest.mock import AsyncMock
 from unittest.mock import patch
 
@@ -152,7 +153,6 @@ class TestProcessTurn:
             await engine.add_user_message("Hi!")
             await engine.advance()
 
-        # Should have the user message and agent response
         agent_msgs = [m for m in engine.transcript if m.role == "assistant"]
         assert len(agent_msgs) == 1
         assert agent_msgs[0].content == "Hello there!"
@@ -181,15 +181,9 @@ class TestProcessTurn:
 
     @pytest.mark.asyncio
     async def test_terminal_node_does_not_auto_end(self, simple_graph):
-        """Terminal node (no transitions) should NOT auto-set end_call_invoked.
-
-        Nodes with no transitions are just nodes where the agent stays and
-        talks. The conversation ends via max_turns or an explicit end_call
-        tool — not by having zero edges.
-        """
+        """Terminal node (no transitions) should NOT auto-set end_call_invoked."""
 
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
-        # Move to farewell node which has no transitions
         engine._current_node = "farewell"
 
         async def mock_call_llm(model, signature, **kwargs):
@@ -240,7 +234,6 @@ class TestProcessTurn:
             await engine.add_user_message("Hello")
             await engine.advance()
 
-        # Verify variables were substituted
         assert "Acme Corp" in captured_kwargs["general_instructions"]
         # State prompt is now the signature docstring
         assert "Alice" in captured_signature.__doc__
@@ -266,6 +259,7 @@ class TestLogicNodeHandling:
                             ),
                         )
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "router": AgentNode(
                     id="router",
@@ -301,16 +295,19 @@ class TestLogicNodeHandling:
                         ),
                     ],
                     metadata={"retell_type": "logic_split"},
+                    node_type=NodeType.LOGIC,
                 ),
                 "premium_support": AgentNode(
                     id="premium_support",
                     state_prompt="Premium support.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "standard_support": AgentNode(
                     id="standard_support",
                     state_prompt="Standard support.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="greeting",
@@ -437,16 +434,19 @@ class TestLogicNodeHandling:
                         ),
                     ],
                     metadata={"retell_type": "branch"},
+                    node_type=NodeType.LOGIC,
                 ),
                 "premium_support": AgentNode(
                     id="premium_support",
                     state_prompt="Premium support.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "fallback": AgentNode(
                     id="fallback",
                     state_prompt="Fallback support.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="router",
@@ -512,6 +512,392 @@ class TestLogicNodeHandling:
         assert result.response == "Hello!"
 
 
+class TestFunctionNodeHandling:
+    """Function (tool-call) nodes are weakly supported: voicetest does not
+    execute the underlying HTTP/webhook tool, but it must not crash when
+    one appears mid-graph — the engine logs a warning and follows the
+    always (else) edge so the conversation can continue.
+    """
+
+    @pytest.fixture
+    def function_graph(self):
+        return AgentGraph(
+            nodes={
+                "greet": AgentNode(
+                    id="greet",
+                    state_prompt="Greet the user.",
+                    transitions=[
+                        Transition(
+                            target_node_id="call_tool",
+                            condition=TransitionCondition(type="llm_prompt", value="User ready"),
+                        )
+                    ],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "call_tool": AgentNode(
+                    id="call_tool",
+                    state_prompt="",
+                    node_type=NodeType.FUNCTION,
+                    transitions=[
+                        Transition(
+                            target_node_id="after_tool",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        )
+                    ],
+                ),
+                "after_tool": AgentNode(
+                    id="after_tool",
+                    state_prompt="Thanks, your request was processed.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+            },
+            entry_node_id="greet",
+            source_type="retell",
+        )
+
+    @pytest.mark.asyncio
+    async def test_function_node_follows_else_edge(self, function_graph, caplog):
+        """Engine takes the always edge through a function node and logs a warning."""
+        engine = ConversationEngine(function_graph, model="openai/gpt-4o-mini")
+        engine._current_node = "call_tool"
+        engine._nodes_visited = ["greet", "call_tool"]
+
+        with caplog.at_level(logging.WARNING, logger="voicetest.engine.conversation"):
+            result = await engine._process_node()
+
+        assert result.transitioned_to == "after_tool"
+        assert "after_tool" in engine.nodes_visited
+        # The synthetic ToolCall records the routing decision, same as logic/extract nodes do.
+        assert any(tc.name == "route_to_after_tool" for tc in result.tool_calls)
+        # And the user gets a single warning explaining tool execution is unsupported.
+        assert any(
+            "function node" in rec.message.lower() and "call_tool" in rec.message
+            for rec in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_function_node_without_transition_does_not_crash(self):
+        """A function node with no outbound edges stalls cleanly — no LLM call, no exception."""
+        graph = AgentGraph(
+            nodes={
+                "lone_tool": AgentNode(
+                    id="lone_tool",
+                    state_prompt="",
+                    node_type=NodeType.FUNCTION,
+                    transitions=[],
+                ),
+            },
+            entry_node_id="lone_tool",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(graph, model="openai/gpt-4o-mini")
+        result = await engine._process_node()
+
+        assert result.response == ""
+        assert result.transitioned_to is None
+
+
+class TestCentralizedTransitionDispatch:
+    """Verifies the centralized `_evaluate_transitions` dispatcher behaves
+    consistently across node types. Each node type's "step 1" (LLM
+    response, extraction, warning, no-op) runs first; transition routing
+    then funnels through a single typed dispatcher.
+    """
+
+    @pytest.mark.asyncio
+    async def test_function_node_routes_via_equation_on_extracted_variable(self):
+        """A function node with an equation edge on a pre-existing extracted
+        variable routes via that equation — not silently dropped to the
+        always edge. Verifies the dispatch is uniform with logic nodes.
+        """
+        graph = AgentGraph(
+            nodes={
+                "tool": AgentNode(
+                    id="tool",
+                    state_prompt="",
+                    node_type=NodeType.FUNCTION,
+                    transitions=[
+                        Transition(
+                            target_node_id="vip_path",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="tier == vip",
+                                equations=[EquationClause(left="tier", operator="==", right="vip")],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="standard_path",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                ),
+                "vip_path": AgentNode(
+                    id="vip_path",
+                    state_prompt="vip",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "standard_path": AgentNode(
+                    id="standard_path",
+                    state_prompt="standard",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+            },
+            entry_node_id="tool",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(
+            graph, model="openai/gpt-4o-mini", dynamic_variables={"tier": "vip"}
+        )
+        result = await engine._process_node()
+
+        assert result.transitioned_to == "vip_path"
+
+    @pytest.mark.asyncio
+    async def test_tool_call_transition_skipped_with_warning(self, caplog):
+        """`tool_call`-typed transitions (Telnyx/LiveKit handoff shape) are
+        skipped with a per-node warning, falling through to the always edge.
+        Until #51 ships tool execution there's no signal to fire them on.
+        """
+        graph = AgentGraph(
+            nodes={
+                "router": AgentNode(
+                    id="router",
+                    state_prompt="",
+                    node_type=NodeType.LOGIC,
+                    transitions=[
+                        Transition(
+                            target_node_id="handoff_target",
+                            condition=TransitionCondition(
+                                type="tool_call", value="handoff_billing"
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="fallback",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                ),
+                "handoff_target": AgentNode(
+                    id="handoff_target",
+                    state_prompt="billed",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "fallback": AgentNode(
+                    id="fallback",
+                    state_prompt="fallback",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+            },
+            entry_node_id="router",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(graph, model="openai/gpt-4o-mini")
+        with caplog.at_level(logging.WARNING, logger="voicetest.engine.conversation"):
+            result = await engine._process_node()
+
+        assert result.transitioned_to == "fallback"
+        assert any("tool_call transition on node router" in rec.message for rec in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_conversation_node_equation_fires_deterministically(self):
+        """An equation-typed transition on a conversation node fires by
+        deterministic evaluation, not by LLM text-reasoning. The LLM's
+        transition_to pick is ignored when the equation matches first.
+        """
+        graph = AgentGraph(
+            nodes={
+                "talk": AgentNode(
+                    id="talk",
+                    state_prompt="Ask the caller something.",
+                    transitions=[
+                        Transition(
+                            target_node_id="vip_branch",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="tier == vip",
+                                equations=[EquationClause(left="tier", operator="==", right="vip")],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="llm_branch",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="User asked about billing"
+                            ),
+                        ),
+                    ],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "vip_branch": AgentNode(
+                    id="vip_branch",
+                    state_prompt="vip",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "llm_branch": AgentNode(
+                    id="llm_branch",
+                    state_prompt="billing",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+            },
+            entry_node_id="talk",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(
+            graph, model="openai/gpt-4o-mini", dynamic_variables={"tier": "vip"}
+        )
+
+        # LLM gate passes (objectives_complete=True) but picks `llm_branch`.
+        # The deterministic equation on `tier == vip` matches first, so the
+        # LLM's pick is ignored and we route to vip_branch.
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                objectives_complete = True
+                transition_to = "llm_branch"
+                reasoning = ""
+                response = "ok"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("hi")
+            await engine.advance()
+
+        assert engine.current_node == "vip_branch"
+
+    @pytest.mark.asyncio
+    async def test_conversation_node_gate_blocks_equation_when_objectives_incomplete(self):
+        """`objectives_complete=False` blocks every transition type — even matching equations."""
+        # Mixed-type transitions force the node to stay CONVERSATION
+        # (model_post_init would infer LOGIC for equation-only nodes).
+        graph = AgentGraph(
+            nodes={
+                "ask": AgentNode(
+                    id="ask",
+                    state_prompt="Ask the caller for their tier.",
+                    transitions=[
+                        Transition(
+                            target_node_id="vip_branch",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="tier == vip",
+                                equations=[EquationClause(left="tier", operator="==", right="vip")],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="other_branch",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="User asked something else"
+                            ),
+                        ),
+                    ],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "vip_branch": AgentNode(
+                    id="vip_branch",
+                    state_prompt="vip",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "other_branch": AgentNode(
+                    id="other_branch",
+                    state_prompt="other",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+            },
+            entry_node_id="ask",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(
+            graph, model="openai/gpt-4o-mini", dynamic_variables={"tier": "vip"}
+        )
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                objectives_complete = False
+                transition_to = "none"
+                reasoning = ""
+                response = "What tier are you on?"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            await engine.add_user_message("hi")
+            await engine.advance()
+
+        # Gate blocks the equation: we stay in `ask` despite the equation matching.
+        assert engine.current_node == "ask"
+
+    @pytest.mark.asyncio
+    async def test_function_node_absent_variable_falls_through_to_else(self, caplog):
+        """Function node with an equation referencing an absent variable
+        (the load-bearing case for weak tool support — tool_result.* is
+        never set because voicetest doesn't execute the tool) falls through
+        to the else edge instead of incorrectly routing."""
+        graph = AgentGraph(
+            nodes={
+                "tool": AgentNode(
+                    id="tool",
+                    state_prompt="",
+                    node_type=NodeType.FUNCTION,
+                    transitions=[
+                        Transition(
+                            target_node_id="success_path",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value="tool_result.status == success",
+                                equations=[
+                                    EquationClause(
+                                        left="tool_result.status",
+                                        operator="==",
+                                        right="success",
+                                    )
+                                ],
+                            ),
+                        ),
+                        Transition(
+                            target_node_id="failure_path",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                ),
+                "success_path": AgentNode(
+                    id="success_path",
+                    state_prompt="success",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "failure_path": AgentNode(
+                    id="failure_path",
+                    state_prompt="failure",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+            },
+            entry_node_id="tool",
+            source_type="retell",
+        )
+
+        engine = ConversationEngine(graph, model="openai/gpt-4o-mini")
+        with caplog.at_level(logging.WARNING, logger="voicetest.engine.conversation"):
+            result = await engine._process_node()
+
+        # Equation on `tool_result.status` evaluates False (variable absent),
+        # falls through to the always edge.
+        assert result.transitioned_to == "failure_path"
+
+
 class TestLogicalOperator:
     """Tests for logical_operator (AND/OR) on equation transitions."""
 
@@ -541,9 +927,20 @@ class TestLogicalOperator:
                             condition=TransitionCondition(type="always", value="Else"),
                         ),
                     ],
+                    node_type=NodeType.LOGIC,
                 ),
-                "match": AgentNode(id="match", state_prompt="Matched.", transitions=[]),
-                "fallback": AgentNode(id="fallback", state_prompt="Fallback.", transitions=[]),
+                "match": AgentNode(
+                    id="match",
+                    state_prompt="Matched.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "fallback": AgentNode(
+                    id="fallback",
+                    state_prompt="Fallback.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
             },
             entry_node_id="router",
             source_type="retell",
@@ -605,15 +1002,25 @@ class TestLogicalOperator:
                             condition=TransitionCondition(type="always", value="Else"),
                         ),
                     ],
+                    node_type=NodeType.LOGIC,
                 ),
-                "match": AgentNode(id="match", state_prompt="Matched.", transitions=[]),
-                "fallback": AgentNode(id="fallback", state_prompt="Fallback.", transitions=[]),
+                "match": AgentNode(
+                    id="match",
+                    state_prompt="Matched.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "fallback": AgentNode(
+                    id="fallback",
+                    state_prompt="Fallback.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
             },
             entry_node_id="router",
             source_type="retell",
         )
 
-        # Only x matches, y does not
         engine = ConversationEngine(
             graph,
             model="openai/gpt-4o-mini",
@@ -676,9 +1083,20 @@ class TestExtractNodeHandling:
                         ),
                     ],
                     metadata={"retell_type": "extract_dynamic_variables"},
+                    node_type=NodeType.EXTRACT,
                 ),
-                "match": AgentNode(id="match", state_prompt="Verified.", transitions=[]),
-                "no_match": AgentNode(id="no_match", state_prompt="Not verified.", transitions=[]),
+                "match": AgentNode(
+                    id="match",
+                    state_prompt="Verified.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "no_match": AgentNode(
+                    id="no_match",
+                    state_prompt="Not verified.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
             },
             entry_node_id="extract",
             source_type="retell",
@@ -790,12 +1208,14 @@ class TestAlwaysEdgeOnConversationNodes:
                         ),
                     ],
                     metadata={"retell_type": "conversation"},
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "end": AgentNode(
                     id="end",
                     state_prompt="End.",
                     transitions=[],
                     metadata={"retell_type": "end"},
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="farewell",
@@ -845,9 +1265,17 @@ class TestAlwaysEdgeOnConversationNodes:
                         ),
                     ],
                     metadata={"retell_type": "conversation"},
+                    node_type=NodeType.CONVERSATION,
                 ),
-                "billing": AgentNode(id="billing", state_prompt="Billing.", transitions=[]),
-                "end": AgentNode(id="end", state_prompt="End.", transitions=[]),
+                "billing": AgentNode(
+                    id="billing",
+                    state_prompt="Billing.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "end": AgentNode(
+                    id="end", state_prompt="End.", transitions=[], node_type=NodeType.CONVERSATION
+                ),
             },
             entry_node_id="main",
             source_type="retell",
@@ -932,16 +1360,19 @@ class TestToolMessagesInTranscript:
                         ),
                     ],
                     metadata={"retell_type": "branch"},
+                    node_type=NodeType.LOGIC,
                 ),
                 "premium_support": AgentNode(
                     id="premium_support",
                     state_prompt="Premium support.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "fallback": AgentNode(
                     id="fallback",
                     state_prompt="Fallback support.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="router",
@@ -995,9 +1426,20 @@ class TestToolMessagesInTranscript:
                         ),
                     ],
                     metadata={"retell_type": "extract_dynamic_variables"},
+                    node_type=NodeType.EXTRACT,
                 ),
-                "match": AgentNode(id="match", state_prompt="Verified.", transitions=[]),
-                "no_match": AgentNode(id="no_match", state_prompt="Not verified.", transitions=[]),
+                "match": AgentNode(
+                    id="match",
+                    state_prompt="Verified.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "no_match": AgentNode(
+                    id="no_match",
+                    state_prompt="Not verified.",
+                    transitions=[],
+                    node_type=NodeType.CONVERSATION,
+                ),
             },
             entry_node_id="extract",
             source_type="retell",
@@ -1034,12 +1476,10 @@ class TestToolMessagesInTranscript:
             )
             await engine._process_node()
 
-        # Should have a tool message for the transition
         tool_msgs = [m for m in engine._transcript if m.role == "tool"]
         assert len(tool_msgs) >= 1
         assert "Transitioned to premium_support" in tool_msgs[0].content
 
-        # Should NOT have an empty agent message
         agent_msgs = [m for m in engine._transcript if m.role == "assistant"]
         empty_agent = [m for m in agent_msgs if m.content == ""]
         assert len(empty_agent) == 0
@@ -1074,7 +1514,6 @@ class TestToolMessagesInTranscript:
             await engine._process_node()
 
         tool_msgs = [m for m in engine._transcript if m.role == "tool"]
-        # Should have extraction message + transition message
         extract_msgs = [m for m in tool_msgs if "Extracted" in m.content]
         assert len(extract_msgs) == 1
         assert "dob_month=January" in extract_msgs[0].content
@@ -1098,7 +1537,6 @@ class TestToolMessagesInTranscript:
             await engine._process_node()
 
         tool_msgs = [m for m in engine._transcript if m.role == "tool"]
-        # One for extraction, one for transition
         assert len(tool_msgs) == 2
         assert "Extracted" in tool_msgs[0].content
         assert "Transitioned to" in tool_msgs[1].content
@@ -1139,11 +1577,13 @@ class TestTranscriptOrdering:
                             ),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "billing": AgentNode(
                     id="billing",
                     state_prompt="Help with billing.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="greeting",
@@ -1179,7 +1619,6 @@ class TestTranscriptOrdering:
         assert "billing" in tool_msgs[0].content
         assert len(agent_msgs) == 1
 
-        # Transition appears before response (agent responds from destination)
         tool_idx = next(i for i, m in enumerate(transcript) if m.role == "tool")
         agent_idx = next(i for i, m in enumerate(transcript) if m.role == "assistant")
         assert tool_idx < agent_idx, (
@@ -1209,6 +1648,7 @@ class TestEndCallNode:
                             ),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "end_call": AgentNode(
                     id="end_call",
@@ -1245,6 +1685,7 @@ class TestEndCallNode:
                             ),
                         ),
                     ],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "end_call": AgentNode(
                     id="end_call",
@@ -1298,7 +1739,6 @@ class TestEndCallNode:
         )
         engine._current_node = "end_call"
 
-        # Should not need an LLM call
         result = await engine.advance()
 
         assert result.response == ""
@@ -1320,7 +1760,6 @@ class TestEndCallNode:
         async def mock_call_llm(model, signature, **kwargs):
             nonlocal call_count
             call_count += 1
-            # Call 1: transition evaluation → advance to end_call
             if call_count == 1:
 
                 class TransitionResult:
@@ -1328,7 +1767,6 @@ class TestEndCallNode:
                     transition_to = "end_call"
 
                 return TransitionResult()
-            # Call 2: response from end_call node (prompted end node)
 
             class EndResult:
                 response = "Thank you for calling!"
@@ -1338,7 +1776,6 @@ class TestEndCallNode:
         with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
             result1 = await engine.advance()
 
-        # advance: transitions to end_call, responds from there
         assert result1.response == "Thank you for calling!"
         assert result1.transitioned_to == "end_call"
         assert result1.end_call_invoked is True
@@ -1356,6 +1793,7 @@ class TestEngineExpandsSnippets:
                     id="main",
                     state_prompt="Node says: {%greeting%}. Use {{name}}.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="main",
@@ -1373,7 +1811,6 @@ class TestEngineExpandsSnippets:
         )
         await engine.add_user_message("hi")
 
-        # Mock call_llm to capture what instructions are passed
         mock_result = AsyncMock()
         mock_result.response = "mock response"
         mock_result.objectives_complete = False
@@ -1382,18 +1819,15 @@ class TestEngineExpandsSnippets:
         with patch("voicetest.engine.conversation.call_llm", return_value=mock_result) as mock_llm:
             await engine._process_node()
 
-            # Inspect the kwargs and signature passed to call_llm
             call_kwargs = mock_llm.call_args
             general = call_kwargs.kwargs.get("general_instructions", "")
             # State prompt is now the signature docstring
             signature = call_kwargs.args[1]
             state = signature.__doc__
 
-            # Snippets should be expanded in general_instructions
             assert "Hello friend" in general
             assert "{%greeting%}" not in general
 
-            # Snippets expanded AND variables substituted in state docstring
             assert "Hello friend" in state
             assert "{%greeting%}" not in state
             assert "Alice" in state
@@ -1428,13 +1862,9 @@ class TestOnTurnCallback:
             await engine.add_user_message("I want to leave")
             await engine.advance()
 
-        # Should have fired for: user message, transition tool message, agent response
         assert len(snapshots) == 3
-        # First snapshot: user message added
         assert snapshots[0] == ["user"]
-        # Second snapshot: transition tool message added
         assert snapshots[1] == ["user", "tool"]
-        # Third snapshot: agent response added
         assert snapshots[2] == ["user", "tool", "assistant"]
 
     @pytest.mark.asyncio
@@ -1462,7 +1892,6 @@ class TestOnTurnCallback:
             await engine.add_user_message("Hi!")
             await engine.advance()
 
-        # Should have fired for: user message, agent response
         assert len(snapshots) == 2
         assert snapshots[0] == ["user"]
         assert snapshots[1] == ["user", "assistant"]
@@ -1559,12 +1988,10 @@ class TestGlobalNodeConversation:
                 transition_to = "none"
                 reasoning = ""
 
-            # Turn 1: transition to cancel_request
             if call_count == 1:
                 return TransitionToGlobal()
             if call_count == 2:
                 return ResponseResult()
-            # Turn 2: go back to greeting
             if call_count == 3:
                 return GoBack()
             if call_count == 4:
@@ -1623,6 +2050,7 @@ class TestGlobalNodeConversation:
                     id="greeting",
                     state_prompt="Greet.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "cancel": AgentNode(
                     id="cancel",
@@ -1648,11 +2076,13 @@ class TestGlobalNodeConversation:
                             ),
                         ],
                     ),
+                    node_type=NodeType.CONVERSATION,
                 ),
                 "cancelled": AgentNode(
                     id="cancelled",
                     state_prompt="Order cancelled.",
                     transitions=[],
+                    node_type=NodeType.CONVERSATION,
                 ),
             },
             entry_node_id="greeting",
@@ -1679,12 +2109,10 @@ class TestGlobalNodeConversation:
                 transition_to = "cancelled"
                 reasoning = ""
 
-            # Turn 1: greeting -> cancel (global entry)
             if call_count == 1:
                 return ToCancel()
             if call_count == 2:
                 return ResponseResult()
-            # Turn 2: cancel -> cancelled (regular forward edge, not go-back)
             if call_count == 3:
                 return ToCancelled()
             return ResponseResult()
@@ -1702,7 +2130,6 @@ class TestGlobalNodeConversation:
 
     def test_reset_clears_originator_stack(self, graph_with_global_node):
         engine = ConversationEngine(graph_with_global_node, model="openai/gpt-4o-mini")
-        # Manually set state to simulate mid-conversation
         engine._originator_stack = ["greeting"]
         engine.reset()
         assert engine.originator_stack == []
@@ -1746,22 +2173,18 @@ class TestGlobalNodeConversation:
                 transition_to = "none"
                 reasoning = ""
 
-            # Turn 1: greeting -> cancel_request
             if call_count == 1:
                 return ToCancel()
             if call_count == 2:
                 return ResponseResult()
-            # Turn 2: cancel_request -> ask_specials (stacking)
             if call_count == 3:
                 return ToSpecials()
             if call_count == 4:
                 return ResponseResult()
-            # Turn 3: ask_specials -> cancel_request (go back one level)
             if call_count == 5:
                 return BackToCancel()
             if call_count == 6:
                 return ResponseResult()
-            # Turn 4: cancel_request -> greeting (go back to original)
             if call_count == 7:
                 return BackToGreeting()
             if call_count == 8:

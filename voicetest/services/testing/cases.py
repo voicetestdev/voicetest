@@ -32,8 +32,7 @@ class TestCaseService:
         """Create a test case for an agent.
 
         If the agent has linked test files, the test is appended to the first file.
-        Otherwise it is stored in the database.
-        """
+        Otherwise it is stored in the database."""
         agent = self._agent_repo.get(agent_id)
         tests_paths = agent.get("tests_paths") if agent else None
 
@@ -43,11 +42,7 @@ class TestCaseService:
         return self._repo.create(agent_id, test_case)
 
     def update_test(self, test_id: str, test_case: TestCase) -> dict:
-        """Update a test case (DB or linked file).
-
-        Raises:
-            ValueError: If test case not found.
-        """
+        """Update a test case (DB or linked file)."""
         test = self._repo.get(test_id)
         if test:
             return self._repo.update(test_id, test_case)
@@ -61,11 +56,7 @@ class TestCaseService:
         raise ValueError(f"Test case not found: {test_id}")
 
     def delete_test(self, test_id: str) -> None:
-        """Delete a test case (DB or linked file).
-
-        Raises:
-            ValueError: If test case not found.
-        """
+        """Delete a test case (DB or linked file)."""
         test = self._repo.get(test_id)
         if test:
             self._repo.delete(test_id)
@@ -81,15 +72,7 @@ class TestCaseService:
     def link_test_file(self, agent_id: str, path: str) -> dict:
         """Link a JSON test file to an agent.
 
-        The file must exist, contain valid JSON, and be a JSON array.
-
-        Returns:
-            Dict with path, test_count, and tests_paths.
-
-        Raises:
-            ValueError: If file is invalid or already linked.
-            FileNotFoundError: If file does not exist.
-        """
+        The file must exist, contain valid JSON, and be a JSON array."""
         resolved = resolve_file(path)
         resolved_str = str(resolved)
 
@@ -114,14 +97,7 @@ class TestCaseService:
         }
 
     def unlink_test_file(self, agent_id: str, path: str) -> dict:
-        """Unlink a test file from an agent.
-
-        Returns:
-            Dict with path and tests_paths.
-
-        Raises:
-            ValueError: If file is not linked.
-        """
+        """Unlink a test file from an agent."""
         resolved = str(resolve_path(path))
         agent = self._agent_repo.get(agent_id)
         if not agent:

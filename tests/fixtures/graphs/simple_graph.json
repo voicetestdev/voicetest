@@ -5,6 +5,7 @@
     "greeting": {
       "id": "greeting",
       "state_prompt": "Greet the user warmly and ask how you can help.",
+      "node_type": "conversation",
       "transitions": [
         {
           "target_node_id": "farewell",
@@ -20,6 +21,7 @@
     "farewell": {
       "id": "farewell",
       "state_prompt": "Say goodbye politely.",
+      "node_type": "conversation",
       "transitions": [],
       "tools": [],
       "metadata": {}

@@ -9,12 +9,17 @@ from uuid import NAMESPACE_URL
 from uuid import uuid4
 from uuid import uuid5
 
+from pydantic import ValidationError
 from sqlalchemy import case
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from voicetest.exceptions import StaleGraphSchemaError
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.agent import Transition
+from voicetest.models.agent import VariableExtraction
+from voicetest.models.agent import infer_node_type
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import TestCase
 from voicetest.storage.linked_file import read_json
@@ -28,6 +33,12 @@ from voicetest.util.pathutil import resolve_path
 
 
 logger = logging.getLogger(__name__)
+
+
+def _is_missing_node_type(err: ValidationError) -> bool:
+    """True iff every validation error is a missing `node_type` field."""
+    errs = err.errors()
+    return bool(errs) and all(e["type"] == "missing" and e["loc"][-1] == "node_type" for e in errs)
 
 
 def _serialize_datetime(dt: datetime | None) -> str | None:
@@ -135,10 +146,7 @@ class AgentRepository:
         return self.get(agent_id)
 
     def get_metrics_config(self, agent_id: str) -> MetricsConfig:
-        """Get an agent's metrics configuration.
-
-        Returns the stored configuration or a default if none exists.
-        """
+        """Get an agent's metrics configuration."""
         agent = self.session.get(Agent, agent_id)
         if not agent:
             return MetricsConfig()
@@ -152,14 +160,13 @@ class AgentRepository:
         """Delete an agent and all associated runs, test cases, and calls.
 
         DuckDB enforces foreign keys but does not support CASCADE at the DB
-        level, so children must be deleted manually in dependency order.
-        """
+        level, so children must be deleted manually in dependency order."""
         agent = self.session.get(Agent, agent_id)
         if agent:
             try:
-                # Delete in FK-dependency order: results → runs → tests/calls → agent.
-                # DuckDB enforces foreign keys eagerly within a transaction, so
-                # each layer must be committed before deleting the parent layer.
+                # FK-dependency order: results → runs → tests/calls → agent.
+                # DuckDB enforces FKs eagerly within a transaction, so each
+                # layer must be committed before deleting the parent layer.
                 run_ids = [r.id for r in agent.runs]
                 self.session.expire(agent)
                 if run_ids:
@@ -190,17 +197,22 @@ class AgentRepository:
         """Load the AgentGraph for an agent.
 
         For linked agents (source_path set), returns Path for caller to import.
-        For imported agents (graph_json set), parses the stored JSON.
-
-        Returns:
-            AgentGraph if graph_json is stored, or Path for linked files.
-        """
+        For imported agents (graph_json set), parses the stored JSON."""
         agent = self.session.get(Agent, agent_id)
         if not agent:
             raise ValueError(f"Agent not found: {agent_id}")
 
         if agent.graph_json:
-            return AgentGraph.model_validate_json(agent.graph_json)
+            try:
+                return AgentGraph.model_validate_json(agent.graph_json)
+            except ValidationError as e:
+                if _is_missing_node_type(e):
+                    raise StaleGraphSchemaError(
+                        f"Agent {agent_id} stored graph predates the required "
+                        "`node_type` field. Run `voicetest migrate-node-types` "
+                        "to update stored graphs."
+                    ) from e
+                raise
 
         if agent.source_path:
             path = resolve_path(agent.source_path)
@@ -215,13 +227,51 @@ class AgentRepository:
         agent = self.session.get(Agent, agent_id)
         return agent.graph_json if agent else None
 
+    def migrate_node_types(self) -> dict:
+        """Backfill `node_type` on stored graphs that predate the required field.
+
+        Walks every agent with a non-null `graph_json`, decodes it, applies
+        `infer_node_type` to any node missing the field, and re-serializes.
+        Returns a summary: total agents scanned, agents updated, nodes touched."""
+        agents = self.session.query(Agent).filter(Agent.graph_json.isnot(None)).all()
+        agents_updated = 0
+        nodes_updated = 0
+
+        for agent in agents:
+            data = json.loads(agent.graph_json)
+            nodes = data.get("nodes") or {}
+            touched = False
+            for node in nodes.values():
+                if "node_type" in node:
+                    continue
+                transitions = [Transition.model_validate(t) for t in node.get("transitions", [])]
+                variables = [
+                    VariableExtraction.model_validate(v)
+                    for v in node.get("variables_to_extract", [])
+                ]
+                node["node_type"] = infer_node_type(transitions, variables).value
+                touched = True
+                nodes_updated += 1
+            if touched:
+                agent.graph_json = json.dumps(data)
+                agent.updated_at = datetime.now(UTC)
+                agents_updated += 1
+
+        if agents_updated:
+            self.session.commit()
+
+        return {
+            "agents_scanned": len(agents),
+            "agents_updated": agents_updated,
+            "nodes_updated": nodes_updated,
+        }
+
     def _to_dict(self, agent: Agent) -> dict:
         """Convert Agent model to dictionary for API responses.
 
         The graph payload is intentionally excluded — clients fetch it from
         `GET /api/agents/{id}/graph`, which handles linked-file re-import and
-        ETag caching as a single source of truth.
-        """
+        ETag caching as a single source of truth."""
         return {
             "id": agent.id,
             "user_id": agent.user_id,
@@ -337,8 +387,7 @@ class TestCaseRepository:
         """List all test cases for an agent, merging DB and file-based tests.
 
         File-based tests get deterministic IDs via uuid5(NAMESPACE_URL, "{path}:{name}")
-        and include source_path and source_index fields.
-        """
+        so they are stable across reads."""
         db_tests = self.list_for_agent(agent_id)
 
         if not tests_paths:
@@ -531,11 +580,7 @@ class RunRepository:
     ) -> list[dict]:
         """List runs for an agent with per-run result status counts.
 
-        Returns the same fields as list_for_agent plus a ``summary`` dict
-        containing total, passed, failed, errors, and running counts.
-        Uses a single grouped query to avoid N+1.
-        """
-        # Subquery: per-run result status counts
+        Uses a single grouped query to avoid N+1 on result-status counts."""
         counts = (
             self.session.query(
                 Result.run_id,
@@ -577,7 +622,6 @@ class RunRepository:
             results.append(d)
             run_ids.append(run.id)
 
-        # Batch-fetch failed/error test names for all runs in one query
         if run_ids:
             failed_rows = (
                 self.session.query(Result.run_id, Result.test_name)
@@ -644,10 +688,7 @@ class RunRepository:
         At most one of `test_case_id` or `call_id` is set per result:
           - test runs: pass `test_case_id`
           - live calls: pass `call_id`
-          - imported transcripts: pass neither (both columns null)
-
-        Returns the new result id.
-        """
+          - imported transcripts: pass neither (both columns null)"""
         result_id = str(uuid4())
         now = datetime.now(UTC)
         data = self._serialize_result_data(result)
@@ -681,10 +722,7 @@ class RunRepository:
         call_id: str,
         result: TestResult,
     ) -> str:
-        """Back-compat alias — prefer add_result(run_id, result, call_id=...).
-
-        Retained because external integrators may depend on this entry point.
-        """
+        """Back-compat alias — prefer add_result(run_id, result, call_id=...)."""
         return self.add_result(run_id, result, call_id=call_id)
 
     def create_pending_result(self, run_id: str, test_case_id: str, test_name: str) -> str:

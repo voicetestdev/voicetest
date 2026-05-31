@@ -1,8 +1,4 @@
-"""Diagnosis models for post-run failure analysis and auto-fix.
-
-These models represent the output of diagnosing why a test failed
-and suggesting concrete prompt/transition changes to fix it.
-"""
+"""Diagnosis models for post-run failure analysis and auto-fix."""
 
 from pydantic import BaseModel
 from pydantic import Field

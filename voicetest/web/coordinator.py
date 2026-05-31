@@ -76,8 +76,7 @@ class RunCoordinator:
         """Claim the orphan-cleanup slot for a run.
 
         Yields True if this caller owns the cleanup; False if another caller
-        already claimed it. The slot is released on exit either way.
-        """
+        already claimed it. The slot is released on exit either way."""
         with self._cleaning_orphans_lock:
             if run_id in self._cleaning_orphans:
                 owns = False

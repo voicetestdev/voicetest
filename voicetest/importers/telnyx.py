@@ -11,6 +11,7 @@ from pydantic import Field
 from voicetest.importers.base import ImporterInfo
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
@@ -124,7 +125,6 @@ class TelnyxImporter:
 
     def _is_telnyx_config(self, config: dict) -> bool:
         """Check if config is a Telnyx AI assistant configuration."""
-        # Telnyx requires instructions (string) and model (string)
         has_instructions = isinstance(config.get("instructions"), str) and bool(
             config.get("instructions")
         )
@@ -133,18 +133,16 @@ class TelnyxImporter:
         if not (has_instructions and has_model):
             return False
 
-        # Must have at least one Telnyx-specific field
         has_telnyx_fields = any(key in config for key in _TELNYX_SPECIFIC_FIELDS)
 
         if not has_telnyx_fields:
             return False
 
-        # Exclude other platforms
         is_not_retell_llm = "general_prompt" not in config and "llm_id" not in config
         is_not_retell_cf = "start_node_id" not in config and "nodes" not in config
-        # VAPI model is a dict, not a string
+        # VAPI uses a model dict, not a string
         is_not_vapi = not isinstance(config.get("model"), dict)
-        # Bland uses "prompt" not "instructions"
+        # Bland uses "prompt", Telnyx uses "instructions"
         is_not_bland = "prompt" not in config or "instructions" in config
 
         return is_not_retell_llm and is_not_retell_cf and is_not_vapi and is_not_bland
@@ -165,6 +163,7 @@ class TelnyxImporter:
             node_id: AgentNode(
                 id=node_id,
                 state_prompt=config.instructions,
+                node_type=NodeType.CONVERSATION,
                 tools=tools,
                 transitions=transitions,
                 metadata=node_metadata,
@@ -186,8 +185,7 @@ class TelnyxImporter:
     ) -> tuple[list[ToolDefinition], list[Transition]]:
         """Convert Telnyx tools to ToolDefinitions and Transitions.
 
-        Handoff tools become Transitions; all others become ToolDefinitions.
-        """
+        Handoff tools become Transitions; all others become ToolDefinitions."""
         tool_defs: list[ToolDefinition] = []
         transitions: list[Transition] = []
 
@@ -244,7 +242,6 @@ class TelnyxImporter:
 
     def _merge_webhook_parameters(self, webhook: TelnyxWebhook) -> dict[str, Any]:
         """Merge path, query, and body parameters into a single schema."""
-        # Use body_parameters as the primary schema if available
         if webhook.body_parameters:
             return webhook.body_parameters
         if webhook.path_parameters:

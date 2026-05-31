@@ -24,11 +24,7 @@ class DiscoveryService:
         return self._importers.list_importers()
 
     def list_export_formats(self) -> list[dict[str, str]]:
-        """List available export formats.
-
-        Returns:
-            List of dicts with format id, name, description, and extension.
-        """
+        """List available export formats."""
         return [
             {
                 "id": info.format_id,

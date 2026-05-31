@@ -30,10 +30,7 @@ from voicetest.util.retry import OnErrorCallback
 from voicetest.util.templating import substitute_variables
 
 
-# Callback type for turn updates
 OnTurnCallback = Callable[[list[Message]], Awaitable[None] | None]
-
-# Callback type for token updates: receives token string and source ("agent" or "user")
 OnTokenCallback = Callable[[str, str], Awaitable[None] | None]
 
 
@@ -45,8 +42,7 @@ def resolve_run_options(
 
     If options is None, all run params come from settings too. If options
     is provided, only the None model fields are filled — caller's run
-    params (max_turns, timeout, etc.) are respected.
-    """
+    params (max_turns, timeout, etc.) are respected."""
     settings = settings_service.get_settings()
     if options is None:
         return RunOptions(
@@ -85,18 +81,7 @@ class TestExecutionService:
         on_error: OnErrorCallback | None = None,
         use_heard: bool = False,
     ) -> list[MetricResult]:
-        """Evaluate a transcript against an agent's global metrics.
-
-        Args:
-            transcript: Conversation transcript to evaluate.
-            metrics_config: Agent metrics configuration with threshold and global metrics.
-            judge_model: LLM model to use for evaluation. Reads from settings if None.
-            on_error: Optional callback for retry notifications.
-            use_heard: If True, use metadata["heard"] for assistant messages.
-
-        Returns:
-            List of MetricResult objects for each enabled global metric.
-        """
+        """Evaluate a transcript against an agent's global metrics."""
         if judge_model is None:
             judge_model = resolve_model(self._settings.get_settings().models.judge)
         metric_judge = MetricJudge(judge_model)
@@ -129,31 +114,15 @@ class TestExecutionService:
         on_token: OnTokenCallback | None = None,
         on_error: OnErrorCallback | None = None,
     ) -> TestResult:
-        """Run a single test case against an agent.
-
-        Args:
-            graph: The agent graph to test.
-            test_case: Test case definition.
-            options: Optional run options.
-            metrics_config: Optional metrics configuration with threshold and global metrics.
-            _mock_mode: If True, use mock responses (for testing).
-            on_turn: Optional callback invoked after each turn with current transcript.
-            on_token: Optional callback invoked for each token during streaming.
-            on_error: Optional callback invoked on retryable errors (e.g., rate limits).
-
-        Returns:
-            TestResult with pass/fail status, transcript, and metrics.
-        """
+        """Run a single test case against an agent."""
         options = resolve_run_options(options, self._settings)
         overrides: list[ModelOverride] = []
         tmp = options.test_model_precedence
 
-        # Resolve models via central precedence chain
         resolved_agent = resolve_model(options.agent_model, graph.default_model, tmp)
         resolved_sim = resolve_model(options.simulator_model, test_case.llm_model, tmp)
         resolved_judge = resolve_model(options.judge_model)
 
-        # Track overrides for diagnostics
         overrides.extend(
             _model_overrides("agent", options.agent_model, graph.default_model, resolved_agent, tmp)
         )
@@ -179,10 +148,8 @@ class TestExecutionService:
 
         start_time = datetime.now()
 
-        # Track transcript for error recovery
         error_transcript: list[Message] = []
 
-        # Wrap on_turn to capture transcript
         original_on_turn = on_turn
 
         async def tracking_on_turn(transcript: list[Message]) -> None:
@@ -194,11 +161,9 @@ class TestExecutionService:
                     await result
 
         try:
-            # Substitute dynamic variables
             dynamic_vars = test_case.dynamic_variables
             user_prompt = substitute_variables(test_case.user_prompt, dynamic_vars)
 
-            # Setup components
             runner = ConversationRunner(
                 graph,
                 options,
@@ -210,10 +175,8 @@ class TestExecutionService:
             rule_judge = RuleJudge(pattern_engine=options.pattern_engine)
             flow_judge = FlowJudge(options.judge_model)
 
-            # Get threshold from metrics_config or use default
             threshold = metrics_config.threshold if metrics_config else 0.7
 
-            # Enable mock mode for testing
             if _mock_mode:
                 simulator._mock_mode = True
                 simulator._mock_responses = [
@@ -222,7 +185,6 @@ class TestExecutionService:
                 ]
                 metric_judge._mock_mode = True
 
-                # Build mock results for test metrics + enabled global metrics
                 mock_results = [
                     MetricResult(
                         metric=m,
@@ -255,15 +217,12 @@ class TestExecutionService:
                     valid=True, issues=[], reasoning="Mock flow validation"
                 )
 
-            # Run conversation
             state = await runner.run(
                 test_case, simulator, on_turn=tracking_on_turn, on_token=on_token, on_error=on_error
             )
 
-            # Evaluate based on test type
             test_type = test_case.effective_type
             if test_type == "rule":
-                # Rule-based evaluation (deterministic pattern matching)
                 metric_results = await rule_judge.evaluate(
                     state.transcript,
                     test_case.includes,
@@ -271,12 +230,10 @@ class TestExecutionService:
                     test_case.patterns,
                 )
             else:
-                # LLM-based evaluation (semantic metrics)
                 metric_results = await metric_judge.evaluate_all(
                     state.transcript, test_case.metrics, threshold=threshold, on_error=on_error
                 )
 
-            # Evaluate global metrics if configured
             if metrics_config:
                 global_results = await self.evaluate_global_metrics(
                     state.transcript,
@@ -286,7 +243,6 @@ class TestExecutionService:
                 )
                 metric_results.extend(global_results)
 
-            # Audio evaluation (when enabled)
             audio_metric_results: list[MetricResult] = []
             if options.audio_eval:
                 try:
@@ -324,7 +280,6 @@ class TestExecutionService:
                 except Exception:
                     logging.getLogger(__name__).exception("Audio evaluation failed")
 
-            # Check flow constraints (optional, informational only)
             flow_issues: list[str] = []
             if options.flow_judge:
                 flow_result = await flow_judge.evaluate(
@@ -332,7 +287,6 @@ class TestExecutionService:
                 )
                 flow_issues = flow_result.issues
 
-            # Determine overall status (based on metrics only)
             metrics_passed = all(r.passed for r in metric_results)
             status = "pass" if metrics_passed else "fail"
 
@@ -389,17 +343,7 @@ class TestExecutionService:
         options: RunOptions | None = None,
         _mock_mode: bool = False,
     ) -> TestRun:
-        """Run multiple test cases, return aggregated results.
-
-        Args:
-            graph: The agent graph to test.
-            test_cases: List of test case definitions.
-            options: Optional run options.
-            _mock_mode: If True, use mock responses (for testing).
-
-        Returns:
-            TestRun with aggregated results.
-        """
+        """Run multiple test cases, return aggregated results."""
         run_id = str(uuid.uuid4())
         started_at = datetime.now()
 

@@ -70,8 +70,7 @@ def _get_current_version(conn) -> int:
 def _stamp_current(conn) -> None:
     """Mark all migrations as applied without running them.
 
-    Used on fresh databases where create_all already built the full schema.
-    """
+    Used on fresh databases where create_all already built the full schema."""
     for version, description, _sql, _verify in _MIGRATIONS:
         conn.execute(
             text("INSERT INTO schema_version (version, description) VALUES (:v, :d)"),
@@ -92,13 +91,7 @@ def _migrate_schema(engine: Engine) -> None:
     """Run pending schema migrations.
 
     Tracks applied migrations in a schema_version table. Each migration runs
-    exactly once, in order. Supports arbitrary SQL — not just ADD COLUMN.
-
-    Three cases:
-    - Fresh DB (no data tables): stamp all migrations, create_all handles the rest.
-    - Old DB (data tables exist, no schema_version): run all pending migrations.
-    - Up-to-date DB (schema_version exists with entries): skip already-applied migrations.
-    """
+    exactly once, in order. Supports arbitrary SQL — not just ADD COLUMN."""
     with engine.begin() as conn:
         has_data_tables = _has_table(conn, "agents")
 
@@ -109,10 +102,10 @@ def _migrate_schema(engine: Engine) -> None:
             _stamp_current(conn)
             return
 
-        # Existing DB — run any pending migrations
         current = _get_current_version(conn)
 
-        # Verify applied migrations are real (detect phantom stamps)
+        # Detect phantom stamps where the version row exists but the migration
+        # was never actually applied (rare DB-corruption recovery path)
         for version, description, _sql, verify_sql in _MIGRATIONS:
             if version > current:
                 break
@@ -153,14 +146,7 @@ def create_db_engine(url: str | None = None) -> Engine:
 
     If url is None, uses DuckDB at the default path from config.
     For PostgreSQL (SaaS), pass a connection URL like:
-        postgresql://user:pass@host/db
-
-    Args:
-        url: Database connection URL. If None, uses DuckDB at default path.
-
-    Returns:
-        SQLAlchemy Engine instance with schema initialized.
-    """
+        postgresql://user:pass@host/db"""
     if url is None:
         db_path = get_db_path()
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -201,14 +187,7 @@ def get_session_factory(engine: Engine) -> sessionmaker[Session]:
 
     For DuckDB engines, returns a session factory whose sessions are
     instrumented to serialize concurrent access on a single lock (see
-    voicetest/storage/duckdb.py). Other backends get the plain sessionmaker.
-
-    Args:
-        engine: SQLAlchemy Engine instance.
-
-    Returns:
-        A sessionmaker that creates Session instances.
-    """
+    voicetest/storage/duckdb.py). Other backends get the plain sessionmaker."""
     if str(engine.url).startswith("duckdb"):
         return DuckDBSessionMaker(bind=engine)
     return sessionmaker(bind=engine)

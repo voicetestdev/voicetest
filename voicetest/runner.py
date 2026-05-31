@@ -1,10 +1,4 @@
-"""Shared test runner logic for CLI and TUI.
-
-This module provides the core test execution logic that both the
-command-line interface and the TUI share. Callers pass an `AppServices`
-bag built from a composition-root container — runner.py never reaches
-into a container itself.
-"""
+"""Shared test runner logic for CLI and TUI."""
 
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -26,28 +20,12 @@ async def load_agent(
     agent_path: Path,
     source: str | None = None,
 ) -> AgentGraph:
-    """Load an agent from a definition file.
-
-    Args:
-        services: Application services bag.
-        agent_path: Path to agent definition file.
-        source: Source type override (auto-detect if None).
-
-    Returns:
-        Loaded AgentGraph.
-    """
+    """Load an agent from a definition file."""
     return await services.agents.import_agent(agent_path, source=source)
 
 
 def load_test_cases(tests_path: Path) -> list[TestCase]:
-    """Load test cases from a JSON file.
-
-    Args:
-        tests_path: Path to test cases JSON file.
-
-    Returns:
-        List of TestCase objects.
-    """
+    """Load test cases from a JSON file."""
     data = json.loads(tests_path.read_text())
     return [TestCase.model_validate(tc) for tc in data]
 
@@ -59,18 +37,7 @@ async def run_all_tests(
     options: RunOptions | None = None,
     mock_mode: bool = False,
 ) -> TestRun:
-    """Run all test cases and return aggregated results.
-
-    Args:
-        services: Application services bag.
-        graph: Agent graph to test.
-        test_cases: List of test cases.
-        options: Run options.
-        mock_mode: Use mock responses for testing.
-
-    Returns:
-        TestRun with all results.
-    """
+    """Run all test cases and return aggregated results."""
     return await services.test_execution.run_tests(graph, test_cases, options, _mock_mode=mock_mode)
 
 
@@ -82,21 +49,7 @@ async def run_tests_streaming(
     mock_mode: bool = False,
     on_error: OnErrorCallback | None = None,
 ) -> AsyncIterator[TestResult]:
-    """Run tests and yield results as they complete.
-
-    This is useful for TUI to show live progress.
-
-    Args:
-        services: Application services bag.
-        graph: Agent graph to test.
-        test_cases: List of test cases.
-        options: Run options.
-        mock_mode: Use mock responses for testing.
-        on_error: Optional callback for retry notifications.
-
-    Yields:
-        TestResult as each test completes.
-    """
+    """Run tests and yield results as they complete."""
     for test_case in test_cases:
         result = await services.test_execution.run_test(
             graph, test_case, options, _mock_mode=mock_mode, on_error=on_error
@@ -141,7 +94,6 @@ class TestRunContext:
         if not self.graph:
             await self.load()
 
-        # Use streaming internally to support on_error callback
         run_id = str(uuid.uuid4())
         started_at = datetime.now()
         results = []

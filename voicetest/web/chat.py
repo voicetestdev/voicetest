@@ -55,18 +55,7 @@ class ChatManager:
     ) -> dict:
         """Start a text chat session.
 
-        Creates a Call record for persistence and instantiates a ConversationEngine.
-
-        Args:
-            agent_id: ID of the agent to chat with.
-            graph: The agent graph configuration.
-            call_repo: Repository for persisting call/chat records.
-            agent_model: LLM model. Reads from settings if None.
-            dynamic_variables: Variables for template substitution in prompts.
-
-        Returns:
-            Dict with chat_id.
-        """
+        Creates a Call record for persistence and instantiates a ConversationEngine."""
         chat_id = str(uuid4())
         room_name = f"chat-{chat_id[:8]}"
 
@@ -98,13 +87,7 @@ class ChatManager:
         content: str,
         call_repo: Any,
     ) -> None:
-        """Process a user message and stream the agent response.
-
-        Args:
-            chat_id: The chat session ID.
-            content: The user's message text.
-            call_repo: Repository for persisting transcript updates.
-        """
+        """Process a user message and stream the agent response."""
         active_chat = self._sessions.get(chat_id)
         if active_chat is None:
             return

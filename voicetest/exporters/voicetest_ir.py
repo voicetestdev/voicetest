@@ -1,8 +1,4 @@
-"""Voicetest JSON exporter — preserves {%snippet%} refs and snippets dict.
-
-This is the raw format for sharing between voicetest users.
-Snippet references are NOT expanded; they remain as {%name%} tokens.
-"""
+"""Voicetest JSON exporter — preserves {%snippet%} refs and snippets dict."""
 
 from voicetest.exporters.base import ExporterInfo
 from voicetest.models.agent import AgentGraph

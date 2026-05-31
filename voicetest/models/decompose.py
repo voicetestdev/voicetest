@@ -1,9 +1,4 @@
-"""Decomposition models for splitting agent graphs into sub-agents.
-
-These models represent the analysis, planning, and output of decomposing
-a monolithic or multi-node AgentGraph into M coherent sub-agents with
-an orchestrator manifest describing the handoff flow.
-"""
+"""Decomposition models for splitting agent graphs into sub-agents."""
 
 from pydantic import BaseModel
 from pydantic import Field

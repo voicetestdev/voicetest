@@ -9,6 +9,7 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import GlobalMetric
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
 from voicetest.models.results import Message
@@ -46,8 +47,14 @@ def simple_graph() -> AgentGraph:
                         condition=TransitionCondition(type="llm_prompt", value="done"),
                     )
                 ],
+                node_type=NodeType.CONVERSATION,
             ),
-            "end": AgentNode(id="end", state_prompt="End conversation.", transitions=[]),
+            "end": AgentNode(
+                id="end",
+                state_prompt="End conversation.",
+                transitions=[],
+                node_type=NodeType.CONVERSATION,
+            ),
         },
         entry_node_id="greeting",
         source_type="test",
