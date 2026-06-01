@@ -2,7 +2,8 @@
 
 Accepts Retell call records in the shape produced by the Retell API and
 the post-call webhook payload. Input may be a single call object, an array
-of call objects, a webhook payload, or an array of webhook payloads.
+of call objects, a webhook payload, an array of webhook payloads, or the
+v3 list-calls envelope ({"items": [...], "pagination_key": ..., "has_more": ...}).
 """
 
 from __future__ import annotations
@@ -56,6 +57,10 @@ def _iter_call_objects(data: Any) -> Iterable[dict]:
 
     if "call" in data and isinstance(data["call"], dict) and _looks_like_call(data["call"]):
         yield data["call"]
+        return
+
+    if isinstance(data.get("items"), list):
+        yield from _iter_call_objects(data["items"])
         return
 
     if _looks_like_call(data):

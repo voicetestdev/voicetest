@@ -68,6 +68,22 @@ class TestParseRetell:
         assert len(result) == 2
         assert {tr.test_name for tr in result} == {"call_a", "call_b"}
 
+    def test_v3_list_envelope(self, retell_call):
+        payload = {
+            "items": [retell_call("call_a"), retell_call("call_b")],
+            "pagination_key": "next_page_token",
+            "has_more": True,
+        }
+
+        result = parse_retell(payload)
+
+        assert len(result) == 2
+        assert {tr.test_name for tr in result} == {"call_a", "call_b"}
+
+    def test_v3_list_envelope_empty_items(self):
+        with pytest.raises(ValueError, match="No Retell call objects"):
+            parse_retell({"items": [], "pagination_key": None, "has_more": False})
+
     def test_skips_turns_with_empty_content(self, retell_call):
         transcript = _FOUR_TURN_TRANSCRIPT + [
             {"role": "user", "content": ""},

@@ -21,14 +21,14 @@ This works for ~1000 production calls in about a minute end-to-end after the ini
 
     ```bash
     # Yesterday's calls in one file
-    curl -X POST https://api.retellai.com/v2/list-calls \
+    curl -X POST https://api.retellai.com/v3/list-calls \
       -H "Authorization: Bearer $RETELL_API_KEY" \
       -H "Content-Type: application/json" \
       -d '{"filter_criteria": {"start_timestamp": {"after": 1714780800000}}, "limit": 1000}' \
       > prod-calls.json
     ```
 
-    Voicetest accepts both the single-call shape and the post-call webhook envelope, as a single object or an array.
+    Voicetest accepts the single-call shape, the post-call webhook envelope, and the v3 `{items, pagination_key, has_more}` list envelope — as a single object or an array.
 
 Other platforms (VAPI, LiveKit, Telnyx, Bland) are not yet supported in v1 of the transcript importer. See [Features: Transcript import & replay](../features.md#transcript-import-replay) for the format reference.
 
