@@ -89,13 +89,13 @@ class RetellPlatformClient:
 
     def list_agents(self, client: Retell) -> list[dict[str, Any]]:
         """List conversation flows from Retell."""
-        flows = client.conversation_flow.list()
+        response = client.conversation_flow.list()
         return [
             {
                 "id": flow.conversation_flow_id,
                 "name": getattr(flow, "conversation_flow_name", None) or flow.conversation_flow_id,
             }
-            for flow in flows
+            for flow in (response.items or [])
         ]
 
     def get_agent(self, client: Retell, agent_id: str) -> dict[str, Any]:

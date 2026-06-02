@@ -4322,7 +4322,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=22.0.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "python-multipart", specifier = ">=0.0.21" },
-    { name = "retell-sdk", specifier = ">=5.0" },
+    { name = "retell-sdk", specifier = ">=5.36.0" },
     { name = "rich", specifier = ">=13.0" },
     { name = "sqlalchemy", specifier = ">=2.0" },
     { name = "telnyx", specifier = ">=4.41.0" },
