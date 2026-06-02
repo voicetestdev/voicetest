@@ -1,5 +1,7 @@
 """Tests for voicetest.platforms.retell module."""
 
+from types import SimpleNamespace
+
 from voicetest.platforms.retell import RetellPlatformClient
 
 
@@ -114,3 +116,26 @@ class TestRetellPlatformClient:
         assert prepared["start_node_id"] == "greeting"
         assert prepared["model_choice"]["type"] == "cascading"
         assert prepared["start_speaker"] == "agent"
+
+    def test_list_agents_unwraps_v2_items_envelope(self):
+        flows = [
+            SimpleNamespace(conversation_flow_id="cf_a", conversation_flow_name="Flow A"),
+            SimpleNamespace(conversation_flow_id="cf_b", conversation_flow_name=None),
+        ]
+        response = SimpleNamespace(items=flows, pagination_key=None, has_more=False)
+        client = SimpleNamespace(conversation_flow=SimpleNamespace(list=lambda: response))
+
+        result = RetellPlatformClient().list_agents(client)
+
+        assert result == [
+            {"id": "cf_a", "name": "Flow A"},
+            {"id": "cf_b", "name": "cf_b"},
+        ]
+
+    def test_list_agents_handles_empty_items(self):
+        response = SimpleNamespace(items=None, pagination_key=None, has_more=False)
+        client = SimpleNamespace(conversation_flow=SimpleNamespace(list=lambda: response))
+
+        result = RetellPlatformClient().list_agents(client)
+
+        assert result == []

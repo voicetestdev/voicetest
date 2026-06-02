@@ -99,6 +99,20 @@ class S3CacheBackend:
         except ClientError as e:
             logger.warning("Failed to delete cache key %s: %s", key, e)
 
+    # DSPy's Cache calls .get/.set/.delete on the disk_cache rather than dunder
+    # subscript access, so expose those alongside the dict-style interface.
+    def get(self, key: str) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            return None
+
+    def set(self, key: str, value: Any) -> None:
+        self[key] = value
+
+    def delete(self, key: str) -> None:
+        del self[key]
+
 
 class S3Cache(Cache):
     """DSPy Cache subclass that uses S3 for persistent storage."""
