@@ -97,8 +97,11 @@ class TestPlatformEndpoints:
         mock_flow.conversation_flow_id = "flow-123"
         mock_flow.conversation_flow_name = "Test Flow"
 
+        mock_response = MagicMock()
+        mock_response.items = [mock_flow]
+
         mock_client = MagicMock()
-        mock_client.conversation_flow.list.return_value = [mock_flow]
+        mock_client.conversation_flow.list.return_value = mock_response
 
         monkeypatch.setattr(
             RetellPlatformClient, "get_client", lambda self, api_key=None: mock_client
