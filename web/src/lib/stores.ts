@@ -35,6 +35,36 @@ export const runWebSocket = writable<WebSocket | null>(null);
 // Track retry status per result_id
 export const retryStatus = writable<Record<string, RetryInfo>>({});
 
+// Track cancel requests that have been issued but not yet finalized by the
+// backend, so the UI can show a "Cancelling…" state. `run` covers a run-level
+// cancel; `tests` holds the result_ids of individual tests being cancelled.
+export interface CancelPending {
+  run: boolean;
+  tests: Set<string>;
+}
+export const cancelPending = writable<CancelPending>({ run: false, tests: new Set() });
+
+function markTestCancelPending(resultId: string): void {
+  cancelPending.update((p) => ({ ...p, tests: new Set(p.tests).add(resultId) }));
+}
+
+function markRunCancelPending(): void {
+  cancelPending.update((p) => ({ ...p, run: true }));
+}
+
+export function clearTestCancelPending(resultId: string): void {
+  cancelPending.update((p) => {
+    if (!p.tests.has(resultId)) return p;
+    const tests = new Set(p.tests);
+    tests.delete(resultId);
+    return { ...p, tests };
+  });
+}
+
+export function resetCancelPending(): void {
+  cancelPending.set({ run: false, tests: new Set() });
+}
+
 // Persist expandedRuns to localStorage
 function loadExpandedRuns(): boolean {
   if (typeof window === "undefined") return false;
@@ -513,7 +543,16 @@ export function connectRunWebSocket(runId: string): void {
           ),
         };
       });
+    } else if (data.type === "cancel_requested") {
+      // Backend acked a cancel request — confirm the optimistic pending state
+      // (also covers cancels issued from another client).
+      if (data.result_id) {
+        markTestCancelPending(data.result_id);
+      } else {
+        markRunCancelPending();
+      }
     } else if (data.type === "test_completed" || data.type === "test_error" || data.type === "test_cancelled") {
+      clearTestCancelPending(data.result_id);
       // Clear retry status only on success or cancel (keep on error for context)
       if (data.type !== "test_error") {
         retryStatus.update((obj) => {
@@ -595,6 +634,7 @@ export function connectRunWebSocket(runId: string): void {
       isRunning.set(false);
       // Clear retry status for this run
       retryStatus.set({});
+      resetCancelPending();
       // Update the run to mark it as completed
       currentRunWithResults.update((run) => {
         if (!run) return run;
@@ -642,9 +682,11 @@ export function clearCurrentRun(): void {
   currentRunId.set(null);
   currentRunWithResults.set(null);
   isRunning.set(false);
+  resetCancelPending();
 }
 
 export function cancelTest(resultId: string): void {
+  markTestCancelPending(resultId);
   const ws = get(runWebSocket);
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "cancel_test", result_id: resultId }));
@@ -652,6 +694,7 @@ export function cancelTest(resultId: string): void {
 }
 
 export function cancelRun(): void {
+  markRunCancelPending();
   const ws = get(runWebSocket);
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "cancel_run" }));

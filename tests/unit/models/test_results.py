@@ -139,6 +139,16 @@ class TestTestResult:
         assert result.error_message == "Connection timeout"
         assert result.transcript == []
 
+    def test_create_cancelled_result(self):
+        result = TestResult(
+            test_id="test-003",
+            test_name="Cancelled test",
+            status="cancelled",
+            error_message="Cancelled before starting",
+        )
+        assert result.status == "cancelled"
+        assert result.error_message == "Cancelled before starting"
+
     def test_result_json_serialization(self):
         result = TestResult(
             test_id="t1",

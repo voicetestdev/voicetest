@@ -1509,8 +1509,15 @@ async def run_websocket(websocket: WebSocket, run_id: str):
                 result_id = data.get("result_id")
                 if result_id:
                     coordinator.cancel_test(run_id, result_id)
+                    if coordinator.is_active(run_id):
+                        await coordinator.broadcast(
+                            run_id,
+                            {"type": "cancel_requested", "result_id": result_id},
+                        )
             elif data.get("type") == "cancel_run":
                 coordinator.cancel_run(run_id)
+                if coordinator.is_active(run_id):
+                    await coordinator.broadcast(run_id, {"type": "cancel_requested"})
     except WebSocketDisconnect:
         # Normal disconnect - client closed connection
         pass
