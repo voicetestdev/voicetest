@@ -982,6 +982,64 @@ class TestRunRunnerLifecycle:
         finally:
             coordinator.end(run_id)
 
+    def test_run_websocket_broadcasts_cancel_requested_on_cancel_run(
+        self, db_client, sample_retell_config, monkeypatch
+    ):
+        """A `cancel_run` message acks back with a run-scoped `cancel_requested`."""
+
+        agent_resp = db_client.post(
+            "/api/agents",
+            json={"name": "WS Ack Run Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_resp.json()["id"]
+        run_repo = db_client.app.state.container.resolve(RunRepository)
+        run_id = run_repo.create(agent_id)["id"]
+
+        coordinator = _get_coordinator(db_client)
+        coordinator.start(run_id)
+        broadcasts, _completed = self._spy_broadcasts(coordinator, monkeypatch)
+
+        try:
+            with db_client.websocket_connect(f"/api/runs/{run_id}/ws") as ws:
+                ws.receive_json()  # state
+                ws.send_json({"type": "cancel_run"})
+                time.sleep(0.2)
+
+            acks = [c for c in broadcasts if c.get("type") == "cancel_requested"]
+            assert len(acks) == 1
+            assert acks[0].get("result_id") is None
+        finally:
+            coordinator.end(run_id)
+
+    def test_run_websocket_broadcasts_cancel_requested_on_cancel_test(
+        self, db_client, sample_retell_config, monkeypatch
+    ):
+        """A `cancel_test` message acks back with the test's `result_id`."""
+
+        agent_resp = db_client.post(
+            "/api/agents",
+            json={"name": "WS Ack Test Agent", "config": sample_retell_config},
+        )
+        agent_id = agent_resp.json()["id"]
+        run_repo = db_client.app.state.container.resolve(RunRepository)
+        run_id = run_repo.create(agent_id)["id"]
+
+        coordinator = _get_coordinator(db_client)
+        coordinator.start(run_id)
+        broadcasts, _completed = self._spy_broadcasts(coordinator, monkeypatch)
+
+        try:
+            with db_client.websocket_connect(f"/api/runs/{run_id}/ws") as ws:
+                ws.receive_json()  # state
+                ws.send_json({"type": "cancel_test", "result_id": "res-123"})
+                time.sleep(0.2)
+
+            acks = [c for c in broadcasts if c.get("type") == "cancel_requested"]
+            assert len(acks) == 1
+            assert acks[0]["result_id"] == "res-123"
+        finally:
+            coordinator.end(run_id)
+
     def test_quota_exhausted_aborts_remaining_tests(self, db_client, two_tests_agent, monkeypatch):
         """When run_test raises QuotaExhaustedError, remaining tests are marked cancelled."""
 

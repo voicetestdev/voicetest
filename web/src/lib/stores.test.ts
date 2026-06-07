@@ -1,7 +1,26 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { get } from "svelte/store";
-import { currentRunWithResults, currentView, currentAgentId, isRunning } from "./stores";
+import {
+  currentRunWithResults,
+  currentView,
+  currentAgentId,
+  isRunning,
+  cancelPending,
+  cancelTest,
+  cancelRun,
+  clearTestCancelPending,
+  resetCancelPending,
+  runWebSocket,
+} from "./stores";
 import type { RunResultRecord, RunWithResults } from "./types";
+
+class FakeWebSocket {
+  readyState = 1; // WebSocket.OPEN
+  sent: string[] = [];
+  send(data: string): void {
+    this.sent.push(data);
+  }
+}
 
 function createResult(overrides: Partial<RunResultRecord> = {}): RunResultRecord {
   return {
@@ -466,6 +485,60 @@ describe("stores", () => {
         const run = get(currentRunWithResults);
         expect(run!.results[0].transcript_json).toBe("[]");
       });
+    });
+  });
+
+  describe("cancel-in-progress state", () => {
+    beforeEach(() => {
+      resetCancelPending();
+      runWebSocket.set(null);
+    });
+
+    it("cancelTest optimistically marks the result pending and sends the message", () => {
+      const ws = new FakeWebSocket();
+      runWebSocket.set(ws as unknown as WebSocket);
+
+      cancelTest("result-1");
+
+      expect(get(cancelPending).tests.has("result-1")).toBe(true);
+      expect(ws.sent).toEqual([
+        JSON.stringify({ type: "cancel_test", result_id: "result-1" }),
+      ]);
+    });
+
+    it("cancelRun optimistically marks the run pending and sends the message", () => {
+      const ws = new FakeWebSocket();
+      runWebSocket.set(ws as unknown as WebSocket);
+
+      cancelRun();
+
+      expect(get(cancelPending).run).toBe(true);
+      expect(ws.sent).toEqual([JSON.stringify({ type: "cancel_run" })]);
+    });
+
+    it("cancelTest still marks pending even when no socket is open", () => {
+      cancelTest("result-2");
+      expect(get(cancelPending).tests.has("result-2")).toBe(true);
+    });
+
+    it("clearTestCancelPending removes a single result without touching others", () => {
+      cancelTest("result-1");
+      cancelTest("result-2");
+
+      clearTestCancelPending("result-1");
+
+      expect(get(cancelPending).tests.has("result-1")).toBe(false);
+      expect(get(cancelPending).tests.has("result-2")).toBe(true);
+    });
+
+    it("resetCancelPending clears both run and test pending", () => {
+      cancelRun();
+      cancelTest("result-1");
+
+      resetCancelPending();
+
+      expect(get(cancelPending).run).toBe(false);
+      expect(get(cancelPending).tests.size).toBe(0);
     });
   });
 

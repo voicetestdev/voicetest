@@ -8,6 +8,7 @@
     runHistory,
     cancelTest,
     cancelRun,
+    cancelPending,
     retryStatus,
     startRun,
     currentView,
@@ -665,8 +666,9 @@
           <button
             class="cancel-run-btn"
             onclick={cancelRun}
+            disabled={$cancelPending.run}
             title="Cancel run"
-          >Cancel</button>
+          >{$cancelPending.run ? "Cancelling…" : "Cancel"}</button>
         {/if}
       {/if}
     </div>
@@ -696,12 +698,19 @@
                   {/if}
                 </button>
                 {#if result.status === "running"}
-                  <button
-                    type="button"
-                    class="cancel-btn"
-                    onclick={() => cancelTest(result.id)}
-                    title="Cancel test"
-                  >×</button>
+                  {#if $cancelPending.tests.has(result.id)}
+                    <span class="cancelling">
+                      <span class="mini-spinner"></span>
+                      Cancelling…
+                    </span>
+                  {:else}
+                    <button
+                      type="button"
+                      class="cancel-btn"
+                      onclick={() => cancelTest(result.id)}
+                      title="Cancel test"
+                    >×</button>
+                  {/if}
                 {/if}
               </div>
             </li>
@@ -1457,8 +1466,13 @@
     font-size: 0.75rem !important;
   }
 
-  .cancel-run-btn:hover {
+  .cancel-run-btn:hover:not(:disabled) {
     background: var(--danger-bg-hover) !important;
+  }
+
+  .cancel-run-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .replay-btn {
@@ -1581,6 +1595,15 @@
 
   .cancel-btn:hover {
     background: var(--danger-bg-hover) !important;
+  }
+
+  .cancelling {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
   }
 
   .empty {
