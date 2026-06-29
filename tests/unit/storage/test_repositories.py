@@ -540,6 +540,27 @@ class TestRunRepository:
         assert run["results"][0]["test_case_id"] is None
         assert run["results"][0]["call_id"] is None
 
+    def test_source_kind_defaults_to_simulated(self, run_repo, agent_repo, sample_run):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+
+        run_repo.add_result(run_record["id"], sample_run.results[0], test_case_id="tc-1")
+
+        run = run_repo.get_with_results(run_record["id"])
+        assert run["results"][0]["source_kind"] == "simulated"
+
+    def test_source_kind_live_persists(self, run_repo, agent_repo, sample_run):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+        result = sample_run.results[0]
+        result.source_kind = "live"
+
+        run_repo.add_result(run_record["id"], result, call_id="call-1")
+
+        run = run_repo.get_with_results(run_record["id"])
+        assert run["results"][0]["source_kind"] == "live"
+        assert run["results"][0]["call_id"] == "call-1"
+
     def test_complete(self, run_repo, agent_repo):
         agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
         run_record = run_repo.create(agent["id"])

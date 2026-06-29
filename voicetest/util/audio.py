@@ -5,6 +5,7 @@ import logging
 
 import httpx
 
+from voicetest.models.results import AudioMetadata
 from voicetest.models.results import Message
 from voicetest.settings import Settings
 
@@ -69,13 +70,13 @@ class AudioRoundTrip:
         return response.json()["text"]
 
     async def transform_transcript(self, transcript: list[Message]) -> list[Message]:
-        """Round-trip all assistant messages, storing results in metadata["heard"]."""
+        """Round-trip all assistant messages, storing results in the audio sub-model."""
         result = copy.deepcopy(transcript)
         for msg in result:
             if msg.role == "assistant" and msg.content.strip():
                 try:
                     heard = await self.round_trip(msg.content)
-                    msg.metadata["heard"] = heard
+                    msg.set_audio(AudioMetadata(heard=heard))
                 except Exception:
                     logger.exception("Audio round-trip failed for message: %s", msg.content[:80])
         return result

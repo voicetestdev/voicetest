@@ -21,12 +21,12 @@ import traceback
 
 from livekit import rtc
 from livekit.agents.voice import Agent
-from livekit.agents.voice import AgentSession
 from livekit.plugins import openai
 from livekit.plugins import silero
 
 from voicetest.engine.conversation import ConversationEngine
 from voicetest.livecall.livekit_adapter import VoicetestLLM
+from voicetest.livecall.participant import CascadeParticipant
 from voicetest.models.agent import AgentGraph
 from voicetest.settings import resolve_model
 
@@ -152,7 +152,7 @@ def main() -> None:
             voicetest_llm = VoicetestLLM(engine)
             voicetest_llm.set_on_response(lambda text: output_transcript("assistant", text))
 
-            # Configure the voice pipeline based on backend choice
+            # Select the cascade STT/TTS components based on backend choice
             if args.backend == "local":
                 # Local OSS stack via Docker: Whisper + local TTS + Kokoro
                 print(
@@ -161,43 +161,35 @@ def main() -> None:
                     file=sys.stderr,
                     flush=True,
                 )
-                session = AgentSession(
-                    stt=openai.STT(
-                        base_url=args.whisper_url,
-                        api_key="not-needed",
-                        model="Systran/faster-whisper-base.en",
-                    ),
-                    llm=voicetest_llm,
-                    tts=openai.TTS(
-                        base_url=args.kokoro_url,
-                        api_key="not-needed",
-                        model="kokoro",
-                        voice="af_heart",
-                    ),
-                    vad=silero.VAD.load(),
-                    allow_interruptions=False,
+                stt = openai.STT(
+                    base_url=args.whisper_url,
+                    api_key="not-needed",
+                    model="Systran/faster-whisper-base.en",
+                )
+                tts = openai.TTS(
+                    base_url=args.kokoro_url,
+                    api_key="not-needed",
+                    model="kokoro",
+                    voice="af_heart",
                 )
             elif args.backend == "mlx":
                 # macOS Metal-accelerated stack
                 if not MLX_AVAILABLE:
                     output_error("MLX backend requires mlx-audio: uv sync --extra macos")
                     sys.exit(1)
-                session = AgentSession(
-                    stt=MlxWhisperSTT(),
-                    llm=voicetest_llm,
-                    tts=MlxKokoroTTS(),
-                    vad=silero.VAD.load(),
-                    allow_interruptions=False,
-                )
+                stt = MlxWhisperSTT()
+                tts = MlxKokoroTTS()
             else:
                 # OpenAI backend
-                session = AgentSession(
-                    stt=openai.STT(),
-                    llm=voicetest_llm,
-                    tts=openai.TTS(),
-                    vad=silero.VAD.load(),
-                    allow_interruptions=False,
-                )
+                stt = openai.STT()
+                tts = openai.TTS()
+
+            session = CascadeParticipant(
+                stt=stt,
+                llm=voicetest_llm,
+                tts=tts,
+                vad=silero.VAD.load(),
+            ).build_session()
 
             # Get instructions from graph for Agent
             instructions = get_general_prompt(graph)

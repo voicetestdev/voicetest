@@ -109,6 +109,32 @@ jobs:
           LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
         run: uv run pytest tests/integration/test_platforms.py tests/integration/test_livekit_api.py -v --tb=short
 
+  livecall-integration:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Start test services (LiveKit + whisper + kokoro)
+        run: bash scripts/services.sh up
+
+      - name: Install dependencies
+        run: uv sync --frozen --all-extras
+
+      - name: Run live-call observer e2e
+        run: uv run pytest tests/integration/test_observer_e2e.py -v --tb=short
+
+      - name: Stop test services
+        if: always()
+        run: bash scripts/services.sh down
+
   build:
     runs-on: ubuntu-latest
     needs: test

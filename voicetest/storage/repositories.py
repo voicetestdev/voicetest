@@ -700,6 +700,7 @@ class RunRepository:
             call_id=call_id,
             test_name=result.test_name,
             status=result.status,
+            source_kind=result.source_kind,
             duration_ms=result.duration_ms,
             turn_count=result.turn_count,
             end_reason=result.end_reason,
@@ -775,6 +776,7 @@ class RunRepository:
         data = self._serialize_result_data(result)
 
         db_result.status = result.status
+        db_result.source_kind = result.source_kind
         db_result.duration_ms = result.duration_ms
         db_result.turn_count = result.turn_count
         db_result.end_reason = result.end_reason
@@ -842,6 +844,7 @@ class RunRepository:
             "call_id": result.call_id,
             "test_name": result.test_name,
             "status": result.status,
+            "source_kind": result.source_kind,
             "duration_ms": result.duration_ms,
             "turn_count": result.turn_count,
             "end_reason": result.end_reason,

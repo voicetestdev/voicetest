@@ -78,11 +78,11 @@ class TestTransformTranscript:
 
         assert result[0].role == "user"
         assert result[0].content == "Hello there"
-        assert "heard" not in result[0].metadata
+        assert result[0].audio().heard is None
 
     @pytest.mark.asyncio
     async def test_agent_messages_get_heard(self):
-        """Agent messages should get metadata['heard'] populated."""
+        """Agent messages should get the audio sub-model heard field populated."""
         rt = AudioRoundTrip()
 
         async def mock_round_trip(text):
@@ -99,7 +99,7 @@ class TestTransformTranscript:
 
         assert result[1].role == "assistant"
         assert result[1].content == "Call 415-555-1234"
-        assert result[1].metadata["heard"] == "heard: Call 415-555-1234"
+        assert result[1].audio().heard == "heard: Call 415-555-1234"
 
     @pytest.mark.asyncio
     async def test_original_transcript_not_mutated(self):
@@ -117,8 +117,8 @@ class TestTransformTranscript:
 
         result = await rt.transform_transcript(transcript)
 
-        assert "heard" in result[0].metadata
-        assert "heard" not in transcript[0].metadata
+        assert result[0].audio().heard == "heard"
+        assert transcript[0].audio().heard is None
 
     @pytest.mark.asyncio
     async def test_empty_agent_message_skipped(self):
@@ -140,8 +140,8 @@ class TestTransformTranscript:
         result = await rt.transform_transcript(transcript)
 
         assert len(calls) == 0
-        assert "heard" not in result[0].metadata
-        assert "heard" not in result[1].metadata
+        assert result[0].audio().heard is None
+        assert result[1].audio().heard is None
 
     @pytest.mark.asyncio
     async def test_round_trip_error_logged_not_raised(self):
@@ -160,7 +160,7 @@ class TestTransformTranscript:
         result = await rt.transform_transcript(transcript)
 
         assert result[0].content == "Hello"
-        assert "heard" not in result[0].metadata
+        assert result[0].audio().heard is None
 
 
 class TestRunOptions:

@@ -8,6 +8,19 @@ from pydantic import BaseModel
 from pydantic import Field
 
 
+class AudioMetadata(BaseModel):
+    """Audio/observer fields carried alongside a transcript message.
+
+    Stored under Message.metadata["audio"]. heard is the observer-transcribed
+    text of the actually-published audio, distinct from content (the intended
+    text). latency_ms is time-to-first-audio for the turn; audio_ref points at
+    captured audio."""
+
+    heard: str | None = None
+    latency_ms: int | None = None
+    audio_ref: str | None = None
+
+
 class Message(BaseModel):
     """Single message in a conversation transcript."""
 
@@ -15,6 +28,22 @@ class Message(BaseModel):
     content: str
     timestamp: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def audio(self) -> AudioMetadata:
+        """Return the audio sub-model, falling back to the legacy flat heard key."""
+        raw = self.metadata.get("audio")
+        if isinstance(raw, AudioMetadata):
+            return raw
+        if isinstance(raw, dict):
+            return AudioMetadata.model_validate(raw)
+        legacy = self.metadata.get("heard")
+        if legacy is not None:
+            return AudioMetadata(heard=legacy)
+        return AudioMetadata()
+
+    def set_audio(self, audio: AudioMetadata) -> None:
+        """Store the audio sub-model under the reserved metadata key."""
+        self.metadata["audio"] = audio.model_dump(exclude_none=True)
 
 
 class ToolCall(BaseModel):
@@ -59,6 +88,7 @@ class TestResult(BaseModel):
     test_id: str | None = None
     test_name: str
     status: Literal["pass", "fail", "error", "imported", "cancelled"]
+    source_kind: Literal["simulated", "live", "imported"] = "simulated"
     transcript: list[Message] = Field(default_factory=list)
     metric_results: list[MetricResult] = Field(default_factory=list)
     audio_metric_results: list[MetricResult] = Field(default_factory=list)

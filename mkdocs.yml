@@ -80,6 +80,5 @@ plugins:
   - search
 
 exclude_docs: |
-  MOLTBOT.md
-  RESEARCH.md
+  research/
   demos/README.md
