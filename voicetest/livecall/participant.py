@@ -16,6 +16,10 @@ from __future__ import annotations
 from typing import Protocol
 from typing import runtime_checkable
 
+from livekit.agents import llm as lk_llm
+from livekit.agents import stt as lk_stt
+from livekit.agents import tts as lk_tts
+from livekit.agents import vad as lk_vad
 from livekit.agents.voice import AgentSession
 
 
@@ -36,7 +40,14 @@ class CascadeParticipant:
 
     intended_text_available = True
 
-    def __init__(self, stt, llm, tts, vad, allow_interruptions: bool = False):
+    def __init__(
+        self,
+        stt: lk_stt.STT,
+        llm: lk_llm.LLM,
+        tts: lk_tts.TTS,
+        vad: lk_vad.VAD,
+        allow_interruptions: bool = False,
+    ):
         self.stt = stt
         self.llm = llm
         self.tts = tts

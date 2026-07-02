@@ -222,9 +222,15 @@
     }
   }
 
+  function heardText(msg: Message): string | undefined {
+    const audio = msg.metadata?.audio as { heard?: string } | undefined;
+    const heard = audio?.heard ?? (msg.metadata?.heard as string | undefined);
+    return heard || undefined;
+  }
+
   function hasAudioEval(result: RunResultRecord): boolean {
     const transcript = parseTranscript(result.transcript_json);
-    return transcript.some((m) => m.role === "assistant" && m.metadata?.heard);
+    return transcript.some((m) => m.role === "assistant" && heardText(m));
   }
 
   async function runAudioEval(resultId: string) {
@@ -824,9 +830,9 @@
                   {:else}
                     <div class="message" class:user={msg.role === "user"} class:agent={msg.role === "assistant"}>
                       <span class="role">{displayRole(msg.role)}</span>
-                      {#if msg.metadata?.heard && msg.role === "assistant"}
+                      {#if msg.role === "assistant" && heardText(msg)}
                         <div class="audio-diff">
-                          {@html diffWords(msg.content, msg.metadata.heard as string)}
+                          {@html diffWords(msg.content, heardText(msg) as string)}
                         </div>
                       {:else}
                         <span class="content">{msg.content}</span>

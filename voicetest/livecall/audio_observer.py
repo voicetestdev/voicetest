@@ -38,9 +38,11 @@ class AudioObserver:
         stream = self._stt.stream()
 
         async def _pump() -> None:
-            async for frame_event in audio_stream:
-                stream.push_frame(frame_event.frame)
-            stream.end_input()
+            try:
+                async for frame_event in audio_stream:
+                    stream.push_frame(frame_event.frame)
+            finally:
+                stream.end_input()
 
         pump_task = asyncio.create_task(_pump())
         try:
