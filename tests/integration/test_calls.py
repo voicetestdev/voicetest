@@ -34,6 +34,7 @@ def simple_graph() -> AgentGraph:
         nodes={
             "greeting": {
                 "id": "greeting",
+                "node_type": "conversation",
                 "state_prompt": "You are a helpful assistant. Say hello.",
                 "transitions": [],
                 "tools": [],

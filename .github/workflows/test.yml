@@ -61,7 +61,7 @@ jobs:
           mise exec -- bun run build
 
       - name: Install Python dependencies
-        run: uv sync --frozen --all-extras --no-extra macos
+        run: uv sync --frozen --extra postgres --extra re2 --extra s3
 
       - name: Run linting
         run: uv run ruff check voicetest/ tests/
@@ -98,7 +98,7 @@ jobs:
         run: curl -sSL https://get.livekit.io/cli | bash
 
       - name: Install dependencies with platform extras
-        run: uv sync --frozen --all-extras --no-extra macos
+        run: uv sync --frozen --extra postgres --extra re2 --extra s3
 
       - name: Run platform integration tests
         env:
@@ -126,7 +126,7 @@ jobs:
         run: bash scripts/services.sh up
 
       - name: Install dependencies
-        run: uv sync --frozen --all-extras --no-extra macos
+        run: uv sync --frozen --extra postgres --extra re2 --extra s3
 
       - name: Run stack integration tests
         run: uv run pytest -m stack tests/integration -v --tb=short
@@ -189,13 +189,15 @@ jobs:
           mise exec -- bun run build
 
       - name: Install dependencies
-        run: uv sync --frozen --all-extras --no-extra macos
+        run: uv sync --frozen --extra postgres --extra re2 --extra s3
 
       - name: Start ollama (local LLM)
+        env:
+          OLLAMA_MODEL: qwen2.5:3b
         run: bash scripts/services.sh up ollama
 
       - name: Run smoke test
-        run: uv run voicetest smoke-test --max-turns 2 --model ollama_chat/qwen2.5:0.5b
+        run: uv run voicetest smoke-test --max-turns 2 --model ollama_chat/qwen2.5:3b
 
       - name: Stop test services
         if: always()

@@ -17,7 +17,7 @@ set -euo pipefail
 
 COMPOSE_FILE="voicetest/compose/docker-compose.yml"
 SERVICES=(livekit whisper kokoro ollama)
-OLLAMA_MODEL="qwen2.5:0.5b"
+OLLAMA_MODEL="${OLLAMA_MODEL:-qwen2.5:0.5b}"
 ACTION="${1:-up}"
 
 port_for() {
