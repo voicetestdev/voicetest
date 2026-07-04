@@ -61,7 +61,7 @@ jobs:
           mise exec -- bun run build
 
       - name: Install Python dependencies
-        run: uv sync --frozen --all-extras
+        run: uv sync --frozen --all-extras --no-extra macos
 
       - name: Run linting
         run: uv run ruff check voicetest/ tests/
@@ -98,7 +98,7 @@ jobs:
         run: curl -sSL https://get.livekit.io/cli | bash
 
       - name: Install dependencies with platform extras
-        run: uv sync --frozen --all-extras
+        run: uv sync --frozen --all-extras --no-extra macos
 
       - name: Run platform integration tests
         env:
@@ -126,7 +126,7 @@ jobs:
         run: bash scripts/services.sh up
 
       - name: Install dependencies
-        run: uv sync --frozen --all-extras
+        run: uv sync --frozen --all-extras --no-extra macos
 
       - name: Run stack integration tests
         run: uv run pytest -m stack tests/integration -v --tb=short
@@ -189,7 +189,7 @@ jobs:
           mise exec -- bun run build
 
       - name: Install dependencies
-        run: uv sync --frozen --all-extras
+        run: uv sync --frozen --all-extras --no-extra macos
 
       - name: Start ollama (local LLM)
         run: bash scripts/services.sh up ollama
