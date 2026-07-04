@@ -19,6 +19,23 @@ from voicetest.services.settings import SettingsService
 from voicetest.web.broadcast import SessionRegistry
 
 
+def merge_observed_heard(transcript: list[dict], role: str, heard: str) -> None:
+    """Attach an observed 'heard' string to a transcript message in place.
+
+    Correlates by turn order: the heard text lands on the earliest message of the
+    same role that has no heard yet. Intended text is emitted before its audio is
+    observed, so the matching message normally already exists; when it doesn't
+    (heard with no separable intended turn), the heard is appended as its own turn."""
+    for message in transcript:
+        if message.get("role") != role:
+            continue
+        audio = message.setdefault("metadata", {}).setdefault("audio", {})
+        if not audio.get("heard"):
+            audio["heard"] = heard
+            return
+    transcript.append({"role": role, "content": heard, "metadata": {"audio": {"heard": heard}}})
+
+
 @dataclass
 class LiveKitConfig:
     """LiveKit connection configuration."""
@@ -131,6 +148,7 @@ class CallManager:
 
         graph_json = graph.model_dump_json()
         agent_token = self.generate_token(room_name, "agent", is_agent=True)
+        observer_token = self.generate_token(room_name, "observer", is_agent=False)
 
         # Use 'uv run' to ensure we use the venv Python in Docker
         # This avoids issues where sys.executable might not be the venv Python
@@ -152,6 +170,8 @@ class CallManager:
             self.config.whisper_url,
             "--kokoro-url",
             self.config.kokoro_url,
+            "--observer-token",
+            observer_token,
         ]
 
         if agent_model:
@@ -210,6 +230,18 @@ class CallManager:
                             data = json.loads(line.strip())
                             if data.get("type") == "transcript":
                                 active_call.transcript.append(data["message"])
+                                call_repo.update_transcript(call_id, active_call.transcript)
+                                await self._sessions.broadcast(
+                                    call_id,
+                                    {
+                                        "type": "transcript_update",
+                                        "transcript": active_call.transcript,
+                                    },
+                                )
+                            elif data.get("type") == "observed":
+                                merge_observed_heard(
+                                    active_call.transcript, data["role"], data["heard"]
+                                )
                                 call_repo.update_transcript(call_id, active_call.transcript)
                                 await self._sessions.broadcast(
                                     call_id,

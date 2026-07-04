@@ -13,7 +13,6 @@ contain at least one expected word.
 """
 
 import asyncio
-import socket
 
 import httpx
 from livekit import api as livekit_api
@@ -34,19 +33,7 @@ SAMPLE_RATE = 24000
 NUM_CHANNELS = 1
 ROOM = "observer-e2e"
 
-
-def _port_open(port: int) -> bool:
-    try:
-        with socket.create_connection(("localhost", port), timeout=1):
-            return True
-    except OSError:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not (_port_open(7880) and _port_open(8001) and _port_open(8002)),
-    reason="service stack not running (scripts/services.sh up)",
-)
+pytestmark = pytest.mark.stack
 
 
 def _token(identity: str) -> str:

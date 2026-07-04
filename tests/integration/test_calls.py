@@ -8,7 +8,6 @@ Run with: uv run pytest tests/integration/test_calls.py -v
 import base64
 import json
 import select
-import socket
 import subprocess
 import sys
 from unittest.mock import AsyncMock
@@ -23,14 +22,7 @@ from voicetest.web.calls import CallManager
 from voicetest.web.calls import LiveKitConfig
 
 
-def livekit_server_available() -> bool:
-    """Check if LiveKit server is reachable at localhost:7880."""
-
-    try:
-        with socket.create_connection(("localhost", 7880), timeout=1):
-            return True
-    except (TimeoutError, OSError):
-        return False
+pytestmark = pytest.mark.stack
 
 
 @pytest.fixture
@@ -155,7 +147,6 @@ class TestAgentWorkerSubprocess:
         assert process.returncode == 1
 
 
-@pytest.mark.skipif(not livekit_server_available(), reason="LiveKit server not running")
 class TestAgentWorkerWithLiveKit:
     """Tests that require a running LiveKit server."""
 
@@ -313,7 +304,6 @@ class TestCallManager:
 
         assert decoded.get("video", {}).get("agent") is True
 
-    @pytest.mark.skipif(not livekit_server_available(), reason="LiveKit server not running")
     @pytest.mark.asyncio
     async def test_create_room(self, call_manager):
         """CallManager can create a LiveKit room."""
@@ -321,7 +311,6 @@ class TestCallManager:
 
         await call_manager.create_room(room_name)
 
-    @pytest.mark.skipif(not livekit_server_available(), reason="LiveKit server not running")
     @pytest.mark.asyncio
     async def test_start_call_spawns_subprocess(self, call_manager, mock_call_repo, simple_graph):
         """start_call spawns an agent worker subprocess."""
@@ -342,7 +331,6 @@ class TestCallManager:
 
         await call_manager.end_call(call_info["call_id"], mock_call_repo)
 
-    @pytest.mark.skipif(not livekit_server_available(), reason="LiveKit server not running")
     @pytest.mark.asyncio
     async def test_end_call_terminates_subprocess(self, call_manager, mock_call_repo, simple_graph):
         """end_call terminates the agent worker subprocess."""
@@ -360,7 +348,6 @@ class TestCallManager:
         assert process.poll() is not None
         assert call_manager.get_active_call(call_info["call_id"]) is None
 
-    @pytest.mark.skipif(not livekit_server_available(), reason="LiveKit server not running")
     @pytest.mark.asyncio
     async def test_session_registry_broadcast_reaches_attached_websocket(
         self, call_manager, mock_call_repo, simple_graph

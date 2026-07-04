@@ -121,7 +121,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "e2e: end-to-end tests requiring Docker Compose (deselect with '-m \"not e2e\"')",
+    "stack: requires the local voicetest service stack (scripts/services.sh up); run with '-m stack'",
 ]
 
 [dependency-groups]

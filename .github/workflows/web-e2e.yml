@@ -1,4 +1,4 @@
-name: E2E Tests
+name: Web E2E Tests
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  e2e:
+  web-e2e:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

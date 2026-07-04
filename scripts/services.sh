@@ -7,15 +7,28 @@
 #   - livekit  ws://localhost:7880  (LiveKit dev server)
 #   - whisper  http://localhost:8001 (faster-whisper STT, OpenAI-compatible)
 #   - kokoro   http://localhost:8002 (Kokoro TTS, OpenAI-compatible)
+#   - ollama   http://localhost:11434 (local LLM for the agent's spoken turn)
 #
 # Usage:
-#   scripts/services.sh up      # start and wait (default)
-#   scripts/services.sh down    # stop and remove
+#   scripts/services.sh up               # start and wait for all services (default)
+#   scripts/services.sh up ollama        # start and wait for a subset only
+#   scripts/services.sh down             # stop and remove
 set -euo pipefail
 
 COMPOSE_FILE="voicetest/compose/docker-compose.yml"
-SERVICES=(livekit whisper kokoro)
+SERVICES=(livekit whisper kokoro ollama)
+OLLAMA_MODEL="qwen2.5:0.5b"
 ACTION="${1:-up}"
+
+port_for() {
+  case "$1" in
+    livekit) echo 7880 ;;
+    whisper) echo 8001 ;;
+    kokoro) echo 8002 ;;
+    ollama) echo 11434 ;;
+    *) echo "" ;;
+  esac
+}
 
 wait_for_port() {
   local name="$1" port="$2" timeout="${3:-180}" elapsed=0
@@ -34,20 +47,29 @@ wait_for_port() {
 
 case "${ACTION}" in
   up)
+    # Bring up all services by default, or only the ones named after 'up'.
+    requested=("${@:2}")
+    if [ "${#requested[@]}" -eq 0 ]; then
+      requested=("${SERVICES[@]}")
+    fi
     # Tolerate a pre-existing stack already bound to these ports (local dev):
     # readiness is confirmed by the port waits below, not by this command.
-    docker compose -f "${COMPOSE_FILE}" up -d "${SERVICES[@]}" \
+    docker compose -f "${COMPOSE_FILE}" up -d "${requested[@]}" \
       || echo "compose up returned non-zero; verifying readiness of existing services..."
-    wait_for_port livekit 7880
-    wait_for_port whisper 8001
-    wait_for_port kokoro 8002
-    echo "all test services ready"
+    for svc in "${requested[@]}"; do
+      wait_for_port "${svc}" "$(port_for "${svc}")"
+      if [ "${svc}" = "ollama" ]; then
+        echo "pulling ollama model ${OLLAMA_MODEL} ..."
+        docker compose -f "${COMPOSE_FILE}" exec -T ollama ollama pull "${OLLAMA_MODEL}"
+      fi
+    done
+    echo "requested test services ready"
     ;;
   down)
     docker compose -f "${COMPOSE_FILE}" down -v
     ;;
   *)
-    echo "usage: $0 [up|down]" >&2
+    echo "usage: $0 [up|down] [service...]" >&2
     exit 1
     ;;
 esac

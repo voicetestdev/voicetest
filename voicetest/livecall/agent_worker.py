@@ -20,15 +20,22 @@ import sys
 import traceback
 
 from livekit import rtc
+from livekit.agents import stt as lk_stt
 from livekit.agents.voice import Agent
 from livekit.plugins import openai
 from livekit.plugins import silero
 
 from voicetest.engine.conversation import ConversationEngine
+from voicetest.livecall.audio_observer import AudioObserver
 from voicetest.livecall.livekit_adapter import VoicetestLLM
+from voicetest.livecall.observer import ObserverTranscript
 from voicetest.livecall.participant import CascadeParticipant
 from voicetest.models.agent import AgentGraph
 from voicetest.settings import resolve_model
+
+
+# The agent participant joins with this identity (see CallManager.generate_token).
+AGENT_IDENTITY = "agent"
 
 
 try:
@@ -64,6 +71,43 @@ def output_status(status: str) -> None:
     """Output a status update to stdout as JSON."""
     msg = {"type": "status", "status": status}
     print(json.dumps(msg), flush=True)
+
+
+def output_observed(role: str, heard: str) -> None:
+    """Output an observed (heard-on-the-wire) transcript line to stdout as JSON."""
+    print(json.dumps({"type": "observed", "role": role, "heard": heard}), flush=True)
+
+
+class EmittingObserverTranscript(ObserverTranscript):
+    """ObserverTranscript that streams each observed turn to stdout as it lands."""
+
+    def add_observed(self, role, heard, **kwargs):
+        message = super().add_observed(role, heard, **kwargs)
+        output_observed(role, heard)
+        return message
+
+
+def build_stt(args) -> lk_stt.STT:
+    """Build the STT component for the selected backend."""
+    if args.backend == "local":
+        return openai.STT(
+            base_url=args.whisper_url,
+            api_key="not-needed",
+            model="Systran/faster-whisper-base.en",
+        )
+    if args.backend == "mlx":
+        if not MLX_AVAILABLE:
+            output_error("MLX backend requires mlx-audio: uv sync --extra macos")
+            sys.exit(1)
+        return MlxWhisperSTT()
+    return openai.STT()
+
+
+def streaming_stt(stt: lk_stt.STT) -> lk_stt.STT:
+    """Wrap a non-streaming STT so AudioObserver can call .stream() on it."""
+    if stt.capabilities.streaming:
+        return stt
+    return lk_stt.StreamAdapter(stt=stt, vad=silero.VAD.load())
 
 
 def get_general_prompt(graph: AgentGraph) -> str:
@@ -105,6 +149,11 @@ def main() -> None:
         default="{}",
         help="JSON string of dynamic variables for template substitution",
     )
+    parser.add_argument(
+        "--observer-token",
+        default=None,
+        help="LiveKit token for the observer participant that transcribes the agent's audio",
+    )
 
     args = parser.parse_args()
 
@@ -123,6 +172,8 @@ def main() -> None:
         output_status("connecting")
 
         room = rtc.Room()
+        observer_room: rtc.Room | None = None
+        observer_tasks: list[asyncio.Task] = []
 
         try:
             print(f"[agent-worker] connecting to {args.url}", file=sys.stderr, flush=True)
@@ -153,6 +204,7 @@ def main() -> None:
             voicetest_llm.set_on_response(lambda text: output_transcript("assistant", text))
 
             # Select the cascade STT/TTS components based on backend choice
+            stt = build_stt(args)
             if args.backend == "local":
                 # Local OSS stack via Docker: Whisper + local TTS + Kokoro
                 print(
@@ -160,11 +212,6 @@ def main() -> None:
                     f" kokoro={args.kokoro_url}",
                     file=sys.stderr,
                     flush=True,
-                )
-                stt = openai.STT(
-                    base_url=args.whisper_url,
-                    api_key="not-needed",
-                    model="Systran/faster-whisper-base.en",
                 )
                 tts = openai.TTS(
                     base_url=args.kokoro_url,
@@ -174,14 +221,9 @@ def main() -> None:
                 )
             elif args.backend == "mlx":
                 # macOS Metal-accelerated stack
-                if not MLX_AVAILABLE:
-                    output_error("MLX backend requires mlx-audio: uv sync --extra macos")
-                    sys.exit(1)
-                stt = MlxWhisperSTT()
                 tts = MlxKokoroTTS()
             else:
                 # OpenAI backend
-                stt = openai.STT()
                 tts = openai.TTS()
 
             session = CascadeParticipant(
@@ -195,25 +237,12 @@ def main() -> None:
             instructions = get_general_prompt(graph)
             agent = Agent(instructions=instructions)
 
-            # Listen for user input transcriptions
+            # Listen for user input transcriptions. Assistant transcripts are
+            # emitted by VoicetestLLM via set_on_response (immediately, before TTS).
             @session.on("user_input_transcribed")
             def on_user_speech(event):
                 if event.is_final and event.transcript:
                     output_transcript("user", event.transcript)
-
-            # Listen for agent speech to capture assistant responses
-            @session.on("speech_created")
-            def on_speech_created(event):
-                handle = event.speech_handle
-
-                # Add callback for when speech is done - chat_items will be populated
-                def on_speech_done(h):
-                    for item in h.chat_items:
-                        text = getattr(item, "text_content", None)
-                        if text:
-                            output_transcript("assistant", text)
-
-                handle.add_done_callback(on_speech_done)
 
             # Register room disconnect handler BEFORE starting session
             disconnect_event = asyncio.Event()
@@ -230,6 +259,29 @@ def main() -> None:
             await session.start(agent, room=room)
             print("[agent-worker] session.start() returned", file=sys.stderr, flush=True)
 
+            # Observe the agent's own published audio from a second participant, so
+            # the transcript records what was heard on the wire alongside intended text.
+            if args.observer_token:
+                observer_room = rtc.Room()
+                observer = AudioObserver(
+                    stt=streaming_stt(build_stt(args)),
+                    transcript=EmittingObserverTranscript(),
+                )
+
+                @observer_room.on("track_subscribed")
+                def on_agent_track(track, publication, participant):
+                    if (
+                        track.kind == rtc.TrackKind.KIND_AUDIO
+                        and participant.identity == AGENT_IDENTITY
+                    ):
+                        stream = rtc.AudioStream(track)
+                        observer_tasks.append(
+                            asyncio.create_task(observer.observe_track(stream, "assistant"))
+                        )
+
+                await observer_room.connect(args.url, args.observer_token)
+                print("[agent-worker] observer connected", file=sys.stderr, flush=True)
+
             # Wait for room disconnect (session runs until room disconnects)
             print("[agent-worker] waiting for disconnect", file=sys.stderr, flush=True)
             await disconnect_event.wait()
@@ -242,6 +294,10 @@ def main() -> None:
             )
             output_error(f"Agent error: {e}")
         finally:
+            for task in observer_tasks:
+                task.cancel()
+            if observer_room is not None:
+                await observer_room.disconnect()
             print("[agent-worker] disconnecting from room", file=sys.stderr, flush=True)
             await room.disconnect()
             output_status("disconnected")

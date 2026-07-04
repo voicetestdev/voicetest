@@ -128,8 +128,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras
 
-      - name: Run live-call observer e2e
-        run: uv run pytest tests/integration/test_observer_e2e.py -v --tb=short
+      - name: Run stack integration tests
+        run: uv run pytest -m stack tests/integration -v --tb=short
 
       - name: Stop test services
         if: always()
@@ -191,7 +191,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --all-extras
 
+      - name: Start ollama (local LLM)
+        run: bash scripts/services.sh up ollama
+
       - name: Run smoke test
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: uv run voicetest smoke-test --max-turns 2
+        run: uv run voicetest smoke-test --max-turns 2 --model ollama_chat/qwen2.5:0.5b
+
+      - name: Stop test services
+        if: always()
+        run: bash scripts/services.sh down

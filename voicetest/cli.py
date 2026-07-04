@@ -512,17 +512,22 @@ def demo(serve: bool, host: str, port: int):
 
 @main.command("smoke-test")
 @click.option("--max-turns", type=int, default=2, help="Maximum conversation turns")
+@click.option(
+    "--model",
+    default=None,
+    help="Override the agent, simulator, and judge model (e.g. a local ollama model)",
+)
 @click.pass_context
-def smoke_test(ctx, max_turns: int):
+def smoke_test(ctx, max_turns: int, model: str | None):
     """Run a quick smoke test using bundled demo data.
 
     Runs 1 test with limited turns to verify voicetest works.
     Useful for CI pipelines."""
     json_mode = ctx.obj.get("json", False)
-    asyncio.run(_smoke_test(max_turns, json_mode=json_mode))
+    asyncio.run(_smoke_test(max_turns, model=model, json_mode=json_mode))
 
 
-async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
+async def _smoke_test(max_turns: int, *, model: str | None = None, json_mode: bool = False) -> None:
     """Run smoke test with bundled demo data."""
     svc = _services()
     settings = svc.settings.get_settings()
@@ -545,9 +550,9 @@ async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
     graph = await agent_svc.import_agent(demo_agent)
     test_case = TestCase.model_validate(first_test)
     options = RunOptions(
-        agent_model=settings.models.agent,
-        simulator_model=settings.models.simulator,
-        judge_model=settings.models.judge,
+        agent_model=model or settings.models.agent,
+        simulator_model=model or settings.models.simulator,
+        judge_model=model or settings.models.judge,
         max_turns=max_turns,
     )
 
