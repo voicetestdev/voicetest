@@ -59,8 +59,22 @@ case "${ACTION}" in
     for svc in "${requested[@]}"; do
       wait_for_port "${svc}" "$(port_for "${svc}")"
       if [ "${svc}" = "ollama" ]; then
+        # The mapped port is up before the ollama server is ready to serve, so
+        # retry the pull until the server accepts it.
         echo "pulling ollama model ${OLLAMA_MODEL} ..."
-        docker compose -f "${COMPOSE_FILE}" exec -T ollama ollama pull "${OLLAMA_MODEL}"
+        pulled=0
+        for _ in $(seq 1 30); do
+          if docker compose -f "${COMPOSE_FILE}" exec -T ollama ollama pull "${OLLAMA_MODEL}"; then
+            pulled=1
+            break
+          fi
+          echo "ollama server not ready yet, retrying pull ..."
+          sleep 2
+        done
+        if [ "${pulled}" -ne 1 ]; then
+          echo "ERROR: ollama pull failed after retries" >&2
+          exit 1
+        fi
       fi
     done
     echo "requested test services ready"
