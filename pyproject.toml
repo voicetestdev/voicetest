@@ -61,8 +61,8 @@ s3 = [
     "cloudpickle>=3.0",
 ]
 macos = [
-    "mlx-audio>=0.3",
-    "misaki[en]>=0.1",
+    "mlx-audio>=0.3; sys_platform == 'darwin'",
+    "misaki[en]>=0.1; sys_platform == 'darwin'",
 ]
 
 [project.scripts]
