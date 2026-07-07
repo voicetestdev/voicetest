@@ -125,6 +125,12 @@ jobs:
       - name: Start test services (LiveKit + whisper + kokoro)
         run: bash scripts/services.sh up
 
+      # The voicetest wheel force-includes web/dist and the app mounts
+      # web/dist/assets at import; these backend tests don't need the real UI,
+      # so stage placeholders to satisfy the editable build and app import.
+      - name: Stage web assets
+        run: mkdir -p web/dist/assets && touch web/dist/index.html
+
       - name: Install dependencies
         run: uv sync --frozen --extra postgres --extra re2 --extra s3
 
