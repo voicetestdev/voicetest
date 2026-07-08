@@ -14,7 +14,6 @@ contain at least one expected word.
 
 import asyncio
 
-import httpx
 from livekit import api as livekit_api
 from livekit import rtc
 from livekit.agents import stt as lk_stt
@@ -22,15 +21,16 @@ from livekit.plugins import openai
 from livekit.plugins import silero
 import pytest
 
+from tests.integration.livekit_helpers import NUM_CHANNELS
+from tests.integration.livekit_helpers import SAMPLE_RATE
+from tests.integration.livekit_helpers import capture_pcm_frames
+from tests.integration.livekit_helpers import synthesize_pcm
 from voicetest.livecall.audio_observer import AudioObserver
 from voicetest.livecall.observer import ObserverTranscript
 
 
 LIVEKIT_URL = "ws://localhost:7880"
 WHISPER_URL = "http://localhost:8001/v1"
-KOKORO_URL = "http://localhost:8002/v1"
-SAMPLE_RATE = 24000
-NUM_CHANNELS = 1
 ROOM = "observer-e2e"
 
 pytestmark = pytest.mark.stack
@@ -45,25 +45,10 @@ def _token(identity: str) -> str:
     )
 
 
-async def _synthesize_pcm(text: str) -> bytes:
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{KOKORO_URL}/audio/speech",
-            json={
-                "model": "kokoro",
-                "input": text,
-                "voice": "af_heart",
-                "response_format": "pcm",
-            },
-        )
-        resp.raise_for_status()
-        return resp.content
-
-
 @pytest.mark.asyncio
 async def test_observer_transcribes_published_audio():
     phrase = "the quick brown fox jumps over the lazy dog"
-    pcm = await _synthesize_pcm(phrase)
+    pcm = await synthesize_pcm(phrase)
 
     transcript = ObserverTranscript()
     whisper = openai.STT(
@@ -99,22 +84,7 @@ async def test_observer_transcribes_published_audio():
         await asyncio.wait_for(subscribed.wait(), timeout=15)
         observe_task = asyncio.create_task(observer.observe_track(holder["stream"], "assistant"))
 
-        samples_per_frame = SAMPLE_RATE // 100  # 10ms frames
-        bytes_per_frame = samples_per_frame * 2
-        for offset in range(0, len(pcm), bytes_per_frame):
-            chunk = pcm[offset : offset + bytes_per_frame]
-            if len(chunk) < bytes_per_frame:
-                chunk = chunk + b"\x00" * (bytes_per_frame - len(chunk))
-            await source.capture_frame(
-                rtc.AudioFrame(chunk, SAMPLE_RATE, NUM_CHANNELS, samples_per_frame)
-            )
-
-        # Trailing silence so the VAD marks end-of-speech and the STT finalizes.
-        silence = b"\x00" * bytes_per_frame
-        for _ in range(100):
-            await source.capture_frame(
-                rtc.AudioFrame(silence, SAMPLE_RATE, NUM_CHANNELS, samples_per_frame)
-            )
+        await capture_pcm_frames(source, pcm)
 
         # Generous window so a cold VAD/STT (first request in CI) can finalize.
         for _ in range(300):

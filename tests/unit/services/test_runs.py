@@ -137,6 +137,28 @@ class TestImportCalls:
         assert run["results"] == []
 
 
+class TestSaveCallAsRun:
+    async def test_marks_result_source_kind_live(self, agent_id, svc):
+        call = {
+            "id": "call-live-1",
+            "agent_id": agent_id,
+            "transcript_json": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ],
+            "started_at": "2026-01-01T00:00:00+00:00",
+            "ended_at": "2026-01-01T00:00:05+00:00",
+        }
+
+        run_id = await svc.save_call_as_run(call)
+
+        run = svc.get_run(run_id)
+        assert run["results"][0]["source_kind"] == "live"
+
+    async def test_empty_transcript_returns_none(self, agent_id, svc):
+        assert await svc.save_call_as_run({"id": "c", "agent_id": agent_id}) is None
+
+
 def _empty_graph():
     return AgentGraph(entry_node_id="x", nodes={}, source_type="test", source_metadata={})
 

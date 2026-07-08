@@ -18,10 +18,14 @@ STT/LLM nondeterminism: at least one assistant turn must carry non-empty heard.
 import asyncio
 from unittest.mock import MagicMock
 
-import httpx
 from livekit import rtc
 import pytest
 
+from tests.integration.livekit_helpers import KOKORO_URL
+from tests.integration.livekit_helpers import NUM_CHANNELS
+from tests.integration.livekit_helpers import SAMPLE_RATE
+from tests.integration.livekit_helpers import capture_pcm_frames
+from tests.integration.livekit_helpers import synthesize_pcm
 from voicetest.models.agent import AgentGraph
 from voicetest.settings import Settings
 from voicetest.web.calls import CallManager
@@ -30,10 +34,7 @@ from voicetest.web.calls import LiveKitConfig
 
 LIVEKIT_URL = "ws://localhost:7880"
 WHISPER_URL = "http://localhost:8001/v1"
-KOKORO_URL = "http://localhost:8002/v1"
 AGENT_MODEL = "ollama_chat/qwen2.5:0.5b"
-SAMPLE_RATE = 24000
-NUM_CHANNELS = 1
 
 pytestmark = pytest.mark.stack
 
@@ -72,43 +73,13 @@ class _Settings:
         return Settings()
 
 
-async def _synthesize_pcm(text: str) -> bytes:
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            f"{KOKORO_URL}/audio/speech",
-            json={
-                "model": "kokoro",
-                "input": text,
-                "voice": "af_heart",
-                "response_format": "pcm",
-            },
-        )
-        resp.raise_for_status()
-        return resp.content
-
-
 async def _publish_caller_audio(room: rtc.Room, pcm: bytes) -> None:
     source = rtc.AudioSource(SAMPLE_RATE, NUM_CHANNELS)
     track = rtc.LocalAudioTrack.create_audio_track("caller", source)
     await room.local_participant.publish_track(
         track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
     )
-
-    samples_per_frame = SAMPLE_RATE // 100  # 10ms frames
-    bytes_per_frame = samples_per_frame * 2
-    for offset in range(0, len(pcm), bytes_per_frame):
-        chunk = pcm[offset : offset + bytes_per_frame]
-        if len(chunk) < bytes_per_frame:
-            chunk = chunk + b"\x00" * (bytes_per_frame - len(chunk))
-        await source.capture_frame(
-            rtc.AudioFrame(chunk, SAMPLE_RATE, NUM_CHANNELS, samples_per_frame)
-        )
-
-    silence = b"\x00" * bytes_per_frame
-    for _ in range(100):
-        await source.capture_frame(
-            rtc.AudioFrame(silence, SAMPLE_RATE, NUM_CHANNELS, samples_per_frame)
-        )
+    await capture_pcm_frames(source, pcm)
 
 
 def _heard_turns(transcript: list[dict]) -> list[dict]:
@@ -146,7 +117,7 @@ async def test_live_call_records_heard_transcript():
         # Let the agent worker and its observer join and subscribe before speaking.
         await asyncio.sleep(3)
 
-        pcm = await _synthesize_pcm("Hello, can you hear me?")
+        pcm = await synthesize_pcm("Hello, can you hear me?")
         await _publish_caller_audio(caller_room, pcm)
 
         # Generous window: cold whisper STT + LLM turn + kokoro TTS + observer STT.

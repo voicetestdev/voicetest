@@ -49,8 +49,11 @@ except ImportError:
     MlxWhisperSTT = None
 
 
-def output_transcript(role: str, content: str) -> None:
-    """Output a transcript message to stdout as JSON."""
+def output_transcript(role: str, content: str, turn_id: int | None = None) -> None:
+    """Output a transcript message to stdout as JSON.
+
+    turn_id ties an intended assistant turn to the observer's heard segments of
+    the same turn so they can be correlated regardless of STT segmentation."""
     msg = {
         "type": "transcript",
         "message": {
@@ -58,6 +61,8 @@ def output_transcript(role: str, content: str) -> None:
             "content": content,
         },
     }
+    if turn_id is not None:
+        msg["turn_id"] = turn_id
     print(json.dumps(msg), flush=True)
 
 
@@ -73,17 +78,28 @@ def output_status(status: str) -> None:
     print(json.dumps(msg), flush=True)
 
 
-def output_observed(role: str, heard: str) -> None:
+def output_observed(role: str, heard: str, turn_id: int | None = None) -> None:
     """Output an observed (heard-on-the-wire) transcript line to stdout as JSON."""
-    print(json.dumps({"type": "observed", "role": role, "heard": heard}), flush=True)
+    msg = {"type": "observed", "role": role, "heard": heard}
+    if turn_id is not None:
+        msg["turn_id"] = turn_id
+    print(json.dumps(msg), flush=True)
 
 
 class EmittingObserverTranscript(ObserverTranscript):
-    """ObserverTranscript that streams each observed turn to stdout as it lands."""
+    """ObserverTranscript that streams each observed turn to stdout as it lands.
+
+    Each observed segment is tagged with the current turn id (the id of the most
+    recent intended assistant turn) so the consumer can concatenate the STT
+    segments of one turn onto that turn's message."""
+
+    def __init__(self, current_turn_id):
+        super().__init__()
+        self._current_turn_id = current_turn_id
 
     def add_observed(self, role, heard, **kwargs):
         message = super().add_observed(role, heard, **kwargs)
-        output_observed(role, heard)
+        output_observed(role, heard, turn_id=self._current_turn_id())
         return message
 
 
@@ -103,11 +119,11 @@ def build_stt(args) -> lk_stt.STT:
     return openai.STT()
 
 
-def streaming_stt(stt: lk_stt.STT) -> lk_stt.STT:
+def streaming_stt(stt: lk_stt.STT, vad) -> lk_stt.STT:
     """Wrap a non-streaming STT so AudioObserver can call .stream() on it."""
     if stt.capabilities.streaming:
         return stt
-    return lk_stt.StreamAdapter(stt=stt, vad=silero.VAD.load())
+    return lk_stt.StreamAdapter(stt=stt, vad=vad)
 
 
 def get_general_prompt(graph: AgentGraph) -> str:
@@ -125,9 +141,9 @@ def main() -> None:
     parser.add_argument("--token", required=True, help="LiveKit access token")
     parser.add_argument(
         "--backend",
-        choices=["openai", "local"],
+        choices=["openai", "local", "mlx"],
         default=os.environ.get("VOICETEST_BACKEND", "openai"),
-        help="Voice backend: 'openai' for OpenAI API, 'local' for Ollama+MLX",
+        help="Voice backend: 'openai' (OpenAI API), 'local' (Docker whisper+kokoro), 'mlx' (macOS)",
     )
     parser.add_argument(
         "--whisper-url",
@@ -199,9 +215,17 @@ def main() -> None:
                 graph=graph, model=resolved, dynamic_variables=dynamic_variables or None
             )
 
-            # Create VoicetestLLM that wraps the engine
+            # Create VoicetestLLM that wraps the engine. Each intended response
+            # advances the turn counter; the observer tags its heard segments with
+            # the same id so they correlate regardless of STT segmentation.
+            turn_counter = {"n": 0}
             voicetest_llm = VoicetestLLM(engine)
-            voicetest_llm.set_on_response(lambda text: output_transcript("assistant", text))
+
+            def on_response(text: str) -> None:
+                turn_counter["n"] += 1
+                output_transcript("assistant", text, turn_id=turn_counter["n"])
+
+            voicetest_llm.set_on_response(on_response)
 
             # Select the cascade STT/TTS components based on backend choice
             stt = build_stt(args)
@@ -226,11 +250,13 @@ def main() -> None:
                 # OpenAI backend
                 tts = openai.TTS()
 
+            # One VAD instance, shared by the cascade session and the observer STT.
+            vad = silero.VAD.load()
             session = CascadeParticipant(
                 stt=stt,
                 llm=voicetest_llm,
                 tts=tts,
-                vad=silero.VAD.load(),
+                vad=vad,
             ).build_session()
 
             # Get instructions from graph for Agent
@@ -264,8 +290,8 @@ def main() -> None:
             if args.observer_token:
                 observer_room = rtc.Room()
                 observer = AudioObserver(
-                    stt=streaming_stt(build_stt(args)),
-                    transcript=EmittingObserverTranscript(),
+                    stt=streaming_stt(build_stt(args), vad),
+                    transcript=EmittingObserverTranscript(lambda: turn_counter["n"]),
                 )
 
                 @observer_room.on("track_subscribed")
@@ -296,6 +322,9 @@ def main() -> None:
         finally:
             for task in observer_tasks:
                 task.cancel()
+            if observer_tasks:
+                # Let each observe_track run its cleanup (flush last final, aclose).
+                await asyncio.gather(*observer_tasks, return_exceptions=True)
             if observer_room is not None:
                 await observer_room.disconnect()
             print("[agent-worker] disconnecting from room", file=sys.stderr, flush=True)

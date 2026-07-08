@@ -159,6 +159,7 @@ class RunService:
         test_result = TestResult(
             test_name="Live Call",
             status=status,
+            source_kind="live",
             transcript=transcript,
             metric_results=metric_results,
             turn_count=turn_count,

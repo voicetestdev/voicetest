@@ -117,6 +117,7 @@ class MetricJudge:
                 continue
             content = msg.content
             if use_heard and msg.role == "assistant":
-                content = msg.audio().heard or content
+                heard = msg.audio().heard
+                content = heard if heard is not None else content
             lines.append(f"{msg.role.upper()}: {content}")
         return "\n".join(lines)

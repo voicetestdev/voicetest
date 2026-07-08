@@ -15,25 +15,42 @@ from uuid import uuid4
 from livekit import api as livekit_api
 
 from voicetest.models.agent import AgentGraph
+from voicetest.models.results import Message
 from voicetest.services.settings import SettingsService
 from voicetest.web.broadcast import SessionRegistry
 
 
-def merge_observed_heard(transcript: list[dict], role: str, heard: str) -> None:
-    """Attach an observed 'heard' string to a transcript message in place.
+def _append_heard(message: dict, heard: str) -> None:
+    """Concatenate an observed 'heard' segment onto a transcript message dict.
 
-    Correlates by turn order: the heard text lands on the earliest message of the
-    same role that has no heard yet. Intended text is emitted before its audio is
-    observed, so the matching message normally already exists; when it doesn't
-    (heard with no separable intended turn), the heard is appended as its own turn."""
-    for message in transcript:
-        if message.get("role") != role:
-            continue
-        audio = message.setdefault("metadata", {}).setdefault("audio", {})
-        if not audio.get("heard"):
-            audio["heard"] = heard
-            return
-    transcript.append({"role": role, "content": heard, "metadata": {"audio": {"heard": heard}}})
+    Goes through the Message/AudioMetadata accessors so the storage shape (and
+    any other audio fields) stay owned by the model."""
+    model = Message.model_validate(message)
+    audio = model.audio()
+    audio.heard = f"{audio.heard} {heard}".strip() if audio.heard else heard
+    model.set_audio(audio)
+    message.clear()
+    message.update(model.model_dump(mode="json"))
+
+
+def merge_observed_heard(
+    transcript: list[dict], turn_messages: dict, role: str, heard: str, turn_id: int | None
+) -> None:
+    """Concatenate an observed 'heard' segment onto its intended turn's message.
+
+    The agent worker tags both intended and observed lines with a turn_id, so all
+    STT segments of one agent turn land on that turn's message. If the intended
+    message hasn't been recorded yet (rare ordering), a standalone turn is created
+    and keyed by turn_id so later segments of the same turn still concatenate."""
+    if not heard or not role:
+        return
+    message = turn_messages.get(turn_id) if turn_id is not None else None
+    if message is None:
+        message = {"role": role, "content": heard}
+        transcript.append(message)
+        if turn_id is not None:
+            turn_messages[turn_id] = message
+    _append_heard(message, heard)
 
 
 @dataclass
@@ -71,6 +88,7 @@ class ActiveCall:
     room_name: str
     process: subprocess.Popen | None = None
     transcript: list = field(default_factory=list)
+    turn_messages: dict = field(default_factory=dict)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -205,6 +223,14 @@ class CallManager:
             "token": user_token,
         }
 
+    async def _persist_and_broadcast(self, call_id: str, call_repo: Any, active_call) -> None:
+        """Persist the current transcript and broadcast it to attached clients."""
+        call_repo.update_transcript(call_id, active_call.transcript)
+        await self._sessions.broadcast(
+            call_id,
+            {"type": "transcript_update", "transcript": active_call.transcript},
+        )
+
     async def _monitor_agent_output(
         self,
         call_id: str,
@@ -228,30 +254,24 @@ class CallManager:
                     if line:
                         try:
                             data = json.loads(line.strip())
-                            if data.get("type") == "transcript":
-                                active_call.transcript.append(data["message"])
-                                call_repo.update_transcript(call_id, active_call.transcript)
-                                await self._sessions.broadcast(
-                                    call_id,
-                                    {
-                                        "type": "transcript_update",
-                                        "transcript": active_call.transcript,
-                                    },
-                                )
-                            elif data.get("type") == "observed":
-                                merge_observed_heard(
-                                    active_call.transcript, data["role"], data["heard"]
-                                )
-                                call_repo.update_transcript(call_id, active_call.transcript)
-                                await self._sessions.broadcast(
-                                    call_id,
-                                    {
-                                        "type": "transcript_update",
-                                        "transcript": active_call.transcript,
-                                    },
-                                )
                         except json.JSONDecodeError:
-                            pass
+                            continue
+                        if data.get("type") == "transcript" and data.get("message"):
+                            message = data["message"]
+                            active_call.transcript.append(message)
+                            turn_id = data.get("turn_id")
+                            if turn_id is not None:
+                                active_call.turn_messages[turn_id] = message
+                            await self._persist_and_broadcast(call_id, call_repo, active_call)
+                        elif data.get("type") == "observed":
+                            merge_observed_heard(
+                                active_call.transcript,
+                                active_call.turn_messages,
+                                data.get("role"),
+                                data.get("heard"),
+                                data.get("turn_id"),
+                            )
+                            await self._persist_and_broadcast(call_id, call_repo, active_call)
                 else:
                     await asyncio.sleep(0.1)
 

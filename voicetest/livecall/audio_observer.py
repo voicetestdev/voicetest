@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterable
+import contextlib
 
 from livekit import rtc
 from livekit.agents import stt as lk_stt
@@ -48,5 +49,9 @@ class AudioObserver:
         try:
             await self.record_speech_events(stream, role)
         finally:
-            await pump_task
+            # Cancel the pump so it can't block on a still-open live track if
+            # record_speech_events exited early (STT error or cancellation).
+            pump_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pump_task
             await stream.aclose()

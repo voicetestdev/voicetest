@@ -3,53 +3,72 @@
 from voicetest.web.calls import merge_observed_heard
 
 
+def _add_intended(transcript, turn_messages, role, content, turn_id):
+    """Mimic _monitor_agent_output appending an intended turn and indexing it."""
+    message = {"role": role, "content": content}
+    transcript.append(message)
+    if turn_id is not None:
+        turn_messages[turn_id] = message
+    return message
+
+
 class TestMergeObservedHeard:
-    def test_attaches_heard_to_matching_role(self):
-        transcript = [{"role": "assistant", "content": "hello there"}]
+    def test_correlates_heard_to_its_turn(self):
+        transcript, turns = [], {}
+        _add_intended(transcript, turns, "assistant", "hello there", turn_id=1)
 
-        merge_observed_heard(transcript, "assistant", "hello thair")
+        merge_observed_heard(transcript, turns, "assistant", "hello thair", turn_id=1)
 
-        assert transcript[0]["metadata"]["audio"]["heard"] == "hello thair"
         assert transcript[0]["content"] == "hello there"
+        assert transcript[0]["metadata"]["audio"]["heard"] == "hello thair"
 
-    def test_ignores_other_roles(self):
-        transcript = [
-            {"role": "user", "content": "hi"},
-            {"role": "assistant", "content": "hello there"},
-        ]
+    def test_multiple_finals_of_one_turn_concatenate(self):
+        transcript, turns = [], {}
+        _add_intended(transcript, turns, "assistant", "Hello. How can I help?", turn_id=1)
 
-        merge_observed_heard(transcript, "assistant", "hello thair")
+        merge_observed_heard(transcript, turns, "assistant", "Hello.", turn_id=1)
+        merge_observed_heard(transcript, turns, "assistant", "How can I help?", turn_id=1)
 
-        assert "audio" not in transcript[0].get("metadata", {})
-        assert transcript[1]["metadata"]["audio"]["heard"] == "hello thair"
+        assert len(transcript) == 1  # no phantom turn
+        assert transcript[0]["metadata"]["audio"]["heard"] == "Hello. How can I help?"
 
-    def test_fills_earliest_unheard_turn_in_order(self):
-        transcript = [
-            {"role": "assistant", "content": "first"},
-            {"role": "assistant", "content": "second"},
-        ]
+    def test_distinct_turns_land_on_their_own_message(self):
+        transcript, turns = [], {}
+        _add_intended(transcript, turns, "assistant", "first", turn_id=1)
+        _add_intended(transcript, turns, "assistant", "second", turn_id=2)
 
-        merge_observed_heard(transcript, "assistant", "first heard")
-        merge_observed_heard(transcript, "assistant", "second heard")
+        merge_observed_heard(transcript, turns, "assistant", "second heard", turn_id=2)
+        merge_observed_heard(transcript, turns, "assistant", "first heard", turn_id=1)
 
         assert transcript[0]["metadata"]["audio"]["heard"] == "first heard"
         assert transcript[1]["metadata"]["audio"]["heard"] == "second heard"
 
-    def test_appends_standalone_when_no_intended_turn(self):
-        transcript = [
-            {"role": "assistant", "content": "only", "metadata": {"audio": {"heard": "h"}}}
-        ]
+    def test_appends_standalone_when_turn_unknown(self):
+        transcript, turns = [], {}
 
-        merge_observed_heard(transcript, "assistant", "extra")
+        merge_observed_heard(transcript, turns, "assistant", "orphan a", turn_id=7)
+        merge_observed_heard(transcript, turns, "assistant", "orphan b", turn_id=7)
 
-        assert len(transcript) == 2
-        assert transcript[1]["content"] == "extra"
-        assert transcript[1]["metadata"]["audio"]["heard"] == "extra"
+        assert len(transcript) == 1
+        assert transcript[0]["role"] == "assistant"
+        assert transcript[0]["metadata"]["audio"]["heard"] == "orphan a orphan b"
 
-    def test_preserves_existing_metadata(self):
-        transcript = [{"role": "assistant", "content": "hello", "metadata": {"latency_ms": 10}}]
+    def test_skips_empty_or_missing(self):
+        transcript, turns = [], {}
+        _add_intended(transcript, turns, "assistant", "hi", turn_id=1)
 
-        merge_observed_heard(transcript, "assistant", "hallo")
+        merge_observed_heard(transcript, turns, "assistant", "", turn_id=1)
+        merge_observed_heard(transcript, turns, None, "x", turn_id=1)
 
-        assert transcript[0]["metadata"]["latency_ms"] == 10
+        assert "metadata" not in transcript[0]
+        assert len(transcript) == 1
+
+    def test_preserves_other_metadata(self):
+        transcript, turns = [], {}
+        message = _add_intended(transcript, turns, "assistant", "hello", turn_id=1)
+        message["metadata"] = {"foo": "bar"}
+
+        merge_observed_heard(transcript, turns, "assistant", "hallo", turn_id=1)
+
+        assert transcript[0]["metadata"]["foo"] == "bar"
         assert transcript[0]["metadata"]["audio"]["heard"] == "hallo"
