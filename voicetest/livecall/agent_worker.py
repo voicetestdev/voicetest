@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -325,10 +326,14 @@ def main() -> None:
             if observer_tasks:
                 # Let each observe_track run its cleanup (flush last final, aclose).
                 await asyncio.gather(*observer_tasks, return_exceptions=True)
+            # Best-effort disconnects: a failure tearing down one connection (e.g.
+            # an observer room that never finished connecting) must not skip the other.
             if observer_room is not None:
-                await observer_room.disconnect()
+                with contextlib.suppress(Exception):
+                    await observer_room.disconnect()
             print("[agent-worker] disconnecting from room", file=sys.stderr, flush=True)
-            await room.disconnect()
+            with contextlib.suppress(Exception):
+                await room.disconnect()
             output_status("disconnected")
 
     asyncio.run(run())

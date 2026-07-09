@@ -15,7 +15,6 @@ from uuid import uuid4
 from livekit import api as livekit_api
 
 from voicetest.models.agent import AgentGraph
-from voicetest.models.results import Message
 from voicetest.services.settings import SettingsService
 from voicetest.web.broadcast import SessionRegistry
 
@@ -23,14 +22,11 @@ from voicetest.web.broadcast import SessionRegistry
 def _append_heard(message: dict, heard: str) -> None:
     """Concatenate an observed 'heard' segment onto a transcript message dict.
 
-    Goes through the Message/AudioMetadata accessors so the storage shape (and
-    any other audio fields) stay owned by the model."""
-    model = Message.model_validate(message)
-    audio = model.audio()
-    audio.heard = f"{audio.heard} {heard}".strip() if audio.heard else heard
-    model.set_audio(audio)
-    message.clear()
-    message.update(model.model_dump(mode="json"))
+    Writes the same metadata['audio']['heard'] shape that Message.set_audio /
+    Message.audio() use, preserving any other audio fields already present."""
+    audio = message.setdefault("metadata", {}).setdefault("audio", {})
+    prev = audio.get("heard")
+    audio["heard"] = f"{prev} {heard}".strip() if prev else heard
 
 
 def merge_observed_heard(
