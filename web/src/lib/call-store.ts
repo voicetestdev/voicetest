@@ -91,6 +91,34 @@ export async function startCall(
   }
 }
 
+export async function startTestAudioCall(agentId: string, testId: string): Promise<void> {
+  callState.set({
+    ...initialState,
+    status: "connecting",
+  });
+
+  try {
+    const response = await api.startCall(agentId, {}, testId);
+
+    // The simulated caller worker joins the room as the user, so the browser
+    // only watches the transcript over the WebSocket — it must not join the
+    // LiveKit room itself (that would collide with the caller's identity).
+    callState.update((s) => ({
+      ...s,
+      callId: response.call_id,
+      status: "active",
+    }));
+
+    connectCallWebSocket(response.call_id);
+  } catch (error) {
+    callState.update((s) => ({
+      ...s,
+      status: "error",
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  }
+}
+
 export async function endCall(agentId: string): Promise<void> {
   const state = get(callState);
   if (!state.callId) return;

@@ -1635,17 +1635,15 @@ async def start_call(
     dynamic_variables = request.dynamic_variables if request else {}
 
     # A test_id makes this a fully-simulated audio call: the test's persona drives
-    # a caller worker so no human joins. Without it, the call awaits a human.
+    # a caller worker so no human joins. Without it, the call awaits a human. The
+    # caller's simulator model defaults from settings (start_call resolves None).
     persona = None
-    simulator_model = None
     if request and request.test_id:
         test_service = _resolve(http_request, TestCaseService)
         record = test_service.get_test(request.test_id)
         if record is None:
             raise HTTPException(status_code=404, detail=f"Test not found: {request.test_id}")
-        test_case = test_service.to_model(record)
-        persona = test_case.user_prompt
-        simulator_model = test_case.simulator_model
+        persona = test_service.to_model(record).user_prompt
 
     try:
         call_info = await call_manager.start_call(
@@ -1654,7 +1652,6 @@ async def start_call(
             call_repo,
             dynamic_variables=dynamic_variables or None,
             persona=persona,
-            simulator_model=simulator_model,
             max_turns=request.max_turns if request else None,
             test_id=request.test_id if request else None,
         )

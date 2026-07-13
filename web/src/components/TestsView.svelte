@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from "../lib/api";
+  import { startTestAudioCall } from "../lib/call-store";
   import {
     agents,
     testCases,
@@ -233,6 +234,11 @@
     newTest = parseRecord(record);
     editingId = record.id;
     showNewTestModal = true;
+  }
+
+  async function runAsAudioCall(record: TestCaseRecord) {
+    if (!$currentAgentId) return;
+    await startTestAudioCall($currentAgentId, record.id);
   }
 
   async function deleteTest(id: string) {
@@ -643,6 +649,14 @@
                     <span class="prompt-preview">{truncatePrompt(record.user_prompt)}</span>
                   </td>
                   <td class="col-actions">
+                    <button
+                      class="small"
+                      onclick={() => runAsAudioCall(record)}
+                      disabled={!$agentGraph}
+                      title="Run this test as a live audio call (requires voicetest up)"
+                    >
+                      Call
+                    </button>
                     <button class="small" onclick={() => editTest(record)}>Edit</button>
                     <button class="small danger" onclick={() => deleteTest(record.id)}>Delete</button>
                   </td>

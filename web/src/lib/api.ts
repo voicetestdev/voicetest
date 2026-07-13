@@ -379,9 +379,10 @@ export const api = {
 
   getLiveKitStatus: () => get<{ available: boolean; error: string | null }>("/livekit/status"),
 
-  startCall: (agentId: string, dynamicVariables?: Record<string, unknown>) =>
+  startCall: (agentId: string, dynamicVariables?: Record<string, unknown>, testId?: string) =>
     post<StartCallResponse>(`/agents/${agentId}/calls/start`, {
       dynamic_variables: dynamicVariables ?? {},
+      ...(testId ? { test_id: testId } : {}),
     }),
 
   getCall: (callId: string) => get<CallRecord>(`/calls/${callId}`),
