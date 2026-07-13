@@ -571,9 +571,6 @@ async def _smoke_test(max_turns: int, *, model: str | None = None, json_mode: bo
         console.print(f"[{status_color}]Status: {result.status.upper()}[/{status_color}]")
         console.print(f"Turns: {len(result.transcript)}")
 
-    # Smoke test verifies the pipeline runs end to end. A metric "fail" still
-    # means it ran and the judge returned a verdict; only "error" (a crash or
-    # parse failure) indicates voicetest itself is broken.
     if result.status == "error":
         raise SystemExit(1)
 
