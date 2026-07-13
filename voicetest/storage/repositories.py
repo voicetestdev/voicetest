@@ -881,7 +881,7 @@ class CallRepository:
         )
         return [self._to_dict(c) for c in calls]
 
-    def create(self, agent_id: str, room_name: str) -> dict:
+    def create(self, agent_id: str, room_name: str, test_id: str | None = None) -> dict:
         """Create a new call."""
         call_id = str(uuid4())
         now = datetime.now(UTC)
@@ -892,6 +892,7 @@ class CallRepository:
             room_name=room_name,
             status="pending",
             transcript_json=[],
+            test_id=test_id,
             started_at=now,
             ended_at=None,
         )
@@ -943,6 +944,7 @@ class CallRepository:
             "room_name": call.room_name,
             "status": call.status,
             "transcript_json": call.transcript_json,
+            "test_id": call.test_id,
             "started_at": _serialize_datetime(call.started_at),
             "ended_at": _serialize_datetime(call.ended_at),
         }

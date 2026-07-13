@@ -120,17 +120,21 @@ Legacy values `"simulation"` and `"unit"` are accepted and mapped to `"llm"` and
 
 A **Run** is a recorded execution of one or more test cases against an agent at a specific point in time. Each Run contains a list of **Result** records, one per test case (or one per conversation, when imported from a transcript dump).
 
-| Run kind  | How it's created                             | Result `status` values   |
-| --------- | -------------------------------------------- | ------------------------ |
-| Simulated | `voicetest run --all` or "Run" in the Web UI | `pass`, `fail`, `error`  |
-| Imported  | `voicetest import-call --transcript ...`     | `imported`               |
-| Replay    | `voicetest replay <run-id>`                  | `pass` (passive capture) |
+| Run kind  | How it's created                                      | Result `status` values   | `source_kind` |
+| --------- | ----------------------------------------------------- | ------------------------ | ------------- |
+| Simulated | `voicetest run --all` or "Run" in the Web UI          | `pass`, `fail`, `error`  | `simulated`   |
+| Live      | A test case run as a live audio call (`voicetest up`) | `pass`, `fail`           | `live`        |
+| Imported  | `voicetest import-call --transcript ...`              | `imported`               | `imported`    |
+| Replay    | `voicetest replay <run-id>`                           | `pass` (passive capture) | `simulated`   |
+
+`source_kind` is a separate discriminator from `status`: it records *where a Result came from* (a simulated harness run, a live audio call, or an imported transcript), independent of pass/fail. A live call is saved as a one-Result Run with `call_id` set, judged against the test case's own metrics (and the agent's [global metrics](features.md#global-metrics)); a call with no test case is named "Live Call" and scored on global metrics only. See [Live audio testing](features.md#live-audio-testing).
 
 Each Result captures:
 
-- **`transcript`** — list of user/assistant/tool messages
+- **`transcript`** — list of user/assistant/tool messages. On a live audio call, each message also carries `metadata.audio.heard` — the observer's STT transcription of the audio actually heard on the wire, distinct from `content` (the intended text). See [Live audio testing](features.md#live-audio-testing).
+- **`source_kind`** — `simulated`, `live`, or `imported`; where the Result came from, independent of `status`
 - **`metric_results`** — score and reasoning per LLM metric
-- **`audio_metric_results`** — same shape, evaluated against the TTS/STT round-tripped transcript
+- **`audio_metric_results`** — same shape, evaluated against the `heard` text (on a live call) or the TTS/STT round-tripped transcript (audio evaluation)
 - **`nodes_visited`** and **`tools_called`** — the path through the graph and any tool invocations
 - **`turn_count`**, **`duration_ms`**, **`end_reason`** — call metadata
 - **`error_message`** — populated when `status="error"`

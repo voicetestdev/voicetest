@@ -1,5 +1,7 @@
 """Tests for live-call transcript helpers."""
 
+from voicetest.web.calls import CallManager
+from voicetest.web.calls import LiveKitConfig
 from voicetest.web.calls import merge_observed_heard
 
 
@@ -8,7 +10,7 @@ def _add_intended(transcript, turn_messages, role, content, turn_id):
     message = {"role": role, "content": content}
     transcript.append(message)
     if turn_id is not None:
-        turn_messages[turn_id] = message
+        turn_messages[(role, turn_id)] = message
     return message
 
 
@@ -72,3 +74,32 @@ class TestMergeObservedHeard:
 
         assert transcript[0]["metadata"]["foo"] == "bar"
         assert transcript[0]["metadata"]["audio"]["heard"] == "hallo"
+
+    def test_same_turn_id_different_roles_do_not_collide(self):
+        transcript, turns = [], {}
+        _add_intended(transcript, turns, "assistant", "agent one", turn_id=1)
+        _add_intended(transcript, turns, "user", "caller one", turn_id=1)
+
+        merge_observed_heard(transcript, turns, "assistant", "agent heard", turn_id=1)
+        merge_observed_heard(transcript, turns, "user", "caller heard", turn_id=1)
+
+        assert transcript[0]["metadata"]["audio"]["heard"] == "agent heard"
+        assert transcript[1]["metadata"]["audio"]["heard"] == "caller heard"
+
+
+class TestCallerCommand:
+    def _manager(self):
+        return CallManager(settings_service=None, config=LiveKitConfig(voice_backend="local"))
+
+    def test_caller_cmd_targets_caller_worker_with_persona(self):
+        cm = self._manager()
+
+        cmd = cm._caller_cmd("room1", "utok", "otok", "PERSONA TEXT", "model-x", max_turns=12)
+
+        assert "voicetest.livecall.caller_worker" in cmd
+        assert cmd[cmd.index("--token") + 1] == "utok"
+        assert cmd[cmd.index("--observer-token") + 1] == "otok"
+        assert cmd[cmd.index("--persona") + 1] == "PERSONA TEXT"
+        assert cmd[cmd.index("--model") + 1] == "model-x"
+        assert cmd[cmd.index("--max-turns") + 1] == "12"
+        assert cmd[cmd.index("--backend") + 1] == "local"

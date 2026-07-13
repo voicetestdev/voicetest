@@ -145,25 +145,50 @@ class RunService:
         turn_count = len(transcript) // 2
 
         metrics_config = self._agent_service.get_metrics_config(agent_id)
+        threshold = metrics_config.threshold if metrics_config else 0.7
+
+        test_case = None
+        test_id = call.get("test_id")
+        if test_id:
+            record = self._tests.get(test_id)
+            if record:
+                test_case = self._tests.to_model(record)
+
+        # The observer put heard-on-the-wire text alongside the intended content,
+        # so audio metrics judge the same criteria against what was actually heard
+        # (no TTS/STT round-trip needed for a live call).
         metric_results: list[MetricResult] = []
-        if metrics_config and metrics_config.global_metrics:
-            try:
-                metric_results = await self._test_execution.evaluate_global_metrics(
-                    transcript, metrics_config
+        audio_metric_results: list[MetricResult] = []
+        has_heard = any(m.audio().heard for m in transcript)
+        try:
+            if test_case and test_case.metrics:
+                metric_results.extend(
+                    await self._test_execution.evaluate_metrics(
+                        transcript, test_case.metrics, threshold=threshold
+                    )
                 )
-            except Exception:
-                _logger.exception("Failed to evaluate global metrics for call %s", call_id)
+                if has_heard:
+                    audio_metric_results = await self._test_execution.evaluate_metrics(
+                        transcript, test_case.metrics, threshold=threshold, use_heard=True
+                    )
+            if metrics_config and metrics_config.global_metrics:
+                metric_results.extend(
+                    await self._test_execution.evaluate_global_metrics(transcript, metrics_config)
+                )
+        except Exception:
+            _logger.exception("Failed to evaluate metrics for call %s", call_id)
 
         status = "pass" if all(r.passed for r in metric_results) else "fail"
 
         test_result = TestResult(
-            test_name="Live Call",
+            test_name=test_case.name if test_case else "Live Call",
             status=status,
             source_kind="live",
             transcript=transcript,
             metric_results=metric_results,
+            audio_metric_results=audio_metric_results,
             turn_count=turn_count,
-            duration_ms=duration_ms,
+            duration_ms=duration_ms or 0,
             end_reason="user_ended",
         )
 

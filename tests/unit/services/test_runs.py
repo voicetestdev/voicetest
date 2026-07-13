@@ -5,8 +5,10 @@ import pytest
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message
 from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
 from voicetest.services.agents import AgentService
 from voicetest.services.runs import RunService
+from voicetest.services.testing.cases import TestCaseService
 
 
 @pytest.fixture
@@ -157,6 +159,39 @@ class TestSaveCallAsRun:
 
     async def test_empty_transcript_returns_none(self, agent_id, svc):
         assert await svc.save_call_as_run({"id": "c", "agent_id": agent_id}) is None
+
+    async def test_result_named_after_test_case(self, agent_id, svc, container):
+        test_svc = container.resolve(TestCaseService)
+        created = test_svc.create_test(
+            agent_id,
+            TestCase(name="Books a flight", user_prompt="## Goal\nBook a flight"),
+        )
+        call = {
+            "id": "call-1",
+            "agent_id": agent_id,
+            "test_id": created["id"],
+            "transcript_json": [
+                {"role": "assistant", "content": "Hi"},
+                {"role": "user", "content": "Book a flight"},
+            ],
+        }
+
+        run_id = await svc.save_call_as_run(call)
+
+        result = svc.get_run(run_id)["results"][0]
+        assert result["test_name"] == "Books a flight"
+        assert result["source_kind"] == "live"
+
+    async def test_result_defaults_to_live_call_without_test(self, agent_id, svc):
+        call = {
+            "id": "call-2",
+            "agent_id": agent_id,
+            "transcript_json": [{"role": "assistant", "content": "Hi"}],
+        }
+
+        run_id = await svc.save_call_as_run(call)
+
+        assert svc.get_run(run_id)["results"][0]["test_name"] == "Live Call"
 
 
 def _empty_graph():

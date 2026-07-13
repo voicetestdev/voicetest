@@ -216,6 +216,16 @@ class TestMigrateSchema:
                     ")"
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
+                    ")"
+                )
+            )
             # Insert a row so we can verify data survives migration
             conn.execute(
                 text(
@@ -243,7 +253,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 4
+            assert version == 5
 
     def test_runs_pending_migration_on_old_schema(self, tmp_path):
         db_path = tmp_path / "old.duckdb"
@@ -280,6 +290,16 @@ class TestMigrateSchema:
             )
             conn.execute(
                 text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
                     "CREATE TABLE schema_version ("
                     "version INTEGER PRIMARY KEY, "
                     "description VARCHAR NOT NULL, "
@@ -302,7 +322,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 4
+            assert version == 5
 
     def test_source_kind_backfill(self, tmp_path):
         """Migration 4 adds source_kind and backfills from the status marker."""
@@ -328,6 +348,16 @@ class TestMigrateSchema:
                     "test_name VARCHAR, "
                     "status VARCHAR, "
                     "created_at TIMESTAMP"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
                     ")"
                 )
             )
@@ -398,6 +428,16 @@ class TestMigrateSchema:
                     ")"
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
+                    ")"
+                )
+            )
 
         with caplog.at_level("INFO", logger="voicetest.storage.engine"):
             _migrate_schema(engine)
@@ -430,6 +470,16 @@ class TestMigrateSchema:
                     "test_name VARCHAR, "
                     "status VARCHAR, "
                     "created_at TIMESTAMP"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
                     ")"
                 )
             )

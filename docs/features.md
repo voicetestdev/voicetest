@@ -1,5 +1,5 @@
 ---
-description: Format conversion, platform integration, snippets, global metrics, diagnosis, audio evaluation, decomposition, caching, and transcript replay.
+description: Format conversion, platform integration, snippets, global metrics, diagnosis, audio evaluation, live audio testing, decomposition, caching, and transcript replay.
 ---
 
 # Features
@@ -161,6 +161,25 @@ Audio evaluation requires the TTS and STT services from `voicetest up`:
 | --------- | --------------------- | ------------------ |
 | `whisper` | http://localhost:8001 | Faster Whisper STT |
 | `kokoro`  | http://localhost:8002 | Kokoro TTS         |
+
+## Live audio testing
+
+[Audio evaluation](#audio-evaluation) round-trips a *simulated text* transcript through TTS/STT after the fact. Live audio testing runs the **whole test case over real WebRTC audio** instead: the agent runs its graph while a simulated caller — the same `UserSimulator` that drives text runs — plays the user over TTS/STT, so the conversation exercises the real STT → LLM → TTS pipeline with **no human on the line**.
+
+An **observer** on each side transcribes what was actually *heard on the wire*, so every turn carries two texts:
+
+- **`content`** — the intended text (the agent's LLM output, or the caller simulator's line).
+- **`heard`** — the observer's STT transcription of the audio the other side actually received.
+
+The pair is stored together with a word-level diff — surfacing the same class of defect audio evaluation catches (e.g. "415-555-1234" spoken as "four hundred fifteen…"), but from a genuine call rather than a reconstruction. Heard segments stream in as the call runs, each correlated to its turn regardless of how STT chunks the audio.
+
+The completed call is saved as a `source_kind="live"` Result (see [Concepts: Runs and results](concepts.md#runs-and-results)), judged against the **test case's own metrics** on the transcript and against the **heard** text as audio metrics, plus the agent's [global metrics](#global-metrics). It renders in the runs UI alongside simulated and imported runs.
+
+Start one from a test case via the API — `POST /agents/{id}/calls/start` with a `test_id`. Omitting `test_id` starts a call for a **human** caller to join from the browser instead. Live audio testing uses the same LiveKit, Whisper, and Kokoro services as audio evaluation, started by `voicetest up` (see the [CLI reference](cli.md)).
+
+!!! note "Cascade today, speech-to-speech next"
+
+    Observation derives `heard` from published audio independent of *how* either side produced it, so it already records the wire transcript for the cascade (STT → LLM → TTS) pipeline that ships today; a native speech-to-speech agent — one with no separable text "brain" — would need no observer change. Time-based audio metrics (latency-to-first-audio, dead-air, barge-in) and native speech-to-speech backends are designed-for but not yet built.
 
 ## Agent decomposition
 

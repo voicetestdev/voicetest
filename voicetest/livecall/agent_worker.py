@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import asyncio
+from collections.abc import Callable
 import contextlib
 import json
 import os
@@ -30,6 +31,7 @@ from voicetest.engine.conversation import ConversationEngine
 from voicetest.livecall.audio_observer import AudioObserver
 from voicetest.livecall.livekit_adapter import VoicetestLLM
 from voicetest.livecall.observer import ObserverTranscript
+from voicetest.livecall.observer_mount import observe_participant
 from voicetest.livecall.participant import CascadeParticipant
 from voicetest.models.agent import AgentGraph
 from voicetest.settings import resolve_model
@@ -127,11 +129,44 @@ def streaming_stt(stt: lk_stt.STT, vad) -> lk_stt.STT:
     return lk_stt.StreamAdapter(stt=stt, vad=vad)
 
 
+def build_tts(args):
+    """Build the TTS component for the selected backend."""
+    if args.backend == "local":
+        return openai.TTS(
+            base_url=args.kokoro_url,
+            api_key="not-needed",
+            model="kokoro",
+            voice="af_heart",
+        )
+    if args.backend == "mlx":
+        if not MLX_AVAILABLE:
+            output_error("MLX backend requires mlx-audio: uv sync --extra macos")
+            sys.exit(1)
+        return MlxKokoroTTS()
+    return openai.TTS()
+
+
 def get_general_prompt(graph: AgentGraph) -> str:
     """Get the general prompt from the agent graph.
 
     Returns the general_prompt from source_metadata, or a default."""
     return graph.source_metadata.get("general_prompt", "You are a helpful voice assistant.")
+
+
+async def opening_turn(
+    engine: ConversationEngine, on_response: Callable[[str], None]
+) -> str | None:
+    """Produce the agent's opening turn from the graph entry node.
+
+    Mirrors the text runner, which advances once before any user input
+    (engine/session.py) so the agent always speaks first. Emits the intended
+    transcript via on_response and returns the greeting to speak, or None when
+    the entry node yields no response."""
+    result = await engine.advance()
+    if result.response:
+        on_response(result.response)
+        return result.response
+    return None
 
 
 def main() -> None:
@@ -230,26 +265,7 @@ def main() -> None:
 
             # Select the cascade STT/TTS components based on backend choice
             stt = build_stt(args)
-            if args.backend == "local":
-                # Local OSS stack via Docker: Whisper + local TTS + Kokoro
-                print(
-                    f"[agent-worker] local backend: whisper={args.whisper_url},"
-                    f" kokoro={args.kokoro_url}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                tts = openai.TTS(
-                    base_url=args.kokoro_url,
-                    api_key="not-needed",
-                    model="kokoro",
-                    voice="af_heart",
-                )
-            elif args.backend == "mlx":
-                # macOS Metal-accelerated stack
-                tts = MlxKokoroTTS()
-            else:
-                # OpenAI backend
-                tts = openai.TTS()
+            tts = build_tts(args)
 
             # One VAD instance, shared by the cascade session and the observer STT.
             vad = silero.VAD.load()
@@ -294,20 +310,19 @@ def main() -> None:
                     stt=streaming_stt(build_stt(args), vad),
                     transcript=EmittingObserverTranscript(lambda: turn_counter["n"]),
                 )
-
-                @observer_room.on("track_subscribed")
-                def on_agent_track(track, publication, participant):
-                    if (
-                        track.kind == rtc.TrackKind.KIND_AUDIO
-                        and participant.identity == AGENT_IDENTITY
-                    ):
-                        stream = rtc.AudioStream(track)
-                        observer_tasks.append(
-                            asyncio.create_task(observer.observe_track(stream, "assistant"))
-                        )
+                observe_participant(
+                    observer_room, observer, AGENT_IDENTITY, "assistant", observer_tasks
+                )
 
                 await observer_room.connect(args.url, args.observer_token)
                 print("[agent-worker] observer connected", file=sys.stderr, flush=True)
+
+            # Agent speaks first, matching the text runner (the entry node's
+            # opening turn advances before any user input). Emitted after the
+            # observer connects so the greeting is transcribed on the wire too.
+            opening = await opening_turn(engine, on_response)
+            if opening:
+                await session.say(opening)
 
             # Wait for room disconnect (session runs until room disconnects)
             print("[agent-worker] waiting for disconnect", file=sys.stderr, flush=True)

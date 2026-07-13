@@ -34,18 +34,21 @@ def merge_observed_heard(
 ) -> None:
     """Concatenate an observed 'heard' segment onto its intended turn's message.
 
-    The agent worker tags both intended and observed lines with a turn_id, so all
-    STT segments of one agent turn land on that turn's message. If the intended
-    message hasn't been recorded yet (rare ordering), a standalone turn is created
-    and keyed by turn_id so later segments of the same turn still concatenate."""
+    Each worker tags both intended and observed lines with a turn_id, so all STT
+    segments of one turn land on that turn's message. The key is (role, turn_id)
+    because the agent and caller each carry their own turn counter, so their ids
+    collide without the role. If the intended message hasn't been recorded yet
+    (rare ordering), a standalone turn is created and keyed the same way so later
+    segments of the same turn still concatenate."""
     if not heard or not role:
         return
-    message = turn_messages.get(turn_id) if turn_id is not None else None
+    key = (role, turn_id)
+    message = turn_messages.get(key) if turn_id is not None else None
     if message is None:
         message = {"role": role, "content": heard}
         transcript.append(message)
         if turn_id is not None:
-            turn_messages[turn_id] = message
+            turn_messages[key] = message
     _append_heard(message, heard)
 
 
@@ -83,6 +86,7 @@ class ActiveCall:
     call_id: str
     room_name: str
     process: subprocess.Popen | None = None
+    caller_process: subprocess.Popen | None = None
     transcript: list = field(default_factory=list)
     turn_messages: dict = field(default_factory=dict)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
@@ -129,6 +133,45 @@ class CallManager:
         )
         return token.to_jwt()
 
+    def _caller_cmd(
+        self,
+        room_name: str,
+        token: str,
+        observer_token: str,
+        persona: str,
+        model: str,
+        max_turns: int | None = None,
+    ) -> list[str]:
+        """Build the command that launches the simulated caller worker."""
+        cmd = [
+            "uv",
+            "run",
+            "python",
+            "-m",
+            "voicetest.livecall.caller_worker",
+            "--room",
+            room_name,
+            "--url",
+            self.config.url,
+            "--token",
+            token,
+            "--persona",
+            persona,
+            "--model",
+            model,
+            "--backend",
+            self.config.voice_backend,
+            "--whisper-url",
+            self.config.whisper_url,
+            "--kokoro-url",
+            self.config.kokoro_url,
+            "--observer-token",
+            observer_token,
+        ]
+        if max_turns is not None:
+            cmd.extend(["--max-turns", str(max_turns)])
+        return cmd
+
     async def start_call(
         self,
         agent_id: str,
@@ -136,10 +179,17 @@ class CallManager:
         call_repo: Any,
         agent_model: str | None = None,
         dynamic_variables: dict | None = None,
+        persona: str | None = None,
+        simulator_model: str | None = None,
+        max_turns: int | None = None,
+        test_id: str | None = None,
     ) -> dict:
         """Start a new live call.
 
-        Creates LiveKit room, generates tokens, spawns agent worker subprocess."""
+        Creates a LiveKit room, generates tokens, and spawns the agent worker.
+        When persona is given, also spawns a simulated caller worker so the call
+        runs fully over audio with no human; otherwise the returned user token is
+        for a human caller to join from the browser."""
         settings = self._settings.get_settings()
         if agent_model is None:
             agent_model = settings.models.agent
@@ -151,7 +201,7 @@ class CallManager:
 
         user_token = self.generate_token(room_name, "user", is_agent=False)
 
-        call_record = call_repo.create(agent_id, room_name)
+        call_record = call_repo.create(agent_id, room_name, test_id=test_id)
         call_repo.update_status(call_record["id"], "connecting")
 
         active_call = ActiveCall(
@@ -210,6 +260,29 @@ class CallManager:
 
         asyncio.create_task(self._monitor_agent_output(call_record["id"], process, call_repo))
 
+        # Simulated caller: join the user side over audio so no human is needed.
+        # Uses its own observer identity so it can transcribe the caller's own
+        # published track without colliding with the agent observer.
+        if persona:
+            simulator_model = simulator_model or settings.models.simulator
+            caller_observer_token = self.generate_token(
+                room_name, "caller-observer", is_agent=False
+            )
+            caller_cmd = self._caller_cmd(
+                room_name, user_token, caller_observer_token, persona, simulator_model, max_turns
+            )
+            caller_process = subprocess.Popen(
+                caller_cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=None,
+                text=True,
+            )
+            active_call.caller_process = caller_process
+            asyncio.create_task(
+                self._monitor_agent_output(call_record["id"], caller_process, call_repo)
+            )
+
         call_repo.update_status(call_record["id"], "active")
 
         return {
@@ -257,7 +330,7 @@ class CallManager:
                             active_call.transcript.append(message)
                             turn_id = data.get("turn_id")
                             if turn_id is not None:
-                                active_call.turn_messages[turn_id] = message
+                                active_call.turn_messages[(message["role"], turn_id)] = message
                             await self._persist_and_broadcast(call_id, call_repo, active_call)
                         elif data.get("type") == "observed":
                             merge_observed_heard(
@@ -302,12 +375,13 @@ class CallManager:
 
         active_call.cancel_event.set()
 
-        if active_call.process and active_call.process.poll() is None:
-            active_call.process.terminate()
-            try:
-                active_call.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                active_call.process.kill()
+        for proc in (active_call.process, active_call.caller_process):
+            if proc and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
         await self._sessions.close(call_id, {"type": "call_ended"})
 

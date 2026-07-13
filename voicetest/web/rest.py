@@ -472,6 +472,8 @@ class StartCallRequest(BaseModel):
     """Request to start a live voice call."""
 
     dynamic_variables: dict[str, Any] = {}
+    test_id: str | None = None
+    max_turns: int | None = None
 
 
 class ImporterInfo(BaseModel):
@@ -1632,12 +1634,29 @@ async def start_call(
 
     dynamic_variables = request.dynamic_variables if request else {}
 
+    # A test_id makes this a fully-simulated audio call: the test's persona drives
+    # a caller worker so no human joins. Without it, the call awaits a human.
+    persona = None
+    simulator_model = None
+    if request and request.test_id:
+        test_service = _resolve(http_request, TestCaseService)
+        record = test_service.get_test(request.test_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"Test not found: {request.test_id}")
+        test_case = test_service.to_model(record)
+        persona = test_case.user_prompt
+        simulator_model = test_case.simulator_model
+
     try:
         call_info = await call_manager.start_call(
             agent_id,
             graph,
             call_repo,
             dynamic_variables=dynamic_variables or None,
+            persona=persona,
+            simulator_model=simulator_model,
+            max_turns=request.max_turns if request else None,
+            test_id=request.test_id if request else None,
         )
         return StartCallResponse(**call_info)
     except Exception as e:

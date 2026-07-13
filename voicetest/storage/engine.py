@@ -56,6 +56,13 @@ _MIGRATIONS: list[tuple[int, str, str | list[str], str]] = [
         "SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'results' AND column_name = 'source_kind'",
     ),
+    (
+        5,
+        "Add test_id to calls",
+        "ALTER TABLE calls ADD COLUMN test_id VARCHAR",
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'calls' AND column_name = 'test_id'",
+    ),
 ]
 
 
