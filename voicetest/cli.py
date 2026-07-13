@@ -257,7 +257,7 @@ async def _run_cli(
 
     def on_error(error: RetryError) -> None:
         _echo(
-            f"[yellow]Rate limited - retrying ({error.attempt}/{error.max_attempts})... "
+            f"[yellow]{error.error_type} - retrying ({error.attempt}/{error.max_attempts})... "
             f"waiting {error.retry_after:.1f}s[/yellow]"
         )
 
@@ -558,7 +558,7 @@ async def _smoke_test(max_turns: int, *, model: str | None = None, json_mode: bo
 
     def on_error(error: RetryError) -> None:
         _echo(
-            f"[yellow]Rate limited - retrying ({error.attempt}/{error.max_attempts})... "
+            f"[yellow]{error.error_type} - retrying ({error.attempt}/{error.max_attempts})... "
             f"waiting {error.retry_after:.1f}s[/yellow]"
         )
 

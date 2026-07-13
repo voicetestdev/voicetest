@@ -75,6 +75,11 @@ case "${ACTION}" in
           echo "ERROR: ollama pull failed after retries" >&2
           exit 1
         fi
+        # Warm the model so the first real inference doesn't pay the cold
+        # weight-load cost, which is slow on CPU-only CI runners.
+        echo "warming ollama model ${OLLAMA_MODEL} ..."
+        docker compose -f "${COMPOSE_FILE}" exec -T ollama \
+          ollama run "${OLLAMA_MODEL}" "hi" >/dev/null 2>&1 || true
       fi
     done
     echo "requested test services ready"
