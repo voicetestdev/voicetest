@@ -5,7 +5,7 @@
 import { writable, get } from "svelte/store";
 import { api } from "./api";
 import { connectToRoom, cleanupAudioElements, type LiveKitConnection } from "./livekit";
-import { loadRunHistory, selectRun } from "./stores";
+import { currentView, loadRunHistory, selectRun } from "./stores";
 import type { CallTranscriptMessage, CallStatus } from "./types";
 
 export interface CallState {
@@ -42,6 +42,10 @@ export const liveKitStatus = writable<LiveKitStatus>(initialLiveKitStatus);
 
 let livekitConnection: LiveKitConnection | null = null;
 
+// Agent id of an in-progress simulated (test-driven) call. A simulated call has
+// no human to hang up, so on call_ended we save it as a run under this agent.
+let simCallAgentId: string | null = null;
+
 export async function startCall(
   agentId: string,
   dynamicVariables?: Record<string, unknown>,
@@ -50,9 +54,14 @@ export async function startCall(
     ...initialState,
     status: "connecting",
   });
+  simCallAgentId = null;
 
   try {
     const response = await api.startCall(agentId, dynamicVariables);
+
+    if (!response.token) {
+      throw new Error("No token returned for a human call");
+    }
 
     callState.update((s) => ({
       ...s,
@@ -96,6 +105,7 @@ export async function startTestAudioCall(agentId: string, testId: string): Promi
     ...initialState,
     status: "connecting",
   });
+  simCallAgentId = agentId;
 
   try {
     const response = await api.startCall(agentId, {}, testId);
@@ -110,6 +120,9 @@ export async function startTestAudioCall(agentId: string, testId: string): Promi
     }));
 
     connectCallWebSocket(response.call_id);
+    // The call surfaces as a source_kind="live" run; take the user to the runs
+    // tab, where it streams and is saved when the conversation ends.
+    currentView.set("runs");
   } catch (error) {
     callState.update((s) => ({
       ...s,
@@ -181,7 +194,15 @@ function connectCallWebSocket(callId: string): void {
       }));
     } else if (data.type === "call_ended") {
       callState.update((s) => ({ ...s, status: "ended" }));
-      cleanupCall();
+      // A simulated call has no human to click End; save it as a run (which also
+      // refreshes the runs list and selects it) instead of just cleaning up.
+      const agentId = simCallAgentId;
+      simCallAgentId = null;
+      if (agentId) {
+        endCall(agentId);
+      } else {
+        cleanupCall();
+      }
     } else if (data.type === "error") {
       callState.update((s) => ({
         ...s,

@@ -31,11 +31,14 @@ class ObserverTranscript:
         intended: str | None = None,
         latency_ms: int | None = None,
         audio_ref: str | None = None,
+        turn_id: int | None = None,
     ) -> Message:
         """Record an observed turn.
 
         content is the intended text when available (cascade), else the heard
-        text (speech-to-speech). heard always holds the observed STT text."""
+        text (speech-to-speech). heard always holds the observed STT text.
+        turn_id is a streaming-correlation hint for emitting subclasses; it is
+        not stored on the canonical Message."""
         content = intended if intended is not None else heard
         msg = Message(role=role, content=content)
         msg.set_audio(AudioMetadata(heard=heard, latency_ms=latency_ms, audio_ref=audio_ref))

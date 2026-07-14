@@ -123,11 +123,14 @@ class RunService:
         """Update a result with audio eval data."""
         self._runs.update_audio_eval(result_id, transformed, audio_metrics)
 
-    async def save_call_as_run(self, call: dict) -> str | None:
+    async def save_call_as_run(self, call: dict, test_case: TestCase | None = None) -> str | None:
         """Convert a completed call into a Run with a single Result.
 
-        Evaluates the agent's configured global metrics against the transcript.
-        Returns the new run_id, or None if the call has no transcript."""
+        Judges the test case's metrics (when known) plus the agent's global
+        metrics against the transcript. The test case is taken from the argument
+        when the caller already holds it (the CLI's file-loaded test), else
+        resolved from the call's test_id in the database. Returns the new run_id,
+        or None if the call has no transcript."""
         transcript_data = call.get("transcript_json") or []
         if not transcript_data:
             return None
@@ -147,12 +150,12 @@ class RunService:
         metrics_config = self._agent_service.get_metrics_config(agent_id)
         threshold = metrics_config.threshold if metrics_config else 0.7
 
-        test_case = None
-        test_id = call.get("test_id")
-        if test_id:
-            record = self._tests.get(test_id)
-            if record:
-                test_case = self._tests.to_model(record)
+        if test_case is None:
+            test_id = call.get("test_id")
+            if test_id:
+                record = self._tests.get(test_id)
+                if record:
+                    test_case = self._tests.to_model(record)
 
         # The observer put heard-on-the-wire text alongside the intended content,
         # so audio metrics judge the same criteria against what was actually heard

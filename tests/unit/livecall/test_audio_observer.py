@@ -63,3 +63,43 @@ class TestRecordSpeechEvents:
         await observer.record_speech_events(_aiter([_final("hi")]), "user")
 
         assert transcript.messages[0].role == "user"
+
+
+class _RecordingTranscript:
+    def __init__(self):
+        self.calls = []
+
+    def add_observed(self, role, heard, *, turn_id=None, **kwargs):
+        self.calls.append((role, heard, turn_id))
+
+
+def _start() -> SpeechEvent:
+    return SpeechEvent(type=SpeechEventType.START_OF_SPEECH, alternatives=[])
+
+
+class TestTurnIdCapture:
+    @pytest.mark.asyncio
+    async def test_turn_id_captured_at_speech_start_not_final(self):
+        transcript = _RecordingTranscript()
+        turn = {"n": 1}
+        observer = AudioObserver(
+            stt=object(), transcript=transcript, turn_id_provider=lambda: turn["n"]
+        )
+
+        async def events():
+            yield _start()
+            turn["n"] = 2
+            yield _final("hello")
+
+        await observer.record_speech_events(events(), "assistant")
+
+        assert transcript.calls == [("assistant", "hello", 1)]
+
+    @pytest.mark.asyncio
+    async def test_turn_id_falls_back_to_final_when_no_speech_start(self):
+        transcript = _RecordingTranscript()
+        observer = AudioObserver(stt=object(), transcript=transcript, turn_id_provider=lambda: 5)
+
+        await observer.record_speech_events(_aiter([_final("hi")]), "user")
+
+        assert transcript.calls == [("user", "hi", 5)]

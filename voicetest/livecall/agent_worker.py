@@ -22,128 +22,27 @@ import sys
 import traceback
 
 from livekit import rtc
-from livekit.agents import stt as lk_stt
 from livekit.agents.voice import Agent
-from livekit.plugins import openai
 from livekit.plugins import silero
 
 from voicetest.engine.conversation import ConversationEngine
 from voicetest.livecall.audio_observer import AudioObserver
 from voicetest.livecall.livekit_adapter import VoicetestLLM
-from voicetest.livecall.observer import ObserverTranscript
 from voicetest.livecall.observer_mount import observe_participant
 from voicetest.livecall.participant import CascadeParticipant
+from voicetest.livecall.worker_io import EmittingObserverTranscript
+from voicetest.livecall.worker_io import build_stt
+from voicetest.livecall.worker_io import build_tts
+from voicetest.livecall.worker_io import output_error
+from voicetest.livecall.worker_io import output_status
+from voicetest.livecall.worker_io import output_transcript
+from voicetest.livecall.worker_io import streaming_stt
 from voicetest.models.agent import AgentGraph
 from voicetest.settings import resolve_model
 
 
 # The agent participant joins with this identity (see CallManager.generate_token).
 AGENT_IDENTITY = "agent"
-
-
-try:
-    from voicetest.plugins.mlx import MlxKokoroTTS
-    from voicetest.plugins.mlx import MlxWhisperSTT
-
-    MLX_AVAILABLE = True
-except ImportError:
-    MLX_AVAILABLE = False
-    MlxKokoroTTS = None
-    MlxWhisperSTT = None
-
-
-def output_transcript(role: str, content: str, turn_id: int | None = None) -> None:
-    """Output a transcript message to stdout as JSON.
-
-    turn_id ties an intended assistant turn to the observer's heard segments of
-    the same turn so they can be correlated regardless of STT segmentation."""
-    msg = {
-        "type": "transcript",
-        "message": {
-            "role": role,
-            "content": content,
-        },
-    }
-    if turn_id is not None:
-        msg["turn_id"] = turn_id
-    print(json.dumps(msg), flush=True)
-
-
-def output_error(message: str) -> None:
-    """Output an error message to stdout as JSON."""
-    msg = {"type": "error", "message": message}
-    print(json.dumps(msg), flush=True)
-
-
-def output_status(status: str) -> None:
-    """Output a status update to stdout as JSON."""
-    msg = {"type": "status", "status": status}
-    print(json.dumps(msg), flush=True)
-
-
-def output_observed(role: str, heard: str, turn_id: int | None = None) -> None:
-    """Output an observed (heard-on-the-wire) transcript line to stdout as JSON."""
-    msg = {"type": "observed", "role": role, "heard": heard}
-    if turn_id is not None:
-        msg["turn_id"] = turn_id
-    print(json.dumps(msg), flush=True)
-
-
-class EmittingObserverTranscript(ObserverTranscript):
-    """ObserverTranscript that streams each observed turn to stdout as it lands.
-
-    Each observed segment is tagged with the current turn id (the id of the most
-    recent intended assistant turn) so the consumer can concatenate the STT
-    segments of one turn onto that turn's message."""
-
-    def __init__(self, current_turn_id):
-        super().__init__()
-        self._current_turn_id = current_turn_id
-
-    def add_observed(self, role, heard, **kwargs):
-        message = super().add_observed(role, heard, **kwargs)
-        output_observed(role, heard, turn_id=self._current_turn_id())
-        return message
-
-
-def build_stt(args) -> lk_stt.STT:
-    """Build the STT component for the selected backend."""
-    if args.backend == "local":
-        return openai.STT(
-            base_url=args.whisper_url,
-            api_key="not-needed",
-            model="Systran/faster-whisper-base.en",
-        )
-    if args.backend == "mlx":
-        if not MLX_AVAILABLE:
-            output_error("MLX backend requires mlx-audio: uv sync --extra macos")
-            sys.exit(1)
-        return MlxWhisperSTT()
-    return openai.STT()
-
-
-def streaming_stt(stt: lk_stt.STT, vad) -> lk_stt.STT:
-    """Wrap a non-streaming STT so AudioObserver can call .stream() on it."""
-    if stt.capabilities.streaming:
-        return stt
-    return lk_stt.StreamAdapter(stt=stt, vad=vad)
-
-
-def build_tts(args):
-    """Build the TTS component for the selected backend."""
-    if args.backend == "local":
-        return openai.TTS(
-            base_url=args.kokoro_url,
-            api_key="not-needed",
-            model="kokoro",
-            voice="af_heart",
-        )
-    if args.backend == "mlx":
-        if not MLX_AVAILABLE:
-            output_error("MLX backend requires mlx-audio: uv sync --extra macos")
-            sys.exit(1)
-        return MlxKokoroTTS()
-    return openai.TTS()
 
 
 def get_general_prompt(graph: AgentGraph) -> str:
@@ -205,6 +104,11 @@ def main() -> None:
         "--observer-token",
         default=None,
         help="LiveKit token for the observer participant that transcribes the agent's audio",
+    )
+    parser.add_argument(
+        "--no-user-transcript",
+        action="store_true",
+        help="Do not emit user turns from the agent's STT (a caller worker owns them in duplex)",
     )
 
     args = parser.parse_args()
@@ -284,6 +188,8 @@ def main() -> None:
             # emitted by VoicetestLLM via set_on_response (immediately, before TTS).
             @session.on("user_input_transcribed")
             def on_user_speech(event):
+                if args.no_user_transcript:
+                    return
                 if event.is_final and event.transcript:
                     output_transcript("user", event.transcript)
 
@@ -308,7 +214,8 @@ def main() -> None:
                 observer_room = rtc.Room()
                 observer = AudioObserver(
                     stt=streaming_stt(build_stt(args), vad),
-                    transcript=EmittingObserverTranscript(lambda: turn_counter["n"]),
+                    transcript=EmittingObserverTranscript(),
+                    turn_id_provider=lambda: turn_counter["n"],
                 )
                 observe_participant(
                     observer_room, observer, AGENT_IDENTITY, "assistant", observer_tasks

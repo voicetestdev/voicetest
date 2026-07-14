@@ -650,8 +650,8 @@ async def _call_cli(
     # The simulated caller ends the conversation at its max-turns cap; wait for
     # its worker to exit, then end the call to stop the agent worker.
     waited = 0.0
-    while waited < timeout:
-        caller = active_call.caller_process if active_call else None
+    while active_call is not None and waited < timeout:
+        caller = active_call.caller_process
         if caller is not None and caller.poll() is not None:
             break
         await asyncio.sleep(0.5)
@@ -660,7 +660,7 @@ async def _call_cli(
     await call_mgr.end_call(call_id, call_repo)
 
     call = call_repo.get(call_id)
-    run_id = await runs.save_call_as_run(call) if call else None
+    run_id = await runs.save_call_as_run(call, test_case=test_case) if call else None
 
     if json_mode:
         console.print_json(data={"call_id": call_id, "run_id": run_id})

@@ -31,10 +31,13 @@ def observe_participant(
     """Observe the published audio of the participant with the given identity.
 
     Appends an observe_track task per matching track to tasks so the caller can
-    cancel them on teardown."""
+    cancel them on teardown. Observes a given identity only once, so a track that
+    unsubscribes and resubscribes does not spawn a duplicate pipeline."""
+    observed: set[str] = set()
 
     @observer_room.on("track_subscribed")
     def on_track(track, publication, participant):
-        if should_observe(track, participant, identity):
+        if should_observe(track, participant, identity) and participant.identity not in observed:
+            observed.add(participant.identity)
             stream = rtc.AudioStream(track)
             tasks.append(asyncio.create_task(observer.observe_track(stream, role)))

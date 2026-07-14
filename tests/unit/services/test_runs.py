@@ -193,6 +193,23 @@ class TestSaveCallAsRun:
 
         assert svc.get_run(run_id)["results"][0]["test_name"] == "Live Call"
 
+    async def test_passed_test_case_is_judged_without_db_lookup(self, agent_id, svc):
+        test_case = TestCase(name="Books a flight", user_prompt="## Goal\nBook a flight")
+        call = {
+            "id": "call-3",
+            "agent_id": agent_id,
+            "transcript_json": [
+                {"role": "assistant", "content": "Hi"},
+                {"role": "user", "content": "Book a flight"},
+            ],
+        }
+
+        run_id = await svc.save_call_as_run(call, test_case=test_case)
+
+        result = svc.get_run(run_id)["results"][0]
+        assert result["test_name"] == "Books a flight"
+        assert result["source_kind"] == "live"
+
 
 def _empty_graph():
     return AgentGraph(entry_node_id="x", nodes={}, source_type="test", source_metadata={})

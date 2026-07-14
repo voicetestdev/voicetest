@@ -441,7 +441,7 @@ class StartCallResponse(BaseModel):
     call_id: str
     room_name: str
     livekit_url: str
-    token: str
+    token: str | None = None
 
 
 class CallStatusResponse(BaseModel):

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterable
+from collections.abc import Callable
 import contextlib
 
 from livekit import rtc
@@ -22,17 +23,35 @@ from voicetest.livecall.observer import ObserverTranscript
 class AudioObserver:
     """Records final STT transcripts of published audio as observed Messages."""
 
-    def __init__(self, stt: lk_stt.STT, transcript: ObserverTranscript):
+    def __init__(
+        self,
+        stt: lk_stt.STT,
+        transcript: ObserverTranscript,
+        turn_id_provider: Callable[[], int] | None = None,
+    ):
         self._stt = stt
         self._transcript = transcript
+        self._turn_id_provider = turn_id_provider
+
+    def _turn_id(self) -> int | None:
+        return self._turn_id_provider() if self._turn_id_provider else None
 
     async def record_speech_events(
         self, events: AsyncIterable[lk_stt.SpeechEvent], role: str
     ) -> None:
-        """Record each final transcript from a SpeechEvent stream."""
+        """Record each final transcript from a SpeechEvent stream.
+
+        The turn id is captured at speech-start, not final-transcript, so a slow
+        STT finalizing after the next turn began still attributes the audio to
+        the turn that produced it (falling back to final time if no start event)."""
+        pending_turn: int | None = None
         async for event in events:
-            if event.type == lk_stt.SpeechEventType.FINAL_TRANSCRIPT and event.alternatives:
-                self._transcript.add_observed(role, event.alternatives[0].text)
+            if event.type == lk_stt.SpeechEventType.START_OF_SPEECH:
+                pending_turn = self._turn_id()
+            elif event.type == lk_stt.SpeechEventType.FINAL_TRANSCRIPT and event.alternatives:
+                turn_id = pending_turn if pending_turn is not None else self._turn_id()
+                self._transcript.add_observed(role, event.alternatives[0].text, turn_id=turn_id)
+                pending_turn = None
 
     async def observe_track(self, audio_stream: rtc.AudioStream, role: str) -> None:
         """Pump a published audio track through STT, recording observed turns."""

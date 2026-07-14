@@ -110,6 +110,13 @@ class SimulatorLLMStream(livekit_llm.LLMStream):
                 flush=True,
             )
             return
+        except Exception as e:
+            print(
+                f"[simulator-llm] generate error: {type(e).__name__}: {e}",
+                file=sys.stderr,
+                flush=True,
+            )
+            raise
 
         # A None response means the simulator is exhausted (goal reached / nothing
         # left to say); emit no turn so the worker can begin teardown.

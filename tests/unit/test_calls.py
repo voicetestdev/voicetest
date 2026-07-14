@@ -1,7 +1,15 @@
 """Tests for live-call transcript helpers."""
 
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+from unittest.mock import patch
+
+import pytest
+
+from voicetest.models.agent import AgentGraph
 from voicetest.web.calls import CallManager
 from voicetest.web.calls import LiveKitConfig
+from voicetest.web.calls import append_intended
 from voicetest.web.calls import merge_observed_heard
 
 
@@ -75,6 +83,25 @@ class TestMergeObservedHeard:
         assert transcript[0]["metadata"]["foo"] == "bar"
         assert transcript[0]["metadata"]["audio"]["heard"] == "hallo"
 
+    def test_intended_after_observed_fills_standalone_no_duplicate(self):
+        transcript, turns = [], {}
+        merge_observed_heard(transcript, turns, "assistant", "helo", turn_id=1)
+        assert len(transcript) == 1
+
+        append_intended(transcript, turns, {"role": "assistant", "content": "hello"}, turn_id=1)
+
+        assert len(transcript) == 1
+        assert transcript[0]["content"] == "hello"
+        assert transcript[0]["metadata"]["audio"]["heard"] == "helo"
+
+    def test_intended_first_appends_and_indexes(self):
+        transcript, turns = [], {}
+
+        append_intended(transcript, turns, {"role": "assistant", "content": "hi"}, turn_id=2)
+
+        assert len(transcript) == 1
+        assert turns[("assistant", 2)]["content"] == "hi"
+
     def test_same_turn_id_different_roles_do_not_collide(self):
         transcript, turns = [], {}
         _add_intended(transcript, turns, "assistant", "agent one", turn_id=1)
@@ -85,6 +112,75 @@ class TestMergeObservedHeard:
 
         assert transcript[0]["metadata"]["audio"]["heard"] == "agent heard"
         assert transcript[1]["metadata"]["audio"]["heard"] == "caller heard"
+
+
+class TestStartCall:
+    async def _start(self, persona):
+        settings = MagicMock()
+        settings.models.simulator = None
+        settings.models.agent = None
+        settings_svc = MagicMock()
+        settings_svc.get_settings.return_value = settings
+
+        cm = CallManager(settings_service=settings_svc, config=LiveKitConfig(voice_backend="local"))
+        cm.create_room = AsyncMock()
+        cm.generate_token = MagicMock(return_value="tok")
+        cm._monitor_agent_output = MagicMock()
+
+        call_repo = MagicMock()
+        call_repo.create.return_value = {"id": "c1", "room_name": "r", "status": "connecting"}
+        graph = AgentGraph(entry_node_id="n", nodes={}, source_type="test", source_metadata={})
+
+        captured: list[list] = []
+
+        def fake_popen(cmd, **kwargs):
+            captured.append(cmd)
+            return MagicMock()
+
+        with (
+            patch("voicetest.web.calls.subprocess.Popen", side_effect=fake_popen),
+            patch("voicetest.web.calls.asyncio.create_task"),
+        ):
+            result = await cm.start_call("agent1", graph, call_repo, persona=persona)
+        return captured, result
+
+    def _launched_caller(self, captured):
+        return any("voicetest.livecall.caller_worker" in c for c in captured)
+
+    @pytest.mark.asyncio
+    async def test_caller_model_resolved_when_simulator_unset(self):
+        captured, _ = await self._start("## Goal\nx")
+        caller_cmd = next(c for c in captured if "voicetest.livecall.caller_worker" in c)
+        assert caller_cmd[caller_cmd.index("--model") + 1]
+
+    @pytest.mark.asyncio
+    async def test_empty_persona_still_launches_caller(self):
+        captured, _ = await self._start("")
+        assert self._launched_caller(captured)
+
+    @pytest.mark.asyncio
+    async def test_simulated_call_returns_no_browser_token(self):
+        _, result = await self._start("## Goal\nx")
+        assert not result["token"]
+
+    @pytest.mark.asyncio
+    async def test_human_call_returns_token_and_no_caller(self):
+        captured, result = await self._start(None)
+        assert result["token"]
+        assert not self._launched_caller(captured)
+
+    def _agent_cmd(self, captured):
+        return next(c for c in captured if "voicetest.livecall.agent_worker" in c)
+
+    @pytest.mark.asyncio
+    async def test_agent_suppresses_user_transcript_when_simulated(self):
+        captured, _ = await self._start("## Goal\nx")
+        assert "--no-user-transcript" in self._agent_cmd(captured)
+
+    @pytest.mark.asyncio
+    async def test_agent_keeps_user_transcript_for_human_call(self):
+        captured, _ = await self._start(None)
+        assert "--no-user-transcript" not in self._agent_cmd(captured)
 
 
 class TestCallerCommand:

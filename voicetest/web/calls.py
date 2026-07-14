@@ -16,6 +16,7 @@ from livekit import api as livekit_api
 
 from voicetest.models.agent import AgentGraph
 from voicetest.services.settings import SettingsService
+from voicetest.settings import resolve_model
 from voicetest.web.broadcast import SessionRegistry
 
 
@@ -50,6 +51,25 @@ def merge_observed_heard(
         if turn_id is not None:
             turn_messages[key] = message
     _append_heard(message, heard)
+
+
+def append_intended(
+    transcript: list[dict], turn_messages: dict, message: dict, turn_id: int | None
+) -> dict:
+    """Record an intended turn's message, indexed by (role, turn_id).
+
+    If an observed segment for the same (role, turn_id) already created a
+    standalone message (out-of-order arrival), fill its content in place instead
+    of appending a duplicate turn, so heard already gathered on it is kept."""
+    key = (message["role"], turn_id) if turn_id is not None else None
+    existing = turn_messages.get(key) if key is not None else None
+    if existing is not None:
+        existing["content"] = message["content"]
+        return existing
+    transcript.append(message)
+    if key is not None:
+        turn_messages[key] = message
+    return message
 
 
 @dataclass
@@ -133,6 +153,32 @@ class CallManager:
         )
         return token.to_jwt()
 
+    def _worker_cmd(
+        self, module: str, room_name: str, token: str, observer_token: str
+    ) -> list[str]:
+        """Build the shared prefix for a live-call worker subprocess command."""
+        return [
+            "uv",
+            "run",
+            "python",
+            "-m",
+            module,
+            "--room",
+            room_name,
+            "--url",
+            self.config.url,
+            "--token",
+            token,
+            "--backend",
+            self.config.voice_backend,
+            "--whisper-url",
+            self.config.whisper_url,
+            "--kokoro-url",
+            self.config.kokoro_url,
+            "--observer-token",
+            observer_token,
+        ]
+
     def _caller_cmd(
         self,
         room_name: str,
@@ -143,31 +189,8 @@ class CallManager:
         max_turns: int | None = None,
     ) -> list[str]:
         """Build the command that launches the simulated caller worker."""
-        cmd = [
-            "uv",
-            "run",
-            "python",
-            "-m",
-            "voicetest.livecall.caller_worker",
-            "--room",
-            room_name,
-            "--url",
-            self.config.url,
-            "--token",
-            token,
-            "--persona",
-            persona,
-            "--model",
-            model,
-            "--backend",
-            self.config.voice_backend,
-            "--whisper-url",
-            self.config.whisper_url,
-            "--kokoro-url",
-            self.config.kokoro_url,
-            "--observer-token",
-            observer_token,
-        ]
+        cmd = self._worker_cmd("voicetest.livecall.caller_worker", room_name, token, observer_token)
+        cmd.extend(["--persona", persona, "--model", model])
         if max_turns is not None:
             cmd.extend(["--max-turns", str(max_turns)])
         return cmd
@@ -194,6 +217,10 @@ class CallManager:
         if agent_model is None:
             agent_model = settings.models.agent
 
+        # A persona (even empty) marks the call as simulated: a caller worker
+        # drives the user side, so no human joins. None means a human caller.
+        simulated = persona is not None
+
         call_id = str(uuid4())
         room_name = f"voicetest-{call_id[:8]}"
 
@@ -216,33 +243,20 @@ class CallManager:
 
         # Use 'uv run' to ensure we use the venv Python in Docker
         # This avoids issues where sys.executable might not be the venv Python
-        cmd = [
-            "uv",
-            "run",
-            "python",
-            "-m",
-            "voicetest.livecall.agent_worker",
-            "--room",
-            room_name,
-            "--url",
-            self.config.url,
-            "--token",
-            agent_token,
-            "--backend",
-            self.config.voice_backend,
-            "--whisper-url",
-            self.config.whisper_url,
-            "--kokoro-url",
-            self.config.kokoro_url,
-            "--observer-token",
-            observer_token,
-        ]
+        cmd = self._worker_cmd(
+            "voicetest.livecall.agent_worker", room_name, agent_token, observer_token
+        )
 
         if agent_model:
             cmd.extend(["--agent-model", agent_model])
 
         if dynamic_variables:
             cmd.extend(["--dynamic-variables", json.dumps(dynamic_variables)])
+
+        if simulated:
+            # The caller worker owns the user turns; the agent must not also emit
+            # the user's speech from its own STT or each user turn is duplicated.
+            cmd.append("--no-user-transcript")
 
         process = subprocess.Popen(
             cmd,
@@ -263,8 +277,8 @@ class CallManager:
         # Simulated caller: join the user side over audio so no human is needed.
         # Uses its own observer identity so it can transcribe the caller's own
         # published track without colliding with the agent observer.
-        if persona:
-            simulator_model = simulator_model or settings.models.simulator
+        if simulated:
+            simulator_model = resolve_model(simulator_model or settings.models.simulator)
             caller_observer_token = self.generate_token(
                 room_name, "caller-observer", is_agent=False
             )
@@ -282,6 +296,11 @@ class CallManager:
             asyncio.create_task(
                 self._monitor_agent_output(call_record["id"], caller_process, call_repo)
             )
+            # No human hangs up a simulated call, so end it when the caller worker
+            # exits (its max-turns cap or the agent reaching an End node).
+            asyncio.create_task(
+                self._end_when_caller_done(call_record["id"], caller_process, call_repo)
+            )
 
         call_repo.update_status(call_record["id"], "active")
 
@@ -289,8 +308,23 @@ class CallManager:
             "call_id": call_record["id"],
             "room_name": room_name,
             "livekit_url": self.config.public_url,
-            "token": user_token,
+            # The caller worker holds the user token in simulated mode; don't hand
+            # it to the browser too or the two collide on identity "user".
+            "token": None if simulated else user_token,
         }
+
+    async def _end_when_caller_done(
+        self, call_id: str, caller_process: subprocess.Popen, call_repo: Any
+    ) -> None:
+        """End the call once the simulated caller worker exits.
+
+        Waits for the caller process (no human to hang up), then tears the call
+        down and broadcasts call_ended so attached clients save it as a run."""
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, caller_process.wait)
+        active_call = self._sessions.get(call_id)
+        if active_call is not None and not active_call.cancel_event.is_set():
+            await self.end_call(call_id, call_repo)
 
     async def _persist_and_broadcast(self, call_id: str, call_repo: Any, active_call) -> None:
         """Persist the current transcript and broadcast it to attached clients."""
@@ -326,11 +360,12 @@ class CallManager:
                         except json.JSONDecodeError:
                             continue
                         if data.get("type") == "transcript" and data.get("message"):
-                            message = data["message"]
-                            active_call.transcript.append(message)
-                            turn_id = data.get("turn_id")
-                            if turn_id is not None:
-                                active_call.turn_messages[(message["role"], turn_id)] = message
+                            append_intended(
+                                active_call.transcript,
+                                active_call.turn_messages,
+                                data["message"],
+                                data.get("turn_id"),
+                            )
                             await self._persist_and_broadcast(call_id, call_repo, active_call)
                         elif data.get("type") == "observed":
                             merge_observed_heard(

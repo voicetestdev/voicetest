@@ -392,7 +392,7 @@ export interface StartCallResponse {
   call_id: string;
   room_name: string;
   livekit_url: string;
-  token: string;
+  token: string | null;
 }
 
 export interface StartChatResponse {

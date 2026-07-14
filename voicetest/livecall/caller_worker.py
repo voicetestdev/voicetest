@@ -25,22 +25,26 @@ from livekit import rtc
 from livekit.agents.voice import Agent
 from livekit.plugins import silero
 
-from voicetest.livecall.agent_worker import EmittingObserverTranscript
-from voicetest.livecall.agent_worker import build_stt
-from voicetest.livecall.agent_worker import build_tts
-from voicetest.livecall.agent_worker import output_error
-from voicetest.livecall.agent_worker import output_status
-from voicetest.livecall.agent_worker import output_transcript
-from voicetest.livecall.agent_worker import streaming_stt
 from voicetest.livecall.audio_observer import AudioObserver
 from voicetest.livecall.observer_mount import observe_participant
 from voicetest.livecall.participant import CascadeParticipant
 from voicetest.livecall.simulator_adapter import SimulatorLLM
+from voicetest.livecall.worker_io import EmittingObserverTranscript
+from voicetest.livecall.worker_io import build_stt
+from voicetest.livecall.worker_io import build_tts
+from voicetest.livecall.worker_io import output_error
+from voicetest.livecall.worker_io import output_status
+from voicetest.livecall.worker_io import output_transcript
+from voicetest.livecall.worker_io import streaming_stt
 from voicetest.simulator.user_sim import UserSimulator
 
 
 # The caller participant joins with this identity (see CallManager.generate_token).
 USER_IDENTITY = "user"
+
+# When the caller reaches its max-turns cap the conversation ends, but the final
+# turn is still being spoken and transcribed; give it time before teardown.
+END_OF_CALL_GRACE_SECONDS = 3.0
 
 
 def main() -> None:
@@ -148,7 +152,8 @@ def main() -> None:
                 observer_room = rtc.Room()
                 observer = AudioObserver(
                     stt=streaming_stt(build_stt(args), vad),
-                    transcript=EmittingObserverTranscript(lambda: turn_counter["n"]),
+                    transcript=EmittingObserverTranscript(),
+                    turn_id_provider=lambda: turn_counter["n"],
                 )
                 observe_participant(observer_room, observer, USER_IDENTITY, "user", observer_tasks)
                 await observer_room.connect(args.url, args.observer_token)
@@ -164,6 +169,11 @@ def main() -> None:
             await asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED)
             for waiter in waiters:
                 waiter.cancel()
+            await asyncio.gather(*waiters, return_exceptions=True)
+            # Ended on the caller's max-turns cap (not a room disconnect): let the
+            # final turn finish being spoken and observed before tearing down.
+            if done.is_set() and not disconnect_event.is_set():
+                await asyncio.sleep(END_OF_CALL_GRACE_SECONDS)
             print("[caller-worker] end of call", file=sys.stderr, flush=True)
 
         except Exception as e:
