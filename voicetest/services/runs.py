@@ -181,6 +181,8 @@ class RunService:
         except Exception:
             _logger.exception("Failed to evaluate metrics for call %s", call_id)
 
+        # A call with no metrics to evaluate has nothing to fail, so it is a pass,
+        # matching how replayed and imported (passive-capture) runs are recorded.
         status = "pass" if all(r.passed for r in metric_results) else "fail"
 
         test_result = TestResult(

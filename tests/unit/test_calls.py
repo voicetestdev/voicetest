@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from voicetest.models.agent import AgentGraph
+from voicetest.web.calls import ActiveCall
 from voicetest.web.calls import CallManager
 from voicetest.web.calls import LiveKitConfig
 from voicetest.web.calls import append_intended
@@ -181,6 +182,59 @@ class TestStartCall:
     async def test_agent_keeps_user_transcript_for_human_call(self):
         captured, _ = await self._start(None)
         assert "--no-user-transcript" not in self._agent_cmd(captured)
+
+
+class TestEndWhenCallerDone:
+    def _manager(self):
+        cm = CallManager(settings_service=MagicMock(), config=LiveKitConfig())
+        cm._sessions.close = AsyncMock()
+        return cm
+
+    @pytest.mark.asyncio
+    async def test_saves_and_broadcasts_run_id_on_caller_exit(self):
+        cm = self._manager()
+        active = ActiveCall(call_id="c1", room_name="r")
+        cm._sessions.register("c1", active)
+        caller = MagicMock()
+        caller.poll.return_value = 0
+        on_caller_done = AsyncMock(return_value="run-1")
+
+        await cm._end_when_caller_done("c1", caller, MagicMock(), on_caller_done)
+
+        on_caller_done.assert_awaited_once_with("c1")
+        assert active.cancel_event.is_set()
+        _, payload = cm._sessions.close.call_args[0]
+        assert payload == {"type": "call_ended", "run_id": "run-1"}
+
+    @pytest.mark.asyncio
+    async def test_closes_session_even_when_save_raises(self):
+        cm = self._manager()
+        active = ActiveCall(call_id="c3", room_name="r")
+        cm._sessions.register("c3", active)
+        caller = MagicMock()
+        caller.poll.return_value = 0
+        on_caller_done = AsyncMock(side_effect=RuntimeError("judge failed"))
+
+        await cm._end_when_caller_done("c3", caller, MagicMock(), on_caller_done)
+
+        cm._sessions.close.assert_awaited_once()
+        _, payload = cm._sessions.close.call_args[0]
+        assert payload == {"type": "call_ended", "run_id": None}
+
+    @pytest.mark.asyncio
+    async def test_skips_when_already_cancelled(self):
+        cm = self._manager()
+        active = ActiveCall(call_id="c2", room_name="r")
+        active.cancel_event.set()
+        cm._sessions.register("c2", active)
+        caller = MagicMock()
+        caller.poll.return_value = 0
+        on_caller_done = AsyncMock()
+
+        await cm._end_when_caller_done("c2", caller, MagicMock(), on_caller_done)
+
+        on_caller_done.assert_not_awaited()
+        cm._sessions.close.assert_not_awaited()
 
 
 class TestCallerCommand:

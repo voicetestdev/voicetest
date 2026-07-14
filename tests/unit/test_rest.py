@@ -1,6 +1,9 @@
 """Tests for voicetest REST API."""
 
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -8,13 +11,88 @@ import pytest
 
 from voicetest.importers.retell import RetellImporter
 from voicetest.models.results import MetricResult
+from voicetest.services.agents import AgentService
+from voicetest.services.runs import RunService
+from voicetest.services.testing.cases import TestCaseService
+from voicetest.storage.repositories import CallRepository
+from voicetest.web.calls import CallManager
+from voicetest.web.rest import StartCallRequest
 from voicetest.web.rest import app
+from voicetest.web.rest import start_call
 
 
 @pytest.fixture
 def client():
     """Create a test client."""
     return TestClient(app)
+
+
+class TestStartCallDeferredSave:
+    """The simulated-call save callback resolves services fresh at save time.
+
+    A simulated call ends minutes after the request that started it, so the save
+    must not reuse the request's Session (Postgres registers Session as transient
+    precisely so sessions are never shared or reused across requests)."""
+
+    class _Container:
+        def __init__(self):
+            self.counts = {}
+            self._instances = {}
+
+        def register(self, cls, instance):
+            self._instances[cls] = instance
+
+        def resolve(self, cls):
+            self.counts[cls] = self.counts.get(cls, 0) + 1
+            return self._instances[cls]
+
+    def _http_request(self, container):
+        state = SimpleNamespace(container=container)
+        return SimpleNamespace(app=SimpleNamespace(state=state))
+
+    @pytest.mark.asyncio
+    async def test_save_run_resolves_services_at_call_time(self):
+        agent_service = MagicMock()
+        agent_service.load_graph.return_value = (MagicMock(), MagicMock())
+
+        test_case = MagicMock(user_prompt="## Goal\ndrive the call")
+        test_service = MagicMock()
+        test_service.get_test.return_value = {"id": "t1"}
+        test_service.to_model.return_value = test_case
+
+        call_repo = MagicMock()
+        call_repo.get.return_value = {"id": "call-1"}
+        run_service = MagicMock()
+        run_service.save_call_as_run = AsyncMock(return_value="run-9")
+
+        captured = {}
+
+        async def fake_start(*args, **kwargs):
+            captured["on_caller_done"] = kwargs["on_caller_done"]
+            return {"call_id": "call-1", "room_name": "r", "livekit_url": "u", "token": None}
+
+        call_manager = MagicMock()
+        call_manager.start_call = fake_start
+
+        container = self._Container()
+        container.register(AgentService, agent_service)
+        container.register(TestCaseService, test_service)
+        container.register(CallRepository, call_repo)
+        container.register(CallManager, call_manager)
+        container.register(RunService, run_service)
+
+        http_request = self._http_request(container)
+        request = StartCallRequest(test_id="t1")
+
+        await start_call("agent1", http_request, request)
+
+        assert container.counts.get(RunService, 0) == 0
+
+        run_id = await captured["on_caller_done"]("call-1")
+
+        assert run_id == "run-9"
+        assert container.counts[RunService] == 1
+        run_service.save_call_as_run.assert_awaited_once_with({"id": "call-1"}, test_case=test_case)
 
 
 class TestHealthEndpoint:

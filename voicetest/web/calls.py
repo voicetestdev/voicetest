@@ -4,9 +4,12 @@ Handles call lifecycle: room creation, token generation, subprocess management.
 """
 
 import asyncio
+from collections.abc import Awaitable
+from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
 import json
+import logging
 import os
 import subprocess
 from typing import Any
@@ -18,6 +21,17 @@ from voicetest.models.agent import AgentGraph
 from voicetest.services.settings import SettingsService
 from voicetest.settings import resolve_model
 from voicetest.web.broadcast import SessionRegistry
+
+
+_logger = logging.getLogger(__name__)
+
+
+# How often the caller-completion watcher polls the caller worker for exit.
+_CALLER_POLL_SECONDS = 0.5
+
+# Callback that saves a completed call as a run and returns the run id, invoked
+# by the caller-completion watcher for simulated calls (no human hangs up).
+OnCallerDone = Callable[[str], Awaitable[str | None]]
 
 
 def _append_heard(message: dict, heard: str) -> None:
@@ -109,6 +123,7 @@ class ActiveCall:
     caller_process: subprocess.Popen | None = None
     transcript: list = field(default_factory=list)
     turn_messages: dict = field(default_factory=dict)
+    monitor_tasks: list = field(default_factory=list)
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -206,6 +221,7 @@ class CallManager:
         simulator_model: str | None = None,
         max_turns: int | None = None,
         test_id: str | None = None,
+        on_caller_done: OnCallerDone | None = None,
     ) -> dict:
         """Start a new live call.
 
@@ -272,7 +288,9 @@ class CallManager:
 
         active_call.process = process
 
-        asyncio.create_task(self._monitor_agent_output(call_record["id"], process, call_repo))
+        active_call.monitor_tasks.append(
+            asyncio.create_task(self._monitor_agent_output(call_record["id"], process, call_repo))
+        )
 
         # Simulated caller: join the user side over audio so no human is needed.
         # Uses its own observer identity so it can transcribe the caller's own
@@ -293,14 +311,20 @@ class CallManager:
                 text=True,
             )
             active_call.caller_process = caller_process
-            asyncio.create_task(
-                self._monitor_agent_output(call_record["id"], caller_process, call_repo)
+            active_call.monitor_tasks.append(
+                asyncio.create_task(
+                    self._monitor_agent_output(call_record["id"], caller_process, call_repo)
+                )
             )
-            # No human hangs up a simulated call, so end it when the caller worker
-            # exits (its max-turns cap or the agent reaching an End node).
-            asyncio.create_task(
-                self._end_when_caller_done(call_record["id"], caller_process, call_repo)
-            )
+            # No human hangs up a simulated call, so the backend ends and saves it
+            # when the caller worker exits. Only when a save callback is supplied
+            # (the web path); the CLI drives its own completion and save.
+            if on_caller_done is not None:
+                asyncio.create_task(
+                    self._end_when_caller_done(
+                        call_record["id"], caller_process, call_repo, on_caller_done
+                    )
+                )
 
         call_repo.update_status(call_record["id"], "active")
 
@@ -313,18 +337,55 @@ class CallManager:
             "token": None if simulated else user_token,
         }
 
-    async def _end_when_caller_done(
-        self, call_id: str, caller_process: subprocess.Popen, call_repo: Any
-    ) -> None:
-        """End the call once the simulated caller worker exits.
+    @staticmethod
+    def _terminate_processes(active_call: "ActiveCall") -> None:
+        """Terminate the call's worker subprocesses, killing any that don't exit."""
+        for proc in (active_call.process, active_call.caller_process):
+            if proc and proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
-        Waits for the caller process (no human to hang up), then tears the call
-        down and broadcasts call_ended so attached clients save it as a run."""
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, caller_process.wait)
+    async def _end_when_caller_done(
+        self,
+        call_id: str,
+        caller_process: subprocess.Popen,
+        call_repo: Any,
+        on_caller_done: OnCallerDone,
+    ) -> None:
+        """Save and end a simulated call once its caller worker exits.
+
+        Polls (without holding a thread) until the caller worker exits — no human
+        hangs up — then tears the call down, saves it as a run via on_caller_done,
+        and broadcasts call_ended carrying the run id so attached clients show it."""
+        while caller_process.poll() is None:
+            active_call = self._sessions.get(call_id)
+            if active_call is None or active_call.cancel_event.is_set():
+                return
+            await asyncio.sleep(_CALLER_POLL_SECONDS)
+
         active_call = self._sessions.get(call_id)
-        if active_call is not None and not active_call.cancel_event.is_set():
-            await self.end_call(call_id, call_repo)
+        if active_call is None or active_call.cancel_event.is_set():
+            return
+
+        active_call.cancel_event.set()
+        self._terminate_processes(active_call)
+        # Let the output monitors drain the workers' final turns before saving.
+        await asyncio.gather(*active_call.monitor_tasks, return_exceptions=True)
+        call_repo.end_call(call_id)
+
+        # Always tear the session down, even if the save raises (a judge/LLM call
+        # can fail); otherwise the session and its sockets would leak with no human
+        # to end the call.
+        run_id = None
+        try:
+            run_id = await on_caller_done(call_id)
+        except Exception:
+            _logger.exception("Failed to save simulated call %s as a run", call_id)
+        finally:
+            await self._sessions.close(call_id, {"type": "call_ended", "run_id": run_id})
 
     async def _persist_and_broadcast(self, call_id: str, call_repo: Any, active_call) -> None:
         """Persist the current transcript and broadcast it to attached clients."""
@@ -333,6 +394,32 @@ class CallManager:
             call_id,
             {"type": "transcript_update", "transcript": active_call.transcript},
         )
+
+    async def _ingest_line(
+        self, call_id: str, call_repo: Any, active_call: "ActiveCall", line: str
+    ) -> None:
+        """Parse one worker stdout line and fold it into the transcript."""
+        try:
+            data = json.loads(line.strip())
+        except json.JSONDecodeError:
+            return
+        if data.get("type") == "transcript" and data.get("message"):
+            append_intended(
+                active_call.transcript,
+                active_call.turn_messages,
+                data["message"],
+                data.get("turn_id"),
+            )
+            await self._persist_and_broadcast(call_id, call_repo, active_call)
+        elif data.get("type") == "observed":
+            merge_observed_heard(
+                active_call.transcript,
+                active_call.turn_messages,
+                data.get("role"),
+                data.get("heard"),
+                data.get("turn_id"),
+            )
+            await self._persist_and_broadcast(call_id, call_repo, active_call)
 
     async def _monitor_agent_output(
         self,
@@ -355,29 +442,18 @@ class CallManager:
                 if process.stdout:
                     line = await loop.run_in_executor(None, process.stdout.readline)
                     if line:
-                        try:
-                            data = json.loads(line.strip())
-                        except json.JSONDecodeError:
-                            continue
-                        if data.get("type") == "transcript" and data.get("message"):
-                            append_intended(
-                                active_call.transcript,
-                                active_call.turn_messages,
-                                data["message"],
-                                data.get("turn_id"),
-                            )
-                            await self._persist_and_broadcast(call_id, call_repo, active_call)
-                        elif data.get("type") == "observed":
-                            merge_observed_heard(
-                                active_call.transcript,
-                                active_call.turn_messages,
-                                data.get("role"),
-                                data.get("heard"),
-                                data.get("turn_id"),
-                            )
-                            await self._persist_and_broadcast(call_id, call_repo, active_call)
+                        await self._ingest_line(call_id, call_repo, active_call, line)
                 else:
                     await asyncio.sleep(0.1)
+
+            # Drain output buffered before the process exited so a run saved right
+            # after teardown still records the final turns.
+            if process.stdout:
+                while True:
+                    line = await loop.run_in_executor(None, process.stdout.readline)
+                    if not line:
+                        break
+                    await self._ingest_line(call_id, call_repo, active_call, line)
 
             exit_code = process.poll()
 
@@ -408,16 +484,14 @@ class CallManager:
         if active_call is None:
             return call_repo.end_call(call_id)
 
+        # The caller-done watcher may already be ending this call (and about to
+        # broadcast call_ended with the run id); don't race it with a second,
+        # run-id-less broadcast.
+        if active_call.cancel_event.is_set():
+            return call_repo.end_call(call_id)
+
         active_call.cancel_event.set()
-
-        for proc in (active_call.process, active_call.caller_process):
-            if proc and proc.poll() is None:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-
+        self._terminate_processes(active_call)
         await self._sessions.close(call_id, {"type": "call_ended"})
 
         return call_repo.end_call(call_id)

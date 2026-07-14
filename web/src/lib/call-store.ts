@@ -124,6 +124,7 @@ export async function startTestAudioCall(agentId: string, testId: string): Promi
     // tab, where it streams and is saved when the conversation ends.
     currentView.set("runs");
   } catch (error) {
+    simCallAgentId = null;
     callState.update((s) => ({
       ...s,
       status: "error",
@@ -194,16 +195,18 @@ function connectCallWebSocket(callId: string): void {
       }));
     } else if (data.type === "call_ended") {
       callState.update((s) => ({ ...s, status: "ended" }));
-      // A simulated call has no human to click End; save it as a run (which also
-      // refreshes the runs list and selects it) instead of just cleaning up.
-      const agentId = simCallAgentId;
-      simCallAgentId = null;
-      if (agentId) {
-        endCall(agentId);
-      } else {
-        cleanupCall();
+      // A simulated call is saved as a run by the backend when it ends; the
+      // call_ended event carries the run id, so refresh and select it. The run
+      // already exists server-side, so a failed refresh only misses the auto-select.
+      if (simCallAgentId && data.run_id) {
+        loadRunHistory(simCallAgentId);
+        selectRun(simCallAgentId, data.run_id);
       }
+      cleanupCall();
     } else if (data.type === "error") {
+      // A terminal error ends the simulated-call bookkeeping; drop the agent id
+      // so a later human call isn't misclassified as simulated.
+      simCallAgentId = null;
       callState.update((s) => ({
         ...s,
         status: "error",
@@ -237,6 +240,7 @@ function cleanupCall(): void {
 
   cleanupAudioElements();
 
+  simCallAgentId = null;
   callState.set(initialState);
 }
 

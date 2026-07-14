@@ -1614,6 +1614,15 @@ async def get_livekit_status(http_request: Request) -> LiveKitStatusResponse:
         return LiveKitStatusResponse(available=False, error=error_msg)
 
 
+def _load_test_case(http_request: Request, test_id: str | None) -> TestCase | None:
+    """Resolve a persisted test case by id for judging a saved call, or None."""
+    if not test_id:
+        return None
+    test_service = _resolve(http_request, TestCaseService)
+    record = test_service.get_test(test_id)
+    return test_service.to_model(record) if record else None
+
+
 @router.post("/agents/{agent_id}/calls/start", response_model=StartCallResponse)
 async def start_call(
     agent_id: str,
@@ -1638,12 +1647,27 @@ async def start_call(
     # a caller worker so no human joins. Without it, the call awaits a human. The
     # caller's simulator model defaults from settings (start_call resolves None).
     persona = None
+    test_case = None
     if request and request.test_id:
-        test_service = _resolve(http_request, TestCaseService)
-        record = test_service.get_test(request.test_id)
-        if record is None:
+        test_case = _load_test_case(http_request, request.test_id)
+        if test_case is None:
             raise HTTPException(status_code=404, detail=f"Test not found: {request.test_id}")
-        persona = test_service.to_model(record).user_prompt
+        persona = test_case.user_prompt
+
+    # A simulated call has no human to hang up, so the backend saves it as a run
+    # when the caller worker exits (rather than relying on an attached browser).
+    # The test case is captured now and judged at save time, so it holds even if
+    # the test row is edited or deleted mid-call. The repo and run service are
+    # resolved fresh when the save fires — the call ends long after this request,
+    # and Postgres registers Session as transient so it is never reused across
+    # requests. The container is process-lifetime, so capturing it is safe.
+    container = http_request.app.state.container
+
+    async def _save_run(cid: str) -> str | None:
+        call = container.resolve(CallRepository).get(cid)
+        if call is None:
+            return None
+        return await container.resolve(RunService).save_call_as_run(call, test_case=test_case)
 
     try:
         call_info = await call_manager.start_call(
@@ -1654,6 +1678,7 @@ async def start_call(
             persona=persona,
             max_turns=request.max_turns if request else None,
             test_id=request.test_id if request else None,
+            on_caller_done=_save_run if persona is not None else None,
         )
         return StartCallResponse(**call_info)
     except Exception as e:
@@ -1703,7 +1728,8 @@ async def end_call(call_id: str, http_request: Request) -> dict:
 
     # Re-fetch call to get final transcript and timestamps
     call = call_repo.get(call_id)
-    run_id = await _resolve(http_request, RunService).save_call_as_run(call)
+    test_case = _load_test_case(http_request, call.get("test_id") if call else None)
+    run_id = await _resolve(http_request, RunService).save_call_as_run(call, test_case=test_case)
 
     return {"status": "ended", "call_id": call_id, "run_id": run_id}
 
