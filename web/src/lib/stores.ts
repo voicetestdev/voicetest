@@ -18,6 +18,9 @@ import { etagCache } from "./etag-cache";
 export const agents = writable<AgentRecord[]>([]);
 export const currentAgentId = writable<string | null>(null);
 export const agentGraph = writable<AgentGraph | null>(null);
+// Set when an agent loads but its graph can't be fetched (e.g. a linked agent
+// whose source file was moved/deleted). Drives the degraded agent view.
+export const agentGraphError = writable<string | null>(null);
 export const testCaseRecords = writable<TestCaseRecord[]>([]);
 export const testCases = writable<TestCase[]>([]);
 export const currentRun = writable<TestRun | null>(null);
@@ -272,13 +275,26 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
     return [...arr, agentId];
   });
 
-  const [graph, records, runs] = await Promise.all([
-    api.getAgentGraph(agentId),
+  // Fetch the graph independently of tests/runs: a linked agent whose source
+  // file was moved/deleted fails only here, and the view must still load so it
+  // can be inspected and deleted. The failure degrades the view, not the app.
+  const graphLoaded = api.getAgentGraph(agentId).then(
+    (graph) => {
+      agentGraph.set(graph);
+      agentGraphError.set(null);
+    },
+    (e) => {
+      agentGraph.set(null);
+      agentGraphError.set(e instanceof Error ? e.message : String(e));
+    },
+  );
+
+  const [records, runs] = await Promise.all([
     api.listTestsForAgent(agentId),
     api.listRunsForAgent(agentId),
   ]);
+  await graphLoaded;
 
-  agentGraph.set(graph);
   testCaseRecords.set(records);
   testCases.set(records.map(parseTestCaseRecord));
   runHistory.set(runs);
@@ -293,12 +309,20 @@ export async function refreshAgent(agentId: string): Promise<void> {
   etagCache.delete(`/agents/${agentId}/graph`);
   etagCache.delete(`/agents/${agentId}/tests`);
 
-  const [graph, records] = await Promise.all([
-    api.getAgentGraph(agentId),
-    api.listTestsForAgent(agentId),
-  ]);
+  const graphLoaded = api.getAgentGraph(agentId).then(
+    (graph) => {
+      agentGraph.set(graph);
+      agentGraphError.set(null);
+    },
+    (e) => {
+      agentGraph.set(null);
+      agentGraphError.set(e instanceof Error ? e.message : String(e));
+    },
+  );
 
-  agentGraph.set(graph);
+  const records = await api.listTestsForAgent(agentId);
+  await graphLoaded;
+
   testCaseRecords.set(records);
   testCases.set(records.map(parseTestCaseRecord));
 }

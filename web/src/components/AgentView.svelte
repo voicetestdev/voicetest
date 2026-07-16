@@ -2,6 +2,7 @@
   import { api } from "../lib/api";
   import {
     agentGraph,
+    agentGraphError,
     currentAgentId,
     currentAgent,
     loadAgents,
@@ -643,8 +644,30 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div class="agent-view">
-  {#if !$agentGraph || !$currentAgent}
+  {#if !$currentAgent}
     <p class="placeholder">No agent selected.</p>
+  {:else if !$agentGraph}
+    <div class="name-row">
+      <span class="editable-name">{$currentAgent.name}</span>
+    </div>
+
+    <section class="graph-unavailable">
+      <h3>Graph unavailable</h3>
+      <p>This agent's flow could not be loaded.</p>
+      {#if $currentAgent.source_path}
+        <p class="source-path">Linked source file: <code>{$currentAgent.source_path}</code></p>
+        <p>The linked file may have been moved or deleted. Restore it to view and edit the flow.</p>
+      {:else if $agentGraphError}
+        <p class="error-detail">{$agentGraphError}</p>
+      {/if}
+    </section>
+
+    <section class="danger-zone">
+      <h3>Danger Zone</h3>
+      <button class="danger" onclick={deleteCurrentAgent}>
+        Delete Agent
+      </button>
+    </section>
   {:else}
     <div class="name-row">
       {#if editingName}
@@ -889,6 +912,23 @@
     width: 100%;
     overflow-y: auto;
     flex: 1;
+  }
+
+  .graph-unavailable {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid var(--warning-border, #e0b000);
+    border-radius: 6px;
+    background: var(--warning-bg, rgba(224, 176, 0, 0.08));
+  }
+
+  .graph-unavailable .source-path code {
+    word-break: break-all;
+  }
+
+  .graph-unavailable .error-detail {
+    font-family: monospace;
+    word-break: break-all;
   }
 
 

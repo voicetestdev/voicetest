@@ -19,6 +19,8 @@
   import SettingsView from "./components/SettingsView.svelte";
   import ImportView from "./components/ImportView.svelte";
   import OptimizeView from "./components/OptimizeView.svelte";
+  import Toasts from "./components/Toasts.svelte";
+  import { pushToast } from "./lib/toast";
 
   let initialized = $state(false);
   let error = $state<string | null>(null);
@@ -53,6 +55,15 @@
 
   onMount(async () => {
     initTheme();
+
+    // Surface otherwise-silent fire-and-forget rejections (e.g. an unawaited
+    // agent selection) as a non-fatal toast instead of losing them. App is the
+    // root component and lives for the page's lifetime, so no teardown needed.
+    window.addEventListener("unhandledrejection", (event) => {
+      const reason = event.reason;
+      pushToast(reason instanceof Error ? reason.message : String(reason));
+    });
+
     try {
       await initStores();
       initialized = true;
@@ -197,6 +208,8 @@
       {/key}
     {/if}
   </main>
+
+  <Toasts />
 </div>
 
 <style>
