@@ -60,6 +60,12 @@ def merge_observed_heard(
     key = (role, turn_id)
     message = turn_messages.get(key) if turn_id is not None else None
     if message is None:
+        # turn_id 0 means the observer transcribed audio before the first
+        # response advanced the counter (a VAD false-positive on noise or leaked
+        # audio); there is no intended turn to attach to, so drop it rather than
+        # fabricating a phantom turn.
+        if turn_id == 0:
+            return
         message = {"role": role, "content": heard}
         transcript.append(message)
         if turn_id is not None:
@@ -492,6 +498,9 @@ class CallManager:
 
         active_call.cancel_event.set()
         self._terminate_processes(active_call)
+        # Let the output monitors drain the workers' final turns before returning,
+        # so a caller that saves the transcript right after (the CLI) sees them.
+        await asyncio.gather(*active_call.monitor_tasks, return_exceptions=True)
         await self._sessions.close(call_id, {"type": "call_ended"})
 
         return call_repo.end_call(call_id)

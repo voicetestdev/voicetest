@@ -726,6 +726,11 @@ class RunRepository:
         """Back-compat alias — prefer add_result(run_id, result, call_id=...)."""
         return self.add_result(run_id, result, call_id=call_id)
 
+    def find_run_id_by_call_id(self, call_id: str) -> str | None:
+        """Return the run id already holding a result for this call, or None."""
+        row = self.session.query(Result.run_id).filter(Result.call_id == call_id).first()
+        return row[0] if row else None
+
     def create_pending_result(self, run_id: str, test_case_id: str, test_name: str) -> str:
         """Create a pending result for an in-progress test."""
         result_id = str(uuid4())

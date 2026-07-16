@@ -46,6 +46,40 @@ USER_IDENTITY = "user"
 # turn is still being spoken and transcribed; give it time before teardown.
 END_OF_CALL_GRACE_SECONDS = 3.0
 
+# Ceiling on how long a single turn (agent speech + caller STT/LLM/TTS) can take.
+# The overall call deadline is this times the turn cap: it guarantees teardown
+# even if the simulator stalls and neither the disconnect nor the cap ever fires.
+MAX_SECONDS_PER_TURN = 60.0
+
+
+async def await_end_of_call(
+    disconnect_event: asyncio.Event,
+    done: asyncio.Event,
+    max_duration_seconds: float,
+) -> None:
+    """Wait until the room disconnects, the caller hits its turn cap, or the
+    overall call deadline passes.
+
+    The deadline is a safety net: if the simulator keeps failing and the agent
+    never hangs up, neither event fires, so without it both this worker and the
+    server-side watcher would wait forever."""
+    waiters = [
+        asyncio.create_task(disconnect_event.wait()),
+        asyncio.create_task(done.wait()),
+    ]
+    try:
+        await asyncio.wait(
+            waiters, timeout=max_duration_seconds, return_when=asyncio.FIRST_COMPLETED
+        )
+    finally:
+        for waiter in waiters:
+            waiter.cancel()
+        await asyncio.gather(*waiters, return_exceptions=True)
+    # Ended on the caller's max-turns cap (not a room disconnect): let the final
+    # turn finish being spoken and observed before tearing down.
+    if done.is_set() and not disconnect_event.is_set():
+        await asyncio.sleep(END_OF_CALL_GRACE_SECONDS)
+
 
 def main() -> None:
     """Main entry point for the caller worker."""
@@ -159,21 +193,10 @@ def main() -> None:
                 await observer_room.connect(args.url, args.observer_token)
                 print("[caller-worker] observer connected", file=sys.stderr, flush=True)
 
-            # Run until the room disconnects (agent ended the call) or the caller
-            # reaches its max-turns cap.
+            # Run until the room disconnects (agent ended the call), the caller
+            # reaches its max-turns cap, or the overall call deadline passes.
             print("[caller-worker] waiting for end of call", file=sys.stderr, flush=True)
-            waiters = [
-                asyncio.create_task(disconnect_event.wait()),
-                asyncio.create_task(done.wait()),
-            ]
-            await asyncio.wait(waiters, return_when=asyncio.FIRST_COMPLETED)
-            for waiter in waiters:
-                waiter.cancel()
-            await asyncio.gather(*waiters, return_exceptions=True)
-            # Ended on the caller's max-turns cap (not a room disconnect): let the
-            # final turn finish being spoken and observed before tearing down.
-            if done.is_set() and not disconnect_event.is_set():
-                await asyncio.sleep(END_OF_CALL_GRACE_SECONDS)
+            await await_end_of_call(disconnect_event, done, args.max_turns * MAX_SECONDS_PER_TURN)
             print("[caller-worker] end of call", file=sys.stderr, flush=True)
 
         except Exception as e:

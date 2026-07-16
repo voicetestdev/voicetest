@@ -137,6 +137,13 @@ class RunService:
 
         agent_id = call["agent_id"]
         call_id = call["id"]
+
+        # A call can be ended (and saved) by both the caller-done watcher and an
+        # explicit end request; save once and return the existing run either time.
+        existing_run_id = self._runs.find_run_id_by_call_id(call_id)
+        if existing_run_id is not None:
+            return existing_run_id
+
         transcript = [Message(**m) for m in transcript_data]
 
         duration_ms = None
@@ -163,6 +170,7 @@ class RunService:
         metric_results: list[MetricResult] = []
         audio_metric_results: list[MetricResult] = []
         has_heard = any(m.audio().heard for m in transcript)
+        evaluation_failed = False
         try:
             if test_case and test_case.metrics:
                 metric_results.extend(
@@ -179,11 +187,18 @@ class RunService:
                     await self._test_execution.evaluate_global_metrics(transcript, metrics_config)
                 )
         except Exception:
+            evaluation_failed = True
             _logger.exception("Failed to evaluate metrics for call %s", call_id)
 
-        # A call with no metrics to evaluate has nothing to fail, so it is a pass,
-        # matching how replayed and imported (passive-capture) runs are recorded.
-        status = "pass" if all(r.passed for r in metric_results) else "fail"
+        if evaluation_failed:
+            # Metrics were configured but could not be judged (e.g. the judge LLM
+            # failed); the outcome is unknown, not a pass.
+            status = "error"
+        else:
+            # A call with no metrics to evaluate has nothing to fail, so it is a
+            # pass, matching how replayed and imported (passive-capture) runs are
+            # recorded.
+            status = "pass" if all(r.passed for r in metric_results) else "fail"
 
         test_result = TestResult(
             test_name=test_case.name if test_case else "Live Call",

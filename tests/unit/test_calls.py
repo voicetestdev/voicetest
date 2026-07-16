@@ -1,5 +1,6 @@
 """Tests for live-call transcript helpers."""
 
+import asyncio
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -63,6 +64,13 @@ class TestMergeObservedHeard:
         assert len(transcript) == 1
         assert transcript[0]["role"] == "assistant"
         assert transcript[0]["metadata"]["audio"]["heard"] == "orphan a orphan b"
+
+    def test_drops_orphan_observed_at_turn_zero(self):
+        transcript, turns = [], {}
+
+        merge_observed_heard(transcript, turns, "user", "stray noise", turn_id=0)
+
+        assert transcript == []
 
     def test_skips_empty_or_missing(self):
         transcript, turns = [], {}
@@ -235,6 +243,32 @@ class TestEndWhenCallerDone:
 
         on_caller_done.assert_not_awaited()
         cm._sessions.close.assert_not_awaited()
+
+
+class TestEndCall:
+    def _manager(self):
+        cm = CallManager(settings_service=MagicMock(), config=LiveKitConfig())
+        cm._sessions.close = AsyncMock()
+        return cm
+
+    @pytest.mark.asyncio
+    async def test_drains_monitor_tasks_before_returning(self):
+        cm = self._manager()
+        active = ActiveCall(call_id="c1", room_name="r")
+        cm._sessions.register("c1", active)
+
+        drained = []
+
+        async def slow_monitor():
+            await asyncio.sleep(0.05)
+            drained.append(True)
+
+        active.monitor_tasks.append(asyncio.create_task(slow_monitor()))
+        call_repo = MagicMock()
+
+        await cm.end_call("c1", call_repo)
+
+        assert drained == [True]
 
 
 class TestCallerCommand:

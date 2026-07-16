@@ -210,6 +210,46 @@ class TestSaveCallAsRun:
         assert result["test_name"] == "Books a flight"
         assert result["source_kind"] == "live"
 
+    async def test_status_is_error_when_metric_eval_raises(self, agent_id, svc, monkeypatch):
+        test_case = TestCase(
+            name="Books a flight",
+            user_prompt="## Goal\nBook a flight",
+            metrics=["The agent books the flight"],
+        )
+        call = {
+            "id": "call-err",
+            "agent_id": agent_id,
+            "transcript_json": [
+                {"role": "assistant", "content": "Hi"},
+                {"role": "user", "content": "Book a flight"},
+            ],
+        }
+
+        async def boom(*args, **kwargs):
+            raise RuntimeError("judge unavailable")
+
+        monkeypatch.setattr(svc._test_execution, "evaluate_metrics", boom)
+
+        run_id = await svc.save_call_as_run(call, test_case=test_case)
+
+        assert svc.get_run(run_id)["results"][0]["status"] == "error"
+
+    async def test_second_save_of_same_call_returns_existing_run(self, agent_id, svc):
+        call = {
+            "id": "call-dup",
+            "agent_id": agent_id,
+            "transcript_json": [
+                {"role": "assistant", "content": "Hi"},
+                {"role": "user", "content": "Book a flight"},
+            ],
+        }
+
+        first = await svc.save_call_as_run(call)
+        second = await svc.save_call_as_run(call)
+
+        assert second == first
+        assert len(svc.list_runs(agent_id)) == 1
+
 
 def _empty_graph():
     return AgentGraph(entry_node_id="x", nodes={}, source_type="test", source_metadata={})

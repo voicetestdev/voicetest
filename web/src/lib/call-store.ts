@@ -204,9 +204,10 @@ function connectCallWebSocket(callId: string): void {
       }
       cleanupCall();
     } else if (data.type === "error") {
-      // A terminal error ends the simulated-call bookkeeping; drop the agent id
-      // so a later human call isn't misclassified as simulated.
-      simCallAgentId = null;
+      // Keep simCallAgentId: an error can arrive just before the call_ended that
+      // carries the run id (a worker exiting non-zero after the run was already
+      // saved), and dropping it here would lose the auto-select of that run. A
+      // later call start resets it, so a human call can't be misclassified.
       callState.update((s) => ({
         ...s,
         status: "error",
