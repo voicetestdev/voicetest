@@ -5,7 +5,7 @@
 import { writable, get } from "svelte/store";
 import { api } from "./api";
 import { connectToRoom, cleanupAudioElements, type LiveKitConnection } from "./livekit";
-import { loadRunHistory, selectRun } from "./stores";
+import { currentView, loadRunHistory, selectRun } from "./stores";
 import type { CallTranscriptMessage, CallStatus } from "./types";
 
 export interface CallState {
@@ -42,6 +42,10 @@ export const liveKitStatus = writable<LiveKitStatus>(initialLiveKitStatus);
 
 let livekitConnection: LiveKitConnection | null = null;
 
+// Agent id of an in-progress simulated (test-driven) call. A simulated call has
+// no human to hang up, so on call_ended we save it as a run under this agent.
+let simCallAgentId: string | null = null;
+
 export async function startCall(
   agentId: string,
   dynamicVariables?: Record<string, unknown>,
@@ -50,9 +54,14 @@ export async function startCall(
     ...initialState,
     status: "connecting",
   });
+  simCallAgentId = null;
 
   try {
     const response = await api.startCall(agentId, dynamicVariables);
+
+    if (!response.token) {
+      throw new Error("No token returned for a human call");
+    }
 
     callState.update((s) => ({
       ...s,
@@ -83,6 +92,39 @@ export async function startCall(
       },
     });
   } catch (error) {
+    callState.update((s) => ({
+      ...s,
+      status: "error",
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  }
+}
+
+export async function startTestAudioCall(agentId: string, testId: string): Promise<void> {
+  callState.set({
+    ...initialState,
+    status: "connecting",
+  });
+  simCallAgentId = agentId;
+
+  try {
+    const response = await api.startCall(agentId, {}, testId);
+
+    // The simulated caller worker joins the room as the user, so the browser
+    // only watches the transcript over the WebSocket — it must not join the
+    // LiveKit room itself (that would collide with the caller's identity).
+    callState.update((s) => ({
+      ...s,
+      callId: response.call_id,
+      status: "active",
+    }));
+
+    connectCallWebSocket(response.call_id);
+    // The call surfaces as a source_kind="live" run; take the user to the runs
+    // tab, where it streams and is saved when the conversation ends.
+    currentView.set("runs");
+  } catch (error) {
+    simCallAgentId = null;
     callState.update((s) => ({
       ...s,
       status: "error",
@@ -153,8 +195,19 @@ function connectCallWebSocket(callId: string): void {
       }));
     } else if (data.type === "call_ended") {
       callState.update((s) => ({ ...s, status: "ended" }));
+      // A simulated call is saved as a run by the backend when it ends; the
+      // call_ended event carries the run id, so refresh and select it. The run
+      // already exists server-side, so a failed refresh only misses the auto-select.
+      if (simCallAgentId && data.run_id) {
+        loadRunHistory(simCallAgentId);
+        selectRun(simCallAgentId, data.run_id);
+      }
       cleanupCall();
     } else if (data.type === "error") {
+      // Keep simCallAgentId: an error can arrive just before the call_ended that
+      // carries the run id (a worker exiting non-zero after the run was already
+      // saved), and dropping it here would lose the auto-select of that run. A
+      // later call start resets it, so a human call can't be misclassified.
       callState.update((s) => ({
         ...s,
         status: "error",
@@ -188,6 +241,7 @@ function cleanupCall(): void {
 
   cleanupAudioElements();
 
+  simCallAgentId = null;
   callState.set(initialState);
 }
 

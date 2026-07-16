@@ -7,8 +7,6 @@ To run these tests:
     uv run pytest tests/integration -v
 """
 
-import subprocess
-
 import pytest
 
 from voicetest.models.agent import AgentGraph
@@ -22,18 +20,7 @@ from voicetest.services.settings import SettingsService
 from voicetest.services.testing.execution import TestExecutionService
 
 
-def ollama_available() -> bool:
-    """Check if Ollama is running and has the required model."""
-    try:
-        result = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=5)
-        return "qwen2.5:0.5b" in result.stdout
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not ollama_available(), reason="Ollama not available or qwen2.5:0.5b not installed"
-)
+pytestmark = pytest.mark.stack
 
 
 @pytest.fixture

@@ -1,7 +1,5 @@
 """Integration tests for token streaming with real LLM calls."""
 
-import warnings
-
 import dspy
 from dspy.streaming import StreamListener
 from dspy.streaming import streamify
@@ -14,13 +12,13 @@ from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services.settings import SettingsService
 from voicetest.services.testing.execution import TestExecutionService
-from voicetest.settings import DEFAULT_MODEL
-from voicetest.settings import load_settings
 
 
-# Load settings and apply env vars for API keys
-_settings = load_settings()
-_settings.apply_env()
+# The agent's turns run against the local ollama model in the service stack, so
+# these stream real tokens without any external LLM key.
+MODEL = "ollama_chat/qwen2.5:0.5b"
+
+pytestmark = pytest.mark.stack
 
 
 @pytest.fixture
@@ -67,9 +65,9 @@ class TestStreamingWithLLM:
         options = RunOptions(
             streaming=True,
             max_turns=2,
-            agent_model=DEFAULT_MODEL,
-            simulator_model=DEFAULT_MODEL,
-            judge_model=DEFAULT_MODEL,
+            agent_model=MODEL,
+            simulator_model=MODEL,
+            judge_model=MODEL,
         )
 
         result = await TestExecutionService(SettingsService()).run_test(
@@ -78,16 +76,6 @@ class TestStreamingWithLLM:
             options=options,
             on_token=on_token,
         )
-
-        # Handle rate limit errors gracefully - external API issue, not our code
-        err = (result.error_message or "").lower()
-        if result.status == "error" and "rate" in err and "limit" in err:
-            warnings.warn(
-                f"RATE LIMITED - Test skipped: {result.error_message[:100]}",
-                UserWarning,
-                stacklevel=1,
-            )
-            pytest.skip("Rate limited by external API")
 
         assert result.status in ("pass", "fail"), f"Got error: {result.error_message}"
         assert len(result.transcript) > 0
@@ -102,7 +90,7 @@ class TestStreamifyIntegration:
     async def test_streamify_basic(self):
         """Test basic DSPy streamify functionality."""
 
-        lm = dspy.LM(DEFAULT_MODEL)
+        lm = dspy.LM(MODEL)
 
         class SimpleSignature(dspy.Signature):
             """Answer a simple question."""

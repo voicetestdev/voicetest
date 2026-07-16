@@ -33,3 +33,6 @@ test-data
 
 # Credentials
 .env
+
+# Claude cache
+.claude/scheduled_tasks.lock

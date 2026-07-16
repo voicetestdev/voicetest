@@ -14,6 +14,8 @@ Usage:
 
 import argparse
 import asyncio
+from collections.abc import Callable
+import contextlib
 import json
 import os
 import sys
@@ -21,49 +23,26 @@ import traceback
 
 from livekit import rtc
 from livekit.agents.voice import Agent
-from livekit.agents.voice import AgentSession
-from livekit.plugins import openai
 from livekit.plugins import silero
 
 from voicetest.engine.conversation import ConversationEngine
+from voicetest.livecall.audio_observer import AudioObserver
 from voicetest.livecall.livekit_adapter import VoicetestLLM
+from voicetest.livecall.observer_mount import observe_participant
+from voicetest.livecall.participant import CascadeParticipant
+from voicetest.livecall.worker_io import EmittingObserverTranscript
+from voicetest.livecall.worker_io import build_stt
+from voicetest.livecall.worker_io import build_tts
+from voicetest.livecall.worker_io import output_error
+from voicetest.livecall.worker_io import output_status
+from voicetest.livecall.worker_io import output_transcript
+from voicetest.livecall.worker_io import streaming_stt
 from voicetest.models.agent import AgentGraph
 from voicetest.settings import resolve_model
 
 
-try:
-    from voicetest.plugins.mlx import MlxKokoroTTS
-    from voicetest.plugins.mlx import MlxWhisperSTT
-
-    MLX_AVAILABLE = True
-except ImportError:
-    MLX_AVAILABLE = False
-    MlxKokoroTTS = None
-    MlxWhisperSTT = None
-
-
-def output_transcript(role: str, content: str) -> None:
-    """Output a transcript message to stdout as JSON."""
-    msg = {
-        "type": "transcript",
-        "message": {
-            "role": role,
-            "content": content,
-        },
-    }
-    print(json.dumps(msg), flush=True)
-
-
-def output_error(message: str) -> None:
-    """Output an error message to stdout as JSON."""
-    msg = {"type": "error", "message": message}
-    print(json.dumps(msg), flush=True)
-
-
-def output_status(status: str) -> None:
-    """Output a status update to stdout as JSON."""
-    msg = {"type": "status", "status": status}
-    print(json.dumps(msg), flush=True)
+# The agent participant joins with this identity (see CallManager.generate_token).
+AGENT_IDENTITY = "agent"
 
 
 def get_general_prompt(graph: AgentGraph) -> str:
@@ -71,6 +50,22 @@ def get_general_prompt(graph: AgentGraph) -> str:
 
     Returns the general_prompt from source_metadata, or a default."""
     return graph.source_metadata.get("general_prompt", "You are a helpful voice assistant.")
+
+
+async def opening_turn(
+    engine: ConversationEngine, on_response: Callable[[str], None]
+) -> str | None:
+    """Produce the agent's opening turn from the graph entry node.
+
+    Mirrors the text runner, which advances once before any user input
+    (engine/session.py) so the agent always speaks first. Emits the intended
+    transcript via on_response and returns the greeting to speak, or None when
+    the entry node yields no response."""
+    result = await engine.advance()
+    if result.response:
+        on_response(result.response)
+        return result.response
+    return None
 
 
 def main() -> None:
@@ -81,9 +76,9 @@ def main() -> None:
     parser.add_argument("--token", required=True, help="LiveKit access token")
     parser.add_argument(
         "--backend",
-        choices=["openai", "local"],
+        choices=["openai", "local", "mlx"],
         default=os.environ.get("VOICETEST_BACKEND", "openai"),
-        help="Voice backend: 'openai' for OpenAI API, 'local' for Ollama+MLX",
+        help="Voice backend: 'openai' (OpenAI API), 'local' (Docker whisper+kokoro), 'mlx' (macOS)",
     )
     parser.add_argument(
         "--whisper-url",
@@ -105,6 +100,16 @@ def main() -> None:
         default="{}",
         help="JSON string of dynamic variables for template substitution",
     )
+    parser.add_argument(
+        "--observer-token",
+        default=None,
+        help="LiveKit token for the observer participant that transcribes the agent's audio",
+    )
+    parser.add_argument(
+        "--no-user-transcript",
+        action="store_true",
+        help="Do not emit user turns from the agent's STT (a caller worker owns them in duplex)",
+    )
 
     args = parser.parse_args()
 
@@ -123,6 +128,8 @@ def main() -> None:
         output_status("connecting")
 
         room = rtc.Room()
+        observer_room: rtc.Room | None = None
+        observer_tasks: list[asyncio.Task] = []
 
         try:
             print(f"[agent-worker] connecting to {args.url}", file=sys.stderr, flush=True)
@@ -148,80 +155,43 @@ def main() -> None:
                 graph=graph, model=resolved, dynamic_variables=dynamic_variables or None
             )
 
-            # Create VoicetestLLM that wraps the engine
+            # Create VoicetestLLM that wraps the engine. Each intended response
+            # advances the turn counter; the observer tags its heard segments with
+            # the same id so they correlate regardless of STT segmentation.
+            turn_counter = {"n": 0}
             voicetest_llm = VoicetestLLM(engine)
-            voicetest_llm.set_on_response(lambda text: output_transcript("assistant", text))
 
-            # Configure the voice pipeline based on backend choice
-            if args.backend == "local":
-                # Local OSS stack via Docker: Whisper + local TTS + Kokoro
-                print(
-                    f"[agent-worker] local backend: whisper={args.whisper_url},"
-                    f" kokoro={args.kokoro_url}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                session = AgentSession(
-                    stt=openai.STT(
-                        base_url=args.whisper_url,
-                        api_key="not-needed",
-                        model="Systran/faster-whisper-base.en",
-                    ),
-                    llm=voicetest_llm,
-                    tts=openai.TTS(
-                        base_url=args.kokoro_url,
-                        api_key="not-needed",
-                        model="kokoro",
-                        voice="af_heart",
-                    ),
-                    vad=silero.VAD.load(),
-                    allow_interruptions=False,
-                )
-            elif args.backend == "mlx":
-                # macOS Metal-accelerated stack
-                if not MLX_AVAILABLE:
-                    output_error("MLX backend requires mlx-audio: uv sync --extra macos")
-                    sys.exit(1)
-                session = AgentSession(
-                    stt=MlxWhisperSTT(),
-                    llm=voicetest_llm,
-                    tts=MlxKokoroTTS(),
-                    vad=silero.VAD.load(),
-                    allow_interruptions=False,
-                )
-            else:
-                # OpenAI backend
-                session = AgentSession(
-                    stt=openai.STT(),
-                    llm=voicetest_llm,
-                    tts=openai.TTS(),
-                    vad=silero.VAD.load(),
-                    allow_interruptions=False,
-                )
+            def on_response(text: str) -> None:
+                turn_counter["n"] += 1
+                output_transcript("assistant", text, turn_id=turn_counter["n"])
+
+            voicetest_llm.set_on_response(on_response)
+
+            # Select the cascade STT/TTS components based on backend choice
+            stt = build_stt(args)
+            tts = build_tts(args)
+
+            # One VAD instance, shared by the cascade session and the observer STT.
+            vad = silero.VAD.load()
+            session = CascadeParticipant(
+                stt=stt,
+                llm=voicetest_llm,
+                tts=tts,
+                vad=vad,
+            ).build_session()
 
             # Get instructions from graph for Agent
             instructions = get_general_prompt(graph)
             agent = Agent(instructions=instructions)
 
-            # Listen for user input transcriptions
+            # Listen for user input transcriptions. Assistant transcripts are
+            # emitted by VoicetestLLM via set_on_response (immediately, before TTS).
             @session.on("user_input_transcribed")
             def on_user_speech(event):
+                if args.no_user_transcript:
+                    return
                 if event.is_final and event.transcript:
                     output_transcript("user", event.transcript)
-
-            # Listen for agent speech to capture assistant responses
-            @session.on("speech_created")
-            def on_speech_created(event):
-                handle = event.speech_handle
-
-                # Add callback for when speech is done - chat_items will be populated
-                def on_speech_done(h):
-                    for item in h.chat_items:
-                        text = getattr(item, "text_content", None)
-                        if text:
-                            output_transcript("assistant", text)
-
-                handle.add_done_callback(on_speech_done)
 
             # Register room disconnect handler BEFORE starting session
             disconnect_event = asyncio.Event()
@@ -238,6 +208,29 @@ def main() -> None:
             await session.start(agent, room=room)
             print("[agent-worker] session.start() returned", file=sys.stderr, flush=True)
 
+            # Observe the agent's own published audio from a second participant, so
+            # the transcript records what was heard on the wire alongside intended text.
+            if args.observer_token:
+                observer_room = rtc.Room()
+                observer = AudioObserver(
+                    stt=streaming_stt(build_stt(args), vad),
+                    transcript=EmittingObserverTranscript(),
+                    turn_id_provider=lambda: turn_counter["n"],
+                )
+                observe_participant(
+                    observer_room, observer, AGENT_IDENTITY, "assistant", observer_tasks
+                )
+
+                await observer_room.connect(args.url, args.observer_token)
+                print("[agent-worker] observer connected", file=sys.stderr, flush=True)
+
+            # Agent speaks first, matching the text runner (the entry node's
+            # opening turn advances before any user input). Emitted after the
+            # observer connects so the greeting is transcribed on the wire too.
+            opening = await opening_turn(engine, on_response)
+            if opening:
+                await session.say(opening)
+
             # Wait for room disconnect (session runs until room disconnects)
             print("[agent-worker] waiting for disconnect", file=sys.stderr, flush=True)
             await disconnect_event.wait()
@@ -250,8 +243,19 @@ def main() -> None:
             )
             output_error(f"Agent error: {e}")
         finally:
+            for task in observer_tasks:
+                task.cancel()
+            if observer_tasks:
+                # Let each observe_track run its cleanup (flush last final, aclose).
+                await asyncio.gather(*observer_tasks, return_exceptions=True)
+            # Best-effort disconnects: a failure tearing down one connection (e.g.
+            # an observer room that never finished connecting) must not skip the other.
+            if observer_room is not None:
+                with contextlib.suppress(Exception):
+                    await observer_room.disconnect()
             print("[agent-worker] disconnecting from room", file=sys.stderr, flush=True)
-            await room.disconnect()
+            with contextlib.suppress(Exception):
+                await room.disconnect()
             output_status("disconnected")
 
     asyncio.run(run())

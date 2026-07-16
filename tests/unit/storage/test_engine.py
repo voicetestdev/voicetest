@@ -216,6 +216,16 @@ class TestMigrateSchema:
                     ")"
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
+                    ")"
+                )
+            )
             # Insert a row so we can verify data survives migration
             conn.execute(
                 text(
@@ -243,7 +253,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 3
+            assert version == 5
 
     def test_runs_pending_migration_on_old_schema(self, tmp_path):
         db_path = tmp_path / "old.duckdb"
@@ -280,6 +290,16 @@ class TestMigrateSchema:
             )
             conn.execute(
                 text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
                     "CREATE TABLE schema_version ("
                     "version INTEGER PRIMARY KEY, "
                     "description VARCHAR NOT NULL, "
@@ -302,7 +322,62 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 3
+            assert version == 5
+
+    def test_source_kind_backfill(self, tmp_path):
+        """Migration 4 adds source_kind and backfills from the status marker."""
+        db_path = tmp_path / "source_kind.duckdb"
+        engine = create_engine(f"duckdb:///{db_path}")
+
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE agents ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "name VARCHAR NOT NULL, "
+                    "source_type VARCHAR NOT NULL"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE results ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "run_id VARCHAR NOT NULL, "
+                    "test_case_id VARCHAR NOT NULL, "
+                    "test_name VARCHAR, "
+                    "status VARCHAR, "
+                    "created_at TIMESTAMP"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO results (id, run_id, test_case_id, status) VALUES "
+                    "('r1', 'run1', 'tc1', 'imported'), "
+                    "('r2', 'run1', 'tc2', 'pass')"
+                )
+            )
+
+        _migrate_schema(engine)
+
+        with engine.begin() as conn:
+            imported = conn.execute(
+                text("SELECT source_kind FROM results WHERE id = 'r1'")
+            ).scalar()
+            passed = conn.execute(text("SELECT source_kind FROM results WHERE id = 'r2'")).scalar()
+            assert imported == "imported"
+            assert passed == "simulated"
 
     def test_tracks_version(self, tmp_path):
         db_path = tmp_path / "versioned.duckdb"
@@ -353,6 +428,16 @@ class TestMigrateSchema:
                     ")"
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
+                    ")"
+                )
+            )
 
         with caplog.at_level("INFO", logger="voicetest.storage.engine"):
             _migrate_schema(engine)
@@ -385,6 +470,16 @@ class TestMigrateSchema:
                     "test_name VARCHAR, "
                     "status VARCHAR, "
                     "created_at TIMESTAMP"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
                     ")"
                 )
             )

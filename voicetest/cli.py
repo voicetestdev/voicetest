@@ -257,7 +257,7 @@ async def _run_cli(
 
     def on_error(error: RetryError) -> None:
         _echo(
-            f"[yellow]Rate limited - retrying ({error.attempt}/{error.max_attempts})... "
+            f"[yellow]{error.error_type} - retrying ({error.attempt}/{error.max_attempts})... "
             f"waiting {error.retry_after:.1f}s[/yellow]"
         )
 
@@ -512,17 +512,22 @@ def demo(serve: bool, host: str, port: int):
 
 @main.command("smoke-test")
 @click.option("--max-turns", type=int, default=2, help="Maximum conversation turns")
+@click.option(
+    "--model",
+    default=None,
+    help="Override the agent, simulator, and judge model (e.g. a local ollama model)",
+)
 @click.pass_context
-def smoke_test(ctx, max_turns: int):
+def smoke_test(ctx, max_turns: int, model: str | None):
     """Run a quick smoke test using bundled demo data.
 
     Runs 1 test with limited turns to verify voicetest works.
     Useful for CI pipelines."""
     json_mode = ctx.obj.get("json", False)
-    asyncio.run(_smoke_test(max_turns, json_mode=json_mode))
+    asyncio.run(_smoke_test(max_turns, model=model, json_mode=json_mode))
 
 
-async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
+async def _smoke_test(max_turns: int, *, model: str | None = None, json_mode: bool = False) -> None:
     """Run smoke test with bundled demo data."""
     svc = _services()
     settings = svc.settings.get_settings()
@@ -545,15 +550,15 @@ async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
     graph = await agent_svc.import_agent(demo_agent)
     test_case = TestCase.model_validate(first_test)
     options = RunOptions(
-        agent_model=settings.models.agent,
-        simulator_model=settings.models.simulator,
-        judge_model=settings.models.judge,
+        agent_model=model or settings.models.agent,
+        simulator_model=model or settings.models.simulator,
+        judge_model=model or settings.models.judge,
         max_turns=max_turns,
     )
 
     def on_error(error: RetryError) -> None:
         _echo(
-            f"[yellow]Rate limited - retrying ({error.attempt}/{error.max_attempts})... "
+            f"[yellow]{error.error_type} - retrying ({error.attempt}/{error.max_attempts})... "
             f"waiting {error.retry_after:.1f}s[/yellow]"
         )
 
@@ -566,8 +571,101 @@ async def _smoke_test(max_turns: int, *, json_mode: bool = False) -> None:
         console.print(f"[{status_color}]Status: {result.status.upper()}[/{status_color}]")
         console.print(f"Turns: {len(result.transcript)}")
 
-    if result.status == "fail":
+    if result.status == "error":
         raise SystemExit(1)
+
+
+@main.command()
+@click.option("--agent-id", required=True, help="Agent ID in the database")
+@click.option(
+    "--tests",
+    "-t",
+    required=True,
+    type=click.Path(exists=True, path_type=Path),
+    help="Test cases JSON file",
+)
+@click.option("--test", "test_name", required=True, help="Name of the test case to run")
+@click.option("--max-turns", type=int, default=None, help="Maximum caller turns before ending")
+@click.option("--timeout", type=int, default=300, help="Max seconds to wait for the call to finish")
+@click.pass_context
+def call(
+    ctx,
+    agent_id: str,
+    tests: Path,
+    test_name: str,
+    max_turns: int | None,
+    timeout: int,
+):
+    """Run a test case as a live audio call (requires `voicetest up`).
+
+    Launches the agent and a simulated caller over real audio with no human,
+    then saves the result as a source_kind=live run judged against the test's
+    metrics."""
+    json_mode = ctx.obj.get("json", False)
+    asyncio.run(_call_cli(agent_id, tests, test_name, max_turns, timeout, json_mode=json_mode))
+
+
+async def _call_cli(
+    agent_id: str,
+    tests_path: Path,
+    test_name: str,
+    max_turns: int | None,
+    timeout: int,
+    *,
+    json_mode: bool = False,
+) -> None:
+    """Run a single test case as a live audio call and save it as a run."""
+    from voicetest.services.agents import AgentService  # noqa: PLC0415
+    from voicetest.services.runs import RunService  # noqa: PLC0415
+    from voicetest.services.testing import TestCaseService  # noqa: PLC0415
+    from voicetest.storage.repositories import CallRepository  # noqa: PLC0415
+    from voicetest.web.calls import CallManager  # noqa: PLC0415
+
+    container = create_container()
+    agent_svc = container.resolve(AgentService)
+    test_svc = container.resolve(TestCaseService)
+    call_repo = container.resolve(CallRepository)
+    call_mgr = container.resolve(CallManager)
+    runs = container.resolve(RunService)
+
+    try:
+        _agent, graph = agent_svc.load_graph(agent_id)
+    except (FileNotFoundError, ValueError) as e:
+        raise click.UsageError(f"Cannot load agent {agent_id}: {e}") from None
+
+    test_case = next((t for t in test_svc.load_test_cases(tests_path) if t.name == test_name), None)
+    if test_case is None:
+        raise click.UsageError(f"Test '{test_name}' not found in {tests_path}")
+
+    call_info = await call_mgr.start_call(
+        agent_id,
+        graph,
+        call_repo,
+        persona=test_case.user_prompt,
+        max_turns=max_turns,
+    )
+    call_id = call_info["call_id"]
+    active_call = call_mgr.get_active_call(call_id)
+
+    # The simulated caller ends the conversation at its max-turns cap; wait for
+    # its worker to exit, then end the call to stop the agent worker.
+    waited = 0.0
+    while active_call is not None and waited < timeout:
+        caller = active_call.caller_process
+        if caller is not None and caller.poll() is not None:
+            break
+        await asyncio.sleep(0.5)
+        waited += 0.5
+
+    await call_mgr.end_call(call_id, call_repo)
+
+    call = call_repo.get(call_id)
+    run_id = await runs.save_call_as_run(call, test_case=test_case) if call else None
+
+    if json_mode:
+        console.print_json(data={"call_id": call_id, "run_id": run_id})
+    else:
+        console.print(f"[green]Call complete.[/green] Saved run: {run_id}")
 
 
 @main.command()

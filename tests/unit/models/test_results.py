@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from voicetest.models.results import AudioMetadata
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
@@ -18,6 +19,44 @@ class TestMessage:
         assert msg.content == "Hello, I need help."
         assert msg.timestamp is None
         assert msg.metadata == {}
+
+
+class TestAudioMetadata:
+    """Tests for the AudioMetadata sub-model and Message audio accessors."""
+
+    def test_defaults_are_none(self):
+        audio = AudioMetadata()
+        assert audio.heard is None
+        assert audio.latency_ms is None
+        assert audio.audio_ref is None
+
+    def test_audio_accessor_empty_when_absent(self):
+        msg = Message(role="assistant", content="Hello")
+        assert msg.audio().heard is None
+
+    def test_set_and_get_audio_round_trip(self):
+        msg = Message(role="assistant", content="Hello")
+        msg.set_audio(AudioMetadata(heard="ello", latency_ms=320, audio_ref="r1"))
+        got = msg.audio()
+        assert got.heard == "ello"
+        assert got.latency_ms == 320
+        assert got.audio_ref == "r1"
+
+    def test_audio_survives_message_serialization(self):
+        msg = Message(role="assistant", content="Hello")
+        msg.set_audio(AudioMetadata(heard="ello", latency_ms=10))
+        restored = Message.model_validate(msg.model_dump())
+        assert restored.audio().heard == "ello"
+        assert restored.audio().latency_ms == 10
+
+    def test_audio_accessor_reads_legacy_flat_heard(self):
+        msg = Message(role="assistant", content="Hello", metadata={"heard": "ello"})
+        assert msg.audio().heard == "ello"
+
+    def test_nested_audio_takes_precedence_over_legacy_flat(self):
+        msg = Message(role="assistant", content="Hello", metadata={"heard": "legacy"})
+        msg.set_audio(AudioMetadata(heard="nested"))
+        assert msg.audio().heard == "nested"
 
     def test_create_agent_message_with_timestamp(self):
         now = datetime.now()
@@ -126,6 +165,14 @@ class TestTestResult:
         assert len(result.metric_results) == 1
         assert result.nodes_visited == ["greeting", "end"]
         assert result.error_message is None
+
+    def test_source_kind_defaults_to_simulated(self):
+        result = TestResult(test_name="t", status="pass")
+        assert result.source_kind == "simulated"
+
+    def test_source_kind_explicit(self):
+        result = TestResult(test_name="t", status="imported", source_kind="live")
+        assert result.source_kind == "live"
 
     def test_create_error_result(self):
         result = TestResult(

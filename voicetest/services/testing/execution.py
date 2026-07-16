@@ -103,6 +103,23 @@ class TestExecutionService:
 
         return results
 
+    async def evaluate_metrics(
+        self,
+        transcript: list[Message],
+        metrics: list[str],
+        threshold: float = 0.7,
+        judge_model: str | None = None,
+        on_error: OnErrorCallback | None = None,
+        use_heard: bool = False,
+    ) -> list[MetricResult]:
+        """Evaluate a transcript against a list of LLM metric criteria."""
+        if judge_model is None:
+            judge_model = resolve_model(self._settings.get_settings().models.judge)
+        metric_judge = MetricJudge(judge_model)
+        return await metric_judge.evaluate_all(
+            transcript, metrics, threshold=threshold, on_error=on_error, use_heard=use_heard
+        )
+
     async def run_test(
         self,
         graph: AgentGraph,

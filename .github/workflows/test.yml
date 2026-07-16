@@ -61,7 +61,7 @@ jobs:
           mise exec -- bun run build
 
       - name: Install Python dependencies
-        run: uv sync --frozen --all-extras
+        run: uv sync --frozen --extra postgres --extra re2 --extra s3
 
       - name: Run linting
         run: uv run ruff check voicetest/ tests/
@@ -98,7 +98,7 @@ jobs:
         run: curl -sSL https://get.livekit.io/cli | bash
 
       - name: Install dependencies with platform extras
-        run: uv sync --frozen --all-extras
+        run: uv sync --frozen --extra postgres --extra re2 --extra s3
 
       - name: Run platform integration tests
         env:
@@ -108,6 +108,38 @@ jobs:
           LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
           LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
         run: uv run pytest tests/integration/test_platforms.py tests/integration/test_livekit_api.py -v --tb=short
+
+  livecall-integration:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Start test services (LiveKit + whisper + kokoro)
+        run: bash scripts/services.sh up
+
+      # The voicetest wheel force-includes web/dist and the app mounts
+      # web/dist/assets at import; these backend tests don't need the real UI,
+      # so stage placeholders to satisfy the editable build and app import.
+      - name: Stage web assets
+        run: mkdir -p web/dist/assets && touch web/dist/index.html
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra postgres --extra re2 --extra s3
+
+      - name: Run stack integration tests
+        run: uv run pytest -m stack tests/integration -v --tb=short
+
+      - name: Stop test services
+        if: always()
+        run: bash scripts/services.sh down
 
   build:
     runs-on: ubuntu-latest
@@ -163,9 +195,16 @@ jobs:
           mise exec -- bun run build
 
       - name: Install dependencies
-        run: uv sync --frozen --all-extras
+        run: uv sync --frozen --extra postgres --extra re2 --extra s3
+
+      - name: Start ollama (local LLM)
+        env:
+          OLLAMA_MODEL: qwen2.5:3b
+        run: bash scripts/services.sh up ollama
 
       - name: Run smoke test
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: uv run voicetest smoke-test --max-turns 2
+        run: uv run voicetest smoke-test --max-turns 2 --model ollama_chat/qwen2.5:3b
+
+      - name: Stop test services
+        if: always()
+        run: bash scripts/services.sh down

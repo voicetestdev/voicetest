@@ -5,8 +5,10 @@ import pytest
 from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message
 from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import TestCase
 from voicetest.services.agents import AgentService
 from voicetest.services.runs import RunService
+from voicetest.services.testing.cases import TestCaseService
 
 
 @pytest.fixture
@@ -135,6 +137,118 @@ class TestImportCalls:
         assert run is not None
         assert run["completed_at"] is not None
         assert run["results"] == []
+
+
+class TestSaveCallAsRun:
+    async def test_marks_result_source_kind_live(self, agent_id, svc):
+        call = {
+            "id": "call-live-1",
+            "agent_id": agent_id,
+            "transcript_json": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ],
+            "started_at": "2026-01-01T00:00:00+00:00",
+            "ended_at": "2026-01-01T00:00:05+00:00",
+        }
+
+        run_id = await svc.save_call_as_run(call)
+
+        run = svc.get_run(run_id)
+        assert run["results"][0]["source_kind"] == "live"
+
+    async def test_empty_transcript_returns_none(self, agent_id, svc):
+        assert await svc.save_call_as_run({"id": "c", "agent_id": agent_id}) is None
+
+    async def test_result_named_after_test_case(self, agent_id, svc, container):
+        test_svc = container.resolve(TestCaseService)
+        created = test_svc.create_test(
+            agent_id,
+            TestCase(name="Books a flight", user_prompt="## Goal\nBook a flight"),
+        )
+        call = {
+            "id": "call-1",
+            "agent_id": agent_id,
+            "test_id": created["id"],
+            "transcript_json": [
+                {"role": "assistant", "content": "Hi"},
+                {"role": "user", "content": "Book a flight"},
+            ],
+        }
+
+        run_id = await svc.save_call_as_run(call)
+
+        result = svc.get_run(run_id)["results"][0]
+        assert result["test_name"] == "Books a flight"
+        assert result["source_kind"] == "live"
+
+    async def test_result_defaults_to_live_call_without_test(self, agent_id, svc):
+        call = {
+            "id": "call-2",
+            "agent_id": agent_id,
+            "transcript_json": [{"role": "assistant", "content": "Hi"}],
+        }
+
+        run_id = await svc.save_call_as_run(call)
+
+        assert svc.get_run(run_id)["results"][0]["test_name"] == "Live Call"
+
+    async def test_passed_test_case_is_judged_without_db_lookup(self, agent_id, svc):
+        test_case = TestCase(name="Books a flight", user_prompt="## Goal\nBook a flight")
+        call = {
+            "id": "call-3",
+            "agent_id": agent_id,
+            "transcript_json": [
+                {"role": "assistant", "content": "Hi"},
+                {"role": "user", "content": "Book a flight"},
+            ],
+        }
+
+        run_id = await svc.save_call_as_run(call, test_case=test_case)
+
+        result = svc.get_run(run_id)["results"][0]
+        assert result["test_name"] == "Books a flight"
+        assert result["source_kind"] == "live"
+
+    async def test_status_is_error_when_metric_eval_raises(self, agent_id, svc, monkeypatch):
+        test_case = TestCase(
+            name="Books a flight",
+            user_prompt="## Goal\nBook a flight",
+            metrics=["The agent books the flight"],
+        )
+        call = {
+            "id": "call-err",
+            "agent_id": agent_id,
+            "transcript_json": [
+                {"role": "assistant", "content": "Hi"},
+                {"role": "user", "content": "Book a flight"},
+            ],
+        }
+
+        async def boom(*args, **kwargs):
+            raise RuntimeError("judge unavailable")
+
+        monkeypatch.setattr(svc._test_execution, "evaluate_metrics", boom)
+
+        run_id = await svc.save_call_as_run(call, test_case=test_case)
+
+        assert svc.get_run(run_id)["results"][0]["status"] == "error"
+
+    async def test_second_save_of_same_call_returns_existing_run(self, agent_id, svc):
+        call = {
+            "id": "call-dup",
+            "agent_id": agent_id,
+            "transcript_json": [
+                {"role": "assistant", "content": "Hi"},
+                {"role": "user", "content": "Book a flight"},
+            ],
+        }
+
+        first = await svc.save_call_as_run(call)
+        second = await svc.save_call_as_run(call)
+
+        assert second == first
+        assert len(svc.list_runs(agent_id)) == 1
 
 
 def _empty_graph():

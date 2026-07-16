@@ -5,6 +5,8 @@ the same ConversationEngine as the test runner. This ensures tests and
 live calls behave identically.
 """
 
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Callable
 import sys
@@ -35,12 +37,12 @@ class VoicetestLLM(livekit_llm.LLM):
         self,
         *,
         chat_ctx: livekit_llm.ChatContext,
-        tools: list[livekit_llm.Tool] | None = None,
+        tools: list[livekit_llm.FunctionTool | livekit_llm.RawFunctionTool] | None = None,
         conn_options: APIConnectOptions | None = None,
         parallel_tool_calls: bool | None = None,
         tool_choice: livekit_llm.ToolChoice | None = None,
         extra_kwargs: dict | None = None,
-    ) -> "VoicetestLLMStream":
+    ) -> VoicetestLLMStream:
         """Process a chat turn using the ConversationEngine."""
         stream = VoicetestLLMStream(
             self, self._engine, chat_ctx, conn_options or APIConnectOptions()

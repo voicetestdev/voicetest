@@ -22,13 +22,12 @@ class MetricJudgeSignature(dspy.Signature):
         desc="Success criterion - may contain multiple requirements separated by periods"
     )
 
-    analysis: str = dspy.OutputField(
-        desc="Break down criterion into requirements, evaluate each with transcript quotes"
+    reasoning: str = dspy.OutputField(
+        desc="Which requirements passed/failed, with transcript quotes as evidence"
     )
     score: float = dspy.OutputField(
         desc="0.0-1.0 based on fraction of requirements met (e.g., 2/3 met = 0.67)"
     )
-    reasoning: str = dspy.OutputField(desc="Summary: which requirements passed/failed")
     confidence: float = dspy.OutputField(desc="Confidence in assessment 0.0-1.0")
 
 
@@ -117,6 +116,7 @@ class MetricJudge:
                 continue
             content = msg.content
             if use_heard and msg.role == "assistant":
-                content = msg.metadata.get("heard", content)
+                heard = msg.audio().heard
+                content = heard if heard is not None else content
             lines.append(f"{msg.role.upper()}: {content}")
         return "\n".join(lines)

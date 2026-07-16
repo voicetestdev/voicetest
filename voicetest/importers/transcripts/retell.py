@@ -91,6 +91,7 @@ def _call_to_result(call: dict) -> TestResult:
         test_id=call.get("call_id"),
         test_name=test_name,
         status="imported",
+        source_kind="imported",
         transcript=messages,
         turn_count=len(messages),
         duration_ms=duration_ms,

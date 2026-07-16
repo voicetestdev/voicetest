@@ -700,6 +700,7 @@ class RunRepository:
             call_id=call_id,
             test_name=result.test_name,
             status=result.status,
+            source_kind=result.source_kind,
             duration_ms=result.duration_ms,
             turn_count=result.turn_count,
             end_reason=result.end_reason,
@@ -724,6 +725,11 @@ class RunRepository:
     ) -> str:
         """Back-compat alias — prefer add_result(run_id, result, call_id=...)."""
         return self.add_result(run_id, result, call_id=call_id)
+
+    def find_run_id_by_call_id(self, call_id: str) -> str | None:
+        """Return the run id already holding a result for this call, or None."""
+        row = self.session.query(Result.run_id).filter(Result.call_id == call_id).first()
+        return row[0] if row else None
 
     def create_pending_result(self, run_id: str, test_case_id: str, test_name: str) -> str:
         """Create a pending result for an in-progress test."""
@@ -775,6 +781,7 @@ class RunRepository:
         data = self._serialize_result_data(result)
 
         db_result.status = result.status
+        db_result.source_kind = result.source_kind
         db_result.duration_ms = result.duration_ms
         db_result.turn_count = result.turn_count
         db_result.end_reason = result.end_reason
@@ -842,6 +849,7 @@ class RunRepository:
             "call_id": result.call_id,
             "test_name": result.test_name,
             "status": result.status,
+            "source_kind": result.source_kind,
             "duration_ms": result.duration_ms,
             "turn_count": result.turn_count,
             "end_reason": result.end_reason,
@@ -878,7 +886,7 @@ class CallRepository:
         )
         return [self._to_dict(c) for c in calls]
 
-    def create(self, agent_id: str, room_name: str) -> dict:
+    def create(self, agent_id: str, room_name: str, test_id: str | None = None) -> dict:
         """Create a new call."""
         call_id = str(uuid4())
         now = datetime.now(UTC)
@@ -889,6 +897,7 @@ class CallRepository:
             room_name=room_name,
             status="pending",
             transcript_json=[],
+            test_id=test_id,
             started_at=now,
             ended_at=None,
         )
@@ -940,6 +949,7 @@ class CallRepository:
             "room_name": call.room_name,
             "status": call.status,
             "transcript_json": call.transcript_json,
+            "test_id": call.test_id,
             "started_at": _serialize_datetime(call.started_at),
             "ended_at": _serialize_datetime(call.ended_at),
         }

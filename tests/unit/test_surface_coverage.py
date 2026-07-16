@@ -208,6 +208,9 @@ INTERNAL_ONLY = {
     "RunService.add_result_from_call": "Called by RunService.save_call_as_run internally",
     "RunService.result_to_dict": "ORM-to-dict helper called by REST result/diagnosis handlers",
     "RunService.save_call_as_run": "Called by REST end_call/end_chat handlers",
+    "TestExecutionService.evaluate_metrics": (
+        "Called by RunService.save_call_as_run to judge a live call, not a standalone operation"
+    ),
     # DecomposeService — helpers called by decompose pipeline
     "DecomposeService.build_sub_graph": "Called by decompose internally for each sub-agent",
     "DecomposeService.build_manifest": "Called by decompose internally to build manifest",

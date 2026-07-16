@@ -123,17 +123,27 @@ class RunService:
         """Update a result with audio eval data."""
         self._runs.update_audio_eval(result_id, transformed, audio_metrics)
 
-    async def save_call_as_run(self, call: dict) -> str | None:
+    async def save_call_as_run(self, call: dict, test_case: TestCase | None = None) -> str | None:
         """Convert a completed call into a Run with a single Result.
 
-        Evaluates the agent's configured global metrics against the transcript.
-        Returns the new run_id, or None if the call has no transcript."""
+        Judges the test case's metrics (when known) plus the agent's global
+        metrics against the transcript. The test case is taken from the argument
+        when the caller already holds it (the CLI's file-loaded test), else
+        resolved from the call's test_id in the database. Returns the new run_id,
+        or None if the call has no transcript."""
         transcript_data = call.get("transcript_json") or []
         if not transcript_data:
             return None
 
         agent_id = call["agent_id"]
         call_id = call["id"]
+
+        # A call can be ended (and saved) by both the caller-done watcher and an
+        # explicit end request; save once and return the existing run either time.
+        existing_run_id = self._runs.find_run_id_by_call_id(call_id)
+        if existing_run_id is not None:
+            return existing_run_id
+
         transcript = [Message(**m) for m in transcript_data]
 
         duration_ms = None
@@ -145,24 +155,60 @@ class RunService:
         turn_count = len(transcript) // 2
 
         metrics_config = self._agent_service.get_metrics_config(agent_id)
-        metric_results: list[MetricResult] = []
-        if metrics_config and metrics_config.global_metrics:
-            try:
-                metric_results = await self._test_execution.evaluate_global_metrics(
-                    transcript, metrics_config
-                )
-            except Exception:
-                _logger.exception("Failed to evaluate global metrics for call %s", call_id)
+        threshold = metrics_config.threshold if metrics_config else 0.7
 
-        status = "pass" if all(r.passed for r in metric_results) else "fail"
+        if test_case is None:
+            test_id = call.get("test_id")
+            if test_id:
+                record = self._tests.get(test_id)
+                if record:
+                    test_case = self._tests.to_model(record)
+
+        # The observer put heard-on-the-wire text alongside the intended content,
+        # so audio metrics judge the same criteria against what was actually heard
+        # (no TTS/STT round-trip needed for a live call).
+        metric_results: list[MetricResult] = []
+        audio_metric_results: list[MetricResult] = []
+        has_heard = any(m.audio().heard for m in transcript)
+        evaluation_failed = False
+        try:
+            if test_case and test_case.metrics:
+                metric_results.extend(
+                    await self._test_execution.evaluate_metrics(
+                        transcript, test_case.metrics, threshold=threshold
+                    )
+                )
+                if has_heard:
+                    audio_metric_results = await self._test_execution.evaluate_metrics(
+                        transcript, test_case.metrics, threshold=threshold, use_heard=True
+                    )
+            if metrics_config and metrics_config.global_metrics:
+                metric_results.extend(
+                    await self._test_execution.evaluate_global_metrics(transcript, metrics_config)
+                )
+        except Exception:
+            evaluation_failed = True
+            _logger.exception("Failed to evaluate metrics for call %s", call_id)
+
+        if evaluation_failed:
+            # Metrics were configured but could not be judged (e.g. the judge LLM
+            # failed); the outcome is unknown, not a pass.
+            status = "error"
+        else:
+            # A call with no metrics to evaluate has nothing to fail, so it is a
+            # pass, matching how replayed and imported (passive-capture) runs are
+            # recorded.
+            status = "pass" if all(r.passed for r in metric_results) else "fail"
 
         test_result = TestResult(
-            test_name="Live Call",
+            test_name=test_case.name if test_case else "Live Call",
             status=status,
+            source_kind="live",
             transcript=transcript,
             metric_results=metric_results,
+            audio_metric_results=audio_metric_results,
             turn_count=turn_count,
-            duration_ms=duration_ms,
+            duration_ms=duration_ms or 0,
             end_reason="user_ended",
         )
 

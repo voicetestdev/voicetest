@@ -138,6 +138,7 @@ class Call(Base):
     room_name: Mapped[str] = mapped_column(String, nullable=False)
     status: Mapped[str] = mapped_column(String, default="pending")
     transcript_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    test_id: Mapped[str | None] = mapped_column(String, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -151,6 +152,7 @@ class Call(Base):
             "room_name": self.room_name,
             "status": self.status,
             "transcript_json": self.transcript_json,
+            "test_id": self.test_id,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "ended_at": self.ended_at.isoformat() if self.ended_at else None,
         }
@@ -167,6 +169,7 @@ class Result(Base):
     call_id: Mapped[str | None] = mapped_column(String, nullable=True)
     test_name: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_kind: Mapped[str | None] = mapped_column(String, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     turn_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     end_reason: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -190,6 +193,7 @@ class Result(Base):
             "call_id": self.call_id,
             "test_name": self.test_name,
             "status": self.status,
+            "source_kind": self.source_kind,
             "duration_ms": self.duration_ms,
             "turn_count": self.turn_count,
             "end_reason": self.end_reason,
