@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { errorMessage } from "../lib/errors";
   import { api } from "../lib/api";
   import { settings } from "../lib/stores";
   import type { Settings } from "../lib/types";
@@ -55,7 +56,7 @@
       settings.set(s);
       localSettings = structuredClone(s);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     loading = false;
   }
@@ -71,7 +72,7 @@
       saved = true;
       setTimeout(() => { saved = false; }, 2000);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
 
     saving = false;

@@ -3,6 +3,7 @@
  */
 
 import { writable, get } from "svelte/store";
+import { errorMessage } from "./errors";
 import { api } from "./api";
 import { connectToRoom, cleanupAudioElements, type LiveKitConnection } from "./livekit";
 import { currentView, loadRunHistory, selectRun } from "./stores";
@@ -95,7 +96,7 @@ export async function startCall(
     callState.update((s) => ({
       ...s,
       status: "error",
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     }));
   }
 }
@@ -128,7 +129,7 @@ export async function startTestAudioCall(agentId: string, testId: string): Promi
     callState.update((s) => ({
       ...s,
       status: "error",
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     }));
   }
 }
@@ -280,7 +281,7 @@ export async function checkLiveKitStatus(retries = 3, delayMs = 1000): Promise<v
       }
       liveKitStatus.set({
         available: false,
-        error: error instanceof Error ? error.message : "Failed to check LiveKit status",
+        error: errorMessage(error, "Failed to check LiveKit status"),
         checking: false,
       });
     }

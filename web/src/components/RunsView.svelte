@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from "../lib/api";
+  import { errorMessage } from "../lib/errors";
   import {
     currentRunWithResults,
     currentRunId,
@@ -76,7 +77,7 @@
       diagnosisResult = await api.diagnoseResult(resultId, model);
       currentChanges = diagnosisResult.fix.changes;
     } catch (e) {
-      diagnosisError = e instanceof Error ? e.message : "Diagnosis failed";
+      diagnosisError = errorMessage(e, "Diagnosis failed");
     }
     diagnosing = false;
   }
@@ -87,7 +88,7 @@
     try {
       fixResult = await api.applyFix(resultId, currentChanges, iterationCount);
     } catch (e) {
-      diagnosisError = e instanceof Error ? e.message : "Apply fix failed";
+      diagnosisError = errorMessage(e, "Apply fix failed");
     }
     applyingFix = false;
   }
@@ -115,7 +116,7 @@
         fix: revised,
       };
     } catch (e) {
-      diagnosisError = e instanceof Error ? e.message : "Revision failed";
+      diagnosisError = errorMessage(e, "Revision failed");
     }
     applyingFix = false;
   }
@@ -131,7 +132,7 @@
       currentChanges = [];
       iterationCount = 0;
     } catch (e) {
-      diagnosisError = e instanceof Error ? e.message : "Save failed";
+      diagnosisError = errorMessage(e, "Save failed");
     }
     savingFix = false;
   }
@@ -207,7 +208,7 @@
         }
       }
     } catch (e) {
-      diagnosisError = e instanceof Error ? e.message : "Auto-fix failed";
+      diagnosisError = errorMessage(e, "Auto-fix failed");
     }
     autoFixRunning = false;
   }
@@ -248,7 +249,7 @@
         };
       });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Audio evaluation failed");
+      alert(errorMessage(e, "Audio evaluation failed"));
     }
     audioEvalLoading = null;
   }
@@ -443,7 +444,7 @@
       currentRunWithResults.set(null);
       currentRunId.set(null);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to delete run");
+      alert(errorMessage(e, "Failed to delete run"));
     }
     deleting = false;
   }
@@ -460,7 +461,7 @@
       await loadRunHistory(agentId);
       await loadRun(newRun.id);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed to replay run");
+      alert(errorMessage(e, "Failed to replay run"));
     }
     replaying = false;
   }

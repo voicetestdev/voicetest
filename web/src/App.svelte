@@ -68,7 +68,7 @@
       await initStores();
       initialized = true;
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to initialize";
+      error = errorMessage(e, "Failed to initialize");
     }
   });
 

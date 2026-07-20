@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from "../lib/api";
+  import { errorMessage } from "../lib/errors";
   import {
     agentGraph,
   } from "../lib/stores";
@@ -50,7 +51,7 @@
       metadataSaved = key;
       setTimeout(() => { metadataSaved = null; }, 2000);
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     savingMetadata = null;
   }

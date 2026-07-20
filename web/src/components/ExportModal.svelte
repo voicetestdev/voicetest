@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { errorMessage } from "../lib/errors";
   import { api } from "../lib/api";
   import {
     agentGraph,
@@ -93,7 +94,7 @@
       URL.revokeObjectURL(url);
       show = false;
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     exporting = false;
   }
@@ -111,7 +112,7 @@
         name: result.name,
       };
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     exportingToPlatform = null;
   }
@@ -129,7 +130,7 @@
       apiKeyInput = "";
       await exportToPlatform(platform);
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     configuringPlatform = null;
   }
@@ -149,7 +150,7 @@
       URL.revokeObjectURL(url);
       show = false;
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     exporting = false;
   }
@@ -169,7 +170,7 @@
       URL.revokeObjectURL(url);
       show = false;
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     exporting = false;
   }

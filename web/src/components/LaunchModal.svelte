@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { errorMessage } from "../lib/errors";
   import { api } from "../lib/api";
   import { testCases } from "../lib/stores";
   import type { TestCase } from "../lib/types";
@@ -37,7 +38,7 @@
       }
       variableValues = initial;
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     } finally {
       loading = false;
     }

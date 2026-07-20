@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { errorMessage } from '../lib/errors';
 	import type { RunResult, TestCaseRecord } from '../lib/types';
 	import { api } from '../lib/api';
 	import Modal from './Modal.svelte';
@@ -79,7 +80,7 @@
 				onclose();
 			}
 		} catch (err) {
-			submitError = err instanceof Error ? err.message : 'Failed to start run';
+			submitError = errorMessage(err, 'Failed to start run');
 		} finally {
 			submitting = false;
 		}
