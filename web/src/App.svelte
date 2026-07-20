@@ -21,6 +21,7 @@
   import OptimizeView from "./components/OptimizeView.svelte";
   import Toasts from "./components/Toasts.svelte";
   import { pushToast } from "./lib/toast";
+  import { errorMessage } from "./lib/errors";
 
   let initialized = $state(false);
   let error = $state<string | null>(null);
@@ -60,8 +61,7 @@
     // agent selection) as a non-fatal toast instead of losing them. App is the
     // root component and lives for the page's lifetime, so no teardown needed.
     window.addEventListener("unhandledrejection", (event) => {
-      const reason = event.reason;
-      pushToast(reason instanceof Error ? reason.message : String(reason));
+      pushToast(errorMessage(event.reason));
     });
 
     try {

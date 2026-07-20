@@ -13,6 +13,7 @@ import type {
   Settings,
 } from "./types";
 import { api } from "./api";
+import { errorMessage } from "./errors";
 import { etagCache } from "./etag-cache";
 
 export const agents = writable<AgentRecord[]>([]);
@@ -242,6 +243,22 @@ export async function loadAgents(): Promise<void> {
   agents.set(agentList);
 }
 
+// Fetch an agent's graph independently of its tests/runs: a linked agent whose
+// source file was moved/deleted fails only here, and the view must still load so
+// it can be inspected and deleted. The failure degrades the view, not the app.
+function loadAgentGraph(agentId: string): Promise<void> {
+  return api.getAgentGraph(agentId).then(
+    (graph) => {
+      agentGraph.set(graph);
+      agentGraphError.set(null);
+    },
+    (e) => {
+      agentGraph.set(null);
+      agentGraphError.set(errorMessage(e));
+    },
+  );
+}
+
 export async function selectAgent(agentId: string, view: NavView = "config", runId: string | null = null): Promise<void> {
   // If same agent is already selected, just switch view without refetching
   if (agentId === currentAgentIdValue) {
@@ -275,19 +292,7 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
     return [...arr, agentId];
   });
 
-  // Fetch the graph independently of tests/runs: a linked agent whose source
-  // file was moved/deleted fails only here, and the view must still load so it
-  // can be inspected and deleted. The failure degrades the view, not the app.
-  const graphLoaded = api.getAgentGraph(agentId).then(
-    (graph) => {
-      agentGraph.set(graph);
-      agentGraphError.set(null);
-    },
-    (e) => {
-      agentGraph.set(null);
-      agentGraphError.set(e instanceof Error ? e.message : String(e));
-    },
-  );
+  const graphLoaded = loadAgentGraph(agentId);
 
   const [records, runs] = await Promise.all([
     api.listTestsForAgent(agentId),
@@ -309,16 +314,7 @@ export async function refreshAgent(agentId: string): Promise<void> {
   etagCache.delete(`/agents/${agentId}/graph`);
   etagCache.delete(`/agents/${agentId}/tests`);
 
-  const graphLoaded = api.getAgentGraph(agentId).then(
-    (graph) => {
-      agentGraph.set(graph);
-      agentGraphError.set(null);
-    },
-    (e) => {
-      agentGraph.set(null);
-      agentGraphError.set(e instanceof Error ? e.message : String(e));
-    },
-  );
+  const graphLoaded = loadAgentGraph(agentId);
 
   const records = await api.listTestsForAgent(agentId);
   await graphLoaded;

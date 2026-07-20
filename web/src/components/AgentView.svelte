@@ -9,6 +9,7 @@
     refreshAgent,
     currentView,
   } from "../lib/stores";
+  import { errorMessage } from "../lib/errors";
   import { graphFingerprint } from "../lib/types";
   import type { SyncStatus } from "../lib/types";
   import CallView from "./CallView.svelte";
@@ -423,7 +424,7 @@
       currentAgentId.set(null);
       currentView.set("import");
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
   }
 
@@ -476,7 +477,7 @@
       nameSaved = true;
       setTimeout(() => { nameSaved = false; }, 2000);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     savingName = false;
   }
@@ -523,7 +524,7 @@
       modelSaved = true;
       setTimeout(() => { modelSaved = false; }, 2000);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     savingModel = false;
   }
@@ -540,7 +541,7 @@
     try {
       await refreshAgent($currentAgentId);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     refreshing = false;
   }
@@ -555,7 +556,7 @@
       syncSuccess = true;
       setTimeout(() => { syncSuccess = false; }, 3000);
     } catch (e) {
-      syncError = e instanceof Error ? e.message : String(e);
+      syncError = errorMessage(e);
     }
     syncing = false;
   }
@@ -587,7 +588,7 @@
       setTimeout(() => { generalPromptSaved = false; }, 2000);
       requestAnimationFrame(() => setupTooltips());
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     savingGeneralPrompt = false;
   }
@@ -643,6 +644,15 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
+{#snippet dangerZone()}
+  <section class="danger-zone">
+    <h3>Danger Zone</h3>
+    <button class="danger" onclick={deleteCurrentAgent}>
+      Delete Agent
+    </button>
+  </section>
+{/snippet}
+
 <div class="agent-view">
   {#if !$currentAgent}
     <p class="placeholder">No agent selected.</p>
@@ -662,12 +672,7 @@
       {/if}
     </section>
 
-    <section class="danger-zone">
-      <h3>Danger Zone</h3>
-      <button class="danger" onclick={deleteCurrentAgent}>
-        Delete Agent
-      </button>
-    </section>
+    {@render dangerZone()}
   {:else}
     <div class="name-row">
       {#if editingName}
@@ -898,12 +903,7 @@
       />
     {/if}
 
-    <section class="danger-zone">
-      <h3>Danger Zone</h3>
-      <button class="danger" onclick={deleteCurrentAgent}>
-        Delete Agent
-      </button>
-    </section>
+    {@render dangerZone()}
   {/if}
 </div>
 
