@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { errorMessage } from "./errors";
+import { errorMessage, rejectionMessage } from "./errors";
 
 describe("errorMessage", () => {
   it("returns the message of an Error", () => {
@@ -17,5 +17,28 @@ describe("errorMessage", () => {
 
   it("prefers the Error's message over the fallback", () => {
     expect(errorMessage(new Error("real"), "fallback")).toBe("real");
+  });
+
+  it("degrades an empty fallback to the stringified value", () => {
+    expect(errorMessage(42, "")).toBe("42");
+  });
+});
+
+describe("rejectionMessage", () => {
+  it("returns null for a null/undefined reason", () => {
+    expect(rejectionMessage(undefined)).toBeNull();
+    expect(rejectionMessage(null)).toBeNull();
+  });
+
+  it("returns null for an AbortError (cancelled/superseded request)", () => {
+    expect(rejectionMessage(new DOMException("aborted", "AbortError"))).toBeNull();
+  });
+
+  it("returns null for an empty message", () => {
+    expect(rejectionMessage("")).toBeNull();
+  });
+
+  it("returns the message for a real error", () => {
+    expect(rejectionMessage(new Error("boom"))).toBe("boom");
   });
 });

@@ -12,11 +12,13 @@ vi.mock("./api", () => ({
 import { api } from "./api";
 import {
   selectAgent,
+  refreshAgent,
   agentGraph,
   agentGraphError,
   runHistory,
   currentAgentId,
 } from "./stores";
+import { toasts } from "./toast";
 
 const graph = {
   entry_node_id: "n",
@@ -58,5 +60,25 @@ describe("selectAgent when a linked file is missing", () => {
 
     expect(get(agentGraphError)).toBeNull();
     expect(get(agentGraph)).not.toBeNull();
+  });
+});
+
+describe("refreshAgent when the graph fetch fails", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    agentGraph.set(null);
+    agentGraphError.set(null);
+    toasts.set([]);
+  });
+
+  it("keeps the last-good graph and toasts instead of blanking the view", async () => {
+    agentGraph.set(graph);
+    (api.getAgentGraph as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("backend 500"));
+    (api.listTestsForAgent as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    await refreshAgent("agent-x");
+
+    expect(get(agentGraph)).toBe(graph);
+    expect(get(toasts).some((t) => t.message.includes("500"))).toBe(true);
   });
 });

@@ -3,6 +3,7 @@
   import {
     agentGraph,
     agentGraphError,
+    agentGraphLoading,
     currentAgentId,
     currentAgent,
     loadAgents,
@@ -87,7 +88,9 @@
 
   $effect(() => {
     const agentId = $currentAgentId;
-    if (agentId) {
+    // Sync status is only shown in the full (graph-loaded) view, so skip the
+    // fetch for a degraded agent whose graph could not be loaded.
+    if (agentId && $agentGraph) {
       syncStatus = null;
       syncSuccess = false;
       syncError = "";
@@ -421,6 +424,7 @@
       await api.deleteAgent($currentAgentId);
       await loadAgents();
       agentGraph.set(null);
+      agentGraphError.set(null);
       currentAgentId.set(null);
       currentView.set("import");
     } catch (e) {
@@ -656,24 +660,7 @@
 <div class="agent-view">
   {#if !$currentAgent}
     <p class="placeholder">No agent selected.</p>
-  {:else if !$agentGraph}
-    <div class="name-row">
-      <span class="editable-name">{$currentAgent.name}</span>
-    </div>
-
-    <section class="graph-unavailable">
-      <h3>Graph unavailable</h3>
-      <p>This agent's flow could not be loaded.</p>
-      {#if $currentAgent.source_path}
-        <p class="source-path">Linked source file: <code>{$currentAgent.source_path}</code></p>
-        <p>The linked file may have been moved or deleted. Restore it to view and edit the flow.</p>
-      {:else if $agentGraphError}
-        <p class="error-detail">{$agentGraphError}</p>
-      {/if}
-    </section>
-
-    {@render dangerZone()}
-  {:else}
+  {:else if $agentGraph}
     <div class="name-row">
       {#if editingName}
         <input
@@ -902,6 +889,26 @@
         ontooltipschanged={handleTooltipsChanged}
       />
     {/if}
+
+    {@render dangerZone()}
+  {:else if $agentGraphLoading}
+    <p class="placeholder">Loading…</p>
+  {:else}
+    <div class="name-row">
+      <span class="editable-name">{$currentAgent.name}</span>
+    </div>
+
+    <section class="graph-unavailable">
+      <h3>Graph unavailable</h3>
+      <p>This agent's flow could not be loaded.</p>
+      {#if $currentAgent.source_path}
+        <p class="source-path">Linked source file: <code>{$currentAgent.source_path}</code></p>
+        <p>If the file was moved or deleted, restore it to view and edit the flow.</p>
+      {/if}
+      {#if $agentGraphError}
+        <p class="error-detail">{$agentGraphError}</p>
+      {/if}
+    </section>
 
     {@render dangerZone()}
   {/if}

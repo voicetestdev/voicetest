@@ -15,6 +15,7 @@ import type {
 import { api } from "./api";
 import { errorMessage } from "./errors";
 import { etagCache } from "./etag-cache";
+import { pushToast } from "./toast";
 
 export const agents = writable<AgentRecord[]>([]);
 export const currentAgentId = writable<string | null>(null);
@@ -22,6 +23,9 @@ export const agentGraph = writable<AgentGraph | null>(null);
 // Set when an agent loads but its graph can't be fetched (e.g. a linked agent
 // whose source file was moved/deleted). Drives the degraded agent view.
 export const agentGraphError = writable<string | null>(null);
+// True while an agent's graph is being fetched, so the view can show a loading
+// state instead of momentarily flashing the "graph unavailable" degraded view.
+export const agentGraphLoading = writable(false);
 export const testCaseRecords = writable<TestCaseRecord[]>([]);
 export const testCases = writable<TestCase[]>([]);
 export const currentRun = writable<TestRun | null>(null);
@@ -246,17 +250,31 @@ export async function loadAgents(): Promise<void> {
 // Fetch an agent's graph independently of its tests/runs: a linked agent whose
 // source file was moved/deleted fails only here, and the view must still load so
 // it can be inspected and deleted. The failure degrades the view, not the app.
-function loadAgentGraph(agentId: string): Promise<void> {
-  return api.getAgentGraph(agentId).then(
-    (graph) => {
-      agentGraph.set(graph);
-      agentGraphError.set(null);
-    },
-    (e) => {
-      agentGraph.set(null);
-      agentGraphError.set(errorMessage(e));
-    },
-  );
+//
+// On failure returns the error message (else null). `preserveOnError` keeps the
+// last-good graph rather than clearing it — used by refresh, where a transient
+// failure should not blank a working view.
+function loadAgentGraph(
+  agentId: string,
+  { preserveOnError = false }: { preserveOnError?: boolean } = {},
+): Promise<string | null> {
+  agentGraphLoading.set(true);
+  return api
+    .getAgentGraph(agentId)
+    .then(
+      (graph) => {
+        agentGraph.set(graph);
+        agentGraphError.set(null);
+        return null;
+      },
+      (e) => {
+        const message = errorMessage(e);
+        if (!preserveOnError) agentGraph.set(null);
+        agentGraphError.set(message);
+        return message;
+      },
+    )
+    .finally(() => agentGraphLoading.set(false));
 }
 
 export async function selectAgent(agentId: string, view: NavView = "config", runId: string | null = null): Promise<void> {
@@ -292,13 +310,13 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
     return [...arr, agentId];
   });
 
-  const graphLoaded = loadAgentGraph(agentId);
-
-  const [records, runs] = await Promise.all([
+  // loadAgentGraph never rejects (it degrades the view on failure), so all
+  // three run concurrently and a bad graph can't fail the whole selection.
+  const [, records, runs] = await Promise.all([
+    loadAgentGraph(agentId),
     api.listTestsForAgent(agentId),
     api.listRunsForAgent(agentId),
   ]);
-  await graphLoaded;
 
   testCaseRecords.set(records);
   testCases.set(records.map(parseTestCaseRecord));
@@ -314,13 +332,17 @@ export async function refreshAgent(agentId: string): Promise<void> {
   etagCache.delete(`/agents/${agentId}/graph`);
   etagCache.delete(`/agents/${agentId}/tests`);
 
-  const graphLoaded = loadAgentGraph(agentId);
-
-  const records = await api.listTestsForAgent(agentId);
-  await graphLoaded;
+  // Keep the last-good graph if the refresh fails (transient backend error);
+  // surface the failure as a toast rather than blanking a working view.
+  const [graphError, records] = await Promise.all([
+    loadAgentGraph(agentId, { preserveOnError: true }),
+    api.listTestsForAgent(agentId),
+  ]);
 
   testCaseRecords.set(records);
   testCases.set(records.map(parseTestCaseRecord));
+
+  if (graphError) pushToast(`Failed to refresh graph: ${graphError}`);
 }
 
 export function toggleAgentExpanded(agentId: string): void {

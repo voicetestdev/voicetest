@@ -21,7 +21,7 @@
   import OptimizeView from "./components/OptimizeView.svelte";
   import Toasts from "./components/Toasts.svelte";
   import { pushToast } from "./lib/toast";
-  import { errorMessage } from "./lib/errors";
+  import { errorMessage, rejectionMessage } from "./lib/errors";
 
   let initialized = $state(false);
   let error = $state<string | null>(null);
@@ -58,11 +58,20 @@
     initTheme();
 
     // Surface otherwise-silent fire-and-forget rejections (e.g. an unawaited
-    // agent selection) as a non-fatal toast instead of losing them. App is the
-    // root component and lives for the page's lifetime, so no teardown needed.
-    window.addEventListener("unhandledrejection", (event) => {
-      pushToast(errorMessage(event.reason));
-    });
+    // agent selection) as a non-fatal toast instead of losing them.
+    // rejectionMessage filters out value-less/aborted rejections that are noise.
+    // Track the handler on window so an HMR remount replaces rather than stacks it.
+    const w = window as unknown as {
+      __voicetestRejectionHandler?: (event: PromiseRejectionEvent) => void;
+    };
+    if (w.__voicetestRejectionHandler) {
+      window.removeEventListener("unhandledrejection", w.__voicetestRejectionHandler);
+    }
+    w.__voicetestRejectionHandler = (event) => {
+      const message = rejectionMessage(event.reason);
+      if (message) pushToast(message);
+    };
+    window.addEventListener("unhandledrejection", w.__voicetestRejectionHandler);
 
     try {
       await initStores();

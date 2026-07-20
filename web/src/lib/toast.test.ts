@@ -30,6 +30,19 @@ describe("toast", () => {
     expect(list[0].message).toBe("two");
   });
 
+  it("dedupes a message already showing", () => {
+    pushToast("dup");
+    pushToast("dup");
+    expect(get(toasts)).toHaveLength(1);
+  });
+
+  it("caps the number of stacked toasts, keeping the most recent", () => {
+    for (let i = 0; i < 8; i++) pushToast(`msg-${i}`);
+    const list = get(toasts);
+    expect(list.length).toBeLessThanOrEqual(5);
+    expect(list[list.length - 1].message).toBe("msg-7");
+  });
+
   it("auto-dismisses after the timeout", () => {
     vi.useFakeTimers();
     try {

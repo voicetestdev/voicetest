@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from "../lib/api";
   import { errorMessage } from "../lib/errors";
+  import { pushToast } from "../lib/toast";
   import {
     currentRunWithResults,
     currentRunId,
@@ -249,7 +250,7 @@
         };
       });
     } catch (e) {
-      alert(errorMessage(e, "Audio evaluation failed"));
+      pushToast(errorMessage(e, "Audio evaluation failed"));
     }
     audioEvalLoading = null;
   }
@@ -444,7 +445,7 @@
       currentRunWithResults.set(null);
       currentRunId.set(null);
     } catch (e) {
-      alert(errorMessage(e, "Failed to delete run"));
+      pushToast(errorMessage(e, "Failed to delete run"));
     }
     deleting = false;
   }
@@ -461,7 +462,7 @@
       await loadRunHistory(agentId);
       await loadRun(newRun.id);
     } catch (e) {
-      alert(errorMessage(e, "Failed to replay run"));
+      pushToast(errorMessage(e, "Failed to replay run"));
     }
     replaying = false;
   }
