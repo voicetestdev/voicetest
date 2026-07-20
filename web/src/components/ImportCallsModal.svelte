@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from "../lib/api";
+  import { errorMessage } from "../lib/errors";
   import { currentAgentId, selectRun, loadRunHistory } from "../lib/stores";
   import { get } from "svelte/store";
   import Modal from "./Modal.svelte";
@@ -43,7 +44,7 @@
       await selectRun(agentId, run.id);
       handleClose();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Import failed";
+      const msg = errorMessage(e, "Import failed");
       error = msg;
       onerror?.(msg);
     } finally {

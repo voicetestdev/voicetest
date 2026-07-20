@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from "../lib/api";
+  import { errorMessage } from "../lib/errors";
   import {
     agentGraph,
   } from "../lib/stores";
@@ -98,7 +99,7 @@
       }, 800);
       ontooltipschanged?.();
     } catch (e) {
-      onerror?.(e instanceof Error ? e.message : String(e));
+      onerror?.(errorMessage(e));
     }
     saving = false;
   }

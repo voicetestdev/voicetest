@@ -2,12 +2,15 @@
   import { api } from "../lib/api";
   import {
     agentGraph,
+    agentGraphError,
+    agentGraphLoading,
     currentAgentId,
     currentAgent,
     loadAgents,
     refreshAgent,
     currentView,
   } from "../lib/stores";
+  import { errorMessage } from "../lib/errors";
   import { graphFingerprint } from "../lib/types";
   import type { SyncStatus } from "../lib/types";
   import CallView from "./CallView.svelte";
@@ -85,7 +88,9 @@
 
   $effect(() => {
     const agentId = $currentAgentId;
-    if (agentId) {
+    // Sync status is only shown in the full (graph-loaded) view, so skip the
+    // fetch for a degraded agent whose graph could not be loaded.
+    if (agentId && $agentGraph) {
       syncStatus = null;
       syncSuccess = false;
       syncError = "";
@@ -419,10 +424,11 @@
       await api.deleteAgent($currentAgentId);
       await loadAgents();
       agentGraph.set(null);
+      agentGraphError.set(null);
       currentAgentId.set(null);
       currentView.set("import");
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
   }
 
@@ -475,7 +481,7 @@
       nameSaved = true;
       setTimeout(() => { nameSaved = false; }, 2000);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     savingName = false;
   }
@@ -522,7 +528,7 @@
       modelSaved = true;
       setTimeout(() => { modelSaved = false; }, 2000);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     savingModel = false;
   }
@@ -539,7 +545,7 @@
     try {
       await refreshAgent($currentAgentId);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     refreshing = false;
   }
@@ -554,7 +560,7 @@
       syncSuccess = true;
       setTimeout(() => { syncSuccess = false; }, 3000);
     } catch (e) {
-      syncError = e instanceof Error ? e.message : String(e);
+      syncError = errorMessage(e);
     }
     syncing = false;
   }
@@ -586,7 +592,7 @@
       setTimeout(() => { generalPromptSaved = false; }, 2000);
       requestAnimationFrame(() => setupTooltips());
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     savingGeneralPrompt = false;
   }
@@ -642,10 +648,19 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
+{#snippet dangerZone()}
+  <section class="danger-zone">
+    <h3>Danger Zone</h3>
+    <button class="danger" onclick={deleteCurrentAgent}>
+      Delete Agent
+    </button>
+  </section>
+{/snippet}
+
 <div class="agent-view">
-  {#if !$agentGraph || !$currentAgent}
+  {#if !$currentAgent}
     <p class="placeholder">No agent selected.</p>
-  {:else}
+  {:else if $agentGraph}
     <div class="name-row">
       {#if editingName}
         <input
@@ -875,12 +890,27 @@
       />
     {/if}
 
-    <section class="danger-zone">
-      <h3>Danger Zone</h3>
-      <button class="danger" onclick={deleteCurrentAgent}>
-        Delete Agent
-      </button>
+    {@render dangerZone()}
+  {:else if $agentGraphLoading}
+    <p class="placeholder">Loading…</p>
+  {:else}
+    <div class="name-row">
+      <span class="editable-name">{$currentAgent.name}</span>
+    </div>
+
+    <section class="graph-unavailable">
+      <h3>Graph unavailable</h3>
+      <p>This agent's flow could not be loaded.</p>
+      {#if $currentAgent.source_path}
+        <p class="source-path">Linked source file: <code>{$currentAgent.source_path}</code></p>
+        <p>If the file was moved or deleted, restore it to view and edit the flow.</p>
+      {/if}
+      {#if $agentGraphError}
+        <p class="error-detail">{$agentGraphError}</p>
+      {/if}
     </section>
+
+    {@render dangerZone()}
   {/if}
 </div>
 
@@ -889,6 +919,23 @@
     width: 100%;
     overflow-y: auto;
     flex: 1;
+  }
+
+  .graph-unavailable {
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid var(--warning-border, #e0b000);
+    border-radius: 6px;
+    background: var(--warning-bg, rgba(224, 176, 0, 0.08));
+  }
+
+  .graph-unavailable .source-path code {
+    word-break: break-all;
+  }
+
+  .graph-unavailable .error-detail {
+    font-family: monospace;
+    word-break: break-all;
   }
 
 

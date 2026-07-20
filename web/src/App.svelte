@@ -19,6 +19,9 @@
   import SettingsView from "./components/SettingsView.svelte";
   import ImportView from "./components/ImportView.svelte";
   import OptimizeView from "./components/OptimizeView.svelte";
+  import Toasts from "./components/Toasts.svelte";
+  import { pushToast } from "./lib/toast";
+  import { errorMessage, rejectionMessage } from "./lib/errors";
 
   let initialized = $state(false);
   let error = $state<string | null>(null);
@@ -53,11 +56,28 @@
 
   onMount(async () => {
     initTheme();
+
+    // Surface otherwise-silent fire-and-forget rejections (e.g. an unawaited
+    // agent selection) as a non-fatal toast instead of losing them.
+    // rejectionMessage filters out value-less/aborted rejections that are noise.
+    // Track the handler on window so an HMR remount replaces rather than stacks it.
+    const w = window as unknown as {
+      __voicetestRejectionHandler?: (event: PromiseRejectionEvent) => void;
+    };
+    if (w.__voicetestRejectionHandler) {
+      window.removeEventListener("unhandledrejection", w.__voicetestRejectionHandler);
+    }
+    w.__voicetestRejectionHandler = (event) => {
+      const message = rejectionMessage(event.reason);
+      if (message) pushToast(message);
+    };
+    window.addEventListener("unhandledrejection", w.__voicetestRejectionHandler);
+
     try {
       await initStores();
       initialized = true;
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to initialize";
+      error = errorMessage(e, "Failed to initialize");
     }
   });
 
@@ -197,6 +217,8 @@
       {/key}
     {/if}
   </main>
+
+  <Toasts />
 </div>
 
 <style>

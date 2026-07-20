@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from "../lib/api";
+  import { errorMessage } from "../lib/errors";
   import {
     agentGraph,
   } from "../lib/stores";
@@ -51,7 +52,7 @@
       newSnippetText = "";
       addingSnippet = false;
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     savingSnippet = false;
   }
@@ -64,7 +65,7 @@
       snippets = result.snippets;
       editingSnippetName = null;
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     savingSnippet = false;
   }
@@ -75,7 +76,7 @@
       const result = await api.deleteSnippet(agentId, name);
       snippets = result.snippets;
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
   }
 
@@ -86,7 +87,7 @@
     try {
       dryAnalysis = await api.analyzeDry(agentId);
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     analyzingDry = false;
   }
@@ -100,7 +101,7 @@
       snippets = result.snippets ?? {};
       dryAnalysis = null;
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     applyingSnippets = false;
   }
@@ -118,7 +119,7 @@
       snippets = result.snippets ?? {};
       dryAnalysis = null;
     } catch (e) {
-      reportError(e instanceof Error ? e.message : String(e));
+      reportError(errorMessage(e));
     }
     applyingSnippets = false;
   }

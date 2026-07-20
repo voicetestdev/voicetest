@@ -6,6 +6,7 @@
  */
 
 import { writable, get } from "svelte/store";
+import { errorMessage } from "./errors";
 import { api } from "./api";
 import { loadRunHistory, selectRun } from "./stores";
 import type { CallTranscriptMessage } from "./types";
@@ -54,7 +55,7 @@ export async function startChat(
     chatState.update((s) => ({
       ...s,
       status: "error",
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     }));
   }
 }

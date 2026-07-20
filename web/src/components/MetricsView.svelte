@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from "../lib/api";
+  import { errorMessage } from "../lib/errors";
   import { currentAgentId } from "../lib/stores";
   import type { GlobalMetric, MetricsConfig } from "../lib/types";
 
@@ -28,7 +29,7 @@
     try {
       config = await api.getMetricsConfig(agentId);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     loading = false;
   }
@@ -40,7 +41,7 @@
     try {
       config = await api.updateMetricsConfig($currentAgentId, config);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     saving = false;
   }

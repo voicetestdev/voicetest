@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { errorMessage } from "../lib/errors";
   import { api } from "../lib/api";
   import { agents, loadAgents, selectAgent } from "../lib/stores";
   import type { Platform, PlatformInfo, PlatformStatus, RemoteAgentInfo } from "../lib/types";
@@ -97,7 +98,7 @@
       await loadAgents();
       await selectAgent(result.agent_id, "config");
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     loadingDemo = false;
   }
@@ -127,7 +128,7 @@
       await selectAgent(agent.id, "config");
       clearData();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     importing = false;
   }
@@ -199,7 +200,7 @@
       const remoteAgents = await api.listRemoteAgents(platform);
       platformAgents = { ...platformAgents, [platform]: remoteAgents };
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = errorMessage(e);
       // If credentials are missing/invalid, show the setup form instead of error
       if (message.includes("API_KEY") || message.includes("API_SECRET") || message.includes("credentials") || message.includes("Unauthorized") || message.includes("401")) {
         platformStatus = { ...platformStatus, [platform]: { platform, configured: false } };
@@ -229,7 +230,7 @@
       apiSecretInput = "";
       await loadRemoteAgents(platform);
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     configuringPlatform = false;
   }
@@ -245,7 +246,7 @@
         agentName = agent.name;
       }
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
       fetchedGraph = null;
     }
   }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { currentAgentId, loadAgents } from "../lib/stores";
+  import { errorMessage } from "../lib/errors";
   import { api } from "../lib/api";
   import SnippetManager from "./SnippetManager.svelte";
   import type { DecompositionResult } from "../lib/types";
@@ -31,7 +32,7 @@
         numAgents,
       );
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     decomposing = false;
   }
@@ -51,7 +52,7 @@
       importedIds = ids;
       await loadAgents();
     } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
+      error = errorMessage(e);
     }
     importing = false;
   }

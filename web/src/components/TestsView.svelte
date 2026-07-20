@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api } from "../lib/api";
+  import { errorMessage } from "../lib/errors";
   import { startTestAudioCall } from "../lib/call-store";
   import {
     agents,
@@ -225,7 +226,7 @@
       await refreshTests();
       closeNewTestModal();
     } catch (e) {
-      importError = e instanceof Error ? e.message : String(e);
+      importError = errorMessage(e);
     }
     saving = false;
   }
@@ -248,7 +249,7 @@
       await refreshTests();
       selectedTestIds = selectedTestIds.filter((x) => x !== id);
     } catch (e) {
-      importError = e instanceof Error ? e.message : String(e);
+      importError = errorMessage(e);
     }
   }
 
@@ -331,7 +332,7 @@
       closeImportModal();
       await importTestsWithProgress(tests);
     } catch (e) {
-      importError = e instanceof Error ? e.message : String(e);
+      importError = errorMessage(e);
     }
   }
 
@@ -378,7 +379,7 @@
       jsonImport = content;
       input.value = "";
     } catch (e) {
-      importError = e instanceof Error ? e.message : String(e);
+      importError = errorMessage(e);
     }
   }
 
@@ -412,7 +413,7 @@
     try {
       await startRun($currentAgentId);
     } catch (e) {
-      runError = e instanceof Error ? e.message : String(e);
+      runError = errorMessage(e);
     }
   }
 
@@ -425,7 +426,7 @@
     try {
       await startRun($currentAgentId, selectedTestIds);
     } catch (e) {
-      runError = e instanceof Error ? e.message : String(e);
+      runError = errorMessage(e);
     }
   }
 
@@ -463,7 +464,7 @@
 
       closeExportModal();
     } catch (e) {
-      exportError = e instanceof Error ? e.message : String(e);
+      exportError = errorMessage(e);
     }
 
     exporting = false;
@@ -486,7 +487,7 @@
       await refreshAgent($currentAgentId);
       closeImportModal();
     } catch (e) {
-      linkError = e instanceof Error ? e.message : String(e);
+      linkError = errorMessage(e);
     }
 
     linking = false;
