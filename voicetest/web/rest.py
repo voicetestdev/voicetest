@@ -1,6 +1,6 @@
 """REST API for voicetest."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 import contextlib
 from datetime import UTC
 from datetime import datetime
@@ -675,7 +675,7 @@ def _require_agent(http_request: Request, agent_id: str) -> dict:
 
 
 @contextlib.asynccontextmanager
-async def _saved_upload(file: UploadFile) -> AsyncIterator[Path]:
+async def _saved_upload(file: UploadFile) -> AsyncGenerator[Path, None]:
     """Save an UploadFile to a temp path; remove it on exit.
 
     Yields the Path. Raises HTTPException(400) if no filename was provided."""

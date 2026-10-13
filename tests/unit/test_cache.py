@@ -11,6 +11,7 @@ from dspy.clients.cache import Cache
 import dspy.clients.lm as dspy_lm_module
 import pytest
 
+from voicetest.llm.base import _create_lm
 from voicetest.llm.claudecode import ClaudeCodeLM
 from voicetest.settings import CacheSettings
 from voicetest.util.cache import CacheBackend
@@ -447,7 +448,7 @@ class TestTryEvictLastCall:
         original_cache = dspy.cache
         try:
             dspy.cache = cache
-            lm = dspy.LM("openai/gpt-4o-mini")
+            lm = _create_lm("openai/gpt-4o-mini")
 
             lm(prompt="test prompt")
             assert call_count["n"] == 1
@@ -475,7 +476,7 @@ class TestTryEvictLastCall:
         original_cache = dspy.cache
         try:
             dspy.cache = cache
-            lm = dspy.LM("openai/gpt-4o-mini")
+            lm = _create_lm("openai/gpt-4o-mini")
             messages = [
                 {"role": "system", "content": "you are helpful"},
                 {"role": "user", "content": "hello"},
@@ -491,6 +492,24 @@ class TestTryEvictLastCall:
 
             lm(messages=messages)
             assert call_count["n"] == 2  # post-eviction miss
+        finally:
+            dspy.cache = original_cache
+
+    def test_end_to_end_cache_salt_changes_cache_key(self, tmp_path, monkeypatch):
+        cache = self._fresh_cache(tmp_path)
+        call_count = self._install_fake_completion(monkeypatch)
+
+        original_cache = dspy.cache
+        try:
+            dspy.cache = cache
+            _create_lm("openai/gpt-4o-mini", cache_salt="aaa")(prompt="test prompt")
+            assert call_count["n"] == 1
+
+            _create_lm("openai/gpt-4o-mini", cache_salt="aaa")(prompt="test prompt")
+            assert call_count["n"] == 1
+
+            _create_lm("openai/gpt-4o-mini", cache_salt="bbb")(prompt="test prompt")
+            assert call_count["n"] == 2
         finally:
             dspy.cache = original_cache
 

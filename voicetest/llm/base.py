@@ -8,6 +8,7 @@ import dspy
 from dspy.adapters.baml_adapter import BAMLAdapter
 from dspy.streaming import StreamListener
 from dspy.streaming import streamify
+from dspy.utils.exceptions import AdapterParseError
 import litellm
 import openai
 
@@ -46,7 +47,7 @@ def _create_lm(model: str, cache_salt: str | None = None, no_cache: bool = False
         extra["metadata"] = {"_cache_salt": cache_salt}
     if no_cache:
         extra["cache"] = False
-    return dspy.LM(model, **extra)
+    return dspy.LM(model, engine="litellm", **extra)
 
 
 async def _invoke_callback(callback: Callable, *args) -> None:
@@ -175,8 +176,23 @@ async def _call_llm_streaming(
         result._voicetest_lm = lm
         return result
 
-    return await with_retry(
-        stream,
-        on_error=on_error,
-        max_attempts_by_exception=_MAX_ATTEMPTS_BY_EXCEPTION,
-    )
+    try:
+        return await with_retry(
+            stream,
+            on_error=on_error,
+            max_attempts_by_exception={**_MAX_ATTEMPTS_BY_EXCEPTION, AdapterParseError: 1},
+        )
+    except AdapterParseError:
+        result = await _call_llm_sync(
+            model,
+            signature_class,
+            on_error,
+            cache_salt=cache_salt,
+            no_cache=no_cache,
+            predictor_class=predictor_class,
+            **kwargs,
+        )
+        value = getattr(result, stream_field, None)
+        if value:
+            await _invoke_callback(on_token, value)
+        return result
