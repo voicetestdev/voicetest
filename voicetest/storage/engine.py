@@ -63,6 +63,17 @@ _MIGRATIONS: list[tuple[int, str, str | list[str], str]] = [
         "SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'calls' AND column_name = 'test_id'",
     ),
+    (
+        6,
+        "Add judge_input, events_json, and voicetest_version to results",
+        [
+            "ALTER TABLE results ADD COLUMN judge_input VARCHAR DEFAULT 'transcript'",
+            "ALTER TABLE results ADD COLUMN events_json JSON",
+            "ALTER TABLE results ADD COLUMN voicetest_version VARCHAR",
+        ],
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'results' AND column_name = 'events_json'",
+    ),
 ]
 
 
@@ -142,21 +153,24 @@ def _migrate_schema(engine: Engine) -> None:
 
         pending = [m for m in _MIGRATIONS if m[0] > current]
 
-        if not pending:
-            logger.info("Schema up to date at version %d", current)
-            return
+    if not pending:
+        logger.info("Schema up to date at version %d", current)
+        return
 
-        logger.info("Running %d pending migration(s) from version %d", len(pending), current)
-        for version, description, sql, _verify in pending:
-            logger.info("Migration %d: %s", version, description)
-            statements = sql if isinstance(sql, list) else [sql]
+    # DuckDB cannot commit an ALTER that follows an UPDATE on the same table
+    # within one transaction, so each migration commits on its own.
+    logger.info("Running %d pending migration(s) from version %d", len(pending), current)
+    for version, description, sql, _verify in pending:
+        logger.info("Migration %d: %s", version, description)
+        statements = sql if isinstance(sql, list) else [sql]
+        with engine.begin() as conn:
             for stmt in statements:
                 conn.execute(text(stmt))
             conn.execute(
                 text("INSERT INTO schema_version (version, description) VALUES (:v, :d)"),
                 {"v": version, "d": description},
             )
-        logger.info("Migrations complete — now at version %d", pending[-1][0])
+    logger.info("Migrations complete — now at version %d", pending[-1][0])
 
 
 def create_db_engine(url: str | None = None) -> Engine:

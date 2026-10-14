@@ -4,7 +4,9 @@ from datetime import datetime
 import logging
 
 from voicetest.engine.session import ConversationRunner
+from voicetest.judges.metric import conversation_for_judge
 from voicetest.models.agent import AgentGraph
+from voicetest.models.events import JUDGE_INPUT_EVENTS
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
@@ -170,21 +172,26 @@ class RunService:
         metric_results: list[MetricResult] = []
         audio_metric_results: list[MetricResult] = []
         has_heard = any(m.audio().heard for m in transcript)
+        judge_input = self._settings.get_settings().run.judge_input
+        conversation = conversation_for_judge(transcript, judge_input)
         evaluation_failed = False
         try:
             if test_case and test_case.metrics:
                 metric_results.extend(
                     await self._test_execution.evaluate_metrics(
-                        transcript, test_case.metrics, threshold=threshold
+                        conversation, test_case.metrics, threshold=threshold
                     )
                 )
                 if has_heard:
                     audio_metric_results = await self._test_execution.evaluate_metrics(
-                        transcript, test_case.metrics, threshold=threshold, use_heard=True
+                        conversation_for_judge(transcript, judge_input, use_heard=True),
+                        test_case.metrics,
+                        threshold=threshold,
+                        use_heard=True,
                     )
             if metrics_config and metrics_config.global_metrics:
                 metric_results.extend(
-                    await self._test_execution.evaluate_global_metrics(transcript, metrics_config)
+                    await self._test_execution.evaluate_global_metrics(conversation, metrics_config)
                 )
         except Exception:
             evaluation_failed = True
@@ -210,6 +217,8 @@ class RunService:
             turn_count=turn_count,
             duration_ms=duration_ms or 0,
             end_reason="user_ended",
+            judge_input=judge_input,
+            events=conversation if judge_input == JUDGE_INPUT_EVENTS else [],
         )
 
         run = self.create_run(agent_id)

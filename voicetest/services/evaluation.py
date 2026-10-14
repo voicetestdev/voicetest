@@ -1,8 +1,12 @@
 """Evaluation service: evaluate transcripts against metrics."""
 
+from voicetest.judges.metric import Conversation
 from voicetest.judges.metric import MetricJudge
+from voicetest.judges.metric import conversation_for_judge
 from voicetest.judges.rule import RuleJudge
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.events import JUDGE_INPUT_TRANSCRIPT
+from voicetest.models.events import JudgeInput
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.test_case import TestCase
@@ -25,7 +29,7 @@ class EvaluationService:
 
     async def evaluate_transcript(
         self,
-        transcript: list[Message],
+        transcript: Conversation,
         metrics: list[str],
         judge_model: str | None = None,
         _mock_mode: bool = False,
@@ -50,6 +54,7 @@ class EvaluationService:
         test_case: TestCase,
         metrics_config: MetricsConfig | None = None,
         judge_model: str | None = None,
+        judge_input: JudgeInput = JUDGE_INPUT_TRANSCRIPT,
     ) -> tuple[list[Message], list[MetricResult]]:
         """Run audio evaluation on an existing transcript.
 
@@ -59,6 +64,7 @@ class EvaluationService:
 
         audio_rt = AudioRoundTrip.from_settings(settings)
         transformed = await audio_rt.transform_transcript(transcript)
+        conversation = conversation_for_judge(transformed, judge_input, use_heard=True)
 
         judge_model = judge_model or resolve_model(settings.models.judge)
         test_type = test_case.effective_type
@@ -77,7 +83,7 @@ class EvaluationService:
         else:
             metric_judge = MetricJudge(judge_model)
             audio_metrics = await metric_judge.evaluate_all(
-                transformed,
+                conversation,
                 test_case.metrics,
                 threshold=threshold,
                 use_heard=True,
@@ -85,7 +91,7 @@ class EvaluationService:
 
         if metrics_config:
             global_results = await self._execution.evaluate_global_metrics(
-                transformed,
+                conversation,
                 metrics_config,
                 judge_model=judge_model,
                 use_heard=True,

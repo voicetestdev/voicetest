@@ -16,6 +16,9 @@ voicetest chat -a agent.json --model openai/gpt-4o --var name=Jane --var account
 # Evaluate a transcript against metrics (no simulation)
 voicetest evaluate -t transcript.json -m "Agent was polite" -m "Agent resolved the issue"
 
+# Evaluate a structured event timeline (speech, keypad, tool, transition events)
+voicetest evaluate -e events.json -m "Caller pressed 1 for billing"
+
 # Diagnose test failures and suggest fixes
 voicetest diagnose -a agent.json -t tests.json
 voicetest diagnose -a agent.json -t tests.json --auto-fix --save fixed_agent.json

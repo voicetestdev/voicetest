@@ -3,11 +3,13 @@
 import pytest
 
 from voicetest.models.agent import AgentGraph
+from voicetest.models.events import JUDGE_INPUT_EVENTS
 from voicetest.models.results import Message
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services.agents import AgentService
 from voicetest.services.runs import RunService
+from voicetest.services.settings import SettingsService
 from voicetest.services.testing.cases import TestCaseService
 
 
@@ -156,6 +158,49 @@ class TestSaveCallAsRun:
 
         run = svc.get_run(run_id)
         assert run["results"][0]["source_kind"] == "live"
+
+    async def test_records_transcript_judge_input_by_default(self, agent_id, svc):
+        call = {
+            "id": "call-judge-default",
+            "agent_id": agent_id,
+            "transcript_json": [{"role": "user", "content": "hi"}],
+        }
+
+        run_id = await svc.save_call_as_run(call)
+
+        result = svc.get_run(run_id)["results"][0]
+        assert result["judge_input"] == "transcript"
+        assert result["events_json"] is None
+
+    async def test_judges_and_records_events_when_settings_select_events(
+        self, agent_id, svc, container, tmp_path, judge_prompts
+    ):
+        (tmp_path / ".voicetest").mkdir(exist_ok=True)
+        settings_svc = container.resolve(SettingsService)
+        settings = settings_svc.get_settings()
+        settings.run.judge_input = JUDGE_INPUT_EVENTS
+        settings_svc.update_settings(settings)
+        call = {
+            "id": "call-judge-events",
+            "agent_id": agent_id,
+            "transcript_json": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ],
+        }
+
+        test_case = TestCase(name="Greets", user_prompt="Say hi", metrics=["Agent greeted"])
+
+        run_id = await svc.save_call_as_run(call, test_case=test_case)
+
+        result = svc.get_run(run_id)["results"][0]
+        assert result["status"] == "pass"
+        assert "[[ ## events ## ]]" in judge_prompts()[0]
+        assert result["judge_input"] == "events"
+        assert result["events_json"] == [
+            {"kind": "speech", "speaker": "user", "content": "hi"},
+            {"kind": "speech", "speaker": "assistant", "content": "hello"},
+        ]
 
     async def test_empty_transcript_returns_none(self, agent_id, svc):
         assert await svc.save_call_as_run({"id": "c", "agent_id": agent_id}) is None

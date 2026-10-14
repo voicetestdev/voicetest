@@ -848,6 +848,35 @@ class TestCLIEvaluate:
 
         assert result.exit_code != 0
 
+    def test_evaluate_help_lists_events(self, cli_runner):
+        result = cli_runner.invoke(main, ["evaluate", "--help"])
+
+        assert "--events" in result.output
+
+    def test_evaluate_rejects_transcript_and_events_together(self, cli_runner, fixtures_dir):
+        events = fixtures_dir / "events" / "keypad_billing.json"
+
+        result = cli_runner.invoke(
+            main, ["evaluate", "--transcript", str(events), "--events", str(events), "-m", "m"]
+        )
+
+        assert result.exit_code != 0
+        assert "exactly one of --transcript or --events" in result.output
+
+    def test_evaluate_requires_transcript_or_events(self, cli_runner):
+        result = cli_runner.invoke(main, ["evaluate", "-m", "m"])
+
+        assert result.exit_code != 0
+        assert "exactly one of --transcript or --events" in result.output
+
+    def test_evaluate_rejects_unknown_event_kind(self, cli_runner, tmp_path):
+        events = tmp_path / "events.json"
+        events.write_text('[{"kind": "other", "content": "hi"}]')
+
+        result = cli_runner.invoke(main, ["evaluate", "--events", str(events), "-m", "m"])
+
+        assert result.exit_code != 0
+
     def test_evaluate_shown_in_main_help(self, cli_runner):
         result = cli_runner.invoke(main, ["--help"])
 

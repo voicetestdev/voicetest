@@ -2,7 +2,10 @@
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
+from dspy.adapters.baml_adapter import BAMLAdapter
+from dspy.utils.dummies import DummyLM
 from fastapi.testclient import TestClient
 import pytest
 
@@ -24,6 +27,39 @@ from voicetest.storage.repositories import AgentRepository
 from voicetest.util.cache import setup_cache_from_settings
 from voicetest.web.rest import app
 from voicetest.web.rest import init_storage
+
+
+SCRIPTED_JUDGMENT = {"reasoning": "Scripted judgment", "score": 1.0, "confidence": 0.9}
+
+
+@pytest.fixture
+def scripted_lm():
+    """Route every LLM call to a DummyLM answering by signature input field.
+
+    Everything above the provider call runs for real: signature selection,
+    prompt formatting, retries, and output parsing."""
+    lm = DummyLM(
+        {
+            "[[ ## events ## ]]": SCRIPTED_JUDGMENT,
+            "[[ ## transcript ## ]]": SCRIPTED_JUDGMENT,
+            "[[ ## persona ## ]]": {"message": "I need help with my account."},
+            "[[ ## user_message ## ]]": {"response": "Happy to help with your account."},
+        },
+        adapter=BAMLAdapter(),
+    )
+    with patch("voicetest.llm.base._create_lm", return_value=lm):
+        yield lm
+
+
+@pytest.fixture
+def judge_prompts(scripted_lm):
+    """Return the final user-message content of each judge call scripted_lm received."""
+
+    def collect() -> list[str]:
+        prompts = [entry["messages"][-1]["content"] for entry in scripted_lm.history]
+        return [p for p in prompts if "[[ ## criterion ## ]]" in p]
+
+    return collect
 
 
 @pytest.fixture(autouse=True)

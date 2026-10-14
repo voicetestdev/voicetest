@@ -2,6 +2,7 @@
 
 from datetime import UTC
 from datetime import datetime
+from importlib.metadata import version as package_version
 import json
 from pathlib import Path
 from uuid import NAMESPACE_URL
@@ -17,6 +18,8 @@ from voicetest.models.agent import AgentNode
 from voicetest.models.agent import GlobalMetric
 from voicetest.models.agent import MetricsConfig
 from voicetest.models.agent import NodeType
+from voicetest.models.events import JUDGE_INPUT_EVENTS
+from voicetest.models.events import JudgeEvent
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
@@ -665,6 +668,67 @@ class TestRunRepository:
         assert run["results"][0]["duration_ms"] == 1500
         assert run["results"][0]["turn_count"] == 3
         assert len(run["results"][0]["transcript_json"]) == 2
+
+    def test_add_result_defaults_judge_input_to_transcript(self, run_repo, agent_repo, sample_run):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+
+        run_repo.add_result(run_record["id"], sample_run.results[0], test_case_id="tc-1")
+
+        stored = run_repo.get_with_results(run_record["id"])["results"][0]
+        assert stored["judge_input"] == "transcript"
+        assert stored["events_json"] is None
+
+    def test_add_result_persists_judge_events(self, run_repo, agent_repo, sample_run):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+        events = [
+            JudgeEvent(kind="speech", speaker="assistant", content="Hello", start_offset_ms=0),
+            JudgeEvent(kind="keypad_input", speaker="user", payload={"digits": "1"}),
+        ]
+        result = sample_run.results[0].model_copy(
+            update={"judge_input": JUDGE_INPUT_EVENTS, JUDGE_INPUT_EVENTS: events}
+        )
+
+        run_repo.add_result(run_record["id"], result, test_case_id="tc-1")
+
+        stored = run_repo.get_with_results(run_record["id"])["results"][0]
+        assert stored["judge_input"] == "events"
+        assert [JudgeEvent.model_validate(e) for e in stored["events_json"]] == events
+
+    def test_complete_result_persists_judge_events(self, run_repo, agent_repo, sample_run):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+        result_id = run_repo.create_pending_result(run_record["id"], "tc-1", "Test")
+        events = [JudgeEvent(kind="speech", speaker="user", content="Hi")]
+        result = sample_run.results[0].model_copy(
+            update={"judge_input": JUDGE_INPUT_EVENTS, JUDGE_INPUT_EVENTS: events}
+        )
+
+        run_repo.complete_result(result_id, result)
+
+        stored = run_repo.get_with_results(run_record["id"])["results"][0]
+        assert stored["judge_input"] == "events"
+        assert stored["events_json"] == [{"kind": "speech", "speaker": "user", "content": "Hi"}]
+
+    def test_add_result_records_voicetest_version(self, run_repo, agent_repo, sample_run):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+
+        run_repo.add_result(run_record["id"], sample_run.results[0], test_case_id="tc-1")
+
+        stored = run_repo.get_with_results(run_record["id"])["results"][0]
+        assert stored["voicetest_version"] == package_version("voicetest")
+
+    def test_pending_result_records_voicetest_version(self, run_repo, agent_repo, sample_run):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        run_record = run_repo.create(agent["id"])
+        result_id = run_repo.create_pending_result(run_record["id"], "tc-1", "Test")
+
+        run_repo.complete_result(result_id, sample_run.results[0])
+
+        stored = run_repo.get_with_results(run_record["id"])["results"][0]
+        assert stored["voicetest_version"] == package_version("voicetest")
 
 
 class TestAgentRepositoryEdgeCases:

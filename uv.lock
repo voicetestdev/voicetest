@@ -4719,7 +4719,7 @@ requires-dist = [
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.35" },
     { name = "click", specifier = ">=8.0" },
     { name = "cloudpickle", marker = "extra == 's3'", specifier = ">=3.0" },
-    { name = "dspy", specifier = ">=2.6" },
+    { name = "dspy", specifier = "==3.4.1" },
     { name = "duckdb", specifier = ">=1.5.2" },
     { name = "duckdb-engine", specifier = ">=0.13" },
     { name = "fastapi", specifier = ">=0.115" },

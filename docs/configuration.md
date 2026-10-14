@@ -50,16 +50,35 @@ See the [LiteLLM Vertex AI docs](https://docs.litellm.ai/docs/providers/vertex) 
 
 ## Run options
 
-| Option                  | Default   | Description                                  |
-| ----------------------- | --------- | -------------------------------------------- |
-| `max_turns`             | `50`      | Maximum conversation turns                   |
-| `turn_timeout_seconds`  | `60.0`    | Per-turn timeout (user sim + agent response) |
-| `no_cache`              | `false`   | Bypass LLM response cache                    |
-| `audio_eval`            | `false`   | TTS/STT round-trip evaluation                |
-| `flow_judge`            | `false`   | Validate conversation flow                   |
-| `streaming`             | `false`   | Stream tokens as LLM generates               |
-| `test_model_precedence` | `false`   | Test-level model overrides global model      |
-| `pattern_engine`        | `fnmatch` | Pattern matching engine: `fnmatch` or `re2`  |
+| Option                  | Default      | Description                                              |
+| ----------------------- | ------------ | -------------------------------------------------------- |
+| `max_turns`             | `50`         | Maximum conversation turns                               |
+| `turn_timeout_seconds`  | `60.0`       | Per-turn timeout (user sim + agent response)             |
+| `no_cache`              | `false`      | Bypass LLM response cache                                |
+| `audio_eval`            | `false`      | TTS/STT round-trip evaluation                            |
+| `flow_judge`            | `false`      | Validate conversation flow                               |
+| `streaming`             | `false`      | Stream tokens as LLM generates                           |
+| `test_model_precedence` | `false`      | Test-level model overrides global model                  |
+| `pattern_engine`        | `fnmatch`    | Pattern matching engine: `fnmatch` or `re2`              |
+| `judge_input`           | `transcript` | Metric judge input: `transcript` or `events` (see below) |
+
+### Judge input
+
+`transcript` gives the metric judge role-prefixed text (`USER: ...`). Tool messages, timestamps, and metadata are dropped.
+
+`events` gives the judge a chronological list of structured events, so it can tell speech apart from keypad input, tool activity, and node transitions, and cite timing when it is known. Each stored result records the `judge_input` it was judged with, the voicetest version that judged it, and, under `events`, the events themselves. The voicetest version pins the judge prompt, including DSPy's formatting, because DSPy is pinned to an exact version.
+
+| Field             | Description                                                                 |
+| ----------------- | --------------------------------------------------------------------------- |
+| `kind`            | `speech`, `keypad_input`, `tool_call`, `tool_result`, or `transition`       |
+| `speaker`         | Who produced the event, when applicable (`user`, `assistant`)               |
+| `start_offset_ms` | Milliseconds from conversation start; omitted when the source has no timing |
+| `end_offset_ms`   | Milliseconds from conversation start; omitted for point events              |
+| `content`         | Text, such as an utterance                                                  |
+| `payload`         | Structured event data, such as `{"digits": "1"}` or a tool name and result  |
+| `metadata`        | Source details that are not evidence in themselves                          |
+
+Events are judged in start-offset order. Events with equal offsets keep their input order, and an event without an offset stays after the event before it. Missing timing is never filled in. Producers that bring in calls from another platform normalize them into these kinds before handing them to voicetest, either with `voicetest evaluate --events` or as `events` in `POST /api/evaluate`.
 
 ## Settings file
 

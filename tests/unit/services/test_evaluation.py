@@ -2,6 +2,7 @@
 
 import pytest
 
+from voicetest.models.events import JudgeEvent
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.services.evaluation import EvaluationService
@@ -44,6 +45,21 @@ class TestEvaluateTranscript:
             _mock_mode=True,
         )
         assert results[0].passed is True
+
+    @pytest.mark.asyncio
+    async def test_judges_events(self, svc, judge_prompts):
+        events = [
+            JudgeEvent(kind="speech", speaker="assistant", content="Press 1 for billing"),
+            JudgeEvent(kind="keypad_input", speaker="user", payload={"digits": "1"}),
+        ]
+
+        results = await svc.evaluate_transcript(
+            transcript=events, metrics=["Caller pressed 1"], judge_model="openai/gpt-4o-mini"
+        )
+
+        assert [r.metric for r in results] == ["Caller pressed 1"]
+        assert results[0].passed is True
+        assert "[[ ## events ## ]]" in judge_prompts()[0]
 
     @pytest.mark.asyncio
     async def test_empty_metrics(self, svc, transcript):

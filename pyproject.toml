@@ -24,7 +24,7 @@ dependencies = [
     "livekit-agents>=1.0,<2.0",
     "livekit-plugins-openai>=1.0,<2.0",
     "livekit-plugins-silero>=1.0,<2.0",
-    "dspy>=2.6",
+    "dspy==3.4.1",
     "pydantic>=2.0",
     "click>=8.0",
     "rich>=13.0",

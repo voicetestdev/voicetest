@@ -8,6 +8,9 @@ from pydantic import BaseModel
 from pydantic import Field
 
 from voicetest.config import get_settings_path
+from voicetest.models.events import JUDGE_INPUT_EVENTS
+from voicetest.models.events import JUDGE_INPUT_TRANSCRIPT
+from voicetest.models.events import JudgeInput
 
 
 DEFAULT_MODEL = "groq/llama-3.1-8b-instant"
@@ -61,6 +64,13 @@ class RunSettings(BaseModel):
     pattern_engine: str = Field(
         default="fnmatch",
         description="Pattern engine: 'fnmatch' (wildcards) or 're2' (regex)",
+    )
+    judge_input: JudgeInput = Field(
+        default=JUDGE_INPUT_TRANSCRIPT,
+        description=(
+            f"Metric judge input: '{JUDGE_INPUT_TRANSCRIPT}' (role-prefixed text) "
+            f"or '{JUDGE_INPUT_EVENTS}'"
+        ),
     )
 
 
@@ -133,6 +143,7 @@ def _to_toml(settings: Settings) -> str:
     lines.append(f"test_model_precedence = {str(settings.run.test_model_precedence).lower()}")
     lines.append(f"audio_eval = {str(settings.run.audio_eval).lower()}")
     lines.append(f'pattern_engine = "{settings.run.pattern_engine}"')
+    lines.append(f'judge_input = "{settings.run.judge_input}"')
     lines.append("")
 
     lines.append("[audio]")

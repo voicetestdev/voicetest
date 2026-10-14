@@ -9,10 +9,13 @@ import uuid
 from voicetest.engine.session import ConversationRunner
 from voicetest.judges.flow import FlowJudge
 from voicetest.judges.flow import FlowResult
+from voicetest.judges.metric import Conversation
 from voicetest.judges.metric import MetricJudge
+from voicetest.judges.metric import conversation_for_judge
 from voicetest.judges.rule import RuleJudge
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.events import JUDGE_INPUT_EVENTS
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import ModelOverride
@@ -57,6 +60,7 @@ def resolve_run_options(
             test_model_precedence=settings.run.test_model_precedence,
             audio_eval=settings.run.audio_eval,
             pattern_engine=settings.run.pattern_engine,
+            judge_input=settings.run.judge_input,
         )
     return options.model_copy(
         update={
@@ -75,7 +79,7 @@ class TestExecutionService:
 
     async def evaluate_global_metrics(
         self,
-        transcript: list[Message],
+        transcript: Conversation,
         metrics_config: MetricsConfig,
         judge_model: str | None = None,
         on_error: OnErrorCallback | None = None,
@@ -105,7 +109,7 @@ class TestExecutionService:
 
     async def evaluate_metrics(
         self,
-        transcript: list[Message],
+        transcript: Conversation,
         metrics: list[str],
         threshold: float = 0.7,
         judge_model: str | None = None,
@@ -238,6 +242,8 @@ class TestExecutionService:
                 test_case, simulator, on_turn=tracking_on_turn, on_token=on_token, on_error=on_error
             )
 
+            conversation = conversation_for_judge(state.transcript, options.judge_input)
+
             test_type = test_case.effective_type
             if test_type == "rule":
                 metric_results = await rule_judge.evaluate(
@@ -248,12 +254,12 @@ class TestExecutionService:
                 )
             else:
                 metric_results = await metric_judge.evaluate_all(
-                    state.transcript, test_case.metrics, threshold=threshold, on_error=on_error
+                    conversation, test_case.metrics, threshold=threshold, on_error=on_error
                 )
 
             if metrics_config:
                 global_results = await self.evaluate_global_metrics(
-                    state.transcript,
+                    conversation,
                     metrics_config,
                     judge_model=options.judge_model,
                     on_error=on_error,
@@ -265,6 +271,9 @@ class TestExecutionService:
                 try:
                     audio_rt = AudioRoundTrip.from_settings()
                     state.transcript = await audio_rt.transform_transcript(state.transcript)
+                    audio_conversation = conversation_for_judge(
+                        state.transcript, options.judge_input, use_heard=True
+                    )
 
                     if test_type == "rule":
                         audio_metric_results = await rule_judge.evaluate(
@@ -276,7 +285,7 @@ class TestExecutionService:
                         )
                     else:
                         audio_metric_results = await metric_judge.evaluate_all(
-                            state.transcript,
+                            audio_conversation,
                             test_case.metrics,
                             threshold=threshold,
                             on_error=on_error,
@@ -285,7 +294,7 @@ class TestExecutionService:
 
                     if metrics_config:
                         audio_global_results = await self.evaluate_global_metrics(
-                            state.transcript,
+                            audio_conversation,
                             metrics_config,
                             judge_model=options.judge_model,
                             on_error=on_error,
@@ -324,6 +333,8 @@ class TestExecutionService:
                 end_reason=state.end_reason,
                 models_used=models_used,
                 model_overrides=overrides,
+                judge_input=options.judge_input,
+                events=conversation if options.judge_input == JUDGE_INPUT_EVENTS else [],
             )
 
         except BaseExceptionGroup as eg:
@@ -339,6 +350,7 @@ class TestExecutionService:
                 error_message=str(real_error),
                 models_used=models_used,
                 model_overrides=overrides,
+                judge_input=options.judge_input,
             )
         except Exception as e:
             duration_ms = int((datetime.now() - start_time).total_seconds() * 1000)
@@ -351,6 +363,7 @@ class TestExecutionService:
                 error_message=str(e),
                 models_used=models_used,
                 model_overrides=overrides,
+                judge_input=options.judge_input,
             )
 
     async def run_tests(

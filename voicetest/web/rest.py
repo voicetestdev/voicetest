@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from pydantic import model_validator
 from sqlalchemy import bindparam
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -41,6 +42,7 @@ from voicetest.models.agent import GlobalMetric
 from voicetest.models.agent import MetricsConfig
 from voicetest.models.diagnosis import Diagnosis as DiagnosisModel
 from voicetest.models.diagnosis import PromptChange as PromptChangeModel
+from voicetest.models.events import JudgeEvent
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
@@ -326,10 +328,17 @@ class RunTestsRequest(BaseModel):
 
 
 class EvaluateRequest(BaseModel):
-    """Request to evaluate a transcript."""
+    """Request to evaluate a transcript or a structured event timeline."""
 
-    transcript: list[Message]
+    transcript: list[Message] | None = None
+    events: list[JudgeEvent] | None = None
     metrics: list[str]
+
+    @model_validator(mode="after")
+    def _exactly_one_conversation(self) -> "EvaluateRequest":
+        if (self.transcript is None) == (self.events is None):
+            raise ValueError("Provide exactly one of transcript or events")
+        return self
 
 
 class CreateAgentRequest(BaseModel):
@@ -586,7 +595,7 @@ async def evaluate_transcript(
 ) -> list[MetricResult]:
     """Evaluate a transcript against metrics."""
     return await _resolve(http_request, EvaluationService).evaluate_transcript(
-        request.transcript,
+        request.events if request.events is not None else request.transcript,
         request.metrics,
     )
 
@@ -1287,6 +1296,7 @@ async def audio_eval_result(result_id: str, http_request: Request) -> dict:
         transcript,
         test_case,
         metrics_config=metrics_config,
+        judge_input=db_result.judge_input,
     )
 
     # Update stored result with audio eval data
