@@ -7,12 +7,18 @@ from voicetest.models.agent import AgentNode
 from voicetest.models.agent import GlobalMetric
 from voicetest.models.agent import MetricsConfig
 from voicetest.models.agent import NodeType
+from voicetest.models.events import JUDGE_INPUT_EVENTS
+from voicetest.models.events import JUDGE_INPUT_TRANSCRIPT
+from voicetest.models.events import JudgeEvent
+from voicetest.models.events import events_from_messages
 from voicetest.models.results import Message
 from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
+from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services.settings import SettingsService
 from voicetest.services.testing.execution import TestExecutionService
+from voicetest.services.testing.execution import resolve_run_options
 
 
 @pytest.fixture
@@ -77,6 +83,74 @@ class TestRunTest:
         result = await svc.run_test(graph, test_case, _mock_mode=True)
         assert result.models_used is not None
         assert result.models_used.agent is not None
+
+    @pytest.mark.asyncio
+    async def test_judges_transcript_by_default(self, svc, graph, test_case, judge_prompts):
+        result = await svc.run_test(graph, test_case, options=RunOptions(max_turns=2))
+
+        assert result.status == "pass"
+        assert result.judge_input == JUDGE_INPUT_TRANSCRIPT
+        assert result.events == []
+        prompt = judge_prompts()[0]
+        assert "[[ ## transcript ## ]]" in prompt
+        assert "USER: I need help with my account." in prompt
+
+    @pytest.mark.asyncio
+    async def test_judges_and_records_events_under_events(
+        self, svc, graph, test_case, judge_prompts
+    ):
+        options = RunOptions(max_turns=2, judge_input=JUDGE_INPUT_EVENTS)
+
+        result = await svc.run_test(graph, test_case, options=options)
+
+        assert result.status == "pass"
+        assert result.judge_input == JUDGE_INPUT_EVENTS
+        assert result.events == events_from_messages(result.transcript)
+        assert all(isinstance(e, JudgeEvent) for e in result.events)
+        prompt = judge_prompts()[0]
+        assert "[[ ## events ## ]]" in prompt
+        assert '"kind": "speech", "speaker": "user"' in prompt
+
+
+class TestResolveRunOptions:
+    def test_judge_input_from_settings(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".voicetest").mkdir()
+        settings_svc = SettingsService()
+        settings = settings_svc.get_settings()
+        settings.run.judge_input = JUDGE_INPUT_EVENTS
+        settings_svc.update_settings(settings)
+
+        assert resolve_run_options(None, settings_svc).judge_input == JUDGE_INPUT_EVENTS
+
+    def test_explicit_options_keep_judge_input(self):
+        options = RunOptions(judge_input=JUDGE_INPUT_EVENTS)
+
+        assert resolve_run_options(options, SettingsService()).judge_input == JUDGE_INPUT_EVENTS
+
+    def test_options_without_judge_input_use_settings(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".voicetest").mkdir()
+        settings_svc = SettingsService()
+        settings = settings_svc.get_settings()
+        settings.run.judge_input = JUDGE_INPUT_EVENTS
+        settings_svc.update_settings(settings)
+
+        options = RunOptions(no_cache=True)
+
+        assert resolve_run_options(options, settings_svc).judge_input == JUDGE_INPUT_EVENTS
+
+    def test_explicit_judge_input_overrides_settings(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".voicetest").mkdir()
+        settings_svc = SettingsService()
+        settings = settings_svc.get_settings()
+        settings.run.judge_input = JUDGE_INPUT_EVENTS
+        settings_svc.update_settings(settings)
+
+        options = RunOptions(judge_input=JUDGE_INPUT_TRANSCRIPT)
+
+        assert resolve_run_options(options, settings_svc).judge_input == JUDGE_INPUT_TRANSCRIPT
 
 
 class TestRunTests:

@@ -2,6 +2,7 @@
 
 from datetime import UTC
 from datetime import datetime
+from importlib.metadata import version as package_version
 
 from sqlalchemy import DateTime
 from sqlalchemy import ForeignKey
@@ -13,6 +14,8 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
+
+from voicetest.models.events import JUDGE_INPUT_TRANSCRIPT
 
 
 class Base(DeclarativeBase):
@@ -180,6 +183,11 @@ class Result(Base):
     nodes_visited: Mapped[list | None] = mapped_column(JSON, nullable=True)
     tools_called: Mapped[list | None] = mapped_column(JSON, nullable=True)
     models_used: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    judge_input: Mapped[str] = mapped_column(String, default=JUDGE_INPUT_TRANSCRIPT, nullable=True)
+    events_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    voicetest_version: Mapped[str | None] = mapped_column(
+        String, default=lambda: package_version("voicetest"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     run: Mapped["Run"] = relationship(back_populates="results")
@@ -204,5 +212,8 @@ class Result(Base):
             "nodes_visited": self.nodes_visited,
             "tools_called": self.tools_called,
             "models_used": self.models_used,
+            "judge_input": self.judge_input,
+            "events_json": self.events_json,
+            "voicetest_version": self.voicetest_version,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

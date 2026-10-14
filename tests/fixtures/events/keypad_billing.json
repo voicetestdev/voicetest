@@ -1,0 +1,8 @@
+[
+  {"kind": "speech", "speaker": "assistant", "start_offset_ms": 0, "end_offset_ms": 2100, "content": "Press 1 for billing or 2 for support."},
+  {"kind": "keypad_input", "speaker": "user", "start_offset_ms": 3400, "payload": {"digits": "1"}},
+  {"kind": "transition", "start_offset_ms": 3500, "payload": {"to_node": "billing"}},
+  {"kind": "tool_call", "start_offset_ms": 3600, "payload": {"name": "lookup_account", "arguments": {"phone": "+15550100"}}},
+  {"kind": "tool_result", "start_offset_ms": 4100, "payload": {"name": "lookup_account", "result": {"balance": "42.00"}}},
+  {"kind": "speech", "speaker": "assistant", "start_offset_ms": 4300, "content": "Your balance is 42 dollars."}
+]

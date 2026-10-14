@@ -1,8 +1,16 @@
 """Tests for voicetest.judges.metric module."""
 
+from typing import get_args
+
+from dspy.adapters.baml_adapter import BAMLAdapter
 import pytest
 
 from voicetest.judges.metric import MetricJudge
+from voicetest.judges.metric import MetricJudgeEventsSignature
+from voicetest.judges.metric import MetricJudgeSignature
+from voicetest.judges.metric import build_judge_call
+from voicetest.models.events import EventKind
+from voicetest.models.events import JudgeEvent
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 
@@ -173,3 +181,88 @@ class TestMetricJudge:
         assert results[0].passed is True
         assert results[1].passed is False
         assert all(r.threshold == 0.8 for r in results)
+
+
+class TestBuildJudgeCall:
+    """Tests for build_judge_call input dispatch."""
+
+    def test_messages_use_transcript_signature_unchanged(self):
+        transcript = [
+            Message(role="assistant", content="Hello"),
+            Message(role="tool", content="Transitioned to help"),
+            Message(role="user", content="Hi"),
+        ]
+
+        signature, inputs = build_judge_call(transcript, "Agent greeted")
+
+        assert signature is MetricJudgeSignature
+        assert inputs == {"transcript": "ASSISTANT: Hello\nUSER: Hi", "criterion": "Agent greeted"}
+
+    def test_messages_with_use_heard_use_heard_text(self):
+        message = Message(role="assistant", content="intended", metadata={"heard": "heard"})
+
+        _, inputs = build_judge_call([message], "c", use_heard=True)
+
+        assert inputs["transcript"] == "ASSISTANT: heard"
+
+    def test_empty_conversation_uses_transcript_signature(self):
+        signature, inputs = build_judge_call([], "c")
+
+        assert signature is MetricJudgeSignature
+        assert inputs == {"transcript": "", "criterion": "c"}
+
+    def test_events_use_events_signature_in_order(self):
+        late = JudgeEvent(kind="speech", speaker="user", content="late", start_offset_ms=900)
+        early = JudgeEvent(
+            kind="keypad_input", speaker="user", payload={"digits": "1"}, start_offset_ms=100
+        )
+
+        signature, inputs = build_judge_call([late, early], "Caller pressed 1")
+
+        assert signature is MetricJudgeEventsSignature
+        assert inputs == {"events": [early, late], "criterion": "Caller pressed 1"}
+
+    def test_mixed_input_is_rejected(self):
+        with pytest.raises(TypeError):
+            build_judge_call(
+                [Message(role="user", content="Hi"), JudgeEvent(kind="speech", content="Hi")], "c"
+            )
+
+    def test_events_signature_keeps_output_fields(self):
+        assert list(MetricJudgeEventsSignature.output_fields) == list(
+            MetricJudgeSignature.output_fields
+        )
+
+    def test_events_prompt_explains_event_fields(self):
+        signature, inputs = build_judge_call([JudgeEvent(kind="speech", content="hi")], "c")
+
+        system = BAMLAdapter().format(signature, demos=[], inputs=inputs)[0]["content"]
+
+        assert "milliseconds from conversation start" in system
+        assert "omitted when unknown" in system
+        for kind in get_args(EventKind):
+            assert kind in system
+        assert "payload" in system
+
+    def test_events_prompt_distinguishes_kinds_and_omits_missing_timing(self):
+        events = [
+            JudgeEvent(kind="speech", speaker="assistant", content="Press 1 for billing"),
+            JudgeEvent(
+                kind="keypad_input", speaker="user", start_offset_ms=4200, payload={"digits": "1"}
+            ),
+            JudgeEvent(kind="tool_call", payload={"name": "lookup_account"}),
+            JudgeEvent(kind="tool_result", payload={"name": "lookup_account", "result": "ok"}),
+        ]
+        signature, inputs = build_judge_call(events, "Caller pressed 1")
+
+        messages = BAMLAdapter().format(signature, demos=[], inputs=inputs)
+        prompt = messages[-1]["content"]
+
+        assert '"kind": "keypad_input"' in prompt
+        assert '"digits": "1"' in prompt
+        assert '"kind": "tool_call"' in prompt
+        assert '"kind": "tool_result"' in prompt
+        assert '"start_offset_ms": 4200' in prompt
+        assert "null" not in prompt
+        assert "end_offset_ms" not in prompt
+        assert "[[ ## transcript ## ]]" not in prompt

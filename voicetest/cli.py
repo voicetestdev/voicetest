@@ -24,6 +24,7 @@ from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
 from voicetest.engine.conversation import ConversationEngine
 from voicetest.importers.transcripts.retell import parse_retell_file
+from voicetest.models.events import JudgeEvent
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
@@ -1806,32 +1807,46 @@ def platform_push(ctx, name, agent_path, agent_name):
 @click.option(
     "--transcript",
     "-t",
-    required=True,
+    default=None,
     type=click.Path(exists=True, path_type=Path),
-    help="Transcript JSON file",
+    help="Transcript JSON file (list of messages)",
+)
+@click.option(
+    "--events",
+    "-e",
+    default=None,
+    type=click.Path(exists=True, path_type=Path),
+    help="Structured events JSON file (list of judge events)",
 )
 @click.option("--metrics", "-m", multiple=True, required=True, help="Metric criteria")
 @click.option("--judge-model", default=None, help="LLM model for evaluation")
 @click.pass_context
-def evaluate(ctx, transcript, metrics, judge_model):
-    """Evaluate a transcript against metrics (no simulation)."""
+def evaluate(ctx, transcript, events, metrics, judge_model):
+    """Evaluate a transcript or event timeline against metrics (no simulation)."""
+    if (transcript is None) == (events is None):
+        raise click.UsageError("Provide exactly one of --transcript or --events")
     json_mode = ctx.obj.get("json", False)
-    asyncio.run(_evaluate(transcript, list(metrics), judge_model, json_mode=json_mode))
+    asyncio.run(_evaluate(transcript, events, list(metrics), judge_model, json_mode=json_mode))
 
 
 async def _evaluate(
-    transcript_path: Path,
+    transcript_path: Path | None,
+    events_path: Path | None,
     metrics: list[str],
     judge_model: str | None,
     *,
     json_mode: bool = False,
 ) -> None:
     """Async implementation of evaluate command."""
-    transcript_data = json.loads(transcript_path.read_text())
-    transcript = [Message.model_validate(m) for m in transcript_data]
+    if events_path is not None:
+        events_data = json.loads(events_path.read_text())
+        conversation = [JudgeEvent.model_validate(e) for e in events_data]
+    else:
+        transcript_data = json.loads(transcript_path.read_text())
+        conversation = [Message.model_validate(m) for m in transcript_data]
 
     svc = _services().eval
-    results = await svc.evaluate_transcript(transcript, metrics, judge_model)
+    results = await svc.evaluate_transcript(conversation, metrics, judge_model)
 
     if json_mode:
         click.echo(json.dumps([r.model_dump() for r in results], indent=2))

@@ -2,6 +2,11 @@
 
 import os
 
+from pydantic import ValidationError
+import pytest
+
+from voicetest.models.events import JUDGE_INPUT_EVENTS
+from voicetest.models.events import JUDGE_INPUT_TRANSCRIPT
 from voicetest.settings import DEFAULT_MODEL
 from voicetest.settings import Settings
 from voicetest.settings import load_settings
@@ -100,6 +105,20 @@ class TestSettingsPersistence:
         assert 'agent = "test/model"' in content
         assert "[run]" in content
         assert "verbose = true" in content
+
+    def test_judge_input_defaults_to_transcript(self):
+        assert Settings().run.judge_input == JUDGE_INPUT_TRANSCRIPT
+
+    def test_judge_input_roundtrip_toml(self, tmp_path):
+        settings_file = tmp_path / ".voicetest.toml"
+        save_settings(Settings(run={"judge_input": JUDGE_INPUT_EVENTS}), settings_file)
+
+        assert 'judge_input = "events"' in settings_file.read_text()
+        assert Settings.load(settings_file).run.judge_input == JUDGE_INPUT_EVENTS
+
+    def test_judge_input_rejects_unknown_value(self):
+        with pytest.raises(ValidationError):
+            Settings(run={"judge_input": "legacy"})
 
     def test_partial_toml_uses_defaults(self, tmp_path):
         settings_file = tmp_path / ".voicetest.toml"

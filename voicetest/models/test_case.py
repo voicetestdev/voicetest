@@ -6,6 +6,9 @@ from typing import Literal
 from pydantic import BaseModel
 from pydantic import Field
 
+from voicetest.models.events import JUDGE_INPUT_TRANSCRIPT
+from voicetest.models.events import JudgeInput
+
 
 TestType = Literal["llm", "rule"]
 
@@ -22,6 +25,7 @@ class RunOptions(BaseModel):
     audio_eval: bool = False
     no_cache: bool = False
     pattern_engine: str = "fnmatch"
+    judge_input: JudgeInput = JUDGE_INPUT_TRANSCRIPT
 
     agent_model: str | None = None
     simulator_model: str | None = None

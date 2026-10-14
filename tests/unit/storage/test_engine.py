@@ -253,7 +253,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 5
+            assert version == 6
 
     def test_runs_pending_migration_on_old_schema(self, tmp_path):
         db_path = tmp_path / "old.duckdb"
@@ -322,7 +322,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 5
+            assert version == 6
 
     def test_source_kind_backfill(self, tmp_path):
         """Migration 4 adds source_kind and backfills from the status marker."""
@@ -378,6 +378,65 @@ class TestMigrateSchema:
             passed = conn.execute(text("SELECT source_kind FROM results WHERE id = 'r2'")).scalar()
             assert imported == "imported"
             assert passed == "simulated"
+
+    def test_judge_input_backfill(self, tmp_path):
+        """Migration 6 adds judge_input, events_json, and voicetest_version to results.
+
+        Prior results were transcript-judged; their voicetest version is unknown."""
+        db_path = tmp_path / "judge_input.duckdb"
+        engine = create_engine(f"duckdb:///{db_path}")
+
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "CREATE TABLE agents ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "name VARCHAR NOT NULL, "
+                    "source_type VARCHAR NOT NULL"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE results ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "run_id VARCHAR NOT NULL, "
+                    "test_case_id VARCHAR NOT NULL, "
+                    "test_name VARCHAR, "
+                    "status VARCHAR, "
+                    "created_at TIMESTAMP"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE TABLE calls ("
+                    "id VARCHAR PRIMARY KEY, "
+                    "agent_id VARCHAR, "
+                    "room_name VARCHAR, "
+                    "status VARCHAR"
+                    ")"
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO results (id, run_id, test_case_id, status) "
+                    "VALUES ('r1', 'run1', 'tc1', 'pass')"
+                )
+            )
+
+        _migrate_schema(engine)
+
+        with engine.begin() as conn:
+            row = conn.execute(
+                text(
+                    "SELECT judge_input, events_json, voicetest_version "
+                    "FROM results WHERE id = 'r1'"
+                )
+            ).one()
+            assert row.judge_input == "transcript"
+            assert row.events_json is None
+            assert row.voicetest_version is None
 
     def test_tracks_version(self, tmp_path):
         db_path = tmp_path / "versioned.duckdb"

@@ -7,6 +7,10 @@ from typing import Literal
 from pydantic import BaseModel
 from pydantic import Field
 
+from voicetest.models.events import JUDGE_INPUT_TRANSCRIPT
+from voicetest.models.events import JudgeEvent
+from voicetest.models.events import JudgeInput
+
 
 class AudioMetadata(BaseModel):
     """Audio/observer fields carried alongside a transcript message.
@@ -101,6 +105,8 @@ class TestResult(BaseModel):
     error_message: str | None = None
     models_used: ModelsUsed | None = None
     model_overrides: list[ModelOverride] = Field(default_factory=list)
+    judge_input: JudgeInput = JUDGE_INPUT_TRANSCRIPT
+    events: list[JudgeEvent] = Field(default_factory=list)
 
 
 class TestRun(BaseModel):

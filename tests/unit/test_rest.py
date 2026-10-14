@@ -333,6 +333,46 @@ class TestEvaluateEndpoint:
         assert results[0]["passed"] is True
         assert results[1]["passed"] is True
 
+    def test_evaluate_events(self, client, judge_prompts):
+        events = [
+            {"kind": "speech", "speaker": "assistant", "content": "Press 1 for billing"},
+            {"kind": "keypad_input", "speaker": "user", "payload": {"digits": "1"}},
+        ]
+
+        response = client.post(
+            "/api/evaluate", json={"events": events, "metrics": ["Caller pressed 1"]}
+        )
+
+        assert response.status_code == 200
+        assert response.json()[0]["reasoning"] == "Scripted judgment"
+        prompt = judge_prompts()[0]
+        assert '"kind": "keypad_input", "speaker": "user", "payload": {"digits": "1"}' in prompt
+
+    def test_evaluate_rejects_transcript_and_events_together(self, client):
+        response = client.post(
+            "/api/evaluate",
+            json={
+                "transcript": [{"role": "user", "content": "hi"}],
+                "events": [{"kind": "speech", "speaker": "user", "content": "hi"}],
+                "metrics": ["m"],
+            },
+        )
+
+        assert response.status_code == 422
+
+    def test_evaluate_requires_transcript_or_events(self, client):
+        response = client.post("/api/evaluate", json={"metrics": ["m"]})
+
+        assert response.status_code == 422
+
+    def test_evaluate_rejects_unknown_event_kind(self, client):
+        response = client.post(
+            "/api/evaluate",
+            json={"events": [{"kind": "other", "content": "hi"}], "metrics": ["m"]},
+        )
+
+        assert response.status_code == 422
+
 
 class TestSettingsEndpoint:
     """Tests for settings endpoints."""

@@ -555,6 +555,7 @@ class RunRepository:
                 [t.model_dump() for t in result.tools_called] if result.tools_called else None
             ),
             "models": result.models_used.model_dump() if result.models_used else None,
+            "events": [e.model_dump() for e in result.events] if result.events else None,
         }
 
     def list_all(self, limit: int = 50, user_id: str | None = None) -> list[dict]:
@@ -711,6 +712,8 @@ class RunRepository:
             nodes_visited=result.nodes_visited,
             tools_called=data["tools"],
             models_used=data["models"],
+            judge_input=result.judge_input,
+            events_json=data["events"],
             created_at=now,
         )
         self.session.add(db_result)
@@ -792,6 +795,8 @@ class RunRepository:
         db_result.nodes_visited = result.nodes_visited
         db_result.tools_called = data["tools"]
         db_result.models_used = data["models"]
+        db_result.judge_input = result.judge_input
+        db_result.events_json = data["events"]
 
         self.session.commit()
 
@@ -860,6 +865,9 @@ class RunRepository:
             "nodes_visited": result.nodes_visited,
             "tools_called": result.tools_called,
             "models_used": result.models_used,
+            "judge_input": result.judge_input,
+            "events_json": result.events_json,
+            "voicetest_version": result.voicetest_version,
             "created_at": _serialize_datetime(result.created_at),
         }
 
