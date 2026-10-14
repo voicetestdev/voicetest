@@ -1,10 +1,9 @@
 """Integration tests for token streaming with real LLM calls."""
 
 import dspy
-from dspy.streaming import StreamListener
-from dspy.streaming import streamify
 import pytest
 
+from voicetest.llm import call_llm
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import NodeType
@@ -83,14 +82,12 @@ class TestStreamingWithLLM:
         print(f"Received {len(tokens_received)} tokens")
 
 
-class TestStreamifyIntegration:
-    """Direct tests for DSPy streamify usage."""
+class TestCallLlmStreamingIntegration:
+    """Streaming through call_llm against a real model."""
 
     @pytest.mark.asyncio
-    async def test_streamify_basic(self):
-        """Test basic DSPy streamify functionality."""
-
-        lm = dspy.LM(MODEL)
+    async def test_call_llm_streaming_basic(self):
+        """call_llm streams tokens and returns a parsed Prediction."""
 
         class SimpleSignature(dspy.Signature):
             """Answer a simple question."""
@@ -98,25 +95,16 @@ class TestStreamifyIntegration:
             question: str = dspy.InputField()
             answer: str = dspy.OutputField()
 
-        predictor = dspy.Predict(SimpleSignature)
-        stream_listeners = [StreamListener(signature_field_name="answer")]
+        tokens_received: list[str] = []
 
-        streaming_predictor = streamify(
-            predictor,
-            stream_listeners=stream_listeners,
-            is_async_program=False,
+        result = await call_llm(
+            MODEL,
+            SimpleSignature,
+            on_token=tokens_received.append,
+            stream_field="answer",
+            predictor_class=dspy.Predict,
+            question="What is 2+2?",
         )
 
-        chunks_received = []
-        result = None
-
-        with dspy.context(lm=lm):
-            async for chunk in streaming_predictor(question="What is 2+2?"):
-                if isinstance(chunk, dspy.Prediction):
-                    result = chunk
-                elif hasattr(chunk, "chunk"):
-                    chunks_received.append(chunk.chunk)
-
-        assert result is not None
         assert "4" in result.answer or "four" in result.answer.lower()
-        print(f"Received {len(chunks_received)} chunks")
+        assert "".join(tokens_received)

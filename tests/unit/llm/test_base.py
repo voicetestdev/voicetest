@@ -7,6 +7,8 @@ and no-cache integration with RunOptions.
 from unittest.mock import patch
 
 import dspy
+from dspy.adapters.baml_adapter import BAMLAdapter
+from dspy.utils.dummies import DummyLM
 import litellm
 import pytest
 
@@ -43,6 +45,37 @@ class TestCallLlmValidation:
                 predictor_class=dspy.Predict,
                 input="test",
             )
+
+
+class TestCallLlmStreamingParseRecovery:
+    @pytest.mark.asyncio
+    async def test_recovers_when_streamed_output_is_unparseable(self):
+        class ResponseSignature(dspy.Signature):
+            user_message: str = dspy.InputField()
+            response: str = dspy.OutputField()
+
+        lm = DummyLM(
+            [
+                {"unexpected": "2 + 2 is 4"},
+                {"unexpected": "2 + 2 is 4"},
+                {"response": "hello"},
+            ],
+            adapter=BAMLAdapter(),
+        )
+        tokens = []
+
+        with patch("voicetest.llm.base._create_lm", return_value=lm):
+            result = await call_llm(
+                "openai/gpt-4o-mini",
+                ResponseSignature,
+                on_token=tokens.append,
+                stream_field="response",
+                predictor_class=dspy.Predict,
+                user_message="hi",
+            )
+
+        assert result.response == "hello"
+        assert "".join(tokens) == "hello"
 
 
 class TestCallLlmRetryCallback:
