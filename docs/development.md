@@ -209,6 +209,8 @@ The type annotations (`str`, `int`, `float`, `bool`, `list[str]`) guide the LLM'
 
 `voicetest.util.retry.with_retry` wraps the LLM call path (`voicetest.llm.base.call_llm`) with exponential backoff. Retries fire on the exceptions listed in `RETRYABLE_EXCEPTIONS`: `litellm.RateLimitError`, `litellm.Timeout`, `litellm.APIConnectionError`, `openai.APITimeoutError`, and `AdapterParseError`.
 
+Before an `AdapterParseError` is retried, `_call_llm_sync` evicts the cached response that failed to parse, so the retry samples the model again instead of replaying the same output.
+
 Streaming calls are the exception for `AdapterParseError`: DSPy does not fall back to `JSONAdapter` once a stream has produced output, so a streamed parse failure is not retried. `_call_llm_streaming` instead re-issues the call through the non-streaming path and delivers the parsed field to `on_token` as a single chunk.
 
 LLM-provider classes are responsible for translating transient upstream failures into one of these exception types so the retry layer catches them — e.g. `voicetest.llm.claudecode.ClaudeCodeLM` maps 5xx → `APIConnectionError`, 429 → `RateLimitError`, 408/504/524 → `Timeout`. Non-transient errors (4xx other than the rate-limit/timeout codes, malformed responses, quota exhausted) stay as `RuntimeError` or `QuotaExhaustedError` so they fail fast instead of burning the retry budget.

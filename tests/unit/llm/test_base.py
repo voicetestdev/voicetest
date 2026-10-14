@@ -4,10 +4,14 @@ Covers centralized LLM call handling, cache salt behavior,
 and no-cache integration with RunOptions.
 """
 
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import dspy
 from dspy.adapters.baml_adapter import BAMLAdapter
+from dspy.clients.cache import Cache
+import dspy.clients.lm as dspy_lm_module
 from dspy.utils.dummies import DummyLM
 import litellm
 import pytest
@@ -76,6 +80,51 @@ class TestCallLlmStreamingParseRecovery:
 
         assert result.response == "hello"
         assert "".join(tokens) == "hello"
+
+
+class TestCallLlmParseErrorRetry:
+    @pytest.mark.asyncio
+    async def test_retry_after_parse_error_bypasses_cached_response(self, tmp_path, monkeypatch):
+        class AnswerSignature(dspy.Signature):
+            question: str = dspy.InputField()
+            answer: str = dspy.OutputField()
+
+        contents = iter(["not json at all", '{"answer": "hello"}'])
+
+        def fake_completion(request, num_retries, cache=None):
+            choice = MagicMock()
+            choice.message.content = next(contents)
+            choice.message.tool_calls = None
+            choice.message.reasoning_content = None
+            response = MagicMock()
+            response.choices = [choice]
+            response.usage = {"total_tokens": 5}
+            response.model = "openai/gpt-4o-mini"
+            response._hidden_params = {}
+            return response
+
+        fake_completion.__module__ = "dspy.clients.lm"
+        fake_completion.__qualname__ = "litellm_completion"
+        monkeypatch.setattr(dspy_lm_module, "litellm_completion", fake_completion)
+        monkeypatch.setattr("voicetest.util.retry.asyncio.sleep", AsyncMock())
+        monkeypatch.setattr(
+            dspy,
+            "cache",
+            Cache(
+                enable_disk_cache=True,
+                enable_memory_cache=True,
+                disk_cache_dir=str(tmp_path / "dspy-cache"),
+            ),
+        )
+
+        result = await call_llm(
+            "openai/gpt-4o-mini",
+            AnswerSignature,
+            predictor_class=dspy.Predict,
+            question="hi",
+        )
+
+        assert result.answer == "hello"
 
 
 class TestCallLlmRetryCallback:

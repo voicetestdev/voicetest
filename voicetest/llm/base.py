@@ -13,6 +13,7 @@ import litellm
 import openai
 
 from voicetest.llm.claudecode import ClaudeCodeLM
+from voicetest.util.cache import try_evict_last_call
 from voicetest.util.retry import OnErrorCallback
 from voicetest.util.retry import with_retry
 
@@ -118,7 +119,11 @@ async def _call_llm_sync(
     def run_predictor():
         with dspy.context(lm=lm, adapter=adapter):
             predictor = predictor_class(signature_class)
-            return predictor(**kwargs)
+            try:
+                return predictor(**kwargs)
+            except AdapterParseError:
+                try_evict_last_call(lm)
+                raise
 
     async def call_in_thread():
         return await asyncio.to_thread(run_predictor)
