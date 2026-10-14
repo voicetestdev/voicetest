@@ -128,6 +128,30 @@ class TestResolveRunOptions:
 
         assert resolve_run_options(options, SettingsService()).judge_input == JUDGE_INPUT_EVENTS
 
+    def test_options_without_judge_input_use_settings(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".voicetest").mkdir()
+        settings_svc = SettingsService()
+        settings = settings_svc.get_settings()
+        settings.run.judge_input = JUDGE_INPUT_EVENTS
+        settings_svc.update_settings(settings)
+
+        options = RunOptions(no_cache=True)
+
+        assert resolve_run_options(options, settings_svc).judge_input == JUDGE_INPUT_EVENTS
+
+    def test_explicit_judge_input_overrides_settings(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".voicetest").mkdir()
+        settings_svc = SettingsService()
+        settings = settings_svc.get_settings()
+        settings.run.judge_input = JUDGE_INPUT_EVENTS
+        settings_svc.update_settings(settings)
+
+        options = RunOptions(judge_input=JUDGE_INPUT_TRANSCRIPT)
+
+        assert resolve_run_options(options, settings_svc).judge_input == JUDGE_INPUT_TRANSCRIPT
+
 
 class TestRunTests:
     @pytest.mark.asyncio

@@ -44,8 +44,8 @@ def resolve_run_options(
     """Fill missing model fields from settings.
 
     If options is None, all run params come from settings too. If options
-    is provided, only the None model fields are filled — caller's run
-    params (max_turns, timeout, etc.) are respected."""
+    is provided, only the None model fields and an unset judge_input are
+    filled — caller's run params (max_turns, timeout, etc.) are respected."""
     settings = settings_service.get_settings()
     if options is None:
         return RunOptions(
@@ -67,6 +67,11 @@ def resolve_run_options(
             "agent_model": options.agent_model or settings.models.agent,
             "simulator_model": options.simulator_model or settings.models.simulator,
             "judge_model": options.judge_model or settings.models.judge,
+            "judge_input": (
+                options.judge_input
+                if "judge_input" in options.model_fields_set
+                else settings.run.judge_input
+            ),
         }
     )
 

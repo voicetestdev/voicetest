@@ -66,7 +66,7 @@ See the [LiteLLM Vertex AI docs](https://docs.litellm.ai/docs/providers/vertex) 
 
 `transcript` gives the metric judge role-prefixed text (`USER: ...`). Tool messages, timestamps, and metadata are dropped.
 
-`events` gives the judge a chronological list of structured events, so it can tell speech apart from keypad input, tool activity, and node transitions, and cite timing when it is known. Each stored result records the `judge_input` it was judged with, the voicetest version that judged it, and, under `events`, the events themselves. The voicetest version pins the judge prompt, including DSPy's formatting, because DSPy is pinned to an exact version.
+`events` gives the judge a chronological list of structured events, so it can tell speech apart from keypad input, tool activity, and node transitions, and cite timing when it is known. Each stored result records the `judge_input` it was judged with, the voicetest version that judged it, and, under `events`, the events themselves. The voicetest version identifies the judge prompt. DSPy, which formats the prompt, is pinned to a minor version (3.4.x); its patch releases are not expected to change prompt formatting.
 
 | Field             | Description                                                                 |
 | ----------------- | --------------------------------------------------------------------------- |
