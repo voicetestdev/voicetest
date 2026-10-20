@@ -2,6 +2,7 @@
 
 from typing import Any
 from typing import Literal
+from typing import get_args
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -20,10 +21,10 @@ def resolve_start_speaker(
     template: str | None,
     global_default: str | None,
 ) -> StartSpeaker:
-    for candidate in (override, template, global_default):
-        if candidate in ("agent", "user"):
-            return candidate
-    return DEFAULT_START_SPEAKER
+    return next(
+        (c for c in (override, template, global_default) if c in get_args(StartSpeaker)),
+        DEFAULT_START_SPEAKER,
+    )
 
 
 class RunOptions(BaseModel):

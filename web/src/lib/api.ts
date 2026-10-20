@@ -354,9 +354,6 @@ export const api = {
   updateMetricsConfig: (agentId: string, config: MetricsConfig) =>
     put<MetricsConfig>(`/agents/${agentId}/metrics-config`, config),
 
-  getStartSpeaker: (agentId: string) =>
-    get<StartSpeakerConfig>(`/agents/${agentId}/start-speaker`),
-
   updateStartSpeaker: (agentId: string, startSpeaker: StartSpeaker | null) =>
     put<StartSpeakerConfig>(`/agents/${agentId}/start-speaker`, {
       start_speaker: startSpeaker,

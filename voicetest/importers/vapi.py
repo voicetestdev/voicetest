@@ -16,6 +16,7 @@ from voicetest.models.agent import NodeType
 from voicetest.models.agent import ToolDefinition
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
+from voicetest.models.test_case import StartSpeaker
 
 
 class VapiToolFunction(BaseModel):
@@ -245,7 +246,7 @@ class VapiImporter:
 
         nodes: dict[str, AgentNode] = {}
         entry_node_id: str | None = None
-        entry_start_speaker: str | None = None
+        entry_start_speaker: StartSpeaker | None = None
         assistant_names: dict[str, str] = {}
 
         for i, member in enumerate(squad.members):
@@ -403,7 +404,7 @@ class VapiImporter:
         return json.loads(path.read_text())
 
 
-def _start_speaker_for_mode(first_message_mode: str | None) -> str | None:
+def _start_speaker_for_mode(first_message_mode: str | None) -> StartSpeaker | None:
     if not first_message_mode:
         return None
     if first_message_mode == "assistant-waits-for-user":

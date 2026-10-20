@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import type { GlobalMetric, MetricsConfig, MetricResult, Settings, AgentGraph, Message } from "./types";
-import { nextExpectedRole, graphFingerprint, displayRole, resolveStartSpeaker } from "./types";
+import {
+  nextExpectedRole,
+  graphFingerprint,
+  displayRole,
+  resolveStartSpeaker,
+  resolveStartSpeakerWithSource,
+} from "./types";
 
 describe("types", () => {
   describe("GlobalMetric", () => {
@@ -275,6 +281,13 @@ describe("types", () => {
 
     it("ignores unrecognized values", () => {
       expect(resolveStartSpeaker("bogus", "user")).toBe("user");
+    });
+
+    it("reports which layer supplied the speaker", () => {
+      expect(resolveStartSpeakerWithSource("user", "agent")).toEqual({ speaker: "user", source: "override" });
+      expect(resolveStartSpeakerWithSource(null, "user")).toEqual({ speaker: "user", source: "template" });
+      expect(resolveStartSpeakerWithSource(null, null, "user")).toEqual({ speaker: "user", source: "global" });
+      expect(resolveStartSpeakerWithSource()).toEqual({ speaker: "agent", source: "default" });
     });
   });
 

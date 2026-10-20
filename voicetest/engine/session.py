@@ -167,18 +167,20 @@ class ConversationRunner:
         node_tracker = NodeTracker()
         node_tracker.record(self.graph.entry_node_id)
         current_node_id = self.graph.entry_node_id
-        response = f"[Mock response from {current_node_id}]"
 
-        if self.start_speaker == "agent":
+        async def respond() -> None:
             state.transcript.append(
                 Message(
                     role="assistant",
-                    content=response,
+                    content=f"[Mock response from {current_node_id}]",
                     metadata={"node_id": node_tracker.current_node},
                 )
             )
             if on_turn:
                 await _invoke_callback(on_turn, state.transcript)
+
+        if self.start_speaker == "agent":
+            await respond()
 
         for _turn in range(self.options.max_turns):
             sim_response = await user_simulator.generate(
@@ -199,16 +201,7 @@ class ConversationRunner:
                 )
             )
 
-            state.transcript.append(
-                Message(
-                    role="assistant",
-                    content=response,
-                    metadata={"node_id": node_tracker.current_node},
-                )
-            )
-
-            if on_turn:
-                await _invoke_callback(on_turn, state.transcript)
+            await respond()
 
             state.turn_count += 1
         else:

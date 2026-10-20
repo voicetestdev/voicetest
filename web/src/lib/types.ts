@@ -86,15 +86,41 @@ export interface StartSpeakerConfig {
   effective: StartSpeaker;
 }
 
+export type StartSpeakerSource = "override" | "template" | "global" | "default";
+
+export const DEFAULT_START_SPEAKER: StartSpeaker = "agent";
+
+export const START_SPEAKER_LABELS: Record<StartSpeaker, string> = {
+  agent: "Agent first",
+  user: "User first",
+};
+
+export function isStartSpeaker(value: unknown): value is StartSpeaker {
+  return value === "agent" || value === "user";
+}
+
+export function resolveStartSpeakerWithSource(
+  override?: string | null,
+  template?: string | null,
+  globalDefault?: string | null,
+): { speaker: StartSpeaker; source: StartSpeakerSource } {
+  const layers: [unknown, StartSpeakerSource][] = [
+    [override, "override"],
+    [template, "template"],
+    [globalDefault, "global"],
+  ];
+  for (const [candidate, source] of layers) {
+    if (isStartSpeaker(candidate)) return { speaker: candidate, source };
+  }
+  return { speaker: DEFAULT_START_SPEAKER, source: "default" };
+}
+
 export function resolveStartSpeaker(
   override?: string | null,
   template?: string | null,
   globalDefault?: string | null,
 ): StartSpeaker {
-  for (const candidate of [override, template, globalDefault]) {
-    if (candidate === "agent" || candidate === "user") return candidate;
-  }
-  return "agent";
+  return resolveStartSpeakerWithSource(override, template, globalDefault).speaker;
 }
 
 /**

@@ -3,6 +3,7 @@
   import { errorMessage } from "../lib/errors";
   import { api } from "../lib/api";
   import { settings } from "../lib/stores";
+  import { DEFAULT_START_SPEAKER, isStartSpeaker, START_SPEAKER_LABELS } from "../lib/types";
   import type { Settings } from "../lib/types";
 
   let localSettings = $state<Settings>({
@@ -62,7 +63,7 @@
   }
 
   function setStartSpeaker(value: string) {
-    localSettings.run.start_speaker = value === "agent" || value === "user" ? value : null;
+    localSettings.run.start_speaker = isStartSpeaker(value) ? value : null;
     saveSettings();
   }
 
@@ -193,9 +194,10 @@
           value={localSettings.run.start_speaker ?? ""}
           onchange={(e) => setStartSpeaker(e.currentTarget.value)}
         >
-          <option value="">Not set (agent first)</option>
-          <option value="agent">Agent first</option>
-          <option value="user">User first</option>
+          <option value="">Not set ({START_SPEAKER_LABELS[DEFAULT_START_SPEAKER].toLowerCase()})</option>
+          {#each Object.entries(START_SPEAKER_LABELS) as [value, label]}
+            <option {value}>{label}</option>
+          {/each}
         </select>
         <span class="hint">Fallback when neither the agent override nor its template sets an opener</span>
       </div>

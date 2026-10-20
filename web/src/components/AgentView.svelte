@@ -12,8 +12,13 @@
     settings,
   } from "../lib/stores";
   import { errorMessage } from "../lib/errors";
-  import { graphFingerprint, resolveStartSpeaker } from "../lib/types";
-  import type { StartSpeaker, SyncStatus } from "../lib/types";
+  import {
+    graphFingerprint,
+    isStartSpeaker,
+    resolveStartSpeakerWithSource,
+    START_SPEAKER_LABELS,
+  } from "../lib/types";
+  import type { SyncStatus } from "../lib/types";
   import CallView from "./CallView.svelte";
   import ChatView from "./ChatView.svelte";
   import ExportModal from "./ExportModal.svelte";
@@ -69,23 +74,12 @@
   let savingStartSpeaker = $state(false);
   let startSpeakerSaved = $state(false);
 
-  const startSpeakerLabels: Record<StartSpeaker, string> = {
-    agent: "Agent first",
-    user: "User first",
-  };
-
-  let templateStartSpeaker = $derived(
-    $agentGraph?.source_metadata?.start_speaker as string | undefined,
-  );
   let inheritedStartSpeaker = $derived(
-    resolveStartSpeaker(null, templateStartSpeaker, $settings?.run.start_speaker),
-  );
-  let inheritedStartSpeakerSource = $derived(
-    templateStartSpeaker === "agent" || templateStartSpeaker === "user"
-      ? "template"
-      : $settings?.run.start_speaker
-        ? "global"
-        : "default",
+    resolveStartSpeakerWithSource(
+      null,
+      $agentGraph?.source_metadata?.start_speaker as string | undefined,
+      $settings?.run.start_speaker,
+    ),
   );
 
   let syncStatus = $state<SyncStatus | null>(null);
@@ -558,7 +552,7 @@
 
   async function saveStartSpeaker(value: string) {
     if (!$currentAgentId) return;
-    const startSpeaker = value === "agent" || value === "user" ? value : null;
+    const startSpeaker = isStartSpeaker(value) ? value : null;
     savingStartSpeaker = true;
     try {
       await api.updateStartSpeaker($currentAgentId, startSpeaker);
@@ -760,10 +754,11 @@
             disabled={savingStartSpeaker}
           >
             <option value="">
-              {startSpeakerLabels[inheritedStartSpeaker]} ({inheritedStartSpeakerSource})
+              {START_SPEAKER_LABELS[inheritedStartSpeaker.speaker]} ({inheritedStartSpeaker.source})
             </option>
-            <option value="agent">{startSpeakerLabels.agent}</option>
-            <option value="user">{startSpeakerLabels.user}</option>
+            {#each Object.entries(START_SPEAKER_LABELS) as [value, label]}
+              <option {value}>{label}</option>
+            {/each}
           </select>
           {#if savingStartSpeaker}
             <span class="model-save-indicator">Saving...</span>
