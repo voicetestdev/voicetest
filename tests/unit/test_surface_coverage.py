@@ -68,6 +68,9 @@ REST_SURFACED = {
     # Metrics config
     "AgentService.get_metrics_config",
     "AgentService.update_metrics_config",
+    # Start speaker override
+    "AgentService.get_start_speaker",
+    "AgentService.update_start_speaker",
     # Test cases
     "TestCaseService.list_tests",
     "TestCaseService.create_test",
@@ -234,6 +237,8 @@ CLI_EXCLUDED_FROM_REST = {
     "AgentService.update_metadata": "Web UI inline edit, CLI edits files directly",
     "AgentService.get_metrics_config": "Web UI metrics panel, CLI uses file-based workflow",
     "AgentService.update_metrics_config": "Web UI metrics panel, CLI uses file-based workflow",
+    "AgentService.get_start_speaker": "Web UI agent setting, CLI uses settings and agent files",
+    "AgentService.update_start_speaker": "Web UI agent setting, CLI uses settings and agent files",
     "EvaluationService.audio_eval_result": "Audio pipeline callback, not a user operation",
     "PlatformService.get_sync_status": "Web UI sync indicator, CLI uses explicit push/import",
     "PlatformService.sync_to_platform": "Web UI one-click sync, CLI uses explicit push",

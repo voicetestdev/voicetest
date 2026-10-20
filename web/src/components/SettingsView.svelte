@@ -61,6 +61,11 @@
     loading = false;
   }
 
+  function setStartSpeaker(value: string) {
+    localSettings.run.start_speaker = value === "agent" || value === "user" ? value : null;
+    saveSettings();
+  }
+
   async function saveSettings() {
     saving = true;
     saved = false;
@@ -179,6 +184,20 @@
           max={100}
         />
         <span class="hint">Maximum conversation turns per test</span>
+      </div>
+
+      <div class="form-group">
+        <label for="start-speaker">Who speaks first</label>
+        <select
+          id="start-speaker"
+          value={localSettings.run.start_speaker ?? ""}
+          onchange={(e) => setStartSpeaker(e.currentTarget.value)}
+        >
+          <option value="">Not set (agent first)</option>
+          <option value="agent">Agent first</option>
+          <option value="user">User first</option>
+        </select>
+        <span class="hint">Fallback when neither the agent override nor its template sets an opener</span>
       </div>
 
       <div class="form-group checkbox">
@@ -339,7 +358,8 @@
   }
 
   .form-group input[type="text"],
-  .form-group input[type="number"] {
+  .form-group input[type="number"],
+  .form-group select {
     width: 100%;
   }
 

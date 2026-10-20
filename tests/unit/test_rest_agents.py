@@ -248,6 +248,66 @@ class TestAgentsCRUD:
         assert len(config["global_metrics"]) == 1
         assert config["global_metrics"][0]["name"] == "HIPAA"
 
+    def _create_agent(self, db_client, config) -> str:
+        response = db_client.post("/api/agents", json={"name": "Test Agent", "config": config})
+        return response.json()["id"]
+
+    def test_get_start_speaker_defaults(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+
+        response = db_client.get(f"/api/agents/{agent_id}/start-speaker")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "override": None,
+            "template": None,
+            "global": None,
+            "effective": "agent",
+        }
+
+    def test_start_speaker_reports_template(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, {**sample_retell_config, "start_speaker": "user"})
+
+        config = db_client.get(f"/api/agents/{agent_id}/start-speaker").json()
+
+        assert config["template"] == "user"
+        assert config["effective"] == "user"
+
+    def test_update_start_speaker_persists_override(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+
+        response = db_client.put(
+            f"/api/agents/{agent_id}/start-speaker", json={"start_speaker": "user"}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["override"] == "user"
+        assert response.json()["effective"] == "user"
+        assert db_client.get(f"/api/agents/{agent_id}").json()["start_speaker"] == "user"
+
+    def test_clear_start_speaker_override(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+        db_client.put(f"/api/agents/{agent_id}/start-speaker", json={"start_speaker": "user"})
+
+        response = db_client.put(
+            f"/api/agents/{agent_id}/start-speaker", json={"start_speaker": None}
+        )
+
+        assert response.json()["override"] is None
+        assert response.json()["effective"] == "agent"
+
+    def test_update_start_speaker_rejects_unknown_value(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+
+        response = db_client.put(
+            f"/api/agents/{agent_id}/start-speaker", json={"start_speaker": "nobody"}
+        )
+
+        assert response.status_code == 422
+
+    def test_start_speaker_unknown_agent_returns_404(self, db_client):
+        assert db_client.get("/api/agents/missing/start-speaker").status_code == 404
+
     def test_metrics_config_included_in_agent_response(self, db_client, sample_retell_config):
         create_response = db_client.post(
             "/api/agents",

@@ -11,6 +11,7 @@ from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import StartSpeaker
 from voicetest.models.test_case import TestCase
 from voicetest.services.agents import AgentService
 from voicetest.services.settings import SettingsService
@@ -273,7 +274,10 @@ class RunService:
             messages = [Message(**m) for m in transcript_data]
 
             simulator = ScriptedUserSimulator(messages)
-            runner = ConversationRunner(graph, options)
+            replay_options = options.model_copy(
+                update={"start_speaker": _recorded_start_speaker(messages)}
+            )
+            runner = ConversationRunner(graph, replay_options)
 
             # Runner takes a TestCase but only uses it in mock mode (which we
             # aren't using). A minimal placeholder satisfies the type.
@@ -300,3 +304,12 @@ class RunService:
 
         self.complete(new_run["id"])
         return self.get_run(new_run["id"])
+
+
+def _recorded_start_speaker(messages: list[Message]) -> StartSpeaker | None:
+    for message in messages:
+        if message.role == "user":
+            return "user"
+        if message.role == "assistant":
+            return "agent"
+    return None

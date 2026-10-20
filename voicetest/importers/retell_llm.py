@@ -175,6 +175,8 @@ class RetellLLMImporter:
         }
         if agent_envelope:
             source_metadata["agent_envelope"] = agent_envelope
+            if agent_envelope.get("start_speaker"):
+                source_metadata["start_speaker"] = agent_envelope["start_speaker"]
 
         return AgentGraph(
             nodes=nodes,

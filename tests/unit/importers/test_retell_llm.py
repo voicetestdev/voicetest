@@ -493,3 +493,18 @@ class TestRetellLLMDashboardExport:
         assert envelope["voice_id"] == "voice_xyz"
         assert envelope["language"] == "ja-JP"
         assert "general_prompt" not in envelope
+
+
+class TestRetellLLMStartSpeaker:
+    def test_start_speaker_surfaced_from_envelope(self, sample_retell_llm_config):
+        config = {**sample_retell_llm_config, "start_speaker": "user"}
+
+        graph = RetellLLMImporter().import_agent(config)
+
+        assert graph.source_metadata["start_speaker"] == "user"
+        assert graph.source_metadata["agent_envelope"]["start_speaker"] == "user"
+
+    def test_no_start_speaker_when_absent(self, sample_retell_llm_config):
+        graph = RetellLLMImporter().import_agent(sample_retell_llm_config)
+
+        assert "start_speaker" not in graph.source_metadata

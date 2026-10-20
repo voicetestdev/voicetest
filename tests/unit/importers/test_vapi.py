@@ -1,6 +1,9 @@
 """Tests for the VAPI importer."""
 
+import copy
 from pathlib import Path
+
+import pytest
 
 from voicetest.importers.vapi import VapiImporter
 
@@ -222,6 +225,37 @@ class TestVapiSquadImport:
         greeting_node = graph.nodes["Greeting"]
         assert greeting_node.metadata.get("first_message") is not None
         assert "Acme Healthcare" in greeting_node.metadata["first_message"]
+
+
+class TestVapiFirstMessageMode:
+    @pytest.mark.parametrize(
+        ("mode", "expected"),
+        [
+            ("assistant-waits-for-user", "user"),
+            ("assistant-speaks-first", "agent"),
+            ("assistant-speaks-first-with-model-generated-message", "agent"),
+        ],
+    )
+    def test_assistant_mode_sets_start_speaker(self, sample_vapi_assistant, mode, expected):
+        graph = VapiImporter().import_agent({**sample_vapi_assistant, "firstMessageMode": mode})
+
+        assert graph.source_metadata["start_speaker"] == expected
+        assert graph.source_metadata["first_message_mode"] == mode
+
+    def test_assistant_without_mode_has_no_start_speaker(self, sample_vapi_assistant):
+        graph = VapiImporter().import_agent(sample_vapi_assistant)
+
+        assert "start_speaker" not in graph.source_metadata
+
+    def test_squad_entry_member_mode_sets_start_speaker(self, sample_vapi_squad):
+        squad = copy.deepcopy(sample_vapi_squad)
+        squad["members"][0]["assistant"]["firstMessageMode"] = "assistant-waits-for-user"
+
+        graph = VapiImporter().import_agent(squad)
+
+        assert graph.source_metadata["start_speaker"] == "user"
+        entry = graph.nodes[graph.entry_node_id]
+        assert entry.metadata["first_message_mode"] == "assistant-waits-for-user"
 
 
 class TestVapiImporterInfo:

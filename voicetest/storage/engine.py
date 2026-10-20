@@ -74,6 +74,13 @@ _MIGRATIONS: list[tuple[int, str, str | list[str], str]] = [
         "SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'results' AND column_name = 'events_json'",
     ),
+    (
+        7,
+        "Add start_speaker to agents",
+        "ALTER TABLE agents ADD COLUMN start_speaker VARCHAR",
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'agents' AND column_name = 'start_speaker'",
+    ),
 ]
 
 

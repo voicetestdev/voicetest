@@ -12,6 +12,8 @@ from voicetest.models.agent import AgentGraph
 from voicetest.models.results import Message
 from voicetest.models.results import ToolCall
 from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import StartSpeaker
+from voicetest.models.test_case import resolve_start_speaker
 from voicetest.util.retry import OnErrorCallback
 
 
@@ -68,6 +70,14 @@ class ConversationRunner:
                 dynamic_variables=dynamic_variables,
             )
 
+    @property
+    def start_speaker(self) -> StartSpeaker:
+        return resolve_start_speaker(
+            self.options.start_speaker,
+            self.graph.source_metadata.get("start_speaker"),
+            self.options.default_start_speaker,
+        )
+
     async def run(
         self,
         test_case: "TestCase",  # noqa: F821 - Forward reference
@@ -90,10 +100,11 @@ class ConversationRunner:
 
         self._engine._on_turn = on_turn
 
-        await self._engine.advance(
-            on_token=agent_token_cb,
-            on_error=on_error,
-        )
+        if self.start_speaker == "agent":
+            await self._engine.advance(
+                on_token=agent_token_cb,
+                on_error=on_error,
+            )
 
         turn_timeout = self.options.turn_timeout_seconds
 
@@ -156,6 +167,18 @@ class ConversationRunner:
         node_tracker = NodeTracker()
         node_tracker.record(self.graph.entry_node_id)
         current_node_id = self.graph.entry_node_id
+        response = f"[Mock response from {current_node_id}]"
+
+        if self.start_speaker == "agent":
+            state.transcript.append(
+                Message(
+                    role="assistant",
+                    content=response,
+                    metadata={"node_id": node_tracker.current_node},
+                )
+            )
+            if on_turn:
+                await _invoke_callback(on_turn, state.transcript)
 
         for _turn in range(self.options.max_turns):
             sim_response = await user_simulator.generate(
@@ -176,7 +199,6 @@ class ConversationRunner:
                 )
             )
 
-            response = f"[Mock response from {current_node_id}]"
             state.transcript.append(
                 Message(
                     role="assistant",

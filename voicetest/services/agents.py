@@ -11,6 +11,7 @@ from voicetest.models.agent import GlobalNodeSetting
 from voicetest.models.agent import GoBackCondition
 from voicetest.models.agent import MetricsConfig
 from voicetest.models.agent import TransitionCondition
+from voicetest.models.test_case import StartSpeaker
 from voicetest.storage.linked_file import check_file
 from voicetest.storage.linked_file import compute_etag
 from voicetest.storage.linked_file import write_json
@@ -267,6 +268,16 @@ class AgentService:
         """Update an agent's metrics configuration."""
         self._repo.update_metrics_config(agent_id, config)
         return config
+
+    def get_start_speaker(self, agent_id: str) -> StartSpeaker | None:
+        agent = self._repo.get(agent_id)
+        return agent.get("start_speaker") if agent else None
+
+    def update_start_speaker(
+        self, agent_id: str, start_speaker: StartSpeaker | None
+    ) -> StartSpeaker | None:
+        self._repo.update_start_speaker(agent_id, start_speaker)
+        return start_speaker
 
     # Importer source_type to exporter format_id mapping when they differ
     _SOURCE_TYPE_TO_FORMAT: dict[str, str] = {

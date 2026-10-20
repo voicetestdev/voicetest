@@ -61,6 +61,18 @@ See the [LiteLLM Vertex AI docs](https://docs.litellm.ai/docs/providers/vertex) 
 | `test_model_precedence` | `false`      | Test-level model overrides global model                  |
 | `pattern_engine`        | `fnmatch`    | Pattern matching engine: `fnmatch` or `re2`              |
 | `judge_input`           | `transcript` | Metric judge input: `transcript` or `events` (see below) |
+| `start_speaker`         | unset        | Fallback opener: `agent` or `user` (see below)           |
+
+### Who speaks first
+
+A simulation opens with the first of these that is set:
+
+1. The agent's override, set from "Speaks first" in the web UI's agent view and stored in the app database.
+1. The agent template: Retell `start_speaker`, or VAPI `firstMessageMode` (`assistant-waits-for-user` means the user speaks first).
+1. The global `start_speaker` run setting.
+1. `agent`.
+
+Replays of imported calls follow the recorded transcript's order instead.
 
 ### Judge input
 

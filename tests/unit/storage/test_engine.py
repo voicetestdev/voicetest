@@ -253,7 +253,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 6
+            assert version == 7
 
     def test_runs_pending_migration_on_old_schema(self, tmp_path):
         db_path = tmp_path / "old.duckdb"
@@ -322,7 +322,7 @@ class TestMigrateSchema:
 
             # Migration should be recorded
             version = _get_current_version(conn)
-            assert version == 6
+            assert version == 7
 
     def test_source_kind_backfill(self, tmp_path):
         """Migration 4 adds source_kind and backfills from the status marker."""

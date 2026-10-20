@@ -11,6 +11,19 @@ from voicetest.models.events import JudgeInput
 
 
 TestType = Literal["llm", "rule"]
+StartSpeaker = Literal["agent", "user"]
+DEFAULT_START_SPEAKER: StartSpeaker = "agent"
+
+
+def resolve_start_speaker(
+    override: str | None,
+    template: str | None,
+    global_default: str | None,
+) -> StartSpeaker:
+    for candidate in (override, template, global_default):
+        if candidate in ("agent", "user"):
+            return candidate
+    return DEFAULT_START_SPEAKER
 
 
 class RunOptions(BaseModel):
@@ -26,6 +39,8 @@ class RunOptions(BaseModel):
     no_cache: bool = False
     pattern_engine: str = "fnmatch"
     judge_input: JudgeInput = JUDGE_INPUT_TRANSCRIPT
+    start_speaker: StartSpeaker | None = None
+    default_start_speaker: StartSpeaker | None = None
 
     agent_model: str | None = None
     simulator_model: str | None = None

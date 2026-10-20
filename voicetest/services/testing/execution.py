@@ -61,6 +61,7 @@ def resolve_run_options(
             audio_eval=settings.run.audio_eval,
             pattern_engine=settings.run.pattern_engine,
             judge_input=settings.run.judge_input,
+            default_start_speaker=settings.run.start_speaker,
         )
     return options.model_copy(
         update={
@@ -72,6 +73,7 @@ def resolve_run_options(
                 if "judge_input" in options.model_fields_set
                 else settings.run.judge_input
             ),
+            "default_start_speaker": (options.default_start_speaker or settings.run.start_speaker),
         }
     )
 

@@ -116,6 +116,24 @@ class TestSettingsPersistence:
         assert 'judge_input = "events"' in settings_file.read_text()
         assert Settings.load(settings_file).run.judge_input == JUDGE_INPUT_EVENTS
 
+    def test_start_speaker_unset_by_default(self, tmp_path):
+        settings_file = tmp_path / ".voicetest.toml"
+        save_settings(Settings(), settings_file)
+
+        assert Settings().run.start_speaker is None
+        assert "start_speaker" not in settings_file.read_text()
+
+    def test_start_speaker_roundtrip_toml(self, tmp_path):
+        settings_file = tmp_path / ".voicetest.toml"
+        save_settings(Settings(run={"start_speaker": "user"}), settings_file)
+
+        assert 'start_speaker = "user"' in settings_file.read_text()
+        assert Settings.load(settings_file).run.start_speaker == "user"
+
+    def test_start_speaker_rejects_unknown_value(self):
+        with pytest.raises(ValidationError):
+            Settings(run={"start_speaker": "nobody"})
+
     def test_judge_input_rejects_unknown_value(self):
         with pytest.raises(ValidationError):
             Settings(run={"judge_input": "legacy"})

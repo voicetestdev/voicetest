@@ -156,6 +156,16 @@ class AgentRepository:
 
         return MetricsConfig()
 
+    def update_start_speaker(self, agent_id: str, start_speaker: str | None) -> dict | None:
+        agent = self.session.get(Agent, agent_id)
+        if not agent:
+            return None
+
+        agent.start_speaker = start_speaker
+        agent.updated_at = datetime.now(UTC)
+        self.session.commit()
+        return self.get(agent_id)
+
     def delete(self, agent_id: str) -> None:
         """Delete an agent and all associated runs, test cases, and calls.
 
@@ -280,6 +290,7 @@ class AgentRepository:
             "source_path": agent.source_path,
             "tests_paths": agent.tests_paths,
             "metrics_config": agent.metrics_config,
+            "start_speaker": agent.start_speaker,
             "created_at": _serialize_datetime(agent.created_at),
             "updated_at": _serialize_datetime(agent.updated_at),
         }

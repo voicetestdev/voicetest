@@ -786,3 +786,68 @@ class TestPerTurnTimeout:
 
         assert state.end_reason == "max_turns"
         assert state.turn_count == 3
+
+
+class TestStartSpeaker:
+    def _mock_simulator(self, *messages: str) -> UserSimulator:
+        simulator = UserSimulator("test", "mock-model")
+        simulator._mock_mode = True
+        simulator._mock_responses = [SimulatorResponse(message=m) for m in messages]
+        return simulator
+
+    def test_defaults_to_agent(self, simple_graph):
+        assert ConversationRunner(simple_graph).start_speaker == "agent"
+
+    def test_template_used_when_no_override(self, simple_graph):
+        simple_graph.source_metadata["start_speaker"] = "user"
+        options = RunOptions(default_start_speaker="agent")
+
+        assert ConversationRunner(simple_graph, options).start_speaker == "user"
+
+    def test_override_beats_template(self, simple_graph):
+        simple_graph.source_metadata["start_speaker"] = "agent"
+        options = RunOptions(start_speaker="user")
+
+        assert ConversationRunner(simple_graph, options).start_speaker == "user"
+
+    def test_global_default_used_when_template_unset(self, simple_graph):
+        simple_graph.source_metadata.pop("start_speaker", None)
+        options = RunOptions(default_start_speaker="user")
+
+        assert ConversationRunner(simple_graph, options).start_speaker == "user"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("start_speaker", "first_role"), [("agent", "assistant"), ("user", "user")]
+    )
+    async def test_mock_transcript_opens_with_start_speaker(
+        self, simple_graph, start_speaker, first_role
+    ):
+        runner = ConversationRunner(
+            simple_graph, RunOptions(start_speaker=start_speaker), mock_mode=True
+        )
+        test_case = TestCase(name="test", user_prompt="Say hello")
+
+        state = await runner.run(test_case, self._mock_simulator("Hello"))
+
+        assert state.transcript[0].role == first_role
+
+    @pytest.mark.asyncio
+    async def test_user_first_skips_agent_opener(self, simple_graph):
+        runner = ConversationRunner(simple_graph, RunOptions(start_speaker="user", max_turns=1))
+        test_case = TestCase(name="test", user_prompt="Say hello")
+
+        async def mock_call_llm(model, signature, **kwargs):
+            class MockResult:
+                response = "Hi there!"
+                objectives_complete = False
+                transition_to = "none"
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            state = await runner.run(test_case, self._mock_simulator("I need help"))
+
+        roles = [m.role for m in state.transcript if m.role in ("user", "assistant")]
+        assert roles == ["user", "assistant"]
+        assert state.transcript[0].content == "I need help"

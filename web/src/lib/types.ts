@@ -77,6 +77,26 @@ export function displayRole(role: Message["role"]): string {
   return role === "assistant" ? "agent" : role;
 }
 
+export type StartSpeaker = "agent" | "user";
+
+export interface StartSpeakerConfig {
+  override: StartSpeaker | null;
+  template: StartSpeaker | null;
+  global: StartSpeaker | null;
+  effective: StartSpeaker;
+}
+
+export function resolveStartSpeaker(
+  override?: string | null,
+  template?: string | null,
+  globalDefault?: string | null,
+): StartSpeaker {
+  for (const candidate of [override, template, globalDefault]) {
+    if (candidate === "agent" || candidate === "user") return candidate;
+  }
+  return "agent";
+}
+
 /**
  * Determine which role should speak next based on the transcript.
  * Skips tool messages to find the last actual speaker. Before any
@@ -189,6 +209,7 @@ export interface Settings {
     streaming: boolean;
     test_model_precedence: boolean;
     audio_eval: boolean;
+    start_speaker?: StartSpeaker | null;
   };
   audio: {
     tts_url: string;
@@ -229,6 +250,7 @@ export interface AgentRecord {
   source_path: string | null;
   tests_paths: string[] | null;
   metrics_config?: MetricsConfig | null;
+  start_speaker?: StartSpeaker | null;
   created_at: string;
   updated_at: string;
 }

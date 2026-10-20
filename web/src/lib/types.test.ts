@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { GlobalMetric, MetricsConfig, MetricResult, Settings, AgentGraph, Message } from "./types";
-import { nextExpectedRole, graphFingerprint, displayRole } from "./types";
+import { nextExpectedRole, graphFingerprint, displayRole, resolveStartSpeaker } from "./types";
 
 describe("types", () => {
   describe("GlobalMetric", () => {
@@ -253,6 +253,28 @@ describe("types", () => {
       expect(settings.models.agent).toBe("openai/gpt-4o");
       expect(settings.models.simulator).toBeNull();
       expect(settings.models.judge).toBe("groq/llama-3.1-8b-instant");
+    });
+  });
+
+  describe("resolveStartSpeaker", () => {
+    it("prefers the agent override", () => {
+      expect(resolveStartSpeaker("user", "agent", "agent")).toBe("user");
+    });
+
+    it("falls back to the template", () => {
+      expect(resolveStartSpeaker(null, "user", "agent")).toBe("user");
+    });
+
+    it("falls back to the global default when the template is unset", () => {
+      expect(resolveStartSpeaker(null, undefined, "user")).toBe("user");
+    });
+
+    it("defaults to agent when nothing is set", () => {
+      expect(resolveStartSpeaker(null, null, null)).toBe("agent");
+    });
+
+    it("ignores unrecognized values", () => {
+      expect(resolveStartSpeaker("bogus", "user")).toBe("user");
     });
   });
 

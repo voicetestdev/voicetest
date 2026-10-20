@@ -11,6 +11,7 @@ from voicetest.config import get_settings_path
 from voicetest.models.events import JUDGE_INPUT_EVENTS
 from voicetest.models.events import JUDGE_INPUT_TRANSCRIPT
 from voicetest.models.events import JudgeInput
+from voicetest.models.test_case import StartSpeaker
 
 
 DEFAULT_MODEL = "groq/llama-3.1-8b-instant"
@@ -70,6 +71,13 @@ class RunSettings(BaseModel):
         description=(
             f"Metric judge input: '{JUDGE_INPUT_TRANSCRIPT}' (role-prefixed text) "
             f"or '{JUDGE_INPUT_EVENTS}'"
+        ),
+    )
+    start_speaker: StartSpeaker | None = Field(
+        default=None,
+        description=(
+            "Fallback opener for simulations when neither the agent override "
+            "nor the agent template sets one: 'agent' or 'user'"
         ),
     )
 
@@ -144,6 +152,8 @@ def _to_toml(settings: Settings) -> str:
     lines.append(f"audio_eval = {str(settings.run.audio_eval).lower()}")
     lines.append(f'pattern_engine = "{settings.run.pattern_engine}"')
     lines.append(f'judge_input = "{settings.run.judge_input}"')
+    if settings.run.start_speaker is not None:
+        lines.append(f'start_speaker = "{settings.run.start_speaker}"')
     lines.append("")
 
     lines.append("[audio]")

@@ -9,10 +9,11 @@
     loadAgents,
     refreshAgent,
     currentView,
+    settings,
   } from "../lib/stores";
   import { errorMessage } from "../lib/errors";
-  import { graphFingerprint } from "../lib/types";
-  import type { SyncStatus } from "../lib/types";
+  import { graphFingerprint, resolveStartSpeaker } from "../lib/types";
+  import type { StartSpeaker, SyncStatus } from "../lib/types";
   import CallView from "./CallView.svelte";
   import ChatView from "./ChatView.svelte";
   import ExportModal from "./ExportModal.svelte";
@@ -64,6 +65,28 @@
   let generalPromptTextarea = $state<HTMLTextAreaElement>();
 
   let refreshing = $state(false);
+
+  let savingStartSpeaker = $state(false);
+  let startSpeakerSaved = $state(false);
+
+  const startSpeakerLabels: Record<StartSpeaker, string> = {
+    agent: "Agent first",
+    user: "User first",
+  };
+
+  let templateStartSpeaker = $derived(
+    $agentGraph?.source_metadata?.start_speaker as string | undefined,
+  );
+  let inheritedStartSpeaker = $derived(
+    resolveStartSpeaker(null, templateStartSpeaker, $settings?.run.start_speaker),
+  );
+  let inheritedStartSpeakerSource = $derived(
+    templateStartSpeaker === "agent" || templateStartSpeaker === "user"
+      ? "template"
+      : $settings?.run.start_speaker
+        ? "global"
+        : "default",
+  );
 
   let syncStatus = $state<SyncStatus | null>(null);
   let syncing = $state(false);
@@ -533,6 +556,21 @@
     savingModel = false;
   }
 
+  async function saveStartSpeaker(value: string) {
+    if (!$currentAgentId) return;
+    const startSpeaker = value === "agent" || value === "user" ? value : null;
+    savingStartSpeaker = true;
+    try {
+      await api.updateStartSpeaker($currentAgentId, startSpeaker);
+      await loadAgents();
+      startSpeakerSaved = true;
+      setTimeout(() => { startSpeakerSaved = false; }, 2000);
+    } catch (e) {
+      error = errorMessage(e);
+    }
+    savingStartSpeaker = false;
+  }
+
   function handleModelKeydown(e: KeyboardEvent) {
     if (e.key === "Enter") {
       saveModel();
@@ -711,6 +749,27 @@
               <span class="model-save-indicator saved">Saved</span>
             {/if}
           </span>
+        </span>
+        <span class="info-item">
+          <label class="label" for="agent-start-speaker">Speaks first:</label>
+          <select
+            id="agent-start-speaker"
+            class="start-speaker-select"
+            value={$currentAgent.start_speaker ?? ""}
+            onchange={(e) => saveStartSpeaker(e.currentTarget.value)}
+            disabled={savingStartSpeaker}
+          >
+            <option value="">
+              {startSpeakerLabels[inheritedStartSpeaker]} ({inheritedStartSpeakerSource})
+            </option>
+            <option value="agent">{startSpeakerLabels.agent}</option>
+            <option value="user">{startSpeakerLabels.user}</option>
+          </select>
+          {#if savingStartSpeaker}
+            <span class="model-save-indicator">Saving...</span>
+          {:else if startSpeakerSaved}
+            <span class="model-save-indicator saved">Saved</span>
+          {/if}
         </span>
         <span class="info-item">
           <span class="label">Entry:</span>
@@ -1183,6 +1242,11 @@
 
   .model-save-indicator.saved {
     color: #22c55e;
+  }
+
+  .start-speaker-select {
+    font-size: var(--text-sm);
+    padding: 0.1rem 0.35rem;
   }
 
   .actions {

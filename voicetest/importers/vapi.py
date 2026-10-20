@@ -109,6 +109,7 @@ class VapiAssistant(BaseModel):
     voice: VapiVoice | None = None
     transcriber: VapiTranscriber | None = None
     first_message: str | None = Field(default=None, alias="firstMessage")
+    first_message_mode: str | None = Field(default=None, alias="firstMessageMode")
     tools: list[VapiTool] = Field(default_factory=list)
     silence_timeout_seconds: int | None = Field(default=None, alias="silenceTimeoutSeconds")
     max_duration_seconds: int | None = Field(default=None, alias="maxDurationSeconds")
@@ -244,6 +245,7 @@ class VapiImporter:
 
         nodes: dict[str, AgentNode] = {}
         entry_node_id: str | None = None
+        entry_start_speaker: str | None = None
         assistant_names: dict[str, str] = {}
 
         for i, member in enumerate(squad.members):
@@ -287,13 +289,12 @@ class VapiImporter:
                 node_type=NodeType.CONVERSATION,
                 tools=tools,
                 transitions=transitions,
-                metadata={"first_message": assistant.first_message}
-                if assistant.first_message
-                else {},
+                metadata=self._build_first_message_metadata(assistant),
             )
 
             if entry_node_id is None:
                 entry_node_id = node_id
+                entry_start_speaker = _start_speaker_for_mode(assistant.first_message_mode)
 
         for node in nodes.values():
             for transition in node.transitions:
@@ -308,6 +309,8 @@ class VapiImporter:
             source_metadata["squad_id"] = squad.id
         if squad.name:
             source_metadata["name"] = squad.name
+        if entry_start_speaker:
+            source_metadata["start_speaker"] = entry_start_speaker
 
         return AgentGraph(
             nodes=nodes,
@@ -357,6 +360,14 @@ class VapiImporter:
 
         return regular_tools, transitions
 
+    def _build_first_message_metadata(self, assistant: VapiAssistant) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        if assistant.first_message:
+            metadata["first_message"] = assistant.first_message
+        if assistant.first_message_mode:
+            metadata["first_message_mode"] = assistant.first_message_mode
+        return metadata
+
     def _build_assistant_metadata(self, assistant: VapiAssistant) -> dict[str, Any]:
         """Build source metadata from assistant config."""
         metadata: dict[str, Any] = {}
@@ -364,8 +375,10 @@ class VapiImporter:
             metadata["assistant_id"] = assistant.id
         if assistant.name:
             metadata["name"] = assistant.name
-        if assistant.first_message:
-            metadata["first_message"] = assistant.first_message
+        metadata.update(self._build_first_message_metadata(assistant))
+        start_speaker = _start_speaker_for_mode(assistant.first_message_mode)
+        if start_speaker:
+            metadata["start_speaker"] = start_speaker
         if assistant.model:
             metadata["model_provider"] = assistant.model.provider
             metadata["model"] = assistant.model.model
@@ -388,3 +401,11 @@ class VapiImporter:
             return path_or_config
         path = Path(path_or_config)
         return json.loads(path.read_text())
+
+
+def _start_speaker_for_mode(first_message_mode: str | None) -> str | None:
+    if not first_message_mode:
+        return None
+    if first_message_mode == "assistant-waits-for-user":
+        return "user"
+    return "agent"
