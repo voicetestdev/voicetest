@@ -864,6 +864,30 @@ class TestRunRunnerLifecycle:
         for s, c in zip(started_idxs, completed_idxs, strict=True):
             assert s < c
 
+    def test_run_applies_agent_start_speaker_override(
+        self, db_client, two_tests_agent, monkeypatch
+    ):
+        agent_id = two_tests_agent["agent_id"]
+        db_client.put(f"/api/agents/{agent_id}/start-speaker", json={"start_speaker": "user"})
+        _broadcasts, completed = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
+        seen_options: list[RunOptions] = []
+
+        async def fake_run_test(*args, **kwargs):
+            seen_options.append(kwargs["options"])
+            return TestResult(test_id="t", test_name="Patched", status="pass", transcript=[])
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test",
+            side_effect=fake_run_test,
+        ):
+            db_client.post(
+                f"/api/agents/{agent_id}/runs",
+                json={"test_ids": two_tests_agent["test_ids"]},
+            )
+            assert completed.wait(timeout=5)
+
+        assert [o.start_speaker for o in seen_options] == ["user", "user"]
+
     # The cancel-path tests below invoke RunRunner.execute() directly through the
     # container. Running through POST + TestClient is unreliable for cancellation
     # timing because TestClient awaits the BackgroundTask before returning, leaving

@@ -37,6 +37,7 @@ class Agent(Base):
     tests_paths: Mapped[list | None] = mapped_column(JSON, nullable=True)
     graph_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     metrics_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    start_speaker: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
@@ -57,6 +58,7 @@ class Agent(Base):
             "tests_paths": self.tests_paths,
             "graph_json": self.graph_json,
             "metrics_config": self.metrics_config,
+            "start_speaker": self.start_speaker,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

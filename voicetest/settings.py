@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import tomllib
+from typing import Literal
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -11,6 +12,7 @@ from voicetest.config import get_settings_path
 from voicetest.models.events import JUDGE_INPUT_EVENTS
 from voicetest.models.events import JUDGE_INPUT_TRANSCRIPT
 from voicetest.models.events import JudgeInput
+from voicetest.models.test_case import StartSpeaker
 
 
 DEFAULT_MODEL = "groq/llama-3.1-8b-instant"
@@ -70,6 +72,13 @@ class RunSettings(BaseModel):
         description=(
             f"Metric judge input: '{JUDGE_INPUT_TRANSCRIPT}' (role-prefixed text) "
             f"or '{JUDGE_INPUT_EVENTS}'"
+        ),
+    )
+    start_speaker: StartSpeaker | None = Field(
+        default=None,
+        description=(
+            "Fallback opener for simulations when neither the agent override "
+            "nor the agent template sets one: 'agent' or 'user'"
         ),
     )
 
@@ -144,6 +153,8 @@ def _to_toml(settings: Settings) -> str:
     lines.append(f"audio_eval = {str(settings.run.audio_eval).lower()}")
     lines.append(f'pattern_engine = "{settings.run.pattern_engine}"')
     lines.append(f'judge_input = "{settings.run.judge_input}"')
+    if settings.run.start_speaker is not None:
+        lines.append(f'start_speaker = "{settings.run.start_speaker}"')
     lines.append("")
 
     lines.append("[audio]")
@@ -174,19 +185,30 @@ def _to_toml(settings: Settings) -> str:
     return "\n".join(lines)
 
 
+ModelSource = Literal["role", "global", "default"]
+
+
+def resolve_model_with_source(
+    settings_value: str | None = None,
+    role_default: str | None = None,
+    test_model_precedence: bool = False,
+) -> tuple[str, ModelSource]:
+    if test_model_precedence and role_default:
+        return role_default, "role"
+    if settings_value:
+        return settings_value, "global"
+    if role_default:
+        return role_default, "role"
+    return DEFAULT_MODEL, "default"
+
+
 def resolve_model(
     settings_value: str | None = None,
     role_default: str | None = None,
     test_model_precedence: bool = False,
 ) -> str:
     """Resolve which model to use for a given role."""
-    if test_model_precedence and role_default:
-        return role_default
-    if settings_value:
-        return settings_value
-    if role_default:
-        return role_default
-    return DEFAULT_MODEL
+    return resolve_model_with_source(settings_value, role_default, test_model_precedence)[0]
 
 
 def load_settings(path: Path | None = None) -> Settings:

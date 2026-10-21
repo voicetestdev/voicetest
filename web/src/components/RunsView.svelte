@@ -6,7 +6,9 @@
     currentRunWithResults,
     currentRunId,
     currentAgentId,
+    currentAgent,
     agentGraph,
+    settings,
     runHistory,
     cancelTest,
     cancelRun,
@@ -29,7 +31,7 @@
     PromptChange,
     AutoFixStopCondition,
   } from "../lib/types";
-  import { nextExpectedRole, displayRole } from "../lib/types";
+  import { nextExpectedRole, displayRole, resolveStartSpeaker } from "../lib/types";
   import { setFaviconState, resetFavicon } from "../lib/favicon";
   import { onDestroy } from "svelte";
 
@@ -859,7 +861,11 @@
                   {:else}
                     {@const nextRole = nextExpectedRole(
                       transcript,
-                      $agentGraph?.source_metadata?.start_speaker as string | undefined,
+                      resolveStartSpeaker(
+                        $currentAgent?.start_speaker,
+                        $agentGraph?.source_metadata?.start_speaker as string | undefined,
+                        $settings?.run.start_speaker,
+                      ),
                     )}
                     <div class="message {displayRole(nextRole)} typing">
                       <span class="role">{displayRole(nextRole)}</span>

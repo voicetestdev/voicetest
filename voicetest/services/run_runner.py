@@ -57,6 +57,12 @@ class RunRunner:
             return
 
         metrics_config = self._agents.get_metrics_config(job.agent_id)
+        options = job.options.model_copy(
+            update={
+                "start_speaker": job.options.start_speaker
+                or self._agents.get_start_speaker(job.agent_id)
+            }
+        )
 
         try:
             for idx, test_record in enumerate(job.test_records):
@@ -91,7 +97,7 @@ class RunRunner:
                     result = await self._exec.run_test(
                         graph,
                         test_case,
-                        options=job.options,
+                        options=options,
                         metrics_config=metrics_config,
                         on_turn=self._make_on_turn(job.run_id, result_id, last_transcript),
                         on_token=self._make_on_token(job.run_id, result_id)

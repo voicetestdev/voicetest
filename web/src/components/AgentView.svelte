@@ -9,12 +9,25 @@
     loadAgents,
     refreshAgent,
     currentView,
+    importerTypes,
+    settings,
   } from "../lib/stores";
   import { errorMessage } from "../lib/errors";
-  import { graphFingerprint } from "../lib/types";
-  import type { SyncStatus } from "../lib/types";
+  import { pushToast, SUCCESS_DISMISS_MS } from "../lib/toast";
+  import {
+    graphFingerprint,
+    describeAgentModel,
+    describeSourceFormat,
+    sourceTypeName,
+    describeStartSpeaker,
+    resolveStartSpeakerWithSource,
+    shortPath,
+    startSpeakerOverrideFor,
+  } from "../lib/types";
+  import type { AgentModelInfo, StartSpeaker, SyncStatus } from "../lib/types";
   import CallView from "./CallView.svelte";
   import ChatView from "./ChatView.svelte";
+  import StartSpeakerToggle from "./StartSpeakerToggle.svelte";
   import ExportModal from "./ExportModal.svelte";
   import ImportCallsModal from "./ImportCallsModal.svelte";
   import MetadataEditor from "./MetadataEditor.svelte";
@@ -48,13 +61,11 @@
   let editingName = $state(false);
   let editedName = $state("");
   let savingName = $state(false);
-  let nameSaved = $state(false);
   let nameInput = $state<HTMLInputElement>();
 
   let editingModel = $state(false);
   let editedModel = $state("");
   let savingModel = $state(false);
-  let modelSaved = $state(false);
   let modelInput = $state<HTMLInputElement>();
 
   let editingGeneralPrompt = $state(false);
@@ -65,6 +76,37 @@
 
   let refreshing = $state(false);
 
+  let modelInfo = $state<AgentModelInfo | null>(null);
+  let modelCaption = $derived(modelInfo ? describeAgentModel(modelInfo) : "");
+
+  $effect(() => {
+    const agentId = $currentAgentId;
+    void $agentGraph?.default_model;
+    void $settings?.models.agent;
+    void $settings?.run.test_model_precedence;
+    if (!agentId || !$agentGraph) {
+      modelInfo = null;
+      return;
+    }
+    api.getAgentModel(agentId).then((info) => {
+      if (agentId === $currentAgentId) modelInfo = info;
+    }).catch(() => {
+      modelInfo = null;
+    });
+  });
+
+  let savingStartSpeaker = $state(false);
+
+  let inheritedStartSpeaker = $derived(
+    resolveStartSpeakerWithSource(
+      null,
+      $agentGraph?.source_metadata?.start_speaker as string | undefined,
+      $settings?.run.start_speaker,
+    ),
+  );
+  let startSpeakerOverride = $derived($currentAgent?.start_speaker ?? null);
+  let startSpeakerHint = $derived(describeStartSpeaker(startSpeakerOverride, inheritedStartSpeaker));
+
   let syncStatus = $state<SyncStatus | null>(null);
   let syncing = $state(false);
   let syncSuccess = $state(false);
@@ -74,17 +116,9 @@
   let nodePromptModal = $state<NodePromptModal>();
   let transitionModal = $state<TransitionModal>();
 
-  const platformDisplayNames: Record<string, string> = {
-    retell: "Retell",
-    vapi: "VAPI",
-    livekit: "LiveKit",
-    bland: "Bland",
-    telnyx: "Telnyx",
-  };
-
-  function getPlatformDisplayName(platform: string): string {
-    return platformDisplayNames[platform] || platform.charAt(0).toUpperCase() + platform.slice(1);
-  }
+  let sourceFormat = $derived(
+    $currentAgent ? describeSourceFormat($currentAgent.source_type, $importerTypes) : null,
+  );
 
   $effect(() => {
     const agentId = $currentAgentId;
@@ -478,8 +512,7 @@
       await api.updateAgent($currentAgentId, { name: editedName.trim() });
       await loadAgents();
       editingName = false;
-      nameSaved = true;
-      setTimeout(() => { nameSaved = false; }, 2000);
+      pushToast("Name saved", SUCCESS_DISMISS_MS);
     } catch (e) {
       error = errorMessage(e);
     }
@@ -525,12 +558,26 @@
         agentGraph.set(updatedGraph);
       }
       editingModel = false;
-      modelSaved = true;
-      setTimeout(() => { modelSaved = false; }, 2000);
+      pushToast("Model saved", SUCCESS_DISMISS_MS);
     } catch (e) {
       error = errorMessage(e);
     }
     savingModel = false;
+  }
+
+  async function selectStartSpeaker(speaker: StartSpeaker) {
+    if (!$currentAgentId) return;
+    const override = startSpeakerOverrideFor(speaker, inheritedStartSpeaker.speaker);
+    if (override === startSpeakerOverride) return;
+    savingStartSpeaker = true;
+    try {
+      await api.updateStartSpeaker($currentAgentId, override);
+      await loadAgents();
+      pushToast("Speaks first saved", SUCCESS_DISMISS_MS);
+    } catch (e) {
+      error = errorMessage(e);
+    }
+    savingStartSpeaker = false;
   }
 
   function handleModelKeydown(e: KeyboardEvent) {
@@ -661,7 +708,7 @@
   {#if !$currentAgent}
     <p class="placeholder">No agent selected.</p>
   {:else if $agentGraph}
-    <div class="name-row">
+    <header class="agent-header">
       {#if editingName}
         <input
           type="text"
@@ -673,106 +720,95 @@
           disabled={savingName}
         />
       {:else}
-        <button class="editable-name" onclick={startEditingName} title="Click to edit">
+        <button class="editable editable-name" onclick={startEditingName} title={$currentAgent.name}>
           {$currentAgent.name}
         </button>
       {/if}
-      {#if savingName}
-        <span class="save-indicator">Saving...</span>
-      {:else if nameSaved}
-        <span class="save-indicator saved">Saved</span>
-      {/if}
-    </div>
-
-    <section class="agent-info">
-      <div class="info-summary">
-        <span class="info-item">
-          <span class="label">LLM:</span>
-          <span class="model-value">
-            {#if editingModel}
-              <input
-                type="text"
-                class="model-input"
-                bind:value={editedModel}
-                bind:this={modelInput}
-                onblur={saveModel}
-                onkeydown={handleModelKeydown}
-                disabled={savingModel}
-                placeholder="e.g. openai/gpt-4o"
-              />
-            {:else}
-              <button class="editable-model" onclick={startEditingModel} title="Click to edit">
-                {$agentGraph.default_model || "Not set"}
-              </button>
-            {/if}
-            {#if savingModel}
-              <span class="model-save-indicator">Saving...</span>
-            {:else if modelSaved}
-              <span class="model-save-indicator saved">Saved</span>
-            {/if}
-          </span>
-        </span>
-        <span class="info-item">
-          <span class="label">Entry:</span>
-          <span>{$agentGraph.entry_node_id}</span>
-        </span>
-        <span class="info-item">
-          <span class="label">Nodes:</span>
-          <span>{Object.keys($agentGraph.nodes).length}</span>
-        </span>
-      </div>
-      {#if $currentAgent.source_path}
-        <div class="linked-file-row">
-          <span class="label">Linked:</span>
-          <span class="linked-file">
-            <span class="mono">{$currentAgent.source_path}</span>
-            <button
-              class="refresh-btn"
-              onclick={refreshFromFile}
-              disabled={refreshing}
-              title="Reload agent from file"
-            >
-              <span class="refresh-icon" class:spinning={refreshing}>↻</span>
-            </button>
-          </span>
-        </div>
-      {/if}
-      <div class="actions">
-        <div class="action-group session">
+      <div class="header-actions">
+        <div class="action-group">
           <div class="session-item"><ChatView /></div>
           <div class="session-item"><CallView /></div>
         </div>
-        <div class="action-group data">
-          <button
-            class="secondary"
-            onclick={() => (showImportCallsModal = true)}
-          >
-            Import Calls...
-          </button>
-          <button
-            class="secondary"
-            onclick={() => (showExportModal = true)}
-          >
-            Export Agent...
-          </button>
+        <span class="action-divider" aria-hidden="true"></span>
+        <div class="action-group">
+          <button onclick={() => (showImportCallsModal = true)}>Import calls…</button>
+          <button onclick={() => (showExportModal = true)}>Export…</button>
           {#if syncStatus?.can_sync}
-            <button
-              class="sync-btn"
-              onclick={syncToSource}
-              disabled={syncing}
-            >
+            <button onclick={syncToSource} disabled={syncing}>
               {#if syncing}
-                Syncing...
+                Syncing…
               {:else if syncSuccess}
-                Synced!
+                Synced
               {:else}
-                Sync to {getPlatformDisplayName(syncStatus.platform || "")}
+                Sync to {sourceTypeName(syncStatus.platform || "")}
               {/if}
             </button>
           {/if}
         </div>
       </div>
-    </section>
+    </header>
+
+    <dl class="agent-settings">
+      <dt>Source</dt>
+      <dd>{sourceFormat?.format}</dd>
+      <dd class="detail">
+        {#if sourceFormat?.label}
+          <span>labelled “{sourceFormat.label}”</span>
+          <span aria-hidden="true">·</span>
+        {/if}
+        {#if $currentAgent.source_path}
+          <span>linked file</span>
+          <span class="mono source-path" title={$currentAgent.source_path}>
+            {shortPath($currentAgent.source_path)}
+          </span>
+          <button
+            class="inline-btn"
+            onclick={refreshFromFile}
+            disabled={refreshing}
+            title="Reload agent from {$currentAgent.source_path}"
+          >
+            {refreshing ? "Reloading…" : "Reload"}
+          </button>
+        {:else}
+          <span>stored in voicetest</span>
+        {/if}
+      </dd>
+
+      <dt>Model</dt>
+      <dd>
+        {#if editingModel}
+          <input
+            type="text"
+            class="mono model-input"
+            bind:value={editedModel}
+            bind:this={modelInput}
+            onblur={saveModel}
+            onkeydown={handleModelKeydown}
+            disabled={savingModel}
+            placeholder={modelInfo?.effective ?? "e.g. openai/gpt-4o"}
+          />
+        {:else}
+          <button class="editable mono model-value" onclick={startEditingModel} title="Click to set this agent's model">
+            {modelInfo?.effective ?? $agentGraph.default_model ?? "…"}
+          </button>
+        {/if}
+      </dd>
+      <dd class="detail">{modelCaption}</dd>
+
+      <dt>Speaks first</dt>
+      <dd>
+        <StartSpeakerToggle
+          value={startSpeakerOverride ?? inheritedStartSpeaker.speaker}
+          onselect={selectStartSpeaker}
+          disabled={savingStartSpeaker}
+        />
+      </dd>
+      <dd class="detail">{startSpeakerHint}</dd>
+
+      <dt>Nodes</dt>
+      <dd>{Object.keys($agentGraph.nodes).length}</dd>
+      <dd class="detail">starts at <span class="mono">{$agentGraph.entry_node_id}</span></dd>
+    </dl>
     {#if error}
       <p class="error-message">{error}</p>
     {/if}
@@ -894,9 +930,9 @@
   {:else if $agentGraphLoading}
     <p class="placeholder">Loading…</p>
   {:else}
-    <div class="name-row">
+    <header class="agent-header">
       <span class="editable-name">{$currentAgent.name}</span>
-    </div>
+    </header>
 
     <section class="graph-unavailable">
       <h3>Graph unavailable</h3>
@@ -939,50 +975,178 @@
   }
 
 
-  .name-row {
+  .agent-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
+    justify-content: space-between;
+    gap: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-4);
+  }
+
+  .editable {
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0.1rem 0.35rem;
+    margin: -0.1rem -0.35rem;
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .editable:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .editable::after {
+    content: " ✎";
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .editable:hover::after {
+    opacity: 1;
+  }
+
+  .editable-name,
+  .name-input {
+    flex: 1 1 16rem;
+    min-width: 0;
+    font-size: 1.5rem;
+    font-weight: bold;
+    line-height: 1.25;
+    color: var(--text-primary);
   }
 
   .editable-name {
-    cursor: pointer;
-    padding: 0.25rem 0.5rem;
-    margin: -0.25rem -0.5rem;
-    border-radius: 4px;
-    transition: background 0.15s;
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    font-weight: bold;
-    color: var(--text-primary);
-    text-align: left;
-  }
-
-  .editable-name:hover {
-    background: var(--bg-hover);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .name-input {
     font-size: 1.5rem;
     font-weight: bold;
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--accent-color, #6366f1);
-    border-radius: 4px;
-    background: var(--bg-secondary);
+    line-height: 1.25;
     color: var(--text-primary);
+  }
+
+  .name-input {
+    padding: 0.1rem 0.35rem;
+    margin: -0.1rem -0.35rem;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    background: var(--bg-secondary);
     outline: none;
     min-width: 200px;
   }
 
-  .save-indicator {
-    font-size: 0.85rem;
+  .header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .action-group {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .action-divider {
+    align-self: stretch;
+    width: 1px;
+    margin: 0.35rem var(--space-1);
+    background: var(--border-color);
+  }
+
+  .source-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  .inline-btn {
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
+    line-height: 1.6;
+    border-radius: var(--radius-sm);
+  }
+
+  .inline-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .agent-settings {
+    display: grid;
+    grid-template-columns: max-content max-content 1fr;
+    align-items: baseline;
+    gap: var(--space-3) 1.5rem;
+    margin: 0 0 1.5rem;
+    padding: var(--space-4);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+  }
+
+  .agent-settings dt {
     color: var(--text-secondary);
   }
 
-  .save-indicator.saved {
-    color: #22c55e;
+  .agent-settings dd {
+    margin: 0;
+    min-width: 0;
+  }
+
+  .agent-settings .detail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 640px) {
+    .action-divider {
+      display: none;
+    }
+
+    .agent-settings {
+      grid-template-columns: max-content 1fr;
+      row-gap: var(--space-1);
+    }
+
+    .agent-settings dt:not(:first-child) {
+      margin-top: var(--space-2);
+    }
+
+    .agent-settings .detail {
+      grid-column: 2;
+    }
+  }
+
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.95em;
+  }
+
+  .model-input {
+    padding: 0.1rem 0.35rem;
+    margin: -0.1rem -0.35rem;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    outline: none;
+    min-width: 180px;
   }
 
   h3 {
@@ -994,88 +1158,6 @@
   .placeholder {
     color: var(--text-secondary);
     font-style: italic;
-  }
-
-  .agent-info {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    margin-bottom: 1.5rem;
-    padding: var(--space-4);
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-  }
-
-  .info-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2) var(--space-4);
-    align-items: center;
-  }
-
-  .info-item {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: var(--text-sm);
-  }
-
-  .linked-file-row {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    font-size: var(--text-sm);
-  }
-
-  .label {
-    color: var(--text-secondary);
-    font-size: var(--text-sm);
-  }
-
-  .mono {
-    font-family: monospace;
-    font-size: 0.85rem;
-  }
-
-  .linked-file {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .refresh-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: none;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 0.15rem 0.35rem;
-    font-size: 0.85rem;
-    line-height: 1;
-    transition: color 0.15s, border-color 0.15s;
-  }
-
-  .refresh-btn:hover:not(:disabled) {
-    color: var(--text-primary);
-    border-color: var(--text-secondary);
-  }
-
-  .refresh-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  .refresh-icon.spinning {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
   }
 
   .general-prompt {
@@ -1140,73 +1222,6 @@
     opacity: 0.6;
   }
 
-  .model-value {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .editable-model {
-    cursor: pointer;
-    padding: 0.15rem 0.4rem;
-    margin: -0.15rem -0.4rem;
-    border-radius: 4px;
-    transition: background 0.15s;
-    font-family: monospace;
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    background: none;
-    border: none;
-  }
-
-  .editable-model:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .model-input {
-    font-family: monospace;
-    font-size: 0.85rem;
-    padding: 0.15rem 0.4rem;
-    border: 1px solid var(--accent-color, #6366f1);
-    border-radius: 4px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    outline: none;
-    min-width: 180px;
-  }
-
-  .model-save-indicator {
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-
-  .model-save-indicator.saved {
-    color: #22c55e;
-  }
-
-  .actions {
-    margin-bottom: 1rem;
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .action-group {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .action-group.session {
-    align-items: flex-start;
-  }
-
-  .action-group.data {
-    align-items: center;
-  }
-
   /* Each session widget renders its button + any error/status indicator
      stacked vertically inside its own column. The min/max-width caps prevent
      status changes (Connecting spinner, error-inline, quota-banner) from
@@ -1219,43 +1234,6 @@
     min-width: 9rem;
     max-width: 14rem;
   }
-
-  .secondary {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    color: var(--text-secondary);
-  }
-
-  .secondary:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
-
-  .sync-btn {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    padding: 0.5rem 1rem;
-    font-size: 0.85rem;
-    transition: background 0.15s, border-color 0.15s;
-  }
-
-  .sync-btn:hover:not(:disabled) {
-    background: var(--bg-hover);
-    border-color: var(--accent);
-  }
-
-  .sync-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .sync-unavailable {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    cursor: help;
-    padding: 0.5rem 0;
-  }
-
 
   .error-message {
     color: #f87171;

@@ -48,6 +48,7 @@ from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
+from voicetest.models.test_case import StartSpeaker
 from voicetest.models.test_case import TestCase
 from voicetest.services.agents import AgentService
 from voicetest.services.decompose import DecomposeService
@@ -64,6 +65,7 @@ from voicetest.services.testing.cases import TestCaseService
 from voicetest.services.testing.execution import TestExecutionService
 from voicetest.services.testing.execution import resolve_run_options
 from voicetest.settings import Settings
+from voicetest.settings import resolve_model_with_source
 from voicetest.storage.models import Result as ResultModel
 from voicetest.storage.models import Run as RunModel
 from voicetest.storage.repositories import AgentRepository
@@ -407,6 +409,12 @@ class UpdateMetricsConfigRequest(BaseModel):
 
     threshold: float = 0.7
     global_metrics: list[GlobalMetric] = []
+
+
+class UpdateStartSpeakerRequest(BaseModel):
+    """Request to set an agent's start speaker override; None defers to the template."""
+
+    start_speaker: StartSpeaker | None = None
 
 
 class CreateTestCaseRequest(BaseModel):
@@ -971,6 +979,39 @@ async def update_metrics_config(
     )
     _resolve(http_request, AgentService).update_metrics_config(agent_id, config)
     return config.model_dump()
+
+
+@router.get("/agents/{agent_id}/model")
+async def get_agent_model(agent_id: str, http_request: Request) -> dict:
+    """Get the model an agent's responses will use, and where that choice comes from."""
+    _require_agent(http_request, agent_id)
+    try:
+        _agent, graph = _resolve(http_request, AgentService).load_graph(agent_id)
+        agent_model = graph.default_model
+    except (FileNotFoundError, ValueError):
+        agent_model = None
+    settings = _resolve(http_request, SettingsService).get_settings()
+    effective, source = resolve_model_with_source(
+        settings.models.agent, agent_model, settings.run.test_model_precedence
+    )
+    return {
+        "agent": agent_model,
+        "global": settings.models.agent,
+        "effective": effective,
+        "source": "agent" if source == "role" else source,
+    }
+
+
+@router.put("/agents/{agent_id}/start-speaker")
+async def update_start_speaker(
+    agent_id: str, request: UpdateStartSpeakerRequest, http_request: Request
+) -> dict:
+    """Set or clear an agent's start speaker override."""
+    _require_agent(http_request, agent_id)
+    start_speaker = _resolve(http_request, AgentService).update_start_speaker(
+        agent_id, request.start_speaker
+    )
+    return {"start_speaker": start_speaker}
 
 
 @router.get("/agents/{agent_id}/tests")

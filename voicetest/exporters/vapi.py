@@ -93,8 +93,7 @@ def _export_assistant(graph: AgentGraph) -> dict[str, Any]:
         if transcriber_config:
             result["transcriber"] = transcriber_config
 
-    if graph.source_metadata and "first_message" in graph.source_metadata:
-        result["firstMessage"] = graph.source_metadata["first_message"]
+    result.update(_first_message_fields(graph.source_metadata))
 
     # VAPI puts tools inside the model config, not at the assistant root
     if node and node.tools:
@@ -230,10 +229,20 @@ def _convert_node_to_member(
 
     assistant["model"] = model_config
 
-    if node.metadata and "first_message" in node.metadata:
-        assistant["firstMessage"] = node.metadata["first_message"]
+    assistant.update(_first_message_fields(node.metadata))
 
     return {"assistant": assistant}
+
+
+_FIRST_MESSAGE_FIELDS = {
+    "first_message": "firstMessage",
+    "first_message_mode": "firstMessageMode",
+}
+
+
+def _first_message_fields(metadata: dict[str, Any] | None) -> dict[str, Any]:
+    metadata = metadata or {}
+    return {vapi: metadata[key] for key, vapi in _FIRST_MESSAGE_FIELDS.items() if key in metadata}
 
 
 def _build_model_config(graph: AgentGraph) -> dict[str, Any]:

@@ -77,6 +77,115 @@ export function displayRole(role: Message["role"]): string {
   return role === "assistant" ? "agent" : role;
 }
 
+export interface AgentModelInfo {
+  agent: string | null;
+  global: string | null;
+  effective: string;
+  source: "agent" | "global" | "default";
+}
+
+function settingSourceName(source: string): string {
+  return source === "global" ? "global setting" : source;
+}
+
+function describeInheritedFrom(source: string): string {
+  return source === "default" ? "default" : `from ${settingSourceName(source)}`;
+}
+
+export function describeAgentModel(info: AgentModelInfo): string {
+  if (info.source === "agent") return "";
+  if (info.source === "global" && info.agent) return `global setting overrides ${info.agent}`;
+  return describeInheritedFrom(info.source);
+}
+
+export const SOURCE_TYPE_NAMES: Record<string, string> = {
+  retell: "Retell",
+  "retell-llm": "Retell LLM",
+  vapi: "VAPI",
+  livekit: "LiveKit",
+  bland: "Bland",
+  telnyx: "Telnyx",
+  xlsform: "XLSForm",
+  custom: "Custom",
+  agentgraph: "voicetest graph",
+};
+
+export function sourceTypeName(sourceType: string): string {
+  return SOURCE_TYPE_NAMES[sourceType] ?? sourceType.charAt(0).toUpperCase() + sourceType.slice(1);
+}
+
+export function describeSourceFormat(
+  sourceType: string,
+  importerTypes: string[] | null,
+): { format: string; label: string | null } {
+  if (importerTypes === null || importerTypes.includes(sourceType)) {
+    return { format: sourceTypeName(sourceType), label: null };
+  }
+  return { format: SOURCE_TYPE_NAMES.agentgraph, label: sourceType };
+}
+
+export function shortPath(path: string, segments = 2): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts.length > segments ? `…/${parts.slice(-segments).join("/")}` : path;
+}
+
+export type StartSpeaker = "agent" | "user";
+
+export type StartSpeakerSource = "override" | "template" | "global" | "default";
+
+export const DEFAULT_START_SPEAKER: StartSpeaker = "agent";
+
+export const START_SPEAKER_LABELS: Record<StartSpeaker, string> = {
+  agent: "Agent",
+  user: "User",
+};
+
+export function isStartSpeaker(value: unknown): value is StartSpeaker {
+  return value === "agent" || value === "user";
+}
+
+export function resolveStartSpeakerWithSource(
+  override?: string | null,
+  template?: string | null,
+  globalDefault?: string | null,
+): { speaker: StartSpeaker; source: StartSpeakerSource } {
+  const layers: [unknown, StartSpeakerSource][] = [
+    [override, "override"],
+    [template, "template"],
+    [globalDefault, "global"],
+  ];
+  for (const [candidate, source] of layers) {
+    if (isStartSpeaker(candidate)) return { speaker: candidate, source };
+  }
+  return { speaker: DEFAULT_START_SPEAKER, source: "default" };
+}
+
+export function startSpeakerOverrideFor(
+  selected: StartSpeaker,
+  inherited: StartSpeaker,
+): StartSpeaker | null {
+  return selected === inherited ? null : selected;
+}
+
+export function describeStartSpeaker(
+  override: StartSpeaker | null,
+  inherited: { speaker: StartSpeaker; source: StartSpeakerSource },
+): string {
+  if (!override) return describeInheritedFrom(inherited.source);
+  const speaker = START_SPEAKER_LABELS[inherited.speaker].toLowerCase();
+  return inherited.source === "default"
+    ? `overridden · default is ${speaker}`
+    : `overridden · ${settingSourceName(inherited.source)} says ${speaker}`;
+}
+
+export function resolveStartSpeaker(
+  override?: string | null,
+  template?: string | null,
+  globalDefault?: string | null,
+): StartSpeaker {
+  return resolveStartSpeakerWithSource(override, template, globalDefault).speaker;
+}
+
 /**
  * Determine which role should speak next based on the transcript.
  * Skips tool messages to find the last actual speaker. Before any
@@ -189,6 +298,7 @@ export interface Settings {
     streaming: boolean;
     test_model_precedence: boolean;
     audio_eval: boolean;
+    start_speaker?: StartSpeaker | null;
   };
   audio: {
     tts_url: string;
@@ -229,6 +339,7 @@ export interface AgentRecord {
   source_path: string | null;
   tests_paths: string[] | null;
   metrics_config?: MetricsConfig | null;
+  start_speaker?: StartSpeaker | null;
   created_at: string;
   updated_at: string;
 }

@@ -1,5 +1,7 @@
 """Tests for voicetest.exporters.vapi module."""
 
+import copy
+
 from voicetest.exporters.vapi import export_vapi_assistant
 from voicetest.exporters.vapi import export_vapi_squad
 from voicetest.importers.vapi import VapiImporter
@@ -307,3 +309,21 @@ class TestVapiRoundTrip:
         original_names = {m["assistant"]["name"] for m in sample_vapi_squad["members"]}
         exported_names = {m["assistant"]["name"] for m in exported["members"]}
         assert original_names == exported_names
+
+
+class TestVAPIFirstMessageModeRoundTrip:
+    def test_assistant_round_trips_first_message_mode(self, sample_vapi_assistant):
+        config = {**sample_vapi_assistant, "firstMessageMode": "assistant-waits-for-user"}
+
+        exported = export_vapi_assistant(VapiImporter().import_agent(config))
+
+        assert exported["firstMessageMode"] == "assistant-waits-for-user"
+
+    def test_squad_member_round_trips_first_message_mode(self, sample_vapi_squad):
+        squad = copy.deepcopy(sample_vapi_squad)
+        squad["members"][0]["assistant"]["firstMessageMode"] = "assistant-waits-for-user"
+
+        exported = export_vapi_squad(VapiImporter().import_agent(squad))
+
+        modes = [m["assistant"].get("firstMessageMode") for m in exported["members"]]
+        assert "assistant-waits-for-user" in modes

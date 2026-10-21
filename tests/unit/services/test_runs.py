@@ -9,6 +9,7 @@ from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services.agents import AgentService
 from voicetest.services.runs import RunService
+from voicetest.services.runs import _recorded_start_speaker
 from voicetest.services.settings import SettingsService
 from voicetest.services.testing.cases import TestCaseService
 
@@ -346,3 +347,19 @@ class TestReplayRun:
         for sim in stub_conversation_runner:
             assert sim._user_turns == ["I need to cancel.", "ORD-99"]
             assert sim._index == 2
+
+
+class TestRecordedStartSpeaker:
+    @pytest.mark.parametrize(
+        ("roles", "expected"),
+        [
+            (["tool", "user", "assistant"], "user"),
+            (["assistant", "user"], "agent"),
+            (["tool"], None),
+            ([], None),
+        ],
+    )
+    def test_first_speaker_from_transcript(self, roles, expected):
+        messages = [Message(role=role, content="x") for role in roles]
+
+        assert _recorded_start_speaker(messages) == expected

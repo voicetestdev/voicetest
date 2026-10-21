@@ -11,6 +11,7 @@ from voicetest.settings import DEFAULT_MODEL
 from voicetest.settings import Settings
 from voicetest.settings import load_settings
 from voicetest.settings import resolve_model
+from voicetest.settings import resolve_model_with_source
 from voicetest.settings import save_settings
 
 
@@ -115,6 +116,24 @@ class TestSettingsPersistence:
 
         assert 'judge_input = "events"' in settings_file.read_text()
         assert Settings.load(settings_file).run.judge_input == JUDGE_INPUT_EVENTS
+
+    def test_start_speaker_unset_by_default(self, tmp_path):
+        settings_file = tmp_path / ".voicetest.toml"
+        save_settings(Settings(), settings_file)
+
+        assert Settings().run.start_speaker is None
+        assert "start_speaker" not in settings_file.read_text()
+
+    def test_start_speaker_roundtrip_toml(self, tmp_path):
+        settings_file = tmp_path / ".voicetest.toml"
+        save_settings(Settings(run={"start_speaker": "user"}), settings_file)
+
+        assert 'start_speaker = "user"' in settings_file.read_text()
+        assert Settings.load(settings_file).run.start_speaker == "user"
+
+    def test_start_speaker_rejects_unknown_value(self):
+        with pytest.raises(ValidationError):
+            Settings(run={"start_speaker": "nobody"})
 
     def test_judge_input_rejects_unknown_value(self):
         with pytest.raises(ValidationError):
@@ -237,3 +256,18 @@ class TestResolveModel:
     def test_test_model_precedence_no_settings_no_role_returns_default(self):
         result = resolve_model(test_model_precedence=True)
         assert result == DEFAULT_MODEL
+
+
+class TestResolveModelWithSource:
+    @pytest.mark.parametrize(
+        ("settings_value", "role_default", "precedence", "expected"),
+        [
+            (None, None, False, (DEFAULT_MODEL, "default")),
+            ("global/m", None, False, ("global/m", "global")),
+            (None, "role/m", False, ("role/m", "role")),
+            ("global/m", "role/m", False, ("global/m", "global")),
+            ("global/m", "role/m", True, ("role/m", "role")),
+        ],
+    )
+    def test_reports_source(self, settings_value, role_default, precedence, expected):
+        assert resolve_model_with_source(settings_value, role_default, precedence) == expected

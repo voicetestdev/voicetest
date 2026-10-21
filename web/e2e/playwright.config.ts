@@ -9,6 +9,7 @@ import { defineConfig } from "@playwright/test";
 // webServer may start before globalSetup runs).
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "voicetest-e2e-"));
 const dbPath = path.join(tmpDir, "e2e-test.duckdb");
+const settingsPath = path.join(tmpDir, "settings.toml");
 
 // Persist the tmpDir path so global-teardown can clean it up
 const DB_PATH_FILE = path.join(os.tmpdir(), "voicetest-e2e-db-path.txt");
@@ -38,6 +39,7 @@ export default defineConfig({
     timeout: 30000,
     env: {
       VOICETEST_DB_PATH: dbPath,
+      VOICETEST_SETTINGS_PATH: settingsPath,
     },
   },
 });

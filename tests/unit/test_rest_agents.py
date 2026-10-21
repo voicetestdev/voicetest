@@ -8,6 +8,7 @@ import pytest
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
 from voicetest.models.agent import NodeType
+from voicetest.settings import DEFAULT_MODEL
 from voicetest.storage.repositories import AgentRepository
 
 
@@ -247,6 +248,74 @@ class TestAgentsCRUD:
         assert config["threshold"] == 0.8
         assert len(config["global_metrics"]) == 1
         assert config["global_metrics"][0]["name"] == "HIPAA"
+
+    def _create_agent(self, db_client, config) -> str:
+        response = db_client.post("/api/agents", json={"name": "Test Agent", "config": config})
+        return response.json()["id"]
+
+    def test_agent_model_falls_back_to_default(self, db_client, sample_retell_config):
+        config = {k: v for k, v in sample_retell_config.items() if k != "model"}
+        agent_id = self._create_agent(db_client, config)
+
+        response = db_client.get(f"/api/agents/{agent_id}/model")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body == {
+            "agent": None,
+            "global": None,
+            "effective": DEFAULT_MODEL,
+            "source": "default",
+        }
+
+    def test_agent_model_reports_global_override(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+        settings = db_client.get("/api/settings").json()
+        settings["models"]["agent"] = "global/model"
+        db_client.put("/api/settings", json=settings)
+
+        body = db_client.get(f"/api/agents/{agent_id}/model").json()
+
+        assert body["effective"] == "global/model"
+        assert body["source"] == "global"
+
+    def test_agent_model_unknown_agent_returns_404(self, db_client):
+        assert db_client.get("/api/agents/missing/model").status_code == 404
+
+    def test_update_start_speaker_persists_override(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+
+        response = db_client.put(
+            f"/api/agents/{agent_id}/start-speaker", json={"start_speaker": "user"}
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"start_speaker": "user"}
+        assert db_client.get(f"/api/agents/{agent_id}").json()["start_speaker"] == "user"
+
+    def test_clear_start_speaker_override(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+        db_client.put(f"/api/agents/{agent_id}/start-speaker", json={"start_speaker": "user"})
+
+        db_client.put(f"/api/agents/{agent_id}/start-speaker", json={"start_speaker": None})
+
+        assert db_client.get(f"/api/agents/{agent_id}").json()["start_speaker"] is None
+
+    def test_update_start_speaker_rejects_unknown_value(self, db_client, sample_retell_config):
+        agent_id = self._create_agent(db_client, sample_retell_config)
+
+        response = db_client.put(
+            f"/api/agents/{agent_id}/start-speaker", json={"start_speaker": "nobody"}
+        )
+
+        assert response.status_code == 422
+
+    def test_start_speaker_unknown_agent_returns_404(self, db_client):
+        response = db_client.put(
+            "/api/agents/missing/start-speaker", json={"start_speaker": "user"}
+        )
+
+        assert response.status_code == 404
 
     def test_metrics_config_included_in_agent_response(self, db_client, sample_retell_config):
         create_response = db_client.post(

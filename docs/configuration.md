@@ -61,6 +61,18 @@ See the [LiteLLM Vertex AI docs](https://docs.litellm.ai/docs/providers/vertex) 
 | `test_model_precedence` | `false`      | Test-level model overrides global model                  |
 | `pattern_engine`        | `fnmatch`    | Pattern matching engine: `fnmatch` or `re2`              |
 | `judge_input`           | `transcript` | Metric judge input: `transcript` or `events` (see below) |
+| `start_speaker`         | unset        | Fallback opener: `agent` or `user` (see below)           |
+
+### Who speaks first
+
+A simulation opens with the first of these that is set:
+
+1. The agent's override, set from "Speaks first" in the web UI's agent view and stored in the app database.
+1. The agent template: Retell `start_speaker`, or VAPI `firstMessageMode` (`assistant-waits-for-user` means the user speaks first).
+1. The global `start_speaker` run setting.
+1. `agent`.
+
+Replays of imported calls follow the recorded transcript's order instead.
 
 ### Judge input
 
@@ -114,18 +126,19 @@ cache_backend = "disk"
 
 ## Environment variables
 
-| Variable                                 | Purpose                                                             |
-| ---------------------------------------- | ------------------------------------------------------------------- |
-| `GROQ_API_KEY`                           | Default LLM provider for the demo agent and quickstart              |
-| `OPENAI_API_KEY`                         | OpenAI models                                                       |
-| `ANTHROPIC_API_KEY`                      | Anthropic Claude models                                             |
-| `VERTEXAI_LOCATION`                      | Override the Vertex AI region (default `us-central1`)               |
-| `VOICETEST_DB_PATH`                      | Override DuckDB storage location (default `.voicetest/data.duckdb`) |
-| `RETELL_API_KEY`                         | Retell platform integration                                         |
-| `VAPI_API_KEY`                           | VAPI platform integration                                           |
-| `BLAND_API_KEY`                          | Bland platform integration                                          |
-| `TELNYX_API_KEY`                         | Telnyx platform integration                                         |
-| `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` | LiveKit platform integration                                        |
+| Variable                                 | Purpose                                                              |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `GROQ_API_KEY`                           | Default LLM provider for the demo agent and quickstart               |
+| `OPENAI_API_KEY`                         | OpenAI models                                                        |
+| `ANTHROPIC_API_KEY`                      | Anthropic Claude models                                              |
+| `VERTEXAI_LOCATION`                      | Override the Vertex AI region (default `us-central1`)                |
+| `VOICETEST_DB_PATH`                      | Override DuckDB storage location (default `.voicetest/data.duckdb`)  |
+| `VOICETEST_SETTINGS_PATH`                | Override settings file location (default `.voicetest/settings.toml`) |
+| `RETELL_API_KEY`                         | Retell platform integration                                          |
+| `VAPI_API_KEY`                           | VAPI platform integration                                            |
+| `BLAND_API_KEY`                          | Bland platform integration                                           |
+| `TELNYX_API_KEY`                         | Telnyx platform integration                                          |
+| `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` | LiveKit platform integration                                         |
 
 ## Using Claude Code as your LLM backend
 

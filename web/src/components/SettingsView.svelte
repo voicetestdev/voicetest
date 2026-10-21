@@ -3,7 +3,9 @@
   import { errorMessage } from "../lib/errors";
   import { api } from "../lib/api";
   import { settings } from "../lib/stores";
-  import type { Settings } from "../lib/types";
+  import { DEFAULT_START_SPEAKER } from "../lib/types";
+  import type { Settings, StartSpeaker } from "../lib/types";
+  import StartSpeakerToggle from "./StartSpeakerToggle.svelte";
 
   let localSettings = $state<Settings>({
     models: {
@@ -59,6 +61,11 @@
       error = errorMessage(e);
     }
     loading = false;
+  }
+
+  function setStartSpeaker(speaker: StartSpeaker) {
+    localSettings.run.start_speaker = speaker === DEFAULT_START_SPEAKER ? null : speaker;
+    saveSettings();
   }
 
   async function saveSettings() {
@@ -179,6 +186,16 @@
           max={100}
         />
         <span class="hint">Maximum conversation turns per test</span>
+      </div>
+
+      <div class="form-group">
+        <span class="field-label">Who speaks first</span>
+        <StartSpeakerToggle
+          label="Who speaks first"
+          value={localSettings.run.start_speaker ?? DEFAULT_START_SPEAKER}
+          onselect={setStartSpeaker}
+        />
+        <span class="hint">Used when neither the agent nor its template sets who speaks first</span>
       </div>
 
       <div class="form-group checkbox">
@@ -331,7 +348,8 @@
     margin-bottom: 0;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .field-label {
     display: block;
     margin-bottom: 0.25rem;
     color: var(--text-secondary);

@@ -1,7 +1,10 @@
 """Tests for voicetest.models.test_case module."""
 
+import pytest
+
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
+from voicetest.models.test_case import resolve_start_speaker
 
 
 class TestRunOptions:
@@ -139,3 +142,18 @@ class TestTestCase:
 
         rule_test = TestCase(name="Test", user_prompt="Prompt", type="rule")
         assert rule_test.effective_type == "rule"
+
+
+class TestResolveStartSpeaker:
+    @pytest.mark.parametrize(
+        ("override", "template", "global_default", "expected"),
+        [
+            ("user", "agent", "agent", "user"),
+            (None, "user", "agent", "user"),
+            (None, None, "user", "user"),
+            (None, None, None, "agent"),
+            ("bogus", None, "user", "user"),
+        ],
+    )
+    def test_precedence(self, override, template, global_default, expected):
+        assert resolve_start_speaker(override, template, global_default) == expected

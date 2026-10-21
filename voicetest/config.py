@@ -33,6 +33,9 @@ def get_voicetest_dir() -> Path:
 
 def get_settings_path() -> Path:
     """Get the settings file path."""
+    if env_path := os.environ.get("VOICETEST_SETTINGS_PATH"):
+        return Path(env_path)
+
     local = get_local_dir()
     if local:
         return local / SETTINGS_FILE
