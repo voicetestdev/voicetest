@@ -50,7 +50,6 @@ from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import StartSpeaker
 from voicetest.models.test_case import TestCase
-from voicetest.models.test_case import resolve_start_speaker
 from voicetest.services.agents import AgentService
 from voicetest.services.decompose import DecomposeService
 from voicetest.services.diagnosis import DiagnosisService
@@ -982,23 +981,6 @@ async def update_metrics_config(
     return config.model_dump()
 
 
-def _start_speaker_config(http_request: Request, agent_id: str) -> dict:
-    agent_service = _resolve(http_request, AgentService)
-    override = agent_service.get_start_speaker(agent_id)
-    try:
-        _agent, graph = agent_service.load_graph(agent_id)
-        template = graph.source_metadata.get("start_speaker")
-    except (FileNotFoundError, ValueError):
-        template = None
-    global_default = _resolve(http_request, SettingsService).get_settings().run.start_speaker
-    return {
-        "override": override,
-        "template": template,
-        "global": global_default,
-        "effective": resolve_start_speaker(override, template, global_default),
-    }
-
-
 @router.get("/agents/{agent_id}/model")
 async def get_agent_model(agent_id: str, http_request: Request) -> dict:
     """Get the model an agent's responses will use, and where that choice comes from."""
@@ -1020,21 +1002,16 @@ async def get_agent_model(agent_id: str, http_request: Request) -> dict:
     }
 
 
-@router.get("/agents/{agent_id}/start-speaker")
-async def get_start_speaker(agent_id: str, http_request: Request) -> dict:
-    """Get an agent's start speaker override alongside the template and global fallbacks."""
-    _require_agent(http_request, agent_id)
-    return _start_speaker_config(http_request, agent_id)
-
-
 @router.put("/agents/{agent_id}/start-speaker")
 async def update_start_speaker(
     agent_id: str, request: UpdateStartSpeakerRequest, http_request: Request
 ) -> dict:
     """Set or clear an agent's start speaker override."""
     _require_agent(http_request, agent_id)
-    _resolve(http_request, AgentService).update_start_speaker(agent_id, request.start_speaker)
-    return _start_speaker_config(http_request, agent_id)
+    start_speaker = _resolve(http_request, AgentService).update_start_speaker(
+        agent_id, request.start_speaker
+    )
+    return {"start_speaker": start_speaker}
 
 
 @router.get("/agents/{agent_id}/tests")

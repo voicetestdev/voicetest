@@ -30,6 +30,7 @@ export const testCaseRecords = writable<TestCaseRecord[]>([]);
 export const testCases = writable<TestCase[]>([]);
 export const currentRun = writable<TestRun | null>(null);
 export const settings = writable<Settings | null>(null);
+export const importerTypes = writable<string[] | null>(null);
 
 export const isRunning = writable(false);
 export const selectedTestId = writable<string | null>(null);
@@ -360,8 +361,17 @@ export async function loadSettings(): Promise<void> {
   settings.set(s);
 }
 
+export async function loadImporterTypes(): Promise<void> {
+  try {
+    const importers = await api.listImporters();
+    importerTypes.set(importers.map((i) => i.source_type));
+  } catch {
+    importerTypes.set(null);
+  }
+}
+
 export async function initStores(): Promise<void> {
-  await Promise.all([loadAgents(), loadSettings()]);
+  await Promise.all([loadAgents(), loadSettings(), loadImporterTypes()]);
 
   const agentList = get(agents);
 

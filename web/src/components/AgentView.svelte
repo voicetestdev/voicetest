@@ -9,10 +9,11 @@
     loadAgents,
     refreshAgent,
     currentView,
+    importerTypes,
     settings,
   } from "../lib/stores";
   import { errorMessage } from "../lib/errors";
-  import { pushToast } from "../lib/toast";
+  import { pushToast, SUCCESS_DISMISS_MS } from "../lib/toast";
   import {
     graphFingerprint,
     describeAgentModel,
@@ -115,18 +116,9 @@
   let nodePromptModal = $state<NodePromptModal>();
   let transitionModal = $state<TransitionModal>();
 
-  let importerTypes = $state<string[] | null>(null);
   let sourceFormat = $derived(
-    $currentAgent ? describeSourceFormat($currentAgent.source_type, importerTypes) : null,
+    $currentAgent ? describeSourceFormat($currentAgent.source_type, $importerTypes) : null,
   );
-
-  $effect(() => {
-    api.listImporters().then((importers) => {
-      importerTypes = importers.map((i) => i.source_type);
-    }).catch(() => {
-      importerTypes = null;
-    });
-  });
 
   $effect(() => {
     const agentId = $currentAgentId;
@@ -520,7 +512,7 @@
       await api.updateAgent($currentAgentId, { name: editedName.trim() });
       await loadAgents();
       editingName = false;
-      pushToast("Name saved");
+      pushToast("Name saved", SUCCESS_DISMISS_MS);
     } catch (e) {
       error = errorMessage(e);
     }
@@ -566,7 +558,7 @@
         agentGraph.set(updatedGraph);
       }
       editingModel = false;
-      pushToast("Model saved");
+      pushToast("Model saved", SUCCESS_DISMISS_MS);
     } catch (e) {
       error = errorMessage(e);
     }
@@ -581,7 +573,7 @@
     try {
       await api.updateStartSpeaker($currentAgentId, override);
       await loadAgents();
-      pushToast("Speaks first saved");
+      pushToast("Speaks first saved", SUCCESS_DISMISS_MS);
     } catch (e) {
       error = errorMessage(e);
     }
@@ -796,7 +788,7 @@
             placeholder={modelInfo?.effective ?? "e.g. openai/gpt-4o"}
           />
         {:else}
-          <button class="editable mono" onclick={startEditingModel} title="Click to set this agent's model">
+          <button class="editable mono model-value" onclick={startEditingModel} title="Click to set this agent's model">
             {modelInfo?.effective ?? $agentGraph.default_model ?? "…"}
           </button>
         {/if}
@@ -1072,12 +1064,6 @@
     background: var(--border-color);
   }
 
-  @media (max-width: 640px) {
-    .action-divider {
-      display: none;
-    }
-  }
-
   .source-path {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1129,6 +1115,10 @@
   }
 
   @media (max-width: 640px) {
+    .action-divider {
+      display: none;
+    }
+
     .agent-settings {
       grid-template-columns: max-content 1fr;
       row-gap: var(--space-1);

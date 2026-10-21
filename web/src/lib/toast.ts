@@ -12,13 +12,14 @@ export interface Toast {
 export const toasts = writable<Toast[]>([]);
 
 const AUTO_DISMISS_MS = 6000;
+export const SUCCESS_DISMISS_MS = 3000;
 
 // Bound how many toasts stack so a burst of rejections can't flood the screen.
 const MAX_TOASTS = 5;
 
 let nextId = 1;
 
-export function pushToast(message: string): number {
+export function pushToast(message: string, dismissMs = AUTO_DISMISS_MS): number {
   const id = nextId++;
   let added = false;
   toasts.update((list) => {
@@ -27,7 +28,7 @@ export function pushToast(message: string): number {
     return [...list, { id, message }].slice(-MAX_TOASTS);
   });
   if (added) {
-    setTimeout(() => dismissToast(id), AUTO_DISMISS_MS);
+    setTimeout(() => dismissToast(id), dismissMs);
   }
   return id;
 }

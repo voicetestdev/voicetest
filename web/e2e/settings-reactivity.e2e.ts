@@ -141,28 +141,22 @@ test.describe("Agent Config Reactivity", () => {
 
   test("agent LLM edit updates correctly", async ({ page }) => {
     // beforeEach already selects the first agent
-    await expect(page.locator(".agent-info")).toBeVisible();
+    await expect(page.locator(".agent-settings")).toBeVisible();
 
-    // Find and click the LLM field to edit
-    const llmField = page.locator(".editable-model");
-    await expect(llmField).toBeVisible();
+    const modelValue = page.locator(".model-value");
+    await expect(modelValue).toBeVisible();
 
-    // Get original value
-    const originalValue = await llmField.textContent();
-
-    // Click to edit
-    await llmField.click();
-
-    // Wait for input
+    // The input holds the agent's own model, which may be empty even though
+    // the displayed value falls back to the global or default model
+    await modelValue.click();
     const modelInput = page.locator(".model-input");
     await expect(modelInput).toBeVisible();
+    const originalModel = await modelInput.inputValue();
 
-    // Set a new value
     await modelInput.fill("openai/gpt-4o");
     await modelInput.blur();
 
-    // Verify the change (wait for span to appear with new value)
-    await expect(page.locator(".editable-model")).toContainText("openai/gpt-4o");
+    await expect(modelValue).toContainText("openai/gpt-4o");
 
     // Wait a bit for the save to complete on the backend
     await page.waitForTimeout(500);
@@ -172,18 +166,14 @@ test.describe("Agent Config Reactivity", () => {
     await expect(page.locator("h2:has-text('Tests')")).toBeVisible();
 
     await page.locator(".view-tabs button:has-text('Agent')").click();
-    await expect(page.locator(".agent-info")).toBeVisible();
+    await expect(page.locator(".agent-settings")).toBeVisible();
 
     // Verify still shows the value (store reactivity)
-    await expect(page.locator(".editable-model")).toContainText("openai/gpt-4o");
+    await expect(modelValue).toContainText("openai/gpt-4o");
 
     // Restore original
-    await page.locator(".editable-model").click();
-    if (originalValue?.includes("Not set")) {
-      await page.locator(".model-input").fill("");
-    } else {
-      await page.locator(".model-input").fill(originalValue!.trim());
-    }
+    await modelValue.click();
+    await page.locator(".model-input").fill(originalModel);
     await page.locator(".model-input").blur();
   });
 });

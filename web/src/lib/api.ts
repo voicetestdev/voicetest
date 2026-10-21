@@ -17,7 +17,6 @@ import type {
   MetricsConfig,
   AgentModelInfo,
   StartSpeaker,
-  StartSpeakerConfig,
   Message,
   Platform,
   PlatformInfo,
@@ -358,7 +357,7 @@ export const api = {
   getAgentModel: (agentId: string) => get<AgentModelInfo>(`/agents/${agentId}/model`),
 
   updateStartSpeaker: (agentId: string, startSpeaker: StartSpeaker | null) =>
-    put<StartSpeakerConfig>(`/agents/${agentId}/start-speaker`, {
+    put<{ start_speaker: StartSpeaker | null }>(`/agents/${agentId}/start-speaker`, {
       start_speaker: startSpeaker,
     }),
 

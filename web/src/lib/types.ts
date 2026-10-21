@@ -84,10 +84,18 @@ export interface AgentModelInfo {
   source: "agent" | "global" | "default";
 }
 
+function settingSourceName(source: string): string {
+  return source === "global" ? "global setting" : source;
+}
+
+function describeInheritedFrom(source: string): string {
+  return source === "default" ? "default" : `from ${settingSourceName(source)}`;
+}
+
 export function describeAgentModel(info: AgentModelInfo): string {
   if (info.source === "agent") return "";
-  if (info.source === "default") return "default";
-  return info.agent ? `global setting overrides ${info.agent}` : "from global setting";
+  if (info.source === "global" && info.agent) return `global setting overrides ${info.agent}`;
+  return describeInheritedFrom(info.source);
 }
 
 export const SOURCE_TYPE_NAMES: Record<string, string> = {
@@ -122,13 +130,6 @@ export function shortPath(path: string, segments = 2): string {
 }
 
 export type StartSpeaker = "agent" | "user";
-
-export interface StartSpeakerConfig {
-  override: StartSpeaker | null;
-  template: StartSpeaker | null;
-  global: StartSpeaker | null;
-  effective: StartSpeaker;
-}
 
 export type StartSpeakerSource = "override" | "template" | "global" | "default";
 
@@ -170,14 +171,11 @@ export function describeStartSpeaker(
   override: StartSpeaker | null,
   inherited: { speaker: StartSpeaker; source: StartSpeakerSource },
 ): string {
-  const sourceName = inherited.source === "global" ? "global setting" : inherited.source;
-  if (!override) {
-    return inherited.source === "default" ? "default" : `from ${sourceName}`;
-  }
+  if (!override) return describeInheritedFrom(inherited.source);
   const speaker = START_SPEAKER_LABELS[inherited.speaker].toLowerCase();
   return inherited.source === "default"
     ? `overridden · default is ${speaker}`
-    : `overridden · ${sourceName} says ${speaker}`;
+    : `overridden · ${settingSourceName(inherited.source)} says ${speaker}`;
 }
 
 export function resolveStartSpeaker(

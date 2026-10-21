@@ -54,4 +54,17 @@ describe("toast", () => {
       vi.useRealTimers();
     }
   });
+
+  it("honours a shorter dismiss time", () => {
+    vi.useFakeTimers();
+    try {
+      pushToast("saved", 3000);
+      vi.advanceTimersByTime(2999);
+      expect(get(toasts)).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(get(toasts)).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -69,7 +69,6 @@ REST_SURFACED = {
     "AgentService.get_metrics_config",
     "AgentService.update_metrics_config",
     # Start speaker override
-    "AgentService.get_start_speaker",
     "AgentService.update_start_speaker",
     # Test cases
     "TestCaseService.list_tests",
@@ -200,6 +199,7 @@ TUI_SURFACED = {
 # Methods that intentionally have no direct transport surface.
 # Each MUST have a justification explaining why.
 INTERNAL_ONLY = {
+    "AgentService.get_start_speaker": "Read by RunRunner; clients get it from the agent record",
     # RunService — orchestration helpers called by _execute_run / background tasks
     "RunService.create_pending_result": "Called by REST _execute_run background task",
     "RunService.complete_result": "Called by REST _execute_run background task",
@@ -237,7 +237,6 @@ CLI_EXCLUDED_FROM_REST = {
     "AgentService.update_metadata": "Web UI inline edit, CLI edits files directly",
     "AgentService.get_metrics_config": "Web UI metrics panel, CLI uses file-based workflow",
     "AgentService.update_metrics_config": "Web UI metrics panel, CLI uses file-based workflow",
-    "AgentService.get_start_speaker": "Web UI agent setting, CLI uses settings and agent files",
     "AgentService.update_start_speaker": "Web UI agent setting, CLI uses settings and agent files",
     "EvaluationService.audio_eval_result": "Audio pipeline callback, not a user operation",
     "PlatformService.get_sync_status": "Web UI sync indicator, CLI uses explicit push/import",

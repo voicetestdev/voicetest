@@ -63,7 +63,12 @@ def judge_prompts(scripted_lm):
 
 
 @pytest.fixture(autouse=True)
-def fresh_container():
+def _isolate_settings(tmp_path, monkeypatch):
+    monkeypatch.setenv("VOICETEST_SETTINGS_PATH", str(tmp_path / "settings.toml"))
+
+
+@pytest.fixture(autouse=True)
+def fresh_container(_isolate_settings):
     """Give each test its own DI container on the FastAPI app.state.
 
     Mirrors the work the FastAPI lifespan handler does (container + storage init

@@ -126,18 +126,19 @@ cache_backend = "disk"
 
 ## Environment variables
 
-| Variable                                 | Purpose                                                             |
-| ---------------------------------------- | ------------------------------------------------------------------- |
-| `GROQ_API_KEY`                           | Default LLM provider for the demo agent and quickstart              |
-| `OPENAI_API_KEY`                         | OpenAI models                                                       |
-| `ANTHROPIC_API_KEY`                      | Anthropic Claude models                                             |
-| `VERTEXAI_LOCATION`                      | Override the Vertex AI region (default `us-central1`)               |
-| `VOICETEST_DB_PATH`                      | Override DuckDB storage location (default `.voicetest/data.duckdb`) |
-| `RETELL_API_KEY`                         | Retell platform integration                                         |
-| `VAPI_API_KEY`                           | VAPI platform integration                                           |
-| `BLAND_API_KEY`                          | Bland platform integration                                          |
-| `TELNYX_API_KEY`                         | Telnyx platform integration                                         |
-| `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` | LiveKit platform integration                                        |
+| Variable                                 | Purpose                                                              |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `GROQ_API_KEY`                           | Default LLM provider for the demo agent and quickstart               |
+| `OPENAI_API_KEY`                         | OpenAI models                                                        |
+| `ANTHROPIC_API_KEY`                      | Anthropic Claude models                                              |
+| `VERTEXAI_LOCATION`                      | Override the Vertex AI region (default `us-central1`)                |
+| `VOICETEST_DB_PATH`                      | Override DuckDB storage location (default `.voicetest/data.duckdb`)  |
+| `VOICETEST_SETTINGS_PATH`                | Override settings file location (default `.voicetest/settings.toml`) |
+| `RETELL_API_KEY`                         | Retell platform integration                                          |
+| `VAPI_API_KEY`                           | VAPI platform integration                                            |
+| `BLAND_API_KEY`                          | Bland platform integration                                           |
+| `TELNYX_API_KEY`                         | Telnyx platform integration                                          |
+| `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` | LiveKit platform integration                                         |
 
 ## Using Claude Code as your LLM backend
 
