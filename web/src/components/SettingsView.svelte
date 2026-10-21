@@ -3,8 +3,9 @@
   import { errorMessage } from "../lib/errors";
   import { api } from "../lib/api";
   import { settings } from "../lib/stores";
-  import { DEFAULT_START_SPEAKER, isStartSpeaker, START_SPEAKER_LABELS } from "../lib/types";
-  import type { Settings } from "../lib/types";
+  import { DEFAULT_START_SPEAKER } from "../lib/types";
+  import type { Settings, StartSpeaker } from "../lib/types";
+  import StartSpeakerToggle from "./StartSpeakerToggle.svelte";
 
   let localSettings = $state<Settings>({
     models: {
@@ -62,8 +63,8 @@
     loading = false;
   }
 
-  function setStartSpeaker(value: string) {
-    localSettings.run.start_speaker = isStartSpeaker(value) ? value : null;
+  function setStartSpeaker(speaker: StartSpeaker) {
+    localSettings.run.start_speaker = speaker === DEFAULT_START_SPEAKER ? null : speaker;
     saveSettings();
   }
 
@@ -188,18 +189,13 @@
       </div>
 
       <div class="form-group">
-        <label for="start-speaker">Who speaks first</label>
-        <select
-          id="start-speaker"
-          value={localSettings.run.start_speaker ?? ""}
-          onchange={(e) => setStartSpeaker(e.currentTarget.value)}
-        >
-          <option value="">Not set ({START_SPEAKER_LABELS[DEFAULT_START_SPEAKER].toLowerCase()})</option>
-          {#each Object.entries(START_SPEAKER_LABELS) as [value, label]}
-            <option {value}>{label}</option>
-          {/each}
-        </select>
-        <span class="hint">Fallback when neither the agent override nor its template sets an opener</span>
+        <span class="field-label">Who speaks first</span>
+        <StartSpeakerToggle
+          label="Who speaks first"
+          value={localSettings.run.start_speaker ?? DEFAULT_START_SPEAKER}
+          onselect={setStartSpeaker}
+        />
+        <span class="hint">Used when neither the agent nor its template sets who speaks first</span>
       </div>
 
       <div class="form-group checkbox">
@@ -352,7 +348,8 @@
     margin-bottom: 0;
   }
 
-  .form-group label {
+  .form-group label,
+  .form-group .field-label {
     display: block;
     margin-bottom: 0.25rem;
     color: var(--text-secondary);
@@ -360,8 +357,7 @@
   }
 
   .form-group input[type="text"],
-  .form-group input[type="number"],
-  .form-group select {
+  .form-group input[type="number"] {
     width: 100%;
   }
 

@@ -51,7 +51,6 @@
 </script>
 
 <button
-  class="btn-primary"
   class:unavailable={!lkStatus.available}
   class:connecting={callStatus.status === "connecting"}
   disabled={callStatus.status === "connecting" || callStatus.status === "active" || (lkStatus.available && !agentId)}

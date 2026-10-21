@@ -77,6 +77,50 @@ export function displayRole(role: Message["role"]): string {
   return role === "assistant" ? "agent" : role;
 }
 
+export interface AgentModelInfo {
+  agent: string | null;
+  global: string | null;
+  effective: string;
+  source: "agent" | "global" | "default";
+}
+
+export function describeAgentModel(info: AgentModelInfo): string {
+  if (info.source === "agent") return "";
+  if (info.source === "default") return "default";
+  return info.agent ? `global setting overrides ${info.agent}` : "from global setting";
+}
+
+export const SOURCE_TYPE_NAMES: Record<string, string> = {
+  retell: "Retell",
+  "retell-llm": "Retell LLM",
+  vapi: "VAPI",
+  livekit: "LiveKit",
+  bland: "Bland",
+  telnyx: "Telnyx",
+  xlsform: "XLSForm",
+  custom: "Custom",
+  agentgraph: "voicetest graph",
+};
+
+export function sourceTypeName(sourceType: string): string {
+  return SOURCE_TYPE_NAMES[sourceType] ?? sourceType.charAt(0).toUpperCase() + sourceType.slice(1);
+}
+
+export function describeSourceFormat(
+  sourceType: string,
+  importerTypes: string[] | null,
+): { format: string; label: string | null } {
+  if (importerTypes === null || importerTypes.includes(sourceType)) {
+    return { format: sourceTypeName(sourceType), label: null };
+  }
+  return { format: SOURCE_TYPE_NAMES.agentgraph, label: sourceType };
+}
+
+export function shortPath(path: string, segments = 2): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts.length > segments ? `…/${parts.slice(-segments).join("/")}` : path;
+}
+
 export type StartSpeaker = "agent" | "user";
 
 export interface StartSpeakerConfig {
@@ -91,8 +135,8 @@ export type StartSpeakerSource = "override" | "template" | "global" | "default";
 export const DEFAULT_START_SPEAKER: StartSpeaker = "agent";
 
 export const START_SPEAKER_LABELS: Record<StartSpeaker, string> = {
-  agent: "Agent first",
-  user: "User first",
+  agent: "Agent",
+  user: "User",
 };
 
 export function isStartSpeaker(value: unknown): value is StartSpeaker {
@@ -113,6 +157,27 @@ export function resolveStartSpeakerWithSource(
     if (isStartSpeaker(candidate)) return { speaker: candidate, source };
   }
   return { speaker: DEFAULT_START_SPEAKER, source: "default" };
+}
+
+export function startSpeakerOverrideFor(
+  selected: StartSpeaker,
+  inherited: StartSpeaker,
+): StartSpeaker | null {
+  return selected === inherited ? null : selected;
+}
+
+export function describeStartSpeaker(
+  override: StartSpeaker | null,
+  inherited: { speaker: StartSpeaker; source: StartSpeakerSource },
+): string {
+  const sourceName = inherited.source === "global" ? "global setting" : inherited.source;
+  if (!override) {
+    return inherited.source === "default" ? "default" : `from ${sourceName}`;
+  }
+  const speaker = START_SPEAKER_LABELS[inherited.speaker].toLowerCase();
+  return inherited.source === "default"
+    ? `overridden · default is ${speaker}`
+    : `overridden · ${sourceName} says ${speaker}`;
 }
 
 export function resolveStartSpeaker(

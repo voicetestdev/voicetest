@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import tomllib
+from typing import Literal
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -184,19 +185,30 @@ def _to_toml(settings: Settings) -> str:
     return "\n".join(lines)
 
 
+ModelSource = Literal["role", "global", "default"]
+
+
+def resolve_model_with_source(
+    settings_value: str | None = None,
+    role_default: str | None = None,
+    test_model_precedence: bool = False,
+) -> tuple[str, ModelSource]:
+    if test_model_precedence and role_default:
+        return role_default, "role"
+    if settings_value:
+        return settings_value, "global"
+    if role_default:
+        return role_default, "role"
+    return DEFAULT_MODEL, "default"
+
+
 def resolve_model(
     settings_value: str | None = None,
     role_default: str | None = None,
     test_model_precedence: bool = False,
 ) -> str:
     """Resolve which model to use for a given role."""
-    if test_model_precedence and role_default:
-        return role_default
-    if settings_value:
-        return settings_value
-    if role_default:
-        return role_default
-    return DEFAULT_MODEL
+    return resolve_model_with_source(settings_value, role_default, test_model_precedence)[0]
 
 
 def load_settings(path: Path | None = None) -> Settings:

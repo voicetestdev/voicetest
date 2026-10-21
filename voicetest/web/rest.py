@@ -66,6 +66,7 @@ from voicetest.services.testing.cases import TestCaseService
 from voicetest.services.testing.execution import TestExecutionService
 from voicetest.services.testing.execution import resolve_run_options
 from voicetest.settings import Settings
+from voicetest.settings import resolve_model_with_source
 from voicetest.storage.models import Result as ResultModel
 from voicetest.storage.models import Run as RunModel
 from voicetest.storage.repositories import AgentRepository
@@ -995,6 +996,27 @@ def _start_speaker_config(http_request: Request, agent_id: str) -> dict:
         "template": template,
         "global": global_default,
         "effective": resolve_start_speaker(override, template, global_default),
+    }
+
+
+@router.get("/agents/{agent_id}/model")
+async def get_agent_model(agent_id: str, http_request: Request) -> dict:
+    """Get the model an agent's responses will use, and where that choice comes from."""
+    _require_agent(http_request, agent_id)
+    try:
+        _agent, graph = _resolve(http_request, AgentService).load_graph(agent_id)
+        agent_model = graph.default_model
+    except (FileNotFoundError, ValueError):
+        agent_model = None
+    settings = _resolve(http_request, SettingsService).get_settings()
+    effective, source = resolve_model_with_source(
+        settings.models.agent, agent_model, settings.run.test_model_precedence
+    )
+    return {
+        "agent": agent_model,
+        "global": settings.models.agent,
+        "effective": effective,
+        "source": "agent" if source == "role" else source,
     }
 
 

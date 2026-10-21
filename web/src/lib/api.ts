@@ -15,6 +15,7 @@ import type {
   LoadDemoResponse,
   MetricResult,
   MetricsConfig,
+  AgentModelInfo,
   StartSpeaker,
   StartSpeakerConfig,
   Message,
@@ -353,6 +354,8 @@ export const api = {
 
   updateMetricsConfig: (agentId: string, config: MetricsConfig) =>
     put<MetricsConfig>(`/agents/${agentId}/metrics-config`, config),
+
+  getAgentModel: (agentId: string) => get<AgentModelInfo>(`/agents/${agentId}/model`),
 
   updateStartSpeaker: (agentId: string, startSpeaker: StartSpeaker | null) =>
     put<StartSpeakerConfig>(`/agents/${agentId}/start-speaker`, {

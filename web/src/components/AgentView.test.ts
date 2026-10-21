@@ -7,6 +7,7 @@ vi.mock("../lib/api", () => ({
     deleteAgent: vi.fn(() => Promise.resolve()),
     getSyncStatus: vi.fn(() => Promise.resolve(null)),
     listAgents: vi.fn(() => Promise.resolve([])),
+    listImporters: vi.fn(() => Promise.resolve([])),
   },
 }));
 

@@ -6,6 +6,11 @@ import {
   displayRole,
   resolveStartSpeaker,
   resolveStartSpeakerWithSource,
+  startSpeakerOverrideFor,
+  describeStartSpeaker,
+  describeAgentModel,
+  shortPath,
+  describeSourceFormat,
 } from "./types";
 
 describe("types", () => {
@@ -288,6 +293,81 @@ describe("types", () => {
       expect(resolveStartSpeakerWithSource(null, "user")).toEqual({ speaker: "user", source: "template" });
       expect(resolveStartSpeakerWithSource(null, null, "user")).toEqual({ speaker: "user", source: "global" });
       expect(resolveStartSpeakerWithSource()).toEqual({ speaker: "agent", source: "default" });
+    });
+  });
+
+  describe("startSpeakerOverrideFor", () => {
+    it("clears the override when selecting the inherited speaker", () => {
+      expect(startSpeakerOverrideFor("agent", "agent")).toBeNull();
+    });
+
+    it("overrides when selecting the other speaker", () => {
+      expect(startSpeakerOverrideFor("user", "agent")).toBe("user");
+    });
+  });
+
+  describe("describeStartSpeaker", () => {
+    it("names the inherited source without an override", () => {
+      expect(describeStartSpeaker(null, { speaker: "user", source: "template" })).toBe("from template");
+      expect(describeStartSpeaker(null, { speaker: "user", source: "global" })).toBe("from global setting");
+      expect(describeStartSpeaker(null, { speaker: "agent", source: "default" })).toBe("default");
+    });
+
+    it("shows what an override hides", () => {
+      expect(describeStartSpeaker("user", { speaker: "agent", source: "template" })).toBe(
+        "overridden · template says agent",
+      );
+      expect(describeStartSpeaker("user", { speaker: "agent", source: "default" })).toBe(
+        "overridden · default is agent",
+      );
+    });
+  });
+
+  describe("describeAgentModel", () => {
+    it("is silent when the agent's own model is used", () => {
+      expect(describeAgentModel({ agent: "a/m", global: null, effective: "a/m", source: "agent" })).toBe("");
+    });
+
+    it("says when the global setting overrides the agent's model", () => {
+      expect(describeAgentModel({ agent: "a/m", global: "g/m", effective: "g/m", source: "global" })).toBe(
+        "global setting overrides a/m",
+      );
+    });
+
+    it("names the global setting or default as the source", () => {
+      expect(describeAgentModel({ agent: null, global: "g/m", effective: "g/m", source: "global" })).toBe(
+        "from global setting",
+      );
+      expect(describeAgentModel({ agent: null, global: null, effective: "d/m", source: "default" })).toBe("default");
+    });
+  });
+
+  describe("describeSourceFormat", () => {
+    const importers = ["retell", "retell-llm", "agentgraph"];
+
+    it("names a known importer format", () => {
+      expect(describeSourceFormat("retell-llm", importers)).toEqual({ format: "Retell LLM", label: null });
+    });
+
+    it("treats an unknown source type as a labelled voicetest graph", () => {
+      expect(describeSourceFormat("scienceworld", importers)).toEqual({
+        format: "voicetest graph",
+        label: "scienceworld",
+      });
+    });
+
+    it("trusts the source type until importers are known", () => {
+      expect(describeSourceFormat("retell", null)).toEqual({ format: "Retell", label: null });
+    });
+  });
+
+  describe("shortPath", () => {
+    it("keeps the last two segments", () => {
+      expect(shortPath("/Users/kg/test-data/agent.json")).toBe("…/test-data/agent.json");
+    });
+
+    it("leaves short paths alone", () => {
+      expect(shortPath("data/agent.json")).toBe("data/agent.json");
     });
   });
 
