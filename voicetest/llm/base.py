@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
+import json
 
 import dspy
 from dspy.adapters.baml_adapter import BAMLAdapter
@@ -79,7 +80,7 @@ async def call_llm(
     if on_token:
         if not stream_field:
             raise ValueError("stream_field required when on_token is provided")
-        return await _call_llm_streaming(
+        result = await _call_llm_streaming(
             model,
             signature_class,
             on_token,
@@ -91,7 +92,7 @@ async def call_llm(
             **kwargs,
         )
     else:
-        return await _call_llm_sync(
+        result = await _call_llm_sync(
             model,
             signature_class,
             on_error,
@@ -100,6 +101,29 @@ async def call_llm(
             predictor_class=predictor_class,
             **kwargs,
         )
+    _unwrap_json_wrapped_fields(result, signature_class)
+    return result
+
+
+def _unwrap_json_wrapped_fields(result: dspy.Prediction, signature_class: type) -> None:
+    output_names = set(signature_class.output_fields)
+    for name in output_names:
+        value = getattr(result, name, None)
+        if not isinstance(value, str):
+            continue
+        stripped = value.strip()
+        if not (stripped.startswith("{") and stripped.endswith("}")):
+            continue
+        try:
+            parsed = json.loads(stripped)
+        except ValueError:
+            continue
+        if (
+            isinstance(parsed, dict)
+            and isinstance(parsed.get(name), str)
+            and set(parsed) <= output_names
+        ):
+            setattr(result, name, parsed[name])
 
 
 async def _call_llm_sync(

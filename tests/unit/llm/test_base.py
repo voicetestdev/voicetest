@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import dspy
 from dspy.adapters.baml_adapter import BAMLAdapter
+from dspy.adapters.chat_adapter import ChatAdapter
 from dspy.clients.cache import Cache
 import dspy.clients.lm as dspy_lm_module
 from dspy.utils.dummies import DummyLM
@@ -80,6 +81,85 @@ class TestCallLlmStreamingParseRecovery:
 
         assert result.response == "hello"
         assert "".join(tokens) == "hello"
+
+
+class MessageSignature(dspy.Signature):
+    prompt: str = dspy.InputField()
+    message: str = dspy.OutputField()
+
+
+class TwoFieldSignature(dspy.Signature):
+    prompt: str = dspy.InputField()
+    message: str = dspy.OutputField()
+    should_end: bool = dspy.OutputField()
+
+
+def _chat_lm(*outputs: dict) -> DummyLM:
+    lm = DummyLM(list(outputs), adapter=ChatAdapter())
+    lm.preferred_adapter = ChatAdapter()
+    return lm
+
+
+class TestCallLlmUnwrapsJsonWrappedFields:
+    @pytest.mark.asyncio
+    async def test_unwraps_field_echoed_as_json(self):
+        lm = _chat_lm({"message": '{"message": "Hello?"}'})
+
+        with patch("voicetest.llm.base._create_lm", return_value=lm):
+            result = await call_llm(
+                "openai/gpt-4o-mini", MessageSignature, predictor_class=dspy.Predict, prompt="hi"
+            )
+
+        assert result.message == "Hello?"
+
+    @pytest.mark.asyncio
+    async def test_unwraps_when_streaming(self):
+        lm = DummyLM([{"message": '{"message": "Hello?"}'}], adapter=ChatAdapter())
+
+        with patch("voicetest.llm.base._create_lm", return_value=lm):
+            result = await call_llm(
+                "openai/gpt-4o-mini",
+                MessageSignature,
+                on_token=lambda t: None,
+                stream_field="message",
+                predictor_class=dspy.Predict,
+                prompt="hi",
+            )
+
+        assert result.message == "Hello?"
+
+    @pytest.mark.asyncio
+    async def test_unwraps_object_keyed_by_sibling_output_fields(self):
+        lm = _chat_lm({"message": '{"message": "Bye", "should_end": true}', "should_end": True})
+
+        with patch("voicetest.llm.base._create_lm", return_value=lm):
+            result = await call_llm(
+                "openai/gpt-4o-mini", TwoFieldSignature, predictor_class=dspy.Predict, prompt="hi"
+            )
+
+        assert result.message == "Bye"
+        assert result.should_end is True
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "message",
+        [
+            '{"order_id": "123"}',
+            '{"message": "hi", "order_id": "123"}',
+            '{"message": 5}',
+            "{not json}",
+            "plain text",
+        ],
+    )
+    async def test_leaves_other_content_alone(self, message):
+        lm = _chat_lm({"message": message})
+
+        with patch("voicetest.llm.base._create_lm", return_value=lm):
+            result = await call_llm(
+                "openai/gpt-4o-mini", MessageSignature, predictor_class=dspy.Predict, prompt="hi"
+            )
+
+        assert result.message == message
 
 
 class TestCallLlmParseErrorRetry:
