@@ -318,8 +318,10 @@ export const api = {
 
   listGallery: () => get<GalleryItem[]>("/gallery"),
 
-  listRunsForAgent: (agentId: string, limit = 50) =>
-    get<RunRecord[]>(`/agents/${agentId}/runs?limit=${limit}`),
+  listRunsForAgent: (agentId: string, limit = 50, offset = 0) =>
+    get<RunRecord[]>(`/agents/${agentId}/runs?limit=${limit}&offset=${offset}`),
+
+  countRunsForAgent: (agentId: string) => get<{ total: number }>(`/agents/${agentId}/runs/count`),
 
   getRun: (runId: string) => get<RunWithResults>(`/runs/${runId}`),
 

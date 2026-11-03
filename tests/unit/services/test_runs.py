@@ -14,6 +14,21 @@ from voicetest.services.settings import SettingsService
 from voicetest.services.testing.cases import TestCaseService
 
 
+_AGENT_CONFIG = {
+    "source_type": "custom",
+    "entry_node_id": "main",
+    "nodes": {
+        "main": {
+            "id": "main",
+            "state_prompt": "Hello.",
+            "node_type": "conversation",
+            "transitions": [],
+        }
+    },
+    "source_metadata": {},
+}
+
+
 @pytest.fixture
 def svc(tmp_path, monkeypatch, container):
     """RunService backed by an isolated temp database."""
@@ -28,21 +43,8 @@ def agent_id(tmp_path, monkeypatch, container):
     monkeypatch.setenv("VOICETEST_LINKED_AGENTS", "")
     monkeypatch.chdir(tmp_path)
 
-    config = {
-        "source_type": "custom",
-        "entry_node_id": "main",
-        "nodes": {
-            "main": {
-                "id": "main",
-                "state_prompt": "Hello.",
-                "node_type": "conversation",
-                "transitions": [],
-            }
-        },
-        "source_metadata": {},
-    }
     agent_svc = container.resolve(AgentService)
-    created = agent_svc.create_agent(name="Run Agent", config=config)
+    created = agent_svc.create_agent(name="Run Agent", config=_AGENT_CONFIG)
     return created["id"]
 
 
@@ -66,6 +68,33 @@ class TestListRuns:
         svc.create_run(agent_id)
         runs = svc.list_runs(agent_id)
         assert len(runs) == 1
+
+    def test_pages_newest_first_without_overlap(self, agent_id, svc):
+        created = [svc.create_run(agent_id)["id"] for _ in range(5)]
+
+        first = svc.list_runs(agent_id, limit=2)
+        second = svc.list_runs(agent_id, limit=2, offset=2)
+        rest = svc.list_runs(agent_id, limit=2, offset=4)
+
+        paged = [r["id"] for r in first + second + rest]
+        assert paged == [r["id"] for r in svc.list_runs(agent_id, limit=10)]
+        assert sorted(paged) == sorted(created)
+
+
+class TestCountRuns:
+    def test_counts_beyond_page_size(self, agent_id, svc):
+        for _ in range(55):
+            svc.create_run(agent_id)
+
+        assert len(svc.list_runs(agent_id)) == 50
+        assert svc.count_runs(agent_id) == 55
+
+    def test_counts_only_this_agent(self, agent_id, svc, container):
+        other = container.resolve(AgentService).create_agent(name="Other", config=_AGENT_CONFIG)
+        svc.create_run(agent_id)
+        svc.create_run(other["id"])
+
+        assert svc.count_runs(agent_id) == 1
 
 
 class TestGetRun:

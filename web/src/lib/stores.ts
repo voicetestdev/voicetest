@@ -37,6 +37,8 @@ export const selectedTestId = writable<string | null>(null);
 export const selectedResultId = writable<string | null>(null);
 
 export const runHistory = writable<RunRecord[]>([]);
+export const runTotal = writable(0);
+export const RUN_PAGE_SIZE = 50;
 export const currentRunId = writable<string | null>(null);
 export const currentRunWithResults = writable<RunWithResults | null>(null);
 export const runWebSocket = writable<WebSocket | null>(null);
@@ -313,15 +315,14 @@ export async function selectAgent(agentId: string, view: NavView = "config", run
 
   // loadAgentGraph never rejects (it degrades the view on failure), so all
   // three run concurrently and a bad graph can't fail the whole selection.
-  const [, records, runs] = await Promise.all([
+  const [, records] = await Promise.all([
     loadAgentGraph(agentId),
     api.listTestsForAgent(agentId),
-    api.listRunsForAgent(agentId),
+    loadRunHistory(agentId),
   ]);
 
   testCaseRecords.set(records);
   testCases.set(records.map(parseTestCaseRecord));
-  runHistory.set(runs);
 
   // Load specific run if deep-linked, otherwise show the runs list
   if (view === "runs" && runId) {
@@ -395,8 +396,19 @@ export async function initStores(): Promise<void> {
 }
 
 export async function loadRunHistory(agentId: string): Promise<void> {
-  const runs = await api.listRunsForAgent(agentId);
+  const [runs, { total }] = await Promise.all([
+    api.listRunsForAgent(agentId, RUN_PAGE_SIZE),
+    api.countRunsForAgent(agentId),
+  ]);
   runHistory.set(runs);
+  runTotal.set(total);
+}
+
+export async function loadOlderRuns(agentId: string): Promise<void> {
+  const loaded = get(runHistory);
+  const older = await api.listRunsForAgent(agentId, RUN_PAGE_SIZE, loaded.length);
+  const seen = new Set(loaded.map((r) => r.id));
+  runHistory.update((runs) => [...runs, ...older.filter((r) => !seen.has(r.id))]);
 }
 
 export async function selectRun(agentId: string, runId: string): Promise<void> {
@@ -444,6 +456,7 @@ export async function startRun(agentId: string, testIds?: string[], options?: Pa
     completed_at: null,
   };
   runHistory.update((runs) => [newRun, ...runs]);
+  runTotal.update((n) => n + 1);
 
   // Set initial empty results so UI shows the run immediately
   currentRunWithResults.set({

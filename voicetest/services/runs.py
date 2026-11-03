@@ -49,9 +49,12 @@ class RunService:
         """Create a new run."""
         return self._runs.create(agent_id)
 
-    def list_runs(self, agent_id: str, limit: int = 50) -> list[dict]:
-        """List runs for an agent with result summary counts."""
-        return self._runs.list_for_agent_with_summary(agent_id, limit)
+    def list_runs(self, agent_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
+        """List runs for an agent with result summary counts, newest first."""
+        return self._runs.list_for_agent_with_summary(agent_id, limit, offset=offset)
+
+    def count_runs(self, agent_id: str) -> int:
+        return self._runs.count_for_agent(agent_id)
 
     def get_run(self, run_id: str) -> dict | None:
         """Get a run with all results, enriched with dynamic variables."""

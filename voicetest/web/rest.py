@@ -17,6 +17,7 @@ from fastapi import BackgroundTasks
 from fastapi import FastAPI
 from fastapi import Header
 from fastapi import HTTPException
+from fastapi import Query
 from fastapi import Request
 from fastapi import Response
 from fastapi import UploadFile
@@ -1198,9 +1199,21 @@ async def list_gallery() -> list[dict]:
 
 
 @router.get("/agents/{agent_id}/runs")
-async def list_runs_for_agent(agent_id: str, http_request: Request, limit: int = 50) -> list[dict]:
-    """List all runs for an agent."""
-    return _resolve(http_request, RunService).list_runs(agent_id, limit)
+async def list_runs_for_agent(
+    agent_id: str,
+    http_request: Request,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> list[dict]:
+    """List an agent's runs, newest first, one page at a time."""
+    return _resolve(http_request, RunService).list_runs(agent_id, limit, offset)
+
+
+@router.get("/agents/{agent_id}/runs/count")
+async def count_runs_for_agent(agent_id: str, http_request: Request) -> dict:
+    """Count all of an agent's runs."""
+    _require_agent(http_request, agent_id)
+    return {"total": _resolve(http_request, RunService).count_runs(agent_id)}
 
 
 @router.get("/runs/{run_id}")
