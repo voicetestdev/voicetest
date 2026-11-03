@@ -6,6 +6,7 @@ vi.mock("./api", () => ({
     getAgentGraph: vi.fn(),
     listTestsForAgent: vi.fn(),
     listRunsForAgent: vi.fn(),
+    countRunsForAgent: vi.fn(() => Promise.resolve({ total: 0 })),
   },
 }));
 

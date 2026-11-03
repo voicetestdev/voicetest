@@ -587,8 +587,18 @@ class RunRepository:
         runs = query.order_by(Run.started_at.desc()).limit(limit).all()
         return [self._run_to_dict(r) for r in runs]
 
+    def count_for_agent(self, agent_id: str, user_id: str | None = None) -> int:
+        query = self.session.query(func.count(Run.id)).filter(Run.agent_id == agent_id)
+        if user_id is not None:
+            query = query.filter(Run.user_id == user_id)
+        return query.scalar() or 0
+
     def list_for_agent_with_summary(
-        self, agent_id: str, limit: int = 50, user_id: str | None = None
+        self,
+        agent_id: str,
+        limit: int = 50,
+        user_id: str | None = None,
+        offset: int = 0,
     ) -> list[dict]:
         """List runs for an agent with per-run result status counts.
 
@@ -615,7 +625,9 @@ class RunRepository:
         if user_id is not None:
             query = query.filter(Run.user_id == user_id)
 
-        rows = query.order_by(Run.started_at.desc()).limit(limit).all()
+        rows = (
+            query.order_by(Run.started_at.desc(), Run.id.desc()).offset(offset).limit(limit).all()
+        )
 
         results = []
         run_ids = []

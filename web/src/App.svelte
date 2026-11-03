@@ -7,7 +7,7 @@
     currentAgentId,
     selectAgent,
     testCaseRecords,
-    runHistory,
+    runTotal,
     currentRunId,
     clearCurrentRun,
   } from "./lib/stores";
@@ -34,7 +34,6 @@
   let agentList = $derived($agents);
   let agentId = $derived($currentAgentId);
   let testRecords = $derived($testCaseRecords);
-  let runs = $derived($runHistory);
 
   function initTheme() {
     const stored = localStorage.getItem("theme");
@@ -182,8 +181,8 @@
               onclick={() => switchView("runs")}
             >
               Runs
-              {#if runs.length > 0}
-                <span class="tab-count">{runs.length}</span>
+              {#if $runTotal > 0}
+                <span class="tab-count">{$runTotal}</span>
               {/if}
             </button>
             <button

@@ -102,6 +102,7 @@ REST_SURFACED = {
     # Runs
     "RunService.create_run",
     "RunService.list_runs",
+    "RunService.count_runs",
     "RunService.get_run",
     "RunService.delete_run",
     "RunService.import_calls",
@@ -230,6 +231,7 @@ INTERNAL_ONLY = {
 
 # REST methods intentionally not in the CLI, with justifications.
 CLI_EXCLUDED_FROM_REST = {
+    "RunService.count_runs": "Web UI runs tab badge, CLI lists runs directly",
     "AgentService.get_graph_with_etag": "HTTP caching optimization (ETag), not relevant for CLI",
     "AgentService.get_variables": "Web UI helper for variable picker, CLI uses file-based workflow",
     "AgentService.update_prompt": "Web UI inline edit, CLI edits files directly",

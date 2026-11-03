@@ -42,6 +42,40 @@ def _get_coordinator(db_client) -> RunCoordinator:
     return db_client.app.state.container.resolve(RunCoordinator)
 
 
+class TestRunHistoryPaging:
+    @pytest.fixture
+    def agent_with_runs(self, db_client, sample_retell_config):
+        agent_id = db_client.post(
+            "/api/agents", json={"name": "Paging Agent", "config": sample_retell_config}
+        ).json()["id"]
+        run_repo = _get_run_repo(db_client)
+        for _ in range(55):
+            run_repo.create(agent_id)
+        return agent_id
+
+    def test_count_reports_all_runs(self, db_client, agent_with_runs):
+        response = db_client.get(f"/api/agents/{agent_with_runs}/runs/count")
+
+        assert response.status_code == 200
+        assert response.json() == {"total": 55}
+
+    def test_offset_returns_older_runs(self, db_client, agent_with_runs):
+        first = db_client.get(f"/api/agents/{agent_with_runs}/runs").json()
+        older = db_client.get(f"/api/agents/{agent_with_runs}/runs?offset=50").json()
+
+        assert len(first) == 50
+        assert len(older) == 5
+        assert not {r["id"] for r in first} & {r["id"] for r in older}
+
+    def test_rejects_negative_offset(self, db_client, agent_with_runs):
+        response = db_client.get(f"/api/agents/{agent_with_runs}/runs?offset=-1")
+
+        assert response.status_code == 422
+
+    def test_count_unknown_agent_returns_404(self, db_client):
+        assert db_client.get("/api/agents/missing/runs/count").status_code == 404
+
+
 class TestRunWebSocket:
     """Tests for run WebSocket endpoint and message formats."""
 

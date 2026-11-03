@@ -1,11 +1,29 @@
 <script lang="ts">
   import {
     runHistory,
+    runTotal,
     loadRun,
+    loadOlderRuns,
+    currentAgentId,
     currentRunId,
   } from "../lib/stores";
+  import { errorMessage } from "../lib/errors";
+  import { pushToast } from "../lib/toast";
   import type { RunRecord } from "../lib/types";
   import ListPanel from "./ListPanel.svelte";
+
+  let loadingOlder = $state(false);
+
+  async function showOlderRuns() {
+    if (!$currentAgentId) return;
+    loadingOlder = true;
+    try {
+      await loadOlderRuns($currentAgentId);
+    } catch (e) {
+      pushToast(errorMessage(e, "Failed to load older runs"));
+    }
+    loadingOlder = false;
+  }
 
   function formatTimestamp(dateStr: string): string {
     const date = new Date(dateStr);
@@ -166,11 +184,24 @@
           </li>
         {/each}
       </ul>
+      {#if $runHistory.length < $runTotal}
+        <div class="older-runs">
+          <button onclick={showOlderRuns} disabled={loadingOlder}>
+            {loadingOlder ? "Loading…" : `Show older runs (${$runTotal - $runHistory.length} more)`}
+          </button>
+        </div>
+      {/if}
     </ListPanel>
   {/if}
 </div>
 
 <style>
+  .older-runs {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-3) 0;
+  }
+
   .runs-list {
     height: 100%;
     overflow-y: auto;
