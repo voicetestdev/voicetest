@@ -10,6 +10,12 @@ description: Every voicetest CLI command — testing, agent management, run hist
 # Run tests against an agent definition
 voicetest run --agent agent.json --tests tests.json --all
 
+# Apply a stored agent's global metrics and save the run to its history
+voicetest run --agent agent.json --tests tests.json --all --agent-id <agent-id> --save-run
+
+# Skip the LLM response cache
+voicetest run --agent agent.json --tests tests.json --all --no-cache
+
 # Chat with an agent interactively
 voicetest chat -a agent.json --model openai/gpt-4o --var name=Jane --var account=12345
 

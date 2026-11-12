@@ -152,6 +152,29 @@ class TestResolveRunOptions:
 
         assert resolve_run_options(options, settings_svc).judge_input == JUDGE_INPUT_TRANSCRIPT
 
+    def test_no_cache_from_settings(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".voicetest").mkdir()
+        settings_svc = SettingsService()
+        settings = settings_svc.get_settings()
+        settings.run.no_cache = True
+        settings_svc.update_settings(settings)
+
+        assert resolve_run_options(None, settings_svc).no_cache is True
+        assert resolve_run_options(RunOptions(max_turns=3), settings_svc).no_cache is True
+
+    def test_explicit_no_cache_overrides_settings(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".voicetest").mkdir()
+        settings_svc = SettingsService()
+        settings = settings_svc.get_settings()
+        settings.run.no_cache = True
+        settings_svc.update_settings(settings)
+
+        options = RunOptions(no_cache=False)
+
+        assert resolve_run_options(options, settings_svc).no_cache is False
+
 
 class TestRunTests:
     @pytest.mark.asyncio

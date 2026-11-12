@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import dataclasses
+import difflib
 import faulthandler
 import importlib.resources
 import json
@@ -14,6 +15,7 @@ import tempfile
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 from rich.tree import Tree
 import uvicorn
@@ -24,6 +26,9 @@ from voicetest.demo import get_demo_agent
 from voicetest.demo import get_demo_tests
 from voicetest.engine.conversation import ConversationEngine
 from voicetest.importers.transcripts.retell import parse_retell_file
+from voicetest.models.diagnosis import DiagnosisResult
+from voicetest.models.diagnosis import FaultLocation
+from voicetest.models.diagnosis import PromptChange
 from voicetest.models.events import JudgeEvent
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
@@ -33,6 +38,7 @@ from voicetest.models.test_case import TestCase
 from voicetest.runner import TestRunContext
 from voicetest.services import AppServices
 from voicetest.services import build_app_services
+from voicetest.services.testing.execution import resolve_run_options
 from voicetest.settings import Settings
 from voicetest.tui import VoicetestApp
 from voicetest.tui import VoicetestShell
@@ -135,8 +141,13 @@ def main(ctx, json_mode):
 @click.option("--all", "run_all", is_flag=True, help="Run all tests")
 @click.option("--test", "test_names", multiple=True, help="Run specific test(s) by name")
 @click.option("--max-turns", type=int, default=None, help="Maximum conversation turns")
+@click.option("--no-cache", is_flag=True, help="Bypass the LLM response cache")
 @click.option("--save-run", is_flag=True, help="Save run to database (requires --agent-id)")
-@click.option("--agent-id", default=None, help="Agent ID in database (for --save-run)")
+@click.option(
+    "--agent-id",
+    default=None,
+    help="Agent ID in database: applies its global metrics, and is required by --save-run",
+)
 @click.pass_context
 def run(
     ctx,
@@ -149,6 +160,7 @@ def run(
     run_all: bool,
     test_names: tuple[str, ...],
     max_turns: int | None,
+    no_cache: bool,
     save_run: bool,
     agent_id: str | None,
 ):
@@ -169,6 +181,7 @@ def run(
                 run_all,
                 test_names,
                 max_turns,
+                no_cache=no_cache,
                 json_mode=json_mode,
                 save_run=save_run,
                 agent_id=agent_id,
@@ -214,6 +227,7 @@ async def _run_cli(
     test_names: tuple[str, ...],
     max_turns: int | None,
     *,
+    no_cache: bool = False,
     json_mode: bool = False,
     save_run: bool = False,
     agent_id: str | None = None,
@@ -222,19 +236,22 @@ async def _run_cli(
     svc = _services()
     settings = svc.settings.get_settings()
     setup_cache_from_settings(settings.cache)
-    options = RunOptions(
-        agent_model=settings.models.agent,
-        simulator_model=settings.models.simulator,
-        judge_model=settings.models.judge,
-        max_turns=max_turns if max_turns is not None else settings.run.max_turns,
-        verbose=verbose or settings.run.verbose,
-    )
+    options = resolve_run_options(None, svc.settings)
+    updates = {"verbose": verbose or options.verbose, "no_cache": no_cache or options.no_cache}
+    if max_turns is not None:
+        updates["max_turns"] = max_turns
+    metrics_config = None
+    if agent_id:
+        metrics_config = svc.agents.get_metrics_config(agent_id)
+        updates["start_speaker"] = svc.agents.get_start_speaker(agent_id)
+    options = options.model_copy(update=updates)
     run_ctx = TestRunContext(
         services=svc,
         agent_path=agent,
         tests_path=tests,
         source=source,
         options=options,
+        metrics_config=metrics_config,
     )
 
     # Load
@@ -267,9 +284,10 @@ async def _run_cli(
     # Save to database if requested
     if save_run and agent_id:
         run_svc = svc.runs
+        test_ids = {t["name"]: t["id"] for t in svc.test_cases.list_tests(agent_id)}
         db_run = run_svc.create_run(agent_id)
         for result in run_result.results:
-            run_svc.add_result(db_run["id"], result)
+            run_svc.add_result(db_run["id"], result, test_case_id=test_ids.get(result.test_name))
         run_svc.complete(db_run["id"])
         _echo(f"[dim]Run saved to database: {db_run['id']}[/dim]")
 
@@ -1949,12 +1967,7 @@ async def _diagnose(
     graph = await agent_svc.import_agent(agent_path)
     test_cases = svc.test_cases.load_test_cases(tests_path)
 
-    options = RunOptions(
-        agent_model=settings.models.agent,
-        simulator_model=settings.models.simulator,
-        judge_model=settings.models.judge,
-        max_turns=settings.run.max_turns,
-    )
+    options = resolve_run_options(None, svc.settings)
     judge_model = settings.models.judge or "groq/llama-3.1-8b-instant"
 
     # Run tests or load previous results
@@ -2054,18 +2067,47 @@ async def _diagnose(
     if json_mode:
         click.echo(json.dumps(output, indent=2))
     else:
-        diag = diagnosis_result.diagnosis
-        console.print(f"\n[bold]Root Cause:[/bold] {diag.root_cause}")
-        console.print(f"[bold]Evidence:[/bold] {diag.transcript_evidence}")
-
-        if diagnosis_result.fix.changes:
-            confidence = f"{diagnosis_result.fix.confidence:.0%}"
-            console.print(f"\n[bold]Suggested Fix ({confidence} confidence):[/bold]")
-            for change in diagnosis_result.fix.changes:
-                console.print(f"  [{change.location_type}] {change.rationale}")
+        _print_diagnosis(diagnosis_result)
 
     if not auto_fix or not fix_attempts or not fix_attempts[-1].get("test_passed"):
         raise SystemExit(1)
+
+
+def _location_label(location: FaultLocation | PromptChange) -> str:
+    """Render a fault location or change target as `[type node -> target]`."""
+    parts = [location.location_type]
+    if location.node_id:
+        parts.append(location.node_id)
+    if location.transition_target_id:
+        parts.append(f"-> {location.transition_target_id}")
+    return f"[{' '.join(parts)}]"
+
+
+def _print_diagnosis(result: DiagnosisResult) -> None:
+    """Print a diagnosis: root cause, evidence, fault locations, and fix diffs."""
+    diag = result.diagnosis
+    console.print(f"\n[bold]Root Cause:[/bold] {escape(diag.root_cause)}")
+    console.print(f"[bold]Evidence:[/bold] {escape(diag.transcript_evidence)}")
+
+    if diag.fault_locations:
+        console.print("\n[bold]Fault Locations:[/bold]")
+        for loc in diag.fault_locations:
+            console.print(f"  {escape(_location_label(loc))} {escape(loc.explanation)}")
+
+    if result.fix.changes:
+        console.print(f"\n[bold]Suggested Fix ({result.fix.confidence:.0%} confidence):[/bold]")
+        for change in result.fix.changes:
+            console.print(f"\n  {escape(_location_label(change))} {escape(change.rationale)}")
+            diff = difflib.unified_diff(
+                change.original_text.splitlines(),
+                change.proposed_text.splitlines(),
+                "original",
+                "proposed",
+                lineterm="",
+            )
+            for line in diff:
+                style = {"+": "green", "-": "red", "@": "cyan"}.get(line[:1], "dim")
+                console.print(f"    {escape(line)}", style=style, highlight=False)
 
 
 # ---------------------------------------------------------------------------

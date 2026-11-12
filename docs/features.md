@@ -173,7 +173,7 @@ An **observer** on each side transcribes what was actually *heard on the wire*, 
 
 The pair is stored together with a word-level diff — surfacing the same class of defect audio evaluation catches (e.g. "415-555-1234" spoken as "four hundred fifteen…"), but from a genuine call rather than a reconstruction. Heard segments stream in as the call runs, each correlated to its turn regardless of how STT chunks the audio.
 
-The completed call is saved as a `source_kind="live"` Result (see [Concepts: Runs and results](concepts.md#runs-and-results)), judged against the **test case's own metrics** on the transcript and against the **heard** text as audio metrics, plus the agent's [global metrics](#global-metrics). It renders in the runs UI alongside simulated and imported runs.
+The completed call is saved as a `source_kind="live"` Result (see [Concepts: Runs and results](concepts.md#runs-and-results)), judged against the **test case's own metrics** on the transcript and against the **heard** text as audio metrics, plus the agent's [global metrics](#global-metrics). A failed audio metric fails the call. It renders in the runs UI alongside simulated and imported runs.
 
 Start one from a test case via the API — `POST /agents/{id}/calls/start` with a `test_id`. Omitting `test_id` starts a call for a **human** caller to join from the browser instead. Live audio testing uses the same LiveKit, Whisper, and Kokoro services as audio evaluation, started by `voicetest up` (see the [CLI reference](cli.md)).
 

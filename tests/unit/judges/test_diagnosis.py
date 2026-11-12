@@ -271,6 +271,41 @@ class TestParseFaultLocations:
         locations = judge._parse_fault_locations("not json at all")
         assert locations == []
 
+    def test_parses_python_literal(self, judge):
+        raw = (
+            "[{'location_type': 'transition', 'node_id': 'greeting', "
+            "'transition_target_id': None, 'relevant_text': 'check the time', "
+            "'explanation': 'Skips verification'}]"
+        )
+        locations = judge._parse_fault_locations(raw)
+        assert len(locations) == 1
+        assert locations[0].node_id == "greeting"
+        assert locations[0].transition_target_id is None
+
+    def test_parses_fenced_json(self, judge):
+        raw = (
+            '```json\n[{"location_type": "general_prompt", '
+            '"relevant_text": "Be warm", "explanation": "Dropped verification"}]\n```'
+        )
+        locations = judge._parse_fault_locations(raw)
+        assert len(locations) == 1
+        assert locations[0].location_type == "general_prompt"
+
+    def test_skips_invalid_entries(self, judge):
+        raw = json.dumps(
+            [
+                {"location_type": "node_prompt"},
+                {
+                    "location_type": "node_prompt",
+                    "node_id": "billing",
+                    "relevant_text": "Help with billing",
+                    "explanation": "Too vague",
+                },
+            ]
+        )
+        locations = judge._parse_fault_locations(raw)
+        assert [loc.node_id for loc in locations] == ["billing"]
+
 
 class TestParseChanges:
     def test_parses_json_list(self, judge):
@@ -293,6 +328,16 @@ class TestParseChanges:
     def test_handles_invalid_json(self, judge):
         changes = judge._parse_changes("broken json")
         assert changes == []
+
+    def test_parses_python_literal(self, judge):
+        raw = (
+            "{'location_type': 'node_prompt', 'node_id': 'billing', "
+            "'original_text': 'Help', 'proposed_text': 'Help with refunds', "
+            "'rationale': 'Add refunds'}"
+        )
+        changes = judge._parse_changes(raw)
+        assert len(changes) == 1
+        assert changes[0].proposed_text == "Help with refunds"
 
 
 class TestMockMode:

@@ -1,9 +1,13 @@
 """Diagnosis judge for post-run failure analysis and fix suggestion."""
 
+import ast
 import json
 import logging
+import re
 
 import dspy
+from pydantic import BaseModel
+from pydantic import ValidationError
 
 from voicetest.llm import call_llm
 from voicetest.models.agent import AgentGraph
@@ -278,22 +282,40 @@ class DiagnosisJudge:
 
     def _parse_fault_locations(self, raw: str) -> list[FaultLocation]:
         """Parse fault locations from LLM JSON output."""
-        try:
-            data = json.loads(raw)
-            if not isinstance(data, list):
-                data = [data]
-            return [FaultLocation.model_validate(item) for item in data]
-        except (json.JSONDecodeError, Exception):
-            logger.warning("Failed to parse fault locations: %s", raw[:200])
-            return []
+        return _parse_items(raw, FaultLocation, "fault locations")
 
     def _parse_changes(self, raw: str) -> list[PromptChange]:
         """Parse prompt changes from LLM JSON output."""
+        return _parse_items(raw, PromptChange, "changes")
+
+
+def _load_list(raw: str) -> list:
+    """Load a JSON array from LLM output, tolerating code fences and Python literals.
+
+    Small models often answer with a Python repr (single quotes, None) instead
+    of JSON."""
+    text = raw.strip()
+    fence = re.match(r"^```[\w-]*\n(.*?)\n?```$", text, re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = ast.literal_eval(text)
+    return data if isinstance(data, list) else [data]
+
+
+def _parse_items[T: BaseModel](raw: str, model: type[T], label: str) -> list[T]:
+    """Parse a list of `model` from LLM output, skipping items that don't validate."""
+    try:
+        data = _load_list(raw)
+    except (ValueError, SyntaxError):
+        logger.warning("Failed to parse %s: %s", label, raw[:200])
+        return []
+    items = []
+    for item in data:
         try:
-            data = json.loads(raw)
-            if not isinstance(data, list):
-                data = [data]
-            return [PromptChange.model_validate(item) for item in data]
-        except (json.JSONDecodeError, Exception):
-            logger.warning("Failed to parse changes: %s", raw[:200])
-            return []
+            items.append(model.model_validate(item))
+        except ValidationError:
+            logger.warning("Skipping invalid %s entry: %s", label, str(item)[:200])
+    return items

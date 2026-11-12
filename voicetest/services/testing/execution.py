@@ -44,8 +44,8 @@ def resolve_run_options(
     """Fill missing model fields from settings.
 
     If options is None, all run params come from settings too. If options
-    is provided, only the None model fields and an unset judge_input are
-    filled — caller's run params (max_turns, timeout, etc.) are respected."""
+    is provided, only the None model fields and an unset judge_input or
+    no_cache are filled — caller's run params (max_turns, timeout, etc.) are respected."""
     settings = settings_service.get_settings()
     if options is None:
         return RunOptions(
@@ -59,6 +59,7 @@ def resolve_run_options(
             streaming=settings.run.streaming,
             test_model_precedence=settings.run.test_model_precedence,
             audio_eval=settings.run.audio_eval,
+            no_cache=settings.run.no_cache,
             pattern_engine=settings.run.pattern_engine,
             judge_input=settings.run.judge_input,
             default_start_speaker=settings.run.start_speaker,
@@ -72,6 +73,11 @@ def resolve_run_options(
                 options.judge_input
                 if "judge_input" in options.model_fields_set
                 else settings.run.judge_input
+            ),
+            "no_cache": (
+                options.no_cache
+                if "no_cache" in options.model_fields_set
+                else settings.run.no_cache
             ),
             "default_start_speaker": (options.default_start_speaker or settings.run.start_speaker),
         }

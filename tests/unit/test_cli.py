@@ -13,9 +13,20 @@ from voicetest.cli import LazyExportChoice
 from voicetest.cli import main
 from voicetest.compose import get_compose_path
 from voicetest.importers.transcripts.retell import parse_retell
+from voicetest.models.agent import GlobalMetric
+from voicetest.models.agent import MetricsConfig
+from voicetest.models.diagnosis import Diagnosis
+from voicetest.models.diagnosis import DiagnosisResult
+from voicetest.models.diagnosis import FaultLocation
+from voicetest.models.diagnosis import FixSuggestion
+from voicetest.models.diagnosis import PromptChange
+from voicetest.models.results import MetricResult
+from voicetest.models.results import TestResult
+from voicetest.models.test_case import TestCase
 from voicetest.services import AgentService
 from voicetest.services import DiscoveryService
 from voicetest.services import RunService
+from voicetest.services.testing.execution import TestExecutionService
 
 
 @pytest.fixture
@@ -165,6 +176,94 @@ class TestCLIRunSaveOption:
 
         assert result.exit_code != 0
         assert "--agent-id" in result.output
+
+
+class TestCLIRunWithAgentId:
+    """Tests for `run --agent-id`, which ties a file-based run to a stored agent."""
+
+    @pytest.fixture
+    def single_test_file(self, tmp_path):
+        tests_path = tmp_path / "single_test.json"
+        tests_path.write_text(
+            json.dumps([{"name": "Asks for help", "user_prompt": "Ask for help."}])
+        )
+        return tests_path
+
+    @pytest.fixture
+    def run_test_calls(self):
+        calls = []
+
+        async def fake_run_test(self, graph, test_case, options=None, **kwargs):
+            calls.append({"options": options, **kwargs})
+            return TestResult(test_name=test_case.name, status="pass")
+
+        with patch.object(TestExecutionService, "run_test", fake_run_test):
+            yield calls
+
+    def test_save_run_links_test_and_applies_global_metrics(
+        self,
+        cli_runner,
+        tmp_path,
+        monkeypatch,
+        sample_retell_config,
+        temp_agent_file,
+        single_test_file,
+        container,
+        app_services,
+        run_test_calls,
+    ):
+        monkeypatch.chdir(tmp_path)
+        agent_id = _create_agent_for_cli(container, sample_retell_config)
+        global_metrics = [GlobalMetric(name="Tone", criteria="Agent was polite")]
+        app_services.agents.update_metrics_config(
+            agent_id, MetricsConfig(global_metrics=global_metrics)
+        )
+        stored = app_services.test_cases.create_test(
+            agent_id, TestCase(name="Asks for help", user_prompt="Ask for help.")
+        )
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "run",
+                "--agent",
+                str(temp_agent_file),
+                "--tests",
+                str(single_test_file),
+                "--all",
+                "--save-run",
+                "--agent-id",
+                agent_id,
+            ],
+            obj={"services": app_services},
+        )
+
+        assert result.exit_code == 0, result.output
+        assert run_test_calls[0]["metrics_config"].global_metrics == global_metrics
+        run = app_services.runs.list_runs(agent_id)[0]
+        saved = app_services.runs.get_run(run["id"])["results"][0]
+        assert saved["test_case_id"] == stored["id"]
+
+    def test_no_cache_flag_reaches_run_options(
+        self, cli_runner, tmp_path, monkeypatch, temp_agent_file, single_test_file, run_test_calls
+    ):
+        monkeypatch.chdir(tmp_path)
+
+        result = cli_runner.invoke(
+            main,
+            [
+                "run",
+                "--agent",
+                str(temp_agent_file),
+                "--tests",
+                str(single_test_file),
+                "--all",
+                "--no-cache",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        assert run_test_calls[0]["options"].no_cache is True
 
 
 class TestCLIMain:
@@ -904,6 +1003,75 @@ class TestCLIDiagnose:
         )
 
         assert result.exit_code != 0
+
+    def test_diagnose_prints_fault_locations_and_diff(
+        self, cli_runner, tmp_path, temp_agent_file, temp_tests_file
+    ):
+        results_path = tmp_path / "results.json"
+        results_path.write_text(
+            json.dumps(
+                [
+                    TestResult(
+                        test_name="Verifies identity",
+                        status="fail",
+                        metric_results=[
+                            MetricResult(metric="Verified DOB", passed=False, reasoning="No")
+                        ],
+                    ).model_dump(mode="json")
+                ]
+            )
+        )
+        diagnosis = DiagnosisResult(
+            diagnosis=Diagnosis(
+                fault_locations=[
+                    FaultLocation(
+                        location_type="transition",
+                        node_id="greeting",
+                        transition_target_id="appointments",
+                        relevant_text="check the time",
+                        explanation="Skips verification",
+                    )
+                ],
+                root_cause="Verification was bypassed",
+                transcript_evidence="[greeting] USER: when is my appointment?",
+            ),
+            fix=FixSuggestion(
+                changes=[
+                    PromptChange(
+                        location_type="node_prompt",
+                        node_id="appointments",
+                        original_text="Help with appointments.",
+                        proposed_text="Verify identity first.",
+                        rationale="Require verification",
+                    )
+                ],
+                summary="Add verification",
+                confidence=0.9,
+            ),
+        )
+
+        with patch(
+            "voicetest.services.diagnosis.DiagnosisService.diagnose_failure",
+            return_value=diagnosis,
+        ):
+            result = cli_runner.invoke(
+                main,
+                [
+                    "diagnose",
+                    "-a",
+                    str(temp_agent_file),
+                    "-t",
+                    str(temp_tests_file),
+                    "-r",
+                    str(results_path),
+                ],
+            )
+
+        assert "[transition greeting -> appointments] Skips verification" in result.output
+        assert "[greeting] USER" in result.output
+        assert "[node_prompt appointments] Require verification" in result.output
+        assert "-Help with appointments." in result.output
+        assert "+Verify identity first." in result.output
 
     def test_diagnose_shown_in_main_help(self, cli_runner):
         result = cli_runner.invoke(main, ["--help"])
