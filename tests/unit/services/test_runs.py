@@ -5,6 +5,7 @@ import pytest
 from voicetest.models.agent import AgentGraph
 from voicetest.models.events import JUDGE_INPUT_EVENTS
 from voicetest.models.results import Message
+from voicetest.models.results import MetricResult
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services.agents import AgentService
@@ -308,6 +309,42 @@ class TestSaveCallAsRun:
         run_id = await svc.save_call_as_run(call, test_case=test_case)
 
         assert svc.get_run(run_id)["results"][0]["status"] == "error"
+
+    async def test_status_fails_when_audio_metric_fails(self, agent_id, svc, monkeypatch):
+        test_case = TestCase(
+            name="Reads the number",
+            user_prompt="Ask for the callback number",
+            metrics=["Agent read the callback number digit by digit"],
+        )
+        call = {
+            "id": "call-heard",
+            "agent_id": agent_id,
+            "transcript_json": [
+                {"role": "user", "content": "What's the number?"},
+                {
+                    "role": "assistant",
+                    "content": "Call 415-555-0123.",
+                    "metadata": {"audio": {"heard": "Call four hundred fifteen."}},
+                },
+            ],
+        }
+
+        async def judge(transcript, metrics, threshold=0.7, use_heard=False, **kwargs):
+            return [
+                MetricResult(
+                    metric=m,
+                    passed=not use_heard,
+                    reasoning="heard a quantity" if use_heard else "digits given",
+                )
+                for m in metrics
+            ]
+
+        monkeypatch.setattr(svc._test_execution, "evaluate_metrics", judge)
+
+        run_id = await svc.save_call_as_run(call, test_case=test_case)
+
+        result = svc.get_run(run_id)["results"][0]
+        assert result["status"] == "fail"
 
     async def test_second_save_of_same_call_returns_existing_run(self, agent_id, svc):
         call = {

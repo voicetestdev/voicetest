@@ -63,6 +63,7 @@ class RunSettings(BaseModel):
         default=False,
         description="Auto-run TTS→STT audio evaluation on every test",
     )
+    no_cache: bool = Field(default=False, description="Bypass the LLM response cache")
     pattern_engine: str = Field(
         default="fnmatch",
         description="Pattern engine: 'fnmatch' (wildcards) or 're2' (regex)",
@@ -151,6 +152,7 @@ def _to_toml(settings: Settings) -> str:
     lines.append(f"streaming = {str(settings.run.streaming).lower()}")
     lines.append(f"test_model_precedence = {str(settings.run.test_model_precedence).lower()}")
     lines.append(f"audio_eval = {str(settings.run.audio_eval).lower()}")
+    lines.append(f"no_cache = {str(settings.run.no_cache).lower()}")
     lines.append(f'pattern_engine = "{settings.run.pattern_engine}"')
     lines.append(f'judge_input = "{settings.run.judge_input}"')
     if settings.run.start_speaker is not None:

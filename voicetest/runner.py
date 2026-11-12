@@ -7,6 +7,7 @@ from pathlib import Path
 import uuid
 
 from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import MetricsConfig
 from voicetest.models.results import TestResult
 from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
@@ -48,11 +49,17 @@ async def run_tests_streaming(
     options: RunOptions | None = None,
     mock_mode: bool = False,
     on_error: OnErrorCallback | None = None,
+    metrics_config: MetricsConfig | None = None,
 ) -> AsyncIterator[TestResult]:
     """Run tests and yield results as they complete."""
     for test_case in test_cases:
         result = await services.test_execution.run_test(
-            graph, test_case, options, _mock_mode=mock_mode, on_error=on_error
+            graph,
+            test_case,
+            options,
+            metrics_config=metrics_config,
+            _mock_mode=mock_mode,
+            on_error=on_error,
         )
         yield result
 
@@ -68,6 +75,7 @@ class TestRunContext:
         source: str | None = None,
         options: RunOptions | None = None,
         mock_mode: bool = False,
+        metrics_config: MetricsConfig | None = None,
     ):
         self.services = services
         self.agent_path = agent_path
@@ -75,6 +83,7 @@ class TestRunContext:
         self.source = source
         self.options = options or RunOptions()
         self.mock_mode = mock_mode
+        self.metrics_config = metrics_config
 
         self.graph: AgentGraph | None = None
         self.test_cases: list[TestCase] = []
@@ -121,6 +130,7 @@ class TestRunContext:
             self.options,
             self.mock_mode,
             on_error=on_error,
+            metrics_config=self.metrics_config,
         ):
             self.results.append(result)
             yield result

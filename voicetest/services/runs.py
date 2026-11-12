@@ -208,8 +208,10 @@ class RunService:
         else:
             # A call with no metrics to evaluate has nothing to fail, so it is a
             # pass, matching how replayed and imported (passive-capture) runs are
-            # recorded.
-            status = "pass" if all(r.passed for r in metric_results) else "fail"
+            # recorded. Audio metrics judge what the caller actually heard, so a
+            # failure there fails the call.
+            judged = metric_results + audio_metric_results
+            status = "pass" if all(r.passed for r in judged) else "fail"
 
         test_result = TestResult(
             test_name=test_case.name if test_case else "Live Call",
