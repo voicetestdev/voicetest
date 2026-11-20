@@ -494,6 +494,19 @@ class TestRunRepository:
         assert record["started_at"] is not None
         assert record["completed_at"] is None
 
+    def test_timestamps_serialize_as_utc(self, run_repo, agent_repo, session):
+        agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
+        record = run_repo.create(agent["id"])
+        run_repo.complete(record["id"])
+        session.expire_all()
+
+        run = run_repo.get_with_results(record["id"])
+
+        for field in ("started_at", "completed_at"):
+            parsed = datetime.fromisoformat(run[field])
+            assert parsed.utcoffset().total_seconds() == 0
+            assert abs((datetime.now(UTC) - parsed).total_seconds()) < 60
+
     def test_list_all(self, run_repo, agent_repo):
         agent = agent_repo.create(name="Agent", source_type="test", graph_json="{}")
 

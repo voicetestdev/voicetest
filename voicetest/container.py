@@ -174,10 +174,12 @@ def create_container() -> punq.Container:
     from voicetest.web.calls import LiveKitConfig  # noqa: PLC0415
     from voicetest.web.chat import ChatManager  # noqa: PLC0415
     from voicetest.web.coordinator import RunCoordinator  # noqa: PLC0415
+    from voicetest.web.run_feed import RunFeed  # noqa: PLC0415
 
     container.register(LiveKitConfig, instance=LiveKitConfig.from_env())
     container.register(CallManager, scope=punq.Scope.singleton)
     container.register(ChatManager, scope=punq.Scope.singleton)
     container.register(RunCoordinator, scope=punq.Scope.singleton)
+    container.register(RunFeed, scope=punq.Scope.singleton)
 
     return container

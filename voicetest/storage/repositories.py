@@ -757,6 +757,18 @@ class RunRepository:
         row = self.session.query(Result.run_id).filter(Result.call_id == call_id).first()
         return row[0] if row else None
 
+    def find_run_ref(
+        self, *, run_id: str | None = None, result_id: str | None = None
+    ) -> tuple[str, str] | None:
+        """Return `(agent_id, run_id)` for a run, or for the run holding a result."""
+        query = self.session.query(Run.agent_id, Run.id)
+        if result_id is not None:
+            query = query.join(Result, Result.run_id == Run.id).filter(Result.id == result_id)
+        else:
+            query = query.filter(Run.id == run_id)
+        row = query.first()
+        return (row[0], row[1]) if row else None
+
     def create_pending_result(self, run_id: str, test_case_id: str, test_name: str) -> str:
         """Create a pending result for an in-progress test."""
         result_id = str(uuid4())

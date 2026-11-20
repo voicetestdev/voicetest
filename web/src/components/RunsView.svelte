@@ -21,6 +21,7 @@
     clearCurrentRun,
     loadRun,
     loadRunHistory,
+    now,
   } from "../lib/stores";
   import type {
     RunResultRecord,
@@ -318,10 +319,8 @@
     return result.join(" ");
   }
 
-  function formatRelativeTime(dateStr: string): string {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
+  function formatRelativeTime(dateStr: string, nowMs: number): string {
+    const diff = nowMs - new Date(dateStr).getTime();
     const minutes = Math.floor(diff / 60000);
     if (minutes < 1) return "just now";
     if (minutes < 60) return `${minutes}m ago`;
@@ -568,7 +567,7 @@
         &larr; Runs
       </button>
       {#if $currentRunWithResults}
-        <span class="run-date">{formatRelativeTime($currentRunWithResults.started_at)}</span>
+        <span class="run-date">{formatRelativeTime($currentRunWithResults.started_at, $now)}</span>
       {/if}
       {#if $currentRunWithResults}
         {#if !$currentRunWithResults.completed_at}

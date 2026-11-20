@@ -6,6 +6,7 @@
     loadOlderRuns,
     currentAgentId,
     currentRunId,
+    now,
   } from "../lib/stores";
   import { errorMessage } from "../lib/errors";
   import { pushToast } from "../lib/toast";
@@ -25,9 +26,9 @@
     loadingOlder = false;
   }
 
-  function formatTimestamp(dateStr: string): string {
+  function formatTimestamp(dateStr: string, nowMs: number): string {
     const date = new Date(dateStr);
-    const now = new Date();
+    const now = new Date(nowMs);
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
 
@@ -170,7 +171,7 @@
                 {/if}
               </div>
               <div class="run-card-right">
-                <span class="run-time">{formatTimestamp(run.started_at)}</span>
+                <span class="run-time">{formatTimestamp(run.started_at, $now)}</span>
                 {#if duration}
                   <span class="run-duration">
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" class="clock-icon">

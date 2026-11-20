@@ -21,6 +21,7 @@ from voicetest.simulator.scripted import ScriptedUserSimulator
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
+from voicetest.web.run_feed import RunFeed
 
 
 _logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ class RunService:
         agent_service: AgentService,
         test_execution_service: TestExecutionService,
         settings_service: SettingsService,
+        run_feed: RunFeed,
     ):
         self._runs = run_repo
         self._agents = agent_repo
@@ -44,10 +46,20 @@ class RunService:
         self._agent_service = agent_service
         self._test_execution = test_execution_service
         self._settings = settings_service
+        self._feed = run_feed
+
+    def _publish(self, *, run_id: str | None = None, result_id: str | None = None) -> None:
+        if not self._feed.watched:
+            return
+        ref = self._runs.find_run_ref(run_id=run_id, result_id=result_id)
+        if ref:
+            self._feed.publish(ref[0], {"type": "run_updated", "run_id": ref[1]})
 
     def create_run(self, agent_id: str) -> dict:
         """Create a new run."""
-        return self._runs.create(agent_id)
+        run = self._runs.create(agent_id)
+        self._feed.publish(agent_id, {"type": "run_updated", "run_id": run["id"]})
+        return run
 
     def list_runs(self, agent_id: str, limit: int = 50, offset: int = 0) -> list[dict]:
         """List runs for an agent with result summary counts, newest first."""
@@ -91,31 +103,44 @@ class RunService:
 
         Pass `test_case_id` for test runs, `call_id` for live calls, or neither
         for imported transcripts. Returns the new result id."""
-        return self._runs.add_result(run_id, result, test_case_id=test_case_id, call_id=call_id)
+        result_id = self._runs.add_result(
+            run_id, result, test_case_id=test_case_id, call_id=call_id
+        )
+        self._publish(run_id=run_id)
+        return result_id
 
     def delete_run(self, run_id: str) -> None:
         """Delete a run and all its results."""
+        ref = self._runs.find_run_ref(run_id=run_id) if self._feed.watched else None
         self._runs.delete(run_id)
+        if ref:
+            self._feed.publish(ref[0], {"type": "run_deleted", "run_id": run_id})
 
     def create_pending_result(self, run_id: str, test_case_id: str, test_name: str) -> str:
         """Create a pending result placeholder for a test."""
-        return self._runs.create_pending_result(run_id, test_case_id, test_name)
+        result_id = self._runs.create_pending_result(run_id, test_case_id, test_name)
+        self._publish(run_id=run_id)
+        return result_id
 
     def complete_result(self, result_id: str, result) -> None:
         """Mark a result as complete with test data."""
         self._runs.complete_result(result_id, result)
+        self._publish(result_id=result_id)
 
     def mark_result_error(self, result_id: str, error: str) -> None:
         """Mark a result as errored."""
         self._runs.mark_result_error(result_id, error)
+        self._publish(result_id=result_id)
 
     def mark_result_cancelled(self, result_id: str) -> None:
         """Mark a result as cancelled."""
         self._runs.mark_result_cancelled(result_id)
+        self._publish(result_id=result_id)
 
     def complete(self, run_id: str) -> None:
         """Mark a run as completed."""
         self._runs.complete(run_id)
+        self._publish(run_id=run_id)
 
     def update_transcript(self, result_id: str, transcript) -> None:
         """Update a result's transcript."""
@@ -128,6 +153,7 @@ class RunService:
     def update_audio_eval(self, result_id: str, transformed, audio_metrics) -> None:
         """Update a result with audio eval data."""
         self._runs.update_audio_eval(result_id, transformed, audio_metrics)
+        self._publish(result_id=result_id)
 
     async def save_call_as_run(self, call: dict, test_case: TestCase | None = None) -> str | None:
         """Convert a completed call into a Run with a single Result.

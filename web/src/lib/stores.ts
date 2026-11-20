@@ -1,4 +1,4 @@
-import { writable, derived, get } from "svelte/store";
+import { writable, derived, readable, get } from "svelte/store";
 import type {
   AgentGraph,
   AgentRecord,
@@ -410,6 +410,90 @@ export async function loadOlderRuns(agentId: string): Promise<void> {
   const seen = new Set(loaded.map((r) => r.id));
   runHistory.update((runs) => [...runs, ...older.filter((r) => !seen.has(r.id))]);
 }
+
+export const now = readable(Date.now(), (set) => {
+  const id = setInterval(() => set(Date.now()), 30_000);
+  return () => clearInterval(id);
+});
+
+export async function refreshRunHistory(agentId: string): Promise<void> {
+  const [head, { total }] = await Promise.all([
+    api.listRunsForAgent(agentId, RUN_PAGE_SIZE),
+    api.countRunsForAgent(agentId),
+  ]);
+  if (agentId !== currentAgentIdValue) return;
+  const headIds = new Set(head.map((r) => r.id));
+  const oldest = head.length === RUN_PAGE_SIZE ? Date.parse(head[head.length - 1].started_at) : null;
+  runHistory.update((runs) => [
+    ...head,
+    ...(oldest === null
+      ? []
+      : runs.filter((r) => !headIds.has(r.id) && Date.parse(r.started_at) < oldest)),
+  ]);
+  runTotal.set(total);
+}
+
+let runsFeed: WebSocket | null = null;
+let runsFeedRetry: ReturnType<typeof setTimeout> | null = null;
+let runsFeedRefresh: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleRunHistoryRefresh(agentId: string): void {
+  if (runsFeedRefresh) clearTimeout(runsFeedRefresh);
+  runsFeedRefresh = setTimeout(() => {
+    runsFeedRefresh = null;
+    refreshRunHistory(agentId).catch((e) => console.error("[runs-feed] refresh failed:", e));
+  }, 300);
+}
+
+function disconnectRunsFeed(): void {
+  for (const timer of [runsFeedRetry, runsFeedRefresh]) {
+    if (timer) clearTimeout(timer);
+  }
+  runsFeedRetry = runsFeedRefresh = null;
+  const ws = runsFeed;
+  runsFeed = null;
+  ws?.close();
+}
+
+function connectRunsFeed(agentId: string): void {
+  disconnectRunsFeed();
+  if (typeof WebSocket === "undefined") return;
+  let ws: WebSocket;
+  try {
+    ws = new WebSocket(api.getWebSocketUrl(`/agents/${agentId}/runs/ws`));
+  } catch (e) {
+    console.error("[runs-feed] connect failed:", e);
+    return;
+  }
+  runsFeed = ws;
+  ws.onmessage = (event) => {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (data.type === "run_deleted") {
+      const before = get(runHistory).length;
+      runHistory.update((runs) => runs.filter((r) => r.id !== data.run_id));
+      if (get(runHistory).length < before) runTotal.update((n) => Math.max(0, n - 1));
+    } else if (data.type === "subscribed" || data.type === "run_updated") {
+      scheduleRunHistoryRefresh(agentId);
+    }
+  };
+  ws.onclose = () => {
+    if (runsFeed !== ws) return;
+    runsFeed = null;
+    runsFeedRetry = setTimeout(() => {
+      if (currentAgentIdValue === agentId) connectRunsFeed(agentId);
+    }, 3000);
+  };
+}
+
+currentAgentId.subscribe((agentId) => {
+  if (agentId) connectRunsFeed(agentId);
+  else disconnectRunsFeed();
+});
 
 export async function selectRun(agentId: string, runId: string): Promise<void> {
   // If same agent, just load the run without refetching agent data

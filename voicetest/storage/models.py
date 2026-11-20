@@ -9,6 +9,7 @@ from sqlalchemy import ForeignKey
 from sqlalchemy import Integer
 from sqlalchemy import String
 from sqlalchemy import Text
+from sqlalchemy import TypeDecorator
 from sqlalchemy.dialects.sqlite import JSON
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped
@@ -16,6 +17,21 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 
 from voicetest.models.events import JUDGE_INPUT_TRANSCRIPT
+
+
+class UTCDateTime(TypeDecorator):
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect) -> datetime | None:
+        if value is not None and value.tzinfo is not None:
+            value = value.astimezone(UTC).replace(tzinfo=None)
+        return value
+
+    def process_result_value(self, value: datetime | None, dialect) -> datetime | None:
+        if value is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        return value
 
 
 class Base(DeclarativeBase):
@@ -38,8 +54,8 @@ class Agent(Base):
     graph_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     metrics_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     start_speaker: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=lambda: datetime.now(UTC))
 
     test_cases: Mapped[list["TestCase"]] = relationship(
         back_populates="agent", cascade="all, delete-orphan"
@@ -81,8 +97,8 @@ class TestCase(Base):
     includes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     excludes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     patterns: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=lambda: datetime.now(UTC))
 
     agent: Mapped["Agent"] = relationship(back_populates="test_cases")
 
@@ -114,8 +130,8 @@ class Run(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     user_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), nullable=False)
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=lambda: datetime.now(UTC))
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
     agent: Mapped["Agent"] = relationship(back_populates="runs")
     results: Mapped[list["Result"]] = relationship(
@@ -144,8 +160,8 @@ class Call(Base):
     status: Mapped[str] = mapped_column(String, default="pending")
     transcript_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     test_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
-    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime, default=lambda: datetime.now(UTC))
+    ended_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
 
     agent: Mapped["Agent"] = relationship(back_populates="calls")
 
@@ -190,7 +206,7 @@ class Result(Base):
     voicetest_version: Mapped[str | None] = mapped_column(
         String, default=lambda: package_version("voicetest"), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=lambda: datetime.now(UTC))
 
     run: Mapped["Run"] = relationship(back_populates="results")
 
