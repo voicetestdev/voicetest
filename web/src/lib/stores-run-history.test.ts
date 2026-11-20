@@ -95,16 +95,60 @@ describe("run history push feed", () => {
     expect(FakeWebSocket.instances.map((ws) => ws.url)).toEqual(["ws://test/agents/a1/runs/ws"]);
   });
 
-  it("removes a deleted run without refetching", () => {
-    currentAgentId.set("a1");
-    runHistory.set([run("r2"), run("r1")]);
-    runTotal.set(2);
+  it("removes a deleted run at once and refetches the true total", async () => {
+    vi.useFakeTimers();
+    try {
+      currentAgentId.set("a1");
+      runHistory.set([run("r2"), run("r1")]);
+      listRuns.mockResolvedValue([run("r1")]);
+      countRuns.mockResolvedValue({ total: 1 });
 
-    FakeWebSocket.instances[0].emit({ type: "run_deleted", run_id: "r2" });
+      FakeWebSocket.instances[0].emit({ type: "run_deleted", run_id: "r2" });
+      expect(get(runHistory).map((r) => r.id)).toEqual(["r1"]);
 
-    expect(get(runHistory).map((r) => r.id)).toEqual(["r1"]);
-    expect(get(runTotal)).toBe(1);
-    expect(listRuns).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(400);
+      expect(get(runTotal)).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not refetch on the first subscribe, only on reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      currentAgentId.set("a1");
+      FakeWebSocket.instances[0].emit({ type: "subscribed" });
+      await vi.advanceTimersByTimeAsync(400);
+      expect(listRuns).not.toHaveBeenCalled();
+
+      listRuns.mockResolvedValue([]);
+      countRuns.mockResolvedValue({ total: 0 });
+      FakeWebSocket.instances[0].onclose?.();
+      await vi.advanceTimersByTimeAsync(1000);
+      FakeWebSocket.instances[1].emit({ type: "subscribed" });
+      await vi.advanceTimersByTimeAsync(400);
+      expect(listRuns).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("backs off reconnects exponentially", async () => {
+    vi.useFakeTimers();
+    try {
+      currentAgentId.set("a1");
+      FakeWebSocket.instances[0].onclose?.();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(FakeWebSocket.instances).toHaveLength(2);
+
+      FakeWebSocket.instances[1].onclose?.();
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(FakeWebSocket.instances).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(FakeWebSocket.instances).toHaveLength(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("debounces run updates into one refetch", async () => {

@@ -13,6 +13,7 @@ from voicetest.models.results import TestRun
 from voicetest.models.test_case import RunOptions
 from voicetest.models.test_case import TestCase
 from voicetest.services import AppServices
+from voicetest.util.concurrency import run_bounded
 from voicetest.util.retry import OnErrorCallback
 
 
@@ -51,9 +52,10 @@ async def run_tests_streaming(
     on_error: OnErrorCallback | None = None,
     metrics_config: MetricsConfig | None = None,
 ) -> AsyncIterator[TestResult]:
-    """Run tests and yield results as they complete."""
-    for test_case in test_cases:
-        result = await services.test_execution.run_test(
+    """Run tests and yield results in test order."""
+
+    async def run_one(test_case: TestCase) -> TestResult:
+        return await services.test_execution.run_test(
             graph,
             test_case,
             options,
@@ -61,6 +63,9 @@ async def run_tests_streaming(
             _mock_mode=mock_mode,
             on_error=on_error,
         )
+
+    concurrency = options.concurrency if options else 1
+    async for _, result in run_bounded(test_cases, run_one, concurrency, ordered=True):
         yield result
 
 

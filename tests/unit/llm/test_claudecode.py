@@ -129,6 +129,21 @@ class TestClaudeCodeLMCall:
             assert len(result) == 1
             assert result[0]["text"] == "The answer is 4."
 
+    async def test_acall_runs_the_cli(self):
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = json.dumps({"result": "The answer is 4."})
+
+        with (
+            patch("shutil.which", return_value="/usr/local/bin/claude"),
+            patch("subprocess.run", return_value=mock_result) as mock_run,
+        ):
+            lm = ClaudeCodeLM(cache=False)
+            result = await lm.acall(messages=[{"role": "user", "content": "What is 2+2?"}])
+
+        assert result == [{"text": "The answer is 4."}]
+        assert "User: What is 2+2?" in mock_run.call_args[0][0]
+
     def test_raises_on_nonzero_exit_code(self):
         """Should raise RuntimeError when CLI returns non-zero exit code with invalid JSON."""
 
@@ -395,7 +410,7 @@ class TestClaudeCodeLMIntegrationWithCallLlm:
             patch("subprocess.run", return_value=mock_result),
             patch.object(
                 dspy.Predict,
-                "__call__",
+                "acall",
                 return_value=dspy.Prediction(answer="42"),
             ),
         ):

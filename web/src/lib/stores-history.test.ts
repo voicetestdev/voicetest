@@ -21,6 +21,9 @@ vi.mock("./api", () => ({
         results: [],
       })
     ),
+    startRun: vi.fn(() =>
+      Promise.resolve({ id: "new", agent_id: "a1", started_at: "2026-11-01T00:00:00+00:00" })
+    ),
     getWebSocketUrl: (path: string) => `ws://test${path}`,
   },
 }));
@@ -30,12 +33,17 @@ import {
   applyHash,
   clearCurrentRun,
   currentRunId,
+  currentRunWithResults,
   currentView,
+  forgetRun,
   initStores,
+  now,
   selectResult,
   selectRun,
   selectedResultId,
+  startRun,
 } from "./stores";
+import type { RunWithResults } from "./types";
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -135,5 +143,108 @@ describe("browser history", () => {
     expect(window.history.length).toBe(start);
     expect(api.getRun).toHaveBeenCalledWith("r3");
     expect(window.location.hash).toBe("#/agent/a1/runs/r3/res1");
+  });
+
+  it("Back to a deleted agent replaces the entry with the import page", async () => {
+    const start = window.history.length;
+    window.history.replaceState(null, "", "#/agent/gone/tests");
+
+    await applyHash();
+    await flush();
+
+    expect(get(currentView)).toBe("import");
+    expect(window.location.hash).toBe("#/import");
+    expect(window.history.length).toBe(start);
+  });
+
+  it("a slow earlier run load cannot overwrite a newer navigation", async () => {
+    let resolveSlow!: (run: RunWithResults) => void;
+    const getRun = api.getRun as ReturnType<typeof vi.fn>;
+    getRun.mockImplementationOnce(
+      () => new Promise<RunWithResults>((resolve) => (resolveSlow = resolve))
+    );
+    currentView.set("runs");
+    clearCurrentRun();
+    await flush();
+
+    window.history.replaceState(null, "", "#/agent/a1/runs/slow");
+    const first = applyHash();
+    window.history.replaceState(null, "", "#/agent/a1/runs/fast");
+    await applyHash();
+    resolveSlow({ id: "slow", agent_id: "a1", started_at: "", completed_at: "", results: [] });
+    await first;
+    await flush();
+
+    expect(get(currentRunId)).toBe("fast");
+    expect(get(currentRunWithResults)?.id).toBe("fast");
+    expect(window.location.hash).toBe("#/agent/a1/runs/fast");
+  });
+
+  it("a click during a slow restore still pushes", async () => {
+    let resolveSlow!: (run: RunWithResults) => void;
+    (api.getRun as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      () => new Promise<RunWithResults>((resolve) => (resolveSlow = resolve))
+    );
+    window.history.replaceState(null, "", "#/agent/a1/runs/r9");
+    const restore = applyHash();
+    await flush();
+    const start = window.history.length;
+
+    currentView.set("metrics");
+    await flush();
+
+    expect(window.history.length).toBe(start + 1);
+    resolveSlow({ id: "r9", agent_id: "a1", started_at: "", completed_at: "", results: [] });
+    await restore;
+  });
+
+  it("starting a run adds one entry and Back returns to the tests view", async () => {
+    currentView.set("tests");
+    await flush();
+    const start = window.history.length;
+
+    currentView.set("runs");
+    await startRun("a1");
+    await flush();
+
+    expect(window.history.length).toBe(start + 1);
+    expect(window.location.hash).toBe("#/agent/a1/runs/new");
+    await goBack();
+    expect(get(currentView)).toBe("tests");
+  });
+
+  it("changing run clears the previous run's selected result", async () => {
+    await selectRun("a1", "r4");
+    selectResult("res-of-r4");
+    await flush();
+
+    await selectRun("a1", "r5");
+    await flush();
+
+    expect(get(selectedResultId)).toBeNull();
+    expect(window.location.hash).toBe("#/agent/a1/runs/r5");
+  });
+
+  it("forgetting the open run returns to the list without a new entry", async () => {
+    await selectRun("a1", "r6");
+    await flush();
+    const start = window.history.length;
+
+    forgetRun("r6");
+    await flush();
+
+    expect(get(currentRunId)).toBeNull();
+    expect(window.location.hash).toBe("#/agent/a1/runs");
+    expect(window.history.length).toBe(start);
+  });
+
+  it("the clock reads the current time when a view subscribes", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(Date.UTC(2030, 0, 1));
+      expect(get(now)).toBe(Date.UTC(2030, 0, 1));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

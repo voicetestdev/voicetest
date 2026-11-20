@@ -191,7 +191,7 @@ def _reconstruct_last_request(lm: Any) -> tuple[dict | None, str | None]:
         messages = [{"role": "user", "content": prompt}]
 
     request = {"model": lm.model, "messages": messages, **merged}
-    return request, "dspy.clients.lm.litellm_completion"
+    return request, "dspy.clients.lm.alitellm_completion"
 
 
 def try_evict_last_call(lm: Any) -> bool:

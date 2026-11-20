@@ -21,6 +21,7 @@ from voicetest.simulator.scripted import ScriptedUserSimulator
 from voicetest.storage.repositories import AgentRepository
 from voicetest.storage.repositories import RunRepository
 from voicetest.storage.repositories import TestCaseRepository
+from voicetest.util.concurrency import run_bounded
 from voicetest.web.run_feed import RunFeed
 
 
@@ -300,41 +301,46 @@ class RunService:
         options = resolve_run_options(options, self._settings)
         new_run = self.create_run(source["agent_id"])
 
-        for source_result in source["results"]:
-            transcript_data = source_result.get("transcript_json") or []
-            messages = [Message(**m) for m in transcript_data]
-
-            simulator = ScriptedUserSimulator(messages)
-            replay_options = options.model_copy(
-                update={"start_speaker": _recorded_start_speaker(messages)}
-            )
-            runner = ConversationRunner(graph, replay_options)
-
-            # Runner takes a TestCase but only uses it in mock mode (which we
-            # aren't using). A minimal placeholder satisfies the type.
-            placeholder = TestCase(
-                name=f"Replay of {source_result.get('test_name', 'call')}",
-                user_prompt="",
-            )
-
-            state = await runner.run(placeholder, simulator)
-
-            replay_result = TestResult(
-                test_id=source_result.get("id"),
-                test_name=f"Replay of {source_result.get('test_name', 'call')}",
-                status="pass",
-                transcript=state.transcript,
-                turn_count=state.turn_count,
-                duration_ms=0,
-                end_reason=state.end_reason,
-                nodes_visited=state.nodes_visited,
-                tools_called=state.tools_called,
-            )
-
+        async for _, replay_result in run_bounded(
+            source["results"],
+            lambda source_result: _replay_result(source_result, graph, options),
+            options.concurrency,
+            ordered=True,
+        ):
             self.add_result(new_run["id"], replay_result)
 
         self.complete(new_run["id"])
         return self.get_run(new_run["id"])
+
+
+async def _replay_result(source_result: dict, graph: AgentGraph, options: RunOptions) -> TestResult:
+    transcript_data = source_result.get("transcript_json") or []
+    messages = [Message(**m) for m in transcript_data]
+
+    simulator = ScriptedUserSimulator(messages)
+    replay_options = options.model_copy(update={"start_speaker": _recorded_start_speaker(messages)})
+    runner = ConversationRunner(graph, replay_options)
+
+    # Runner takes a TestCase but only uses it in mock mode (which we
+    # aren't using). A minimal placeholder satisfies the type.
+    placeholder = TestCase(
+        name=f"Replay of {source_result.get('test_name', 'call')}",
+        user_prompt="",
+    )
+
+    state = await runner.run(placeholder, simulator)
+
+    return TestResult(
+        test_id=source_result.get("id"),
+        test_name=f"Replay of {source_result.get('test_name', 'call')}",
+        status="pass",
+        transcript=state.transcript,
+        turn_count=state.turn_count,
+        duration_ms=0,
+        end_reason=state.end_reason,
+        nodes_visited=state.nodes_visited,
+        tools_called=state.tools_called,
+    )
 
 
 def _recorded_start_speaker(messages: list[Message]) -> StartSpeaker | None:

@@ -14,6 +14,7 @@ from voicetest.models.events import JudgeInput
 TestType = Literal["llm", "rule"]
 StartSpeaker = Literal["agent", "user"]
 DEFAULT_START_SPEAKER: StartSpeaker = "agent"
+MAX_CONCURRENCY = 16
 
 
 def resolve_start_speaker(
@@ -32,6 +33,12 @@ class RunOptions(BaseModel):
 
     max_turns: int = 50
     turn_timeout_seconds: float = 60.0
+    concurrency: int = Field(
+        default=1,
+        ge=1,
+        le=MAX_CONCURRENCY,
+        description="Number of tests to run at once",
+    )
     verbose: bool = False
     flow_judge: bool = False
     streaming: bool = False

@@ -966,7 +966,9 @@ class TestRunRunnerLifecycle:
     # no window for the test thread to inject a cancel between iterations.
 
     @staticmethod
-    def _prepare_job(db_client, agent_id: str, test_ids: list[str]):
+    def _prepare_job(
+        db_client, agent_id: str, test_ids: list[str], options: RunOptions | None = None
+    ):
         """Mirror start_run: create the Run, pending results, and a RunJob."""
 
         container = db_client.app.state.container
@@ -987,7 +989,7 @@ class TestRunRunnerLifecycle:
             agent_id=agent_id,
             test_records=test_records,
             result_ids=result_ids,
-            options=RunOptions(),
+            options=options or RunOptions(),
         )
         return job, result_ids
 
@@ -1163,6 +1165,98 @@ class TestRunRunnerLifecycle:
         assert "test_started" in types  # first test did start before raising
         quota_msg = next(c for c in broadcasts if c.get("type") == "quota_exhausted")
         assert quota_msg["reset_message"] == "try later"
+
+    def test_runrunner_runs_tests_concurrently(self, db_client, two_tests_agent, monkeypatch):
+        broadcasts, _completed = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
+        job, _ = self._prepare_job(
+            db_client,
+            two_tests_agent["agent_id"],
+            two_tests_agent["test_ids"],
+            RunOptions(concurrency=2),
+        )
+        _get_coordinator(db_client).start(job.run_id)
+        in_flight = 0
+        peak = 0
+
+        async def slow_run_test(*args, **kwargs):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.05)
+            in_flight -= 1
+            return TestResult(test_id="t", test_name="Patched", status="pass", transcript=[])
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test",
+            side_effect=slow_run_test,
+        ):
+            runner = db_client.app.state.container.resolve(RunRunner)
+            asyncio.run(runner.execute(job))
+
+        types = [c.get("type") for c in broadcasts]
+        assert peak == 2
+        assert types.count("test_completed") == 2
+        assert types[-1] == "run_completed"
+
+    def test_quota_exhausted_in_flight_tests_record_their_own_error(
+        self, db_client, two_tests_agent, monkeypatch
+    ):
+        broadcasts, _completed = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
+        job, _ = self._prepare_job(
+            db_client,
+            two_tests_agent["agent_id"],
+            two_tests_agent["test_ids"],
+            RunOptions(concurrency=2),
+        )
+        _get_coordinator(db_client).start(job.run_id)
+
+        async def raises_quota(*args, **kwargs):
+            await asyncio.sleep(0.01)
+            raise QuotaExhaustedError("quota gone", reset_message="try later")
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test",
+            side_effect=raises_quota,
+        ):
+            runner = db_client.app.state.container.resolve(RunRunner)
+            asyncio.run(runner.execute(job))
+
+        types = [c.get("type") for c in broadcasts]
+        assert types.count("quota_exhausted") == 2
+        assert "test_cancelled" not in types
+        assert types[-1] == "run_completed"
+
+    def test_start_run_echoes_concurrency_capped_at_test_count(
+        self, db_client, two_tests_agent, monkeypatch
+    ):
+        _broadcasts, completed = self._spy_broadcasts(_get_coordinator(db_client), monkeypatch)
+
+        async def fake_run_test(*args, **kwargs):
+            return TestResult(test_id="t", test_name="Patched", status="pass", transcript=[])
+
+        with patch(
+            "voicetest.services.testing.execution.TestExecutionService.run_test",
+            side_effect=fake_run_test,
+        ):
+            resp = db_client.post(
+                f"/api/agents/{two_tests_agent['agent_id']}/runs",
+                json={"test_ids": two_tests_agent["test_ids"], "options": {"concurrency": 8}},
+            )
+            assert completed.wait(timeout=5)
+
+        assert resp.status_code == 200
+        assert resp.json()["concurrency"] == 2
+
+    @pytest.mark.parametrize("concurrency", [0, 17])
+    def test_start_run_rejects_out_of_range_concurrency(
+        self, db_client, two_tests_agent, concurrency
+    ):
+        resp = db_client.post(
+            f"/api/agents/{two_tests_agent['agent_id']}/runs",
+            json={"options": {"concurrency": concurrency}},
+        )
+
+        assert resp.status_code == 422
 
     def test_runrunner_unexpected_exception_broadcasts_test_error(
         self, db_client, two_tests_agent, monkeypatch

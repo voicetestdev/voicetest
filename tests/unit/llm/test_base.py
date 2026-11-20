@@ -4,6 +4,7 @@ Covers centralized LLM call handling, cache salt behavior,
 and no-cache integration with RunOptions.
 """
 
+import asyncio
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -171,7 +172,7 @@ class TestCallLlmParseErrorRetry:
 
         contents = iter(["not json at all", '{"answer": "hello"}'])
 
-        def fake_completion(request, num_retries, cache=None):
+        async def fake_completion(request, num_retries, cache=None):
             choice = MagicMock()
             choice.message.content = next(contents)
             choice.message.tool_calls = None
@@ -184,8 +185,8 @@ class TestCallLlmParseErrorRetry:
             return response
 
         fake_completion.__module__ = "dspy.clients.lm"
-        fake_completion.__qualname__ = "litellm_completion"
-        monkeypatch.setattr(dspy_lm_module, "litellm_completion", fake_completion)
+        fake_completion.__qualname__ = "alitellm_completion"
+        monkeypatch.setattr(dspy_lm_module, "alitellm_completion", fake_completion)
         monkeypatch.setattr("voicetest.util.retry.asyncio.sleep", AsyncMock())
         monkeypatch.setattr(
             dspy,
@@ -205,6 +206,51 @@ class TestCallLlmParseErrorRetry:
         )
 
         assert result.answer == "hello"
+
+
+class TestCallLlmConcurrency:
+    async def test_concurrent_calls_overlap_and_keep_their_own_lm(self):
+        started = 0
+        both_started = asyncio.Event()
+
+        class GatedLM(DummyLM):
+            preferred_adapter = ChatAdapter()
+
+            async def aforward(self, prompt=None, messages=None, **kwargs):
+                nonlocal started
+                started += 1
+                if started == 2:
+                    both_started.set()
+                await both_started.wait()
+                return await super().aforward(prompt=prompt, messages=messages, **kwargs)
+
+        lms = iter(
+            [
+                GatedLM([{"message": "first"}], adapter=ChatAdapter()),
+                GatedLM([{"message": "second"}], adapter=ChatAdapter()),
+            ]
+        )
+
+        with patch("voicetest.llm.base._create_lm", side_effect=lambda *a, **k: next(lms)):
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    call_llm(
+                        "openai/gpt-4o-mini",
+                        MessageSignature,
+                        predictor_class=dspy.Predict,
+                        prompt="a",
+                    ),
+                    call_llm(
+                        "openai/gpt-4o-mini",
+                        MessageSignature,
+                        predictor_class=dspy.Predict,
+                        prompt="b",
+                    ),
+                ),
+                timeout=5,
+            )
+
+        assert [r.message for r in results] == ["first", "second"]
 
 
 class TestCallLlmRetryCallback:
@@ -236,7 +282,7 @@ class TestCallLlmRetryCallback:
                 )
             return dspy.Prediction(output="success")
 
-        with patch("dspy.Predict.__call__", side_effect=mock_predict):
+        with patch("dspy.Predict.acall", side_effect=mock_predict):
             await _call_llm_sync(
                 "openai/gpt-4o-mini",
                 DummySignature,
@@ -280,7 +326,7 @@ class TestCallLlmRetryIntegration:
                 )
             return dspy.Prediction(output="success")
 
-        with patch("dspy.Predict.__call__", side_effect=mock_predict):
+        with patch("dspy.Predict.acall", side_effect=mock_predict):
             await _call_llm_sync(
                 "openai/gpt-4o-mini",
                 DummySignature,

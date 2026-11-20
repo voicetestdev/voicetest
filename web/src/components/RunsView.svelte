@@ -23,6 +23,7 @@
     loadRunHistory,
     now,
     selectResult as navigateToResult,
+    forgetRun,
   } from "../lib/stores";
   import type {
     RunResultRecord,
@@ -444,10 +445,8 @@
     deleting = true;
     try {
       await api.deleteRun(runId);
-      runHistory.update((runs) => runs.filter((r) => r.id !== runId));
+      forgetRun(runId);
       runTotal.update((n) => Math.max(0, n - 1));
-      currentRunWithResults.set(null);
-      currentRunId.set(null);
     } catch (e) {
       pushToast(errorMessage(e, "Failed to delete run"));
     }

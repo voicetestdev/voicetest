@@ -10,6 +10,8 @@ import asyncio
 from dataclasses import dataclass
 
 from voicetest.exceptions import QuotaExhaustedError
+from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import MetricsConfig
 from voicetest.models.results import Message
 from voicetest.models.results import TestResult
 from voicetest.models.test_case import RunOptions
@@ -17,6 +19,7 @@ from voicetest.services.agents import AgentService
 from voicetest.services.runs import RunService
 from voicetest.services.testing.cases import TestCaseService
 from voicetest.services.testing.execution import TestExecutionService
+from voicetest.util.concurrency import run_bounded
 from voicetest.util.retry import RetryError
 from voicetest.web.coordinator import RunCoordinator
 
@@ -63,105 +66,14 @@ class RunRunner:
                 or self._agents.get_start_speaker(job.agent_id)
             }
         )
+        quota_exhausted = asyncio.Event()
+
+        async def run_one(test_record: dict) -> None:
+            await self._run_one(job, test_record, graph, options, metrics_config, quota_exhausted)
 
         try:
-            for idx, test_record in enumerate(job.test_records):
-                result_id = job.result_ids[test_record["id"]]
-
-                if self._coordinator.is_test_cancelled(job.run_id, result_id):
-                    self._runs.mark_result_cancelled(result_id)
-                    await self._coordinator.broadcast(
-                        job.run_id,
-                        {"type": "test_cancelled", "result_id": result_id},
-                    )
-                    continue
-
-                if self._coordinator.is_run_cancelled(job.run_id):
-                    await self._cancel_remaining(job, idx)
-                    break
-
-                test_case = self._tests.to_model(test_record)
-
-                await self._coordinator.broadcast(
-                    job.run_id,
-                    {
-                        "type": "test_started",
-                        "result_id": result_id,
-                        "test_case_id": test_record["id"],
-                        "test_name": test_case.name,
-                    },
-                )
-
-                last_transcript: list[Message] = []
-                try:
-                    result = await self._exec.run_test(
-                        graph,
-                        test_case,
-                        options=options,
-                        metrics_config=metrics_config,
-                        on_turn=self._make_on_turn(job.run_id, result_id, last_transcript),
-                        on_token=self._make_on_token(job.run_id, result_id)
-                        if job.options.streaming
-                        else None,
-                        on_error=self._make_on_error(job.run_id, result_id),
-                    )
-                    self._runs.complete_result(result_id, result)
-                    await self._coordinator.broadcast(
-                        job.run_id,
-                        {
-                            "type": "test_completed",
-                            "result_id": result_id,
-                            "status": result.status,
-                        },
-                    )
-                except asyncio.CancelledError:
-                    cancelled_result = TestResult(
-                        test_name=test_case.name,
-                        status="error",
-                        transcript=last_transcript,
-                        error_message="Cancelled by user",
-                    )
-                    self._runs.complete_result(result_id, cancelled_result)
-                    await self._coordinator.broadcast(
-                        job.run_id,
-                        {"type": "test_cancelled", "result_id": result_id},
-                    )
-                except QuotaExhaustedError as e:
-                    error_result = TestResult(
-                        test_name=test_case.name,
-                        status="error",
-                        transcript=last_transcript,
-                        error_message=str(e),
-                    )
-                    self._runs.complete_result(result_id, error_result)
-                    await self._coordinator.broadcast(
-                        job.run_id,
-                        {
-                            "type": "quota_exhausted",
-                            "result_id": result_id,
-                            "message": str(e),
-                            "reset_message": e.reset_message,
-                        },
-                    )
-                    # Quota won't reset for hours — abort rather than burn through retry backoff.
-                    await self._cancel_remaining(job, idx + 1)
-                    break
-                except Exception as e:
-                    error_result = TestResult(
-                        test_name=test_case.name,
-                        status="error",
-                        transcript=last_transcript,
-                        error_message=str(e),
-                    )
-                    self._runs.complete_result(result_id, error_result)
-                    await self._coordinator.broadcast(
-                        job.run_id,
-                        {
-                            "type": "test_error",
-                            "result_id": result_id,
-                            "error": str(e),
-                        },
-                    )
+            async for _ in run_bounded(job.test_records, run_one, job.options.concurrency):
+                pass
 
             self._runs.complete(job.run_id)
             await self._coordinator.broadcast(job.run_id, {"type": "run_completed"})
@@ -176,13 +88,109 @@ class RunRunner:
             # `run_completed`, closes).
             self._coordinator.end(job.run_id)
 
-    async def _cancel_remaining(self, job: RunJob, start_idx: int) -> None:
-        for remaining_record in job.test_records[start_idx:]:
-            remaining_result_id = job.result_ids[remaining_record["id"]]
-            self._runs.mark_result_cancelled(remaining_result_id)
+    async def _run_one(
+        self,
+        job: RunJob,
+        test_record: dict,
+        graph: AgentGraph,
+        options: RunOptions,
+        metrics_config: MetricsConfig | None,
+        quota_exhausted: asyncio.Event,
+    ) -> None:
+        result_id = job.result_ids[test_record["id"]]
+
+        if (
+            quota_exhausted.is_set()
+            or self._coordinator.is_run_cancelled(job.run_id)
+            or self._coordinator.is_test_cancelled(job.run_id, result_id)
+        ):
+            self._runs.mark_result_cancelled(result_id)
             await self._coordinator.broadcast(
                 job.run_id,
-                {"type": "test_cancelled", "result_id": remaining_result_id},
+                {"type": "test_cancelled", "result_id": result_id},
+            )
+            return
+
+        test_case = self._tests.to_model(test_record)
+
+        await self._coordinator.broadcast(
+            job.run_id,
+            {
+                "type": "test_started",
+                "result_id": result_id,
+                "test_case_id": test_record["id"],
+                "test_name": test_case.name,
+            },
+        )
+
+        last_transcript: list[Message] = []
+        try:
+            result = await self._exec.run_test(
+                graph,
+                test_case,
+                options=options,
+                metrics_config=metrics_config,
+                on_turn=self._make_on_turn(job.run_id, result_id, last_transcript),
+                on_token=self._make_on_token(job.run_id, result_id)
+                if job.options.streaming
+                else None,
+                on_error=self._make_on_error(job.run_id, result_id),
+            )
+            self._runs.complete_result(result_id, result)
+            await self._coordinator.broadcast(
+                job.run_id,
+                {
+                    "type": "test_completed",
+                    "result_id": result_id,
+                    "status": result.status,
+                },
+            )
+        except asyncio.CancelledError:
+            cancelled_result = TestResult(
+                test_name=test_case.name,
+                status="error",
+                transcript=last_transcript,
+                error_message="Cancelled by user",
+            )
+            self._runs.complete_result(result_id, cancelled_result)
+            await self._coordinator.broadcast(
+                job.run_id,
+                {"type": "test_cancelled", "result_id": result_id},
+            )
+        except QuotaExhaustedError as e:
+            # Quota won't reset for hours: stop starting queued tests; in-flight ones record theirs.
+            quota_exhausted.set()
+            error_result = TestResult(
+                test_name=test_case.name,
+                status="error",
+                transcript=last_transcript,
+                error_message=str(e),
+            )
+            self._runs.complete_result(result_id, error_result)
+            await self._coordinator.broadcast(
+                job.run_id,
+                {
+                    "type": "quota_exhausted",
+                    "result_id": result_id,
+                    "message": str(e),
+                    "reset_message": e.reset_message,
+                },
+            )
+        except Exception as e:
+            error_result = TestResult(
+                test_name=test_case.name,
+                status="error",
+                transcript=last_transcript,
+                error_message=str(e),
+            )
+            self._runs.complete_result(result_id, error_result)
+            await self._coordinator.broadcast(
+                job.run_id,
+                {
+                    "type": "test_error",
+                    "result_id": result_id,
+                    "error": str(e),
+                },
             )
 
     def _make_on_turn(self, run_id: str, result_id: str, transcript_ref: list[Message]):
