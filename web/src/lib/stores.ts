@@ -1,4 +1,4 @@
-import { writable, derived, get } from "svelte/store";
+import { writable, derived, readable, get } from "svelte/store";
 import type {
   AgentGraph,
   AgentRecord,
@@ -132,28 +132,62 @@ let currentRunIdValue: string | null = null;
 let selectedResultIdValue: string | null = null;
 // Disabled initially - subscriptions fire immediately with default values which would corrupt the hash
 let hashUpdateEnabled = false;
+let replaceDepth = 0;
+let hashFlushScheduled = false;
+let pendingReplace = false;
+let pendingPush = false;
+let navSeq = 0;
+
+function buildHash(): string {
+  if (currentViewValue === "settings") return "#/settings";
+  if (currentViewValue === "import" || !currentAgentIdValue) return "#/import";
+  let hash = `#/agent/${currentAgentIdValue}/${currentViewValue}`;
+  // Deep-link into a specific run (and optionally a specific test result)
+  // so reloads keep the user on the same screen.
+  if (currentViewValue === "runs" && currentRunIdValue) {
+    hash += `/${currentRunIdValue}`;
+    if (selectedResultIdValue) {
+      hash += `/${selectedResultIdValue}`;
+    }
+  }
+  return hash;
+}
+
+function routeOf(hash: string): string {
+  return hash.split("/").slice(0, 5).join("/");
+}
 
 function updateHash(): void {
   if (typeof window === "undefined") return;
-  let hash = "";
-  if (currentViewValue === "settings") {
-    hash = "#/settings";
-  } else if (currentViewValue === "import" || !currentAgentIdValue) {
-    hash = "#/import";
+  if (replaceDepth > 0) pendingReplace = true;
+  if (hashFlushScheduled) return;
+  hashFlushScheduled = true;
+  queueMicrotask(flushHash);
+}
+
+// Coalesces every store change made in one tick into a single history entry.
+// Changing agent, view or run pushes; a result the app picks on its own
+// (auto-follow, first result) only replaces, so Back never lands on a page
+// that immediately re-selects and traps the user.
+function flushHash(): void {
+  hashFlushScheduled = false;
+  const replace = pendingReplace;
+  const push = pendingPush;
+  pendingReplace = pendingPush = false;
+  const hash = buildHash();
+  const current = window.location.hash;
+  if (hash === current) return;
+  if (!replace && (push || routeOf(hash) !== routeOf(current))) {
+    window.history.pushState(null, "", hash);
   } else {
-    hash = `#/agent/${currentAgentIdValue}/${currentViewValue}`;
-    // Deep-link into a specific run (and optionally a specific test result)
-    // so reloads keep the user on the same screen.
-    if (currentViewValue === "runs" && currentRunIdValue) {
-      hash += `/${currentRunIdValue}`;
-      if (selectedResultIdValue) {
-        hash += `/${selectedResultIdValue}`;
-      }
-    }
-  }
-  if (window.location.hash !== hash) {
     window.history.replaceState(null, "", hash);
   }
+}
+
+export function selectResult(resultId: string): void {
+  if (resultId === selectedResultIdValue) return;
+  pendingPush = true;
+  selectedResultId.set(resultId);
 }
 
 currentAgentId.subscribe((v) => {
@@ -176,27 +210,45 @@ selectedResultId.subscribe((v) => {
   if (hashUpdateEnabled) updateHash();
 });
 
-if (typeof window !== "undefined") {
-  window.addEventListener("hashchange", async () => {
-    const { agentId, view, runId, resultId } = parseHash();
+export async function applyHash(): Promise<void> {
+  const seq = ++navSeq;
+  const { agentId, view, runId, resultId } = parseHash();
+  replaceDepth++;
+  try {
     if (view === "settings") {
       currentView.set("settings");
       currentAgentId.set(null);
-    } else if (agentId && agentId !== currentAgentIdValue) {
-      await selectAgent(agentId, view, runId);
-      if (resultId) selectedResultId.set(resultId);
-    } else if (view !== currentViewValue) {
-      currentView.set(view);
-      if (view === "runs" && runId) {
-        await loadRun(runId);
-        if (resultId) selectedResultId.set(resultId);
-      }
-    } else if (view === "runs" && runId && runId !== currentRunIdValue) {
-      await loadRun(runId);
-      if (resultId) selectedResultId.set(resultId);
-    } else if (view === "runs" && resultId && resultId !== selectedResultIdValue) {
-      selectedResultId.set(resultId);
+      return;
     }
+    if (!agentId) {
+      currentView.set("import");
+      return;
+    }
+    try {
+      if (agentId !== currentAgentIdValue) {
+        await selectAgent(agentId, view, runId);
+      } else {
+        currentView.set(view);
+        if (view === "runs" && runId && runId !== currentRunIdValue) await loadRun(runId);
+      }
+    } catch (e) {
+      if (seq !== navSeq) return;
+      pushToast(errorMessage(e, "That page is no longer available"));
+      if (agentId === currentAgentIdValue) clearCurrentRun();
+      else currentView.set("import");
+      return;
+    }
+    if (seq !== navSeq) return;
+    if (view === "runs" && !runId) clearCurrentRun();
+    else if (runId && resultId) selectedResultId.set(resultId);
+  } finally {
+    replaceDepth--;
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("hashchange", () => {
+    void applyHash();
   });
 }
 
@@ -372,6 +424,15 @@ export async function loadImporterTypes(): Promise<void> {
 }
 
 export async function initStores(): Promise<void> {
+  replaceDepth++;
+  try {
+    await restoreInitialLocation();
+  } finally {
+    replaceDepth--;
+  }
+}
+
+async function restoreInitialLocation(): Promise<void> {
   await Promise.all([loadAgents(), loadSettings(), loadImporterTypes()]);
 
   const agentList = get(agents);
@@ -411,6 +472,90 @@ export async function loadOlderRuns(agentId: string): Promise<void> {
   runHistory.update((runs) => [...runs, ...older.filter((r) => !seen.has(r.id))]);
 }
 
+export const now = readable(Date.now(), (set) => {
+  const id = setInterval(() => set(Date.now()), 30_000);
+  return () => clearInterval(id);
+});
+
+export async function refreshRunHistory(agentId: string): Promise<void> {
+  const [head, { total }] = await Promise.all([
+    api.listRunsForAgent(agentId, RUN_PAGE_SIZE),
+    api.countRunsForAgent(agentId),
+  ]);
+  if (agentId !== currentAgentIdValue) return;
+  const headIds = new Set(head.map((r) => r.id));
+  const oldest = head.length === RUN_PAGE_SIZE ? Date.parse(head[head.length - 1].started_at) : null;
+  runHistory.update((runs) => [
+    ...head,
+    ...(oldest === null
+      ? []
+      : runs.filter((r) => !headIds.has(r.id) && Date.parse(r.started_at) < oldest)),
+  ]);
+  runTotal.set(total);
+}
+
+let runsFeed: WebSocket | null = null;
+let runsFeedRetry: ReturnType<typeof setTimeout> | null = null;
+let runsFeedRefresh: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleRunHistoryRefresh(agentId: string): void {
+  if (runsFeedRefresh) clearTimeout(runsFeedRefresh);
+  runsFeedRefresh = setTimeout(() => {
+    runsFeedRefresh = null;
+    refreshRunHistory(agentId).catch((e) => console.error("[runs-feed] refresh failed:", e));
+  }, 300);
+}
+
+function disconnectRunsFeed(): void {
+  for (const timer of [runsFeedRetry, runsFeedRefresh]) {
+    if (timer) clearTimeout(timer);
+  }
+  runsFeedRetry = runsFeedRefresh = null;
+  const ws = runsFeed;
+  runsFeed = null;
+  ws?.close();
+}
+
+function connectRunsFeed(agentId: string): void {
+  disconnectRunsFeed();
+  if (typeof WebSocket === "undefined") return;
+  let ws: WebSocket;
+  try {
+    ws = new WebSocket(api.getWebSocketUrl(`/agents/${agentId}/runs/ws`));
+  } catch (e) {
+    console.error("[runs-feed] connect failed:", e);
+    return;
+  }
+  runsFeed = ws;
+  ws.onmessage = (event) => {
+    let data;
+    try {
+      data = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+    if (data.type === "run_deleted") {
+      const before = get(runHistory).length;
+      runHistory.update((runs) => runs.filter((r) => r.id !== data.run_id));
+      if (get(runHistory).length < before) runTotal.update((n) => Math.max(0, n - 1));
+    } else if (data.type === "subscribed" || data.type === "run_updated") {
+      scheduleRunHistoryRefresh(agentId);
+    }
+  };
+  ws.onclose = () => {
+    if (runsFeed !== ws) return;
+    runsFeed = null;
+    runsFeedRetry = setTimeout(() => {
+      if (currentAgentIdValue === agentId) connectRunsFeed(agentId);
+    }, 3000);
+  };
+}
+
+currentAgentId.subscribe((agentId) => {
+  if (agentId) connectRunsFeed(agentId);
+  else disconnectRunsFeed();
+});
+
 export async function selectRun(agentId: string, runId: string): Promise<void> {
   // If same agent, just load the run without refetching agent data
   if (currentAgentIdValue === agentId) {
@@ -444,6 +589,7 @@ export async function startRun(agentId: string, testIds?: string[], options?: Pa
   disconnectRunWebSocket();
   isRunning.set(true);
   currentRunWithResults.set(null);
+  currentRunId.set(null);
 
   const response = await api.startRun(agentId, testIds, options);
   currentRunId.set(response.id);

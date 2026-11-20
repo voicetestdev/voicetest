@@ -77,6 +77,7 @@ from voicetest.util.pathutil import resolve_within
 from voicetest.web.calls import CallManager
 from voicetest.web.chat import ChatManager
 from voicetest.web.coordinator import RunCoordinator
+from voicetest.web.run_feed import RunFeed
 
 
 # Configure logging from env var set by CLI (carries across uvicorn --reload workers).
@@ -1262,7 +1263,7 @@ def _cleanup_orphaned_run(http_request: Request, run_id: str, result_ids: list[s
         session = _db_session(http_request)
         session.execute(
             _UPDATE_RUN_COMPLETED,
-            {"ts": datetime.now(UTC), "rid": run_id},
+            {"ts": datetime.now(UTC).replace(tzinfo=None), "rid": run_id},
         )
         if result_ids:
             session.execute(
@@ -1591,6 +1592,24 @@ async def run_websocket(websocket: WebSocket, run_id: str):
         print(f"[WS] Exception in websocket handler for run {run_id}: {type(e).__name__}: {e}")
     finally:
         coordinator.detach(run_id, websocket)
+
+
+@router.websocket("/agents/{agent_id}/runs/ws")
+async def agent_runs_websocket(websocket: WebSocket, agent_id: str):
+    """WebSocket pushing `run_updated` / `run_deleted` events for an agent's runs.
+
+    Sends `subscribed` once attached; clients refetch then to cover any gap."""
+    feed = websocket.app.state.container.resolve(RunFeed)
+    await websocket.accept()
+    await feed.attach(agent_id, websocket)
+    try:
+        await websocket.send_json({"type": "subscribed"})
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        feed.detach(agent_id, websocket)
 
 
 @router.post("/agents/{agent_id}/runs")

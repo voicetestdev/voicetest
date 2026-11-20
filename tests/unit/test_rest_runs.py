@@ -76,6 +76,44 @@ class TestRunHistoryPaging:
         assert db_client.get("/api/agents/missing/runs/count").status_code == 404
 
 
+class TestAgentRunsFeed:
+    @pytest.fixture
+    def agent_id(self, db_client, sample_retell_config):
+        return db_client.post(
+            "/api/agents", json={"name": "Feed Agent", "config": sample_retell_config}
+        ).json()["id"]
+
+    def test_pushes_run_lifecycle(self, db_client, agent_id):
+        run_svc = db_client.app.state.container.resolve(RunService)
+
+        with db_client.websocket_connect(f"/api/agents/{agent_id}/runs/ws") as ws:
+            assert ws.receive_json() == {"type": "subscribed"}
+
+            run = run_svc.create_run(agent_id)
+            result_id = run_svc.create_pending_result(run["id"], "tc-1", "Test 1")
+            run_svc.complete_result(result_id, TestResult(test_name="Test 1", status="pass"))
+            run_svc.complete(run["id"])
+            assert db_client.delete(f"/api/runs/{run['id']}").status_code == 200
+
+            updated = {"type": "run_updated", "run_id": run["id"]}
+            assert [ws.receive_json() for _ in range(5)] == [updated] * 4 + [
+                {"type": "run_deleted", "run_id": run["id"]}
+            ]
+
+    def test_ignores_other_agents_runs(self, db_client, agent_id, sample_retell_config):
+        other_id = db_client.post(
+            "/api/agents", json={"name": "Other Agent", "config": sample_retell_config}
+        ).json()["id"]
+        run_svc = db_client.app.state.container.resolve(RunService)
+
+        with db_client.websocket_connect(f"/api/agents/{agent_id}/runs/ws") as ws:
+            ws.receive_json()
+            run_svc.create_run(other_id)
+            mine = run_svc.create_run(agent_id)
+
+            assert ws.receive_json() == {"type": "run_updated", "run_id": mine["id"]}
+
+
 class TestRunWebSocket:
     """Tests for run WebSocket endpoint and message formats."""
 
