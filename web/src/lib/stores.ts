@@ -132,28 +132,62 @@ let currentRunIdValue: string | null = null;
 let selectedResultIdValue: string | null = null;
 // Disabled initially - subscriptions fire immediately with default values which would corrupt the hash
 let hashUpdateEnabled = false;
+let replaceDepth = 0;
+let hashFlushScheduled = false;
+let pendingReplace = false;
+let pendingPush = false;
+let navSeq = 0;
+
+function buildHash(): string {
+  if (currentViewValue === "settings") return "#/settings";
+  if (currentViewValue === "import" || !currentAgentIdValue) return "#/import";
+  let hash = `#/agent/${currentAgentIdValue}/${currentViewValue}`;
+  // Deep-link into a specific run (and optionally a specific test result)
+  // so reloads keep the user on the same screen.
+  if (currentViewValue === "runs" && currentRunIdValue) {
+    hash += `/${currentRunIdValue}`;
+    if (selectedResultIdValue) {
+      hash += `/${selectedResultIdValue}`;
+    }
+  }
+  return hash;
+}
+
+function routeOf(hash: string): string {
+  return hash.split("/").slice(0, 5).join("/");
+}
 
 function updateHash(): void {
   if (typeof window === "undefined") return;
-  let hash = "";
-  if (currentViewValue === "settings") {
-    hash = "#/settings";
-  } else if (currentViewValue === "import" || !currentAgentIdValue) {
-    hash = "#/import";
+  if (replaceDepth > 0) pendingReplace = true;
+  if (hashFlushScheduled) return;
+  hashFlushScheduled = true;
+  queueMicrotask(flushHash);
+}
+
+// Coalesces every store change made in one tick into a single history entry.
+// Changing agent, view or run pushes; a result the app picks on its own
+// (auto-follow, first result) only replaces, so Back never lands on a page
+// that immediately re-selects and traps the user.
+function flushHash(): void {
+  hashFlushScheduled = false;
+  const replace = pendingReplace;
+  const push = pendingPush;
+  pendingReplace = pendingPush = false;
+  const hash = buildHash();
+  const current = window.location.hash;
+  if (hash === current) return;
+  if (!replace && (push || routeOf(hash) !== routeOf(current))) {
+    window.history.pushState(null, "", hash);
   } else {
-    hash = `#/agent/${currentAgentIdValue}/${currentViewValue}`;
-    // Deep-link into a specific run (and optionally a specific test result)
-    // so reloads keep the user on the same screen.
-    if (currentViewValue === "runs" && currentRunIdValue) {
-      hash += `/${currentRunIdValue}`;
-      if (selectedResultIdValue) {
-        hash += `/${selectedResultIdValue}`;
-      }
-    }
-  }
-  if (window.location.hash !== hash) {
     window.history.replaceState(null, "", hash);
   }
+}
+
+export function selectResult(resultId: string): void {
+  if (resultId === selectedResultIdValue) return;
+  pendingPush = true;
+  selectedResultId.set(resultId);
 }
 
 currentAgentId.subscribe((v) => {
@@ -176,27 +210,45 @@ selectedResultId.subscribe((v) => {
   if (hashUpdateEnabled) updateHash();
 });
 
-if (typeof window !== "undefined") {
-  window.addEventListener("hashchange", async () => {
-    const { agentId, view, runId, resultId } = parseHash();
+export async function applyHash(): Promise<void> {
+  const seq = ++navSeq;
+  const { agentId, view, runId, resultId } = parseHash();
+  replaceDepth++;
+  try {
     if (view === "settings") {
       currentView.set("settings");
       currentAgentId.set(null);
-    } else if (agentId && agentId !== currentAgentIdValue) {
-      await selectAgent(agentId, view, runId);
-      if (resultId) selectedResultId.set(resultId);
-    } else if (view !== currentViewValue) {
-      currentView.set(view);
-      if (view === "runs" && runId) {
-        await loadRun(runId);
-        if (resultId) selectedResultId.set(resultId);
-      }
-    } else if (view === "runs" && runId && runId !== currentRunIdValue) {
-      await loadRun(runId);
-      if (resultId) selectedResultId.set(resultId);
-    } else if (view === "runs" && resultId && resultId !== selectedResultIdValue) {
-      selectedResultId.set(resultId);
+      return;
     }
+    if (!agentId) {
+      currentView.set("import");
+      return;
+    }
+    try {
+      if (agentId !== currentAgentIdValue) {
+        await selectAgent(agentId, view, runId);
+      } else {
+        currentView.set(view);
+        if (view === "runs" && runId && runId !== currentRunIdValue) await loadRun(runId);
+      }
+    } catch (e) {
+      if (seq !== navSeq) return;
+      pushToast(errorMessage(e, "That page is no longer available"));
+      if (agentId === currentAgentIdValue) clearCurrentRun();
+      else currentView.set("import");
+      return;
+    }
+    if (seq !== navSeq) return;
+    if (view === "runs" && !runId) clearCurrentRun();
+    else if (runId && resultId) selectedResultId.set(resultId);
+  } finally {
+    replaceDepth--;
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("hashchange", () => {
+    void applyHash();
   });
 }
 
@@ -372,6 +424,15 @@ export async function loadImporterTypes(): Promise<void> {
 }
 
 export async function initStores(): Promise<void> {
+  replaceDepth++;
+  try {
+    await restoreInitialLocation();
+  } finally {
+    replaceDepth--;
+  }
+}
+
+async function restoreInitialLocation(): Promise<void> {
   await Promise.all([loadAgents(), loadSettings(), loadImporterTypes()]);
 
   const agentList = get(agents);
@@ -528,6 +589,7 @@ export async function startRun(agentId: string, testIds?: string[], options?: Pa
   disconnectRunWebSocket();
   isRunning.set(true);
   currentRunWithResults.set(null);
+  currentRunId.set(null);
 
   const response = await api.startRun(agentId, testIds, options);
   currentRunId.set(response.id);

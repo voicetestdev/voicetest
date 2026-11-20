@@ -22,6 +22,7 @@
     loadRun,
     loadRunHistory,
     now,
+    selectResult as navigateToResult,
   } from "../lib/stores";
   import type {
     RunResultRecord,
@@ -341,7 +342,7 @@
 
   function selectResult(id: string) {
     userPinned = true;
-    $selectedResultId = id;
+    navigateToResult(id);
   }
 
   // Auto-select: only when user hasn't pinned a result
