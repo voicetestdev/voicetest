@@ -313,7 +313,7 @@ class TestTryEvictLastCall:
             "model": lm.model,
             "messages": messages,
             **merged,
-            "_fn_identifier": "dspy.clients.lm.litellm_completion",
+            "_fn_identifier": "dspy.clients.lm.alitellm_completion",
         }
         cache.put(
             request,
@@ -421,25 +421,25 @@ class TestTryEvictLastCall:
         return resp
 
     def _install_fake_completion(self, monkeypatch):
-        """Monkey-patch dspy.clients.lm.litellm_completion with a mock that masquerades
+        """Monkey-patch dspy.clients.lm.alitellm_completion with a mock that masquerades
         as the real identifier (so request_cache computes the same _fn_identifier
         that production would)."""
 
         call_count = {"n": 0}
 
-        def fake_completion(request, num_retries, cache=None):
+        async def fake_completion(request, num_retries, cache=None):
             call_count["n"] += 1
             return self._make_fake_response()
 
         # request_cache computes fn_identifier from fn.__module__ + fn.__qualname__ —
         # make the fake match the real function so the cache key computation agrees.
         fake_completion.__module__ = "dspy.clients.lm"
-        fake_completion.__qualname__ = "litellm_completion"
+        fake_completion.__qualname__ = "alitellm_completion"
 
-        monkeypatch.setattr(dspy_lm_module, "litellm_completion", fake_completion)
+        monkeypatch.setattr(dspy_lm_module, "alitellm_completion", fake_completion)
         return call_count
 
-    def test_end_to_end_eviction_with_prompt_arg(self, tmp_path, monkeypatch):
+    async def test_end_to_end_eviction_with_prompt_arg(self, tmp_path, monkeypatch):
         """End-to-end proof with prompt= (history stores messages=None, tests the
         prompt→messages reconstruction path)."""
         cache = self._fresh_cache(tmp_path)
@@ -450,11 +450,11 @@ class TestTryEvictLastCall:
             dspy.cache = cache
             lm = _create_lm("openai/gpt-4o-mini")
 
-            lm(prompt="test prompt")
+            await lm.acall(prompt="test prompt")
             assert call_count["n"] == 1
 
             # Cache hit — completion not invoked again
-            lm(prompt="test prompt")
+            await lm.acall(prompt="test prompt")
             assert call_count["n"] == 1
 
             assert try_evict_last_call(lm) is True
@@ -462,12 +462,12 @@ class TestTryEvictLastCall:
             # Post-eviction: cache miss → completion invoked again. If our
             # reconstructed key didn't match what dspy wrote, this would still
             # be a cache hit and count would stay at 1.
-            lm(prompt="test prompt")
+            await lm.acall(prompt="test prompt")
             assert call_count["n"] == 2
         finally:
             dspy.cache = original_cache
 
-    def test_end_to_end_eviction_with_messages_arg(self, tmp_path, monkeypatch):
+    async def test_end_to_end_eviction_with_messages_arg(self, tmp_path, monkeypatch):
         """End-to-end proof with messages= (history stores the messages list
         directly — tests the normal reconstruction path)."""
         cache = self._fresh_cache(tmp_path)
@@ -482,33 +482,33 @@ class TestTryEvictLastCall:
                 {"role": "user", "content": "hello"},
             ]
 
-            lm(messages=messages)
+            await lm.acall(messages=messages)
             assert call_count["n"] == 1
 
-            lm(messages=messages)
+            await lm.acall(messages=messages)
             assert call_count["n"] == 1  # cache hit
 
             assert try_evict_last_call(lm) is True
 
-            lm(messages=messages)
+            await lm.acall(messages=messages)
             assert call_count["n"] == 2  # post-eviction miss
         finally:
             dspy.cache = original_cache
 
-    def test_end_to_end_cache_salt_changes_cache_key(self, tmp_path, monkeypatch):
+    async def test_end_to_end_cache_salt_changes_cache_key(self, tmp_path, monkeypatch):
         cache = self._fresh_cache(tmp_path)
         call_count = self._install_fake_completion(monkeypatch)
 
         original_cache = dspy.cache
         try:
             dspy.cache = cache
-            _create_lm("openai/gpt-4o-mini", cache_salt="aaa")(prompt="test prompt")
+            await _create_lm("openai/gpt-4o-mini", cache_salt="aaa").acall(prompt="test prompt")
             assert call_count["n"] == 1
 
-            _create_lm("openai/gpt-4o-mini", cache_salt="aaa")(prompt="test prompt")
+            await _create_lm("openai/gpt-4o-mini", cache_salt="aaa").acall(prompt="test prompt")
             assert call_count["n"] == 1
 
-            _create_lm("openai/gpt-4o-mini", cache_salt="bbb")(prompt="test prompt")
+            await _create_lm("openai/gpt-4o-mini", cache_salt="bbb").acall(prompt="test prompt")
             assert call_count["n"] == 2
         finally:
             dspy.cache = original_cache

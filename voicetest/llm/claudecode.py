@@ -1,5 +1,6 @@
 """Claude Code CLI LLM provider."""
 
+import asyncio
 import json
 import logging
 import os
@@ -103,6 +104,14 @@ class ClaudeCodeLM(dspy.LM):
             request=request,
             timeout=kwargs.get("timeout", DEFAULT_CLAUDECODE_TIMEOUT),
         )
+
+    async def acall(
+        self,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        **kwargs,
+    ) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self.__call__, prompt, messages, **kwargs)
 
     def _run_cli(
         self,

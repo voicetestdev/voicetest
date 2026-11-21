@@ -1,7 +1,10 @@
 """Tests for voicetest.services.runs module."""
 
+import asyncio
+
 import pytest
 
+from voicetest.engine.session import ConversationState
 from voicetest.models.agent import AgentGraph
 from voicetest.models.events import JUDGE_INPUT_EVENTS
 from voicetest.models.results import Message
@@ -413,6 +416,38 @@ class TestReplayRun:
         for sim in stub_conversation_runner:
             assert sim._user_turns == ["I need to cancel.", "ORD-99"]
             assert sim._index == 2
+
+    async def test_replay_runs_concurrently_and_keeps_source_order(
+        self, agent_id, imported_test_result, svc, monkeypatch
+    ):
+        source = svc.import_calls(
+            agent_id,
+            [
+                imported_test_result("call_a", transcript=list(_FOUR_TURN_TRANSCRIPT)),
+                imported_test_result("call_b", transcript=list(_FOUR_TURN_TRANSCRIPT)),
+            ],
+        )
+        delays = {"Replay of call_a": 0.05, "Replay of call_b": 0.0}
+        in_flight = 0
+        peak = 0
+
+        async def fake_run(self, test_case, simulator, **kwargs):
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(delays[test_case.name])
+            in_flight -= 1
+            return ConversationState()
+
+        monkeypatch.setattr("voicetest.engine.session.ConversationRunner.run", fake_run)
+
+        replay = await svc.replay_run(source["id"], _empty_graph(), RunOptions(concurrency=2))
+
+        assert peak == 2
+        assert [r["test_name"] for r in replay["results"]] == [
+            "Replay of call_a",
+            "Replay of call_b",
+        ]
 
 
 class TestRecordedStartSpeaker:
