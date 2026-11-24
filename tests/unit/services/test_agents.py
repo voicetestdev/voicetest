@@ -5,7 +5,12 @@ import json
 import pytest
 
 from voicetest.models.agent import AgentGraph
+from voicetest.models.agent import AgentNode
 from voicetest.models.agent import MetricsConfig
+from voicetest.models.agent import NodeType
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
+from voicetest.models.agent import VariableExtraction
 from voicetest.services.agents import AgentService
 
 
@@ -365,6 +370,66 @@ class TestGetVariables:
         created = svc.create_agent(name="NoVars", config=config)
         variables = svc.get_variables(created["id"])
         assert variables == []
+
+    def test_finds_variables_outside_prompts(self, svc):
+        config = {
+            "source_type": "custom",
+            "entry_node_id": "main",
+            "nodes": {
+                "main": {
+                    "id": "main",
+                    "state_prompt": "Collect a color.",
+                    "node_type": "extract",
+                    "variables_to_extract": [
+                        {
+                            "name": "selected_color",
+                            "description": "Return {{available_color}} if accepted.",
+                        }
+                    ],
+                    "transitions": [],
+                }
+            },
+        }
+        created = svc.create_agent(name="ExtractVars", config=config)
+        assert svc.get_variables(created["id"]) == ["available_color"]
+
+
+class TestExportAgent:
+    @pytest.mark.asyncio
+    async def test_expanded_resolves_snippets_outside_prompts(self, svc):
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(
+                    id="main",
+                    state_prompt="{%tone%}",
+                    node_type=NodeType.EXTRACT,
+                    transitions=[
+                        Transition(
+                            target_node_id="main",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="{%tone%} {{name}}"
+                            ),
+                        ),
+                    ],
+                    variables_to_extract=[
+                        VariableExtraction(name="pick", description="{%tone%}"),
+                    ],
+                ),
+            },
+            entry_node_id="main",
+            source_type="custom",
+            snippets={"tone": "Be polite."},
+        )
+
+        exported = AgentGraph.model_validate_json(
+            await svc.export_agent(graph, format="voicetest", expanded=True)
+        )
+
+        node = exported.nodes["main"]
+        assert node.state_prompt == "Be polite."
+        assert node.transitions[0].condition.value == "Be polite. {{name}}"
+        assert node.variables_to_extract[0].description == "Be polite."
+        assert exported.snippets == {}
 
 
 class TestMetricsConfig:

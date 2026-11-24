@@ -18,8 +18,8 @@ from voicetest.storage.linked_file import write_json
 from voicetest.storage.repositories import AgentRepository
 from voicetest.util.pathutil import resolve_file
 from voicetest.util.pathutil import resolve_path
-from voicetest.util.templating import expand_graph_snippets
-from voicetest.util.templating import extract_variables
+from voicetest.util.templating import extract_graph_variables
+from voicetest.util.templating import render_graph
 
 
 class AgentService:
@@ -52,7 +52,7 @@ class AgentService:
     ) -> str:
         """Export agent graph to specified format."""
         if expanded and graph.snippets:
-            graph = expand_graph_snippets(graph)
+            graph = render_graph(graph)
         content = self._exporters.export(graph, format)
 
         if output:
@@ -170,19 +170,9 @@ class AgentService:
         return self._importers.import_agent(result) if isinstance(result, Path) else result
 
     def get_variables(self, agent_id: str) -> list[str]:
-        """Extract dynamic variable names from agent prompts."""
+        """Extract dynamic variable names from the agent's model-facing text."""
         _agent, graph = self.load_graph(agent_id)
-
-        texts = []
-        general_prompt = graph.source_metadata.get("general_prompt", "")
-        if general_prompt:
-            texts.append(general_prompt)
-        for node in graph.nodes.values():
-            if node.state_prompt:
-                texts.append(node.state_prompt)
-
-        combined = "\n".join(texts)
-        return extract_variables(combined)
+        return extract_graph_variables(graph)
 
     def update_prompt(
         self,

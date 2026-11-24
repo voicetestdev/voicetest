@@ -25,8 +25,7 @@ from voicetest.models.results import Message
 from voicetest.models.results import ToolCall
 from voicetest.models.test_case import RunOptions
 from voicetest.util.retry import OnErrorCallback
-from voicetest.util.templating import expand_snippets
-from voicetest.util.templating import substitute_variables
+from voicetest.util.templating import render_graph
 
 
 logger = logging.getLogger(__name__)
@@ -52,13 +51,14 @@ class ConversationEngine:
         options: RunOptions | None = None,
         dynamic_variables: dict | None = None,
     ):
-        self.graph = graph
+        self._template_graph = graph
         self.model = model
         self.options = options or RunOptions()
-        self._dynamic_variables = dynamic_variables or {}
+        self._initial_variables = dict(dynamic_variables or {})
+        self._dynamic_variables = dict(self._initial_variables)
+        self._render()
 
         self._no_cache = self.options.no_cache if self.options else False
-        self._module = ConversationModule(graph)
         self._on_turn = None
 
         self._current_node = graph.entry_node_id
@@ -67,6 +67,14 @@ class ConversationEngine:
         self._tools_called: list[ToolCall] = []
         self._end_call_invoked = False
         self._originator_stack: list[str] = []
+
+    @property
+    def graph(self) -> AgentGraph:
+        return self._graph
+
+    def _render(self) -> None:
+        self._graph = render_graph(self._template_graph, self._dynamic_variables)
+        self._module = ConversationModule(self._graph)
 
     @property
     def current_node(self) -> str:
@@ -129,13 +137,6 @@ class ConversationEngine:
             if msg.role == "user":
                 return msg.content
         return ""
-
-    def _expand(self, text: str) -> str:
-        """Expand snippet refs and substitute dynamic variables."""
-        return substitute_variables(
-            expand_snippets(text, self.graph.snippets),
-            self._dynamic_variables,
-        )
 
     async def advance(
         self,
@@ -257,18 +258,13 @@ class ConversationEngine:
                 last_agent_message = msg.content
                 break
 
-        state_module = self._module.get_state_module(self._current_node)
-        state_prompt = node.state_prompt
-        if state_module:
-            state_prompt = self._expand(state_module.instructions)
-
         transition_result = await call_llm(
             self.model,
             self._module._transition_signature,
             on_error=on_error,
             no_cache=self._no_cache,
             predictor_class=dspy.ChainOfThought,
-            current_state_prompt=state_prompt,
+            current_state_prompt=node.state_prompt,
             conversation_history=conversation_history,
             last_agent_message=last_agent_message,
             available_transitions=available_transitions,
@@ -304,8 +300,8 @@ class ConversationEngine:
         node = self.graph.nodes[self._current_node]
         user_message = self._last_user_message()
 
-        general_instructions = self._expand(self._module.instructions)
-        state_instructions = self._expand(state_module.instructions)
+        general_instructions = self._module.instructions
+        state_instructions = state_module.instructions
 
         conversation_history = self._format_transcript(self._transcript)
         response_sig = state_module.create_response_signature(state_instructions)
@@ -464,7 +460,7 @@ class ConversationEngine:
         user_message = self._last_user_message()
 
         attrs: dict = {
-            "__doc__": self._expand(state_module.instructions),
+            "__doc__": state_module.instructions,
             "conversation_history": dspy.InputField(desc="Full conversation transcript"),
             "user_message": dspy.InputField(desc="Most recent user message"),
         }
@@ -496,6 +492,7 @@ class ConversationEngine:
                 extracted[var.name] = str(value)
 
         if extracted:
+            self._render()
             parts = [f"{k}={v}" for k, v in extracted.items()]
             await self._append_message(
                 Message(
@@ -536,3 +533,5 @@ class ConversationEngine:
         self._tools_called = []
         self._end_call_invoked = False
         self._originator_stack = []
+        self._dynamic_variables = dict(self._initial_variables)
+        self._render()

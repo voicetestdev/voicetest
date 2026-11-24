@@ -1,5 +1,7 @@
 """Integration tests for the complete voicetest flow."""
 
+from unittest.mock import patch
+
 import pytest
 
 from voicetest.models.agent import AgentGraph
@@ -7,6 +9,7 @@ from voicetest.models.agent import AgentNode
 from voicetest.models.agent import NodeType
 from voicetest.models.agent import Transition
 from voicetest.models.agent import TransitionCondition
+from voicetest.models.agent import VariableExtraction
 from voicetest.models.results import Message
 from voicetest.models.results import MetricResult
 from voicetest.models.results import TestResult
@@ -16,6 +19,8 @@ from voicetest.models.test_case import TestCase
 from voicetest.services.agents import AgentService
 from voicetest.services.evaluation import EvaluationService
 from voicetest.services.testing.execution import TestExecutionService
+from voicetest.simulator.user_sim import SimulatorResponse
+from voicetest.simulator.user_sim import UserSimulator
 
 
 @pytest.fixture
@@ -152,6 +157,104 @@ class TestRunTestBehavior:
         )
 
         assert len(result.metric_results) == len(simple_test_case.metrics)
+
+
+class TestDynamicVariableRendering:
+    @pytest.fixture
+    def color_graph(self) -> AgentGraph:
+        return AgentGraph(
+            nodes={
+                "offer": AgentNode(
+                    id="offer",
+                    state_prompt="Offer {{available_color}}. Previous pick: {{selected_color}}.",
+                    transitions=[
+                        Transition(
+                            target_node_id="extract",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        )
+                    ],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "extract": AgentNode(
+                    id="extract",
+                    state_prompt="",
+                    variables_to_extract=[
+                        VariableExtraction(
+                            name="selected_color",
+                            description=(
+                                "If the caller accepts the suggested color, "
+                                "return the value from {{available_color}}."
+                            ),
+                        )
+                    ],
+                    transitions=[
+                        Transition(
+                            target_node_id="confirm",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        )
+                    ],
+                    node_type=NodeType.EXTRACT,
+                ),
+                "confirm": AgentNode(
+                    id="confirm",
+                    state_prompt="Confirm {{selected_color}} with the caller.",
+                    node_type=NodeType.CONVERSATION,
+                ),
+            },
+            entry_node_id="offer",
+            source_type="custom",
+            source_metadata={"start_speaker": "agent"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_repeated_runs_render_prompts_without_leaking_variables(
+        self, color_graph, container
+    ):
+        test_case = TestCase(
+            name="Color",
+            user_prompt="Accept the suggested color.",
+            type="rule",
+            includes=["blue"],
+            dynamic_variables={"available_color": "blue"},
+        )
+        runs: list[list] = []
+
+        async def fake_call_llm(model, signature, **kwargs):
+            runs[-1].append(signature)
+
+            class Result:
+                selected_color = "blue"
+                response = "Great, blue it is."
+                objectives_complete = False
+                transition_to = "none"
+
+            return Result()
+
+        async def fake_generate(self, transcript, **kwargs):
+            if any(m.role == "user" for m in transcript):
+                return None
+            return SimulatorResponse(message="Yes, use it.")
+
+        service = container.resolve(TestExecutionService)
+        with (
+            patch("voicetest.engine.conversation.call_llm", side_effect=fake_call_llm),
+            patch.object(UserSimulator, "generate", fake_generate),
+        ):
+            for _ in range(2):
+                runs.append([])
+                result = await service.run_test(
+                    color_graph, test_case, options=RunOptions(max_turns=3)
+                )
+                assert result.status == "pass", result.error_message
+
+        assert test_case.dynamic_variables == {"available_color": "blue"}
+        for signatures in runs:
+            docs = [sig.__doc__ for sig in signatures]
+            assert "Offer blue. Previous pick: {{selected_color}}." in docs
+            assert "Confirm blue with the caller." in docs
+            extract_sig = next(sig for sig in signatures if sig.__name__ == "ExtractVariables")
+            desc = extract_sig.output_fields["selected_color"].json_schema_extra["desc"]
+            assert desc == "If the caller accepts the suggested color, return the value from blue."
 
 
 class TestExportAgent:

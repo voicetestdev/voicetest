@@ -7,6 +7,7 @@ Handles two layers of text expansion:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import copy
 import re
 from typing import TYPE_CHECKING
@@ -64,18 +65,44 @@ def extract_snippet_refs(text: str) -> list[str]:
     return list(dict.fromkeys(raw_names))
 
 
-def expand_graph_snippets(graph: AgentGraph) -> AgentGraph:
-    """Return a deep copy of the graph with all {%ref%} resolved in prompts."""
-    expanded = copy.deepcopy(graph)
-    snippets = expanded.snippets
+def _rewrite_text(graph: AgentGraph, fn: Callable[[str], str]) -> None:
+    general_prompt = graph.source_metadata.get("general_prompt")
+    if isinstance(general_prompt, str):
+        graph.source_metadata["general_prompt"] = fn(general_prompt)
 
-    general_prompt = expanded.source_metadata.get("general_prompt")
-    if general_prompt and isinstance(general_prompt, str):
-        expanded.source_metadata["general_prompt"] = expand_snippets(general_prompt, snippets)
+    for node in graph.nodes.values():
+        node.state_prompt = fn(node.state_prompt)
+        for transition in node.transitions:
+            transition.condition.value = fn(transition.condition.value)
+            if transition.description:
+                transition.description = fn(transition.description)
+        for var in node.variables_to_extract:
+            var.description = fn(var.description)
+            var.choices = [fn(choice) for choice in var.choices]
+        if node.global_node_setting:
+            setting = node.global_node_setting
+            setting.condition = fn(setting.condition)
+            for go_back in setting.go_back_conditions:
+                go_back.condition.value = fn(go_back.condition.value)
 
-    for node in expanded.nodes.values():
-        if node.state_prompt:
-            node.state_prompt = expand_snippets(node.state_prompt, snippets)
 
-    expanded.snippets = {}
-    return expanded
+def render_graph(graph: AgentGraph, variables: dict[str, Any] | None = None) -> AgentGraph:
+    rendered = copy.deepcopy(graph)
+    snippets = rendered.snippets
+    _rewrite_text(
+        rendered,
+        lambda text: substitute_variables(expand_snippets(text, snippets), variables or {}),
+    )
+    rendered.snippets = {}
+    return rendered
+
+
+def extract_graph_variables(graph: AgentGraph) -> list[str]:
+    texts: list[str] = []
+
+    def collect(text: str) -> str:
+        texts.append(text)
+        return text
+
+    _rewrite_text(render_graph(graph), collect)
+    return extract_variables("\n".join(texts))

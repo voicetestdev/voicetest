@@ -181,7 +181,7 @@ def main() -> None:
             ).build_session()
 
             # Get instructions from graph for Agent
-            instructions = get_general_prompt(graph)
+            instructions = get_general_prompt(engine.graph)
             agent = Agent(instructions=instructions)
 
             # Listen for user input transcriptions. Assistant transcripts are

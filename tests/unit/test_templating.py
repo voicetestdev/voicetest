@@ -1,12 +1,25 @@
 """Tests for voicetest.util.templating module."""
 
+import types
+import typing
+
+from pydantic import BaseModel
+
 from voicetest.models.agent import AgentGraph
 from voicetest.models.agent import AgentNode
+from voicetest.models.agent import EquationClause
+from voicetest.models.agent import GlobalNodeSetting
+from voicetest.models.agent import GoBackCondition
 from voicetest.models.agent import NodeType
-from voicetest.util.templating import expand_graph_snippets
+from voicetest.models.agent import ToolDefinition
+from voicetest.models.agent import Transition
+from voicetest.models.agent import TransitionCondition
+from voicetest.models.agent import VariableExtraction
 from voicetest.util.templating import expand_snippets
+from voicetest.util.templating import extract_graph_variables
 from voicetest.util.templating import extract_snippet_refs
 from voicetest.util.templating import extract_variables
+from voicetest.util.templating import render_graph
 from voicetest.util.templating import substitute_variables
 
 
@@ -160,74 +173,192 @@ class TestExtractSnippetRefs:
         assert result == ["snip"]
 
 
-class TestExpandGraphSnippets:
-    """Tests for expand_graph_snippets function."""
+RENDERED_FIELDS = {
+    "AgentNode.state_prompt",
+    "Transition.description",
+    "TransitionCondition.value",
+    "VariableExtraction.description",
+    "VariableExtraction.choices",
+    "GlobalNodeSetting.condition",
+}
 
-    def test_expands_all_prompts(self):
-        graph = AgentGraph(
+UNRENDERED_FIELDS = {
+    "AgentGraph.entry_node_id",
+    "AgentGraph.source_type",
+    "AgentGraph.snippets",
+    "AgentGraph.default_model",
+    "AgentNode.id",
+    "Transition.target_node_id",
+    "EquationClause.left",
+    "EquationClause.operator",
+    "EquationClause.right",
+    "VariableExtraction.name",
+    "VariableExtraction.type",
+    "ToolDefinition.name",
+    "ToolDefinition.description",
+    "ToolDefinition.type",
+    "ToolDefinition.url",
+    "ToolDefinition.tool_id",
+    "GoBackCondition.id",
+}
+
+
+def _text_fields(model: type[BaseModel], seen: set[type] | None = None) -> set[str]:
+    seen = seen if seen is not None else set()
+    if model in seen:
+        return set()
+    seen.add(model)
+    found: set[str] = set()
+
+    def walk(owner: str, annotation: typing.Any) -> None:
+        if annotation is str:
+            found.add(owner)
+        elif isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            found.update(_text_fields(annotation, seen))
+        elif typing.get_origin(annotation) is dict:
+            walk(owner, typing.get_args(annotation)[1])
+        elif typing.get_origin(annotation) in (list, typing.Union, types.UnionType):
+            for arg in typing.get_args(annotation):
+                walk(owner, arg)
+
+    for name, info in model.model_fields.items():
+        walk(f"{model.__name__}.{name}", info.annotation)
+    return found
+
+
+class TestRenderGraph:
+    @staticmethod
+    def _templated_graph() -> AgentGraph:
+        text = "{{color}} {%snip%}"
+        return AgentGraph(
             nodes={
                 "a": AgentNode(
                     id="a",
-                    state_prompt="Node A: {%disclaimer%}",
-                    transitions=[],
-                    node_type=NodeType.CONVERSATION,
+                    state_prompt=text,
+                    node_type=NodeType.EXTRACT,
+                    tools=[ToolDefinition(name="t", description="plain")],
+                    transitions=[
+                        Transition(
+                            target_node_id="g",
+                            condition=TransitionCondition(
+                                type="equation",
+                                value=text,
+                                equations=[
+                                    EquationClause(left="color", operator="==", right="blue")
+                                ],
+                            ),
+                            description=text,
+                        ),
+                    ],
+                    variables_to_extract=[
+                        VariableExtraction(name="pick", description=text, choices=[text]),
+                    ],
                 ),
-                "b": AgentNode(
-                    id="b",
-                    state_prompt="Node B: {%disclaimer%}",
-                    transitions=[],
+                "g": AgentNode(
+                    id="g",
+                    state_prompt=text,
                     node_type=NodeType.CONVERSATION,
+                    global_node_setting=GlobalNodeSetting(
+                        condition=text,
+                        go_back_conditions=[
+                            GoBackCondition(
+                                id="back",
+                                condition=TransitionCondition(type="llm_prompt", value=text),
+                            ),
+                        ],
+                    ),
                 ),
             },
             entry_node_id="a",
             source_type="custom",
-            source_metadata={"general_prompt": "General: {%disclaimer%}"},
-            snippets={"disclaimer": "We are not liable."},
+            source_metadata={"general_prompt": text},
+            snippets={"snip": "snippet"},
         )
 
-        expanded = expand_graph_snippets(graph)
+    def test_every_text_field_is_classified(self):
+        fields = _text_fields(AgentGraph)
 
-        assert expanded.source_metadata["general_prompt"] == "General: We are not liable."
-        assert expanded.nodes["a"].state_prompt == "Node A: We are not liable."
-        assert expanded.nodes["b"].state_prompt == "Node B: We are not liable."
-        assert expanded.snippets == {}
+        assert fields == RENDERED_FIELDS | UNRENDERED_FIELDS
+        assert not RENDERED_FIELDS & UNRENDERED_FIELDS
+
+    def test_renders_all_model_facing_text(self):
+        rendered = render_graph(self._templated_graph(), {"color": "blue"})
+
+        dumped = rendered.model_dump_json()
+        assert "{{" not in dumped
+        assert "{%" not in dumped
+        assert rendered.source_metadata["general_prompt"] == "blue snippet"
+        assert rendered.nodes["a"].variables_to_extract[0].choices == ["blue snippet"]
+        assert rendered.nodes["g"].global_node_setting.go_back_conditions[0].condition.value == (
+            "blue snippet"
+        )
+        assert rendered.snippets == {}
 
     def test_does_not_modify_original(self):
+        graph = self._templated_graph()
+
+        render_graph(graph, {"color": "blue"})
+
+        assert graph.nodes["a"].state_prompt == "{{color}} {%snip%}"
+        assert graph.snippets == {"snip": "snippet"}
+
+    def test_without_variables_resolves_only_snippets(self):
+        graph = self._templated_graph()
+
+        rendered = render_graph(graph)
+
+        assert rendered is not graph
+        assert rendered.nodes["a"].state_prompt == "{{color}} snippet"
+        assert rendered.nodes["a"].transitions[0].condition.value == "{{color}} snippet"
+        assert rendered.snippets == {}
+
+    def test_equation_operands_are_not_rendered(self):
+        graph = self._templated_graph()
+        graph.nodes["a"].transitions[0].condition.equations[0].right = "{{color}}"
+
+        rendered = render_graph(graph, {"color": "blue"})
+
+        assert rendered.nodes["a"].transitions[0].condition.equations[0].right == "{{color}}"
+
+
+class TestExtractGraphVariables:
+    def test_finds_variables_in_all_model_facing_text(self):
         graph = AgentGraph(
             nodes={
                 "a": AgentNode(
                     id="a",
-                    state_prompt="{%snip%}",
-                    transitions=[],
-                    node_type=NodeType.CONVERSATION,
+                    state_prompt="Hi {{name}}",
+                    node_type=NodeType.EXTRACT,
+                    transitions=[
+                        Transition(
+                            target_node_id="a",
+                            condition=TransitionCondition(
+                                type="llm_prompt", value="Asks about {{product}}"
+                            ),
+                        ),
+                    ],
+                    variables_to_extract=[
+                        VariableExtraction(
+                            name="pick", description="Return {{available_color}} if accepted"
+                        ),
+                    ],
                 ),
             },
             entry_node_id="a",
             source_type="custom",
-            snippets={"snip": "expanded"},
+            source_metadata={"general_prompt": "{%intro%} {{name}}"},
+            snippets={"intro": "You work for {{company}}."},
         )
 
-        expand_graph_snippets(graph)
+        assert extract_graph_variables(graph) == ["company", "name", "product", "available_color"]
 
-        # Original is unchanged
-        assert graph.nodes["a"].state_prompt == "{%snip%}"
-        assert graph.snippets == {"snip": "expanded"}
-
-    def test_empty_snippets_returns_copy(self):
+    def test_no_variables(self):
         graph = AgentGraph(
             nodes={
-                "a": AgentNode(
-                    id="a",
-                    state_prompt="plain text",
-                    transitions=[],
-                    node_type=NodeType.CONVERSATION,
-                ),
+                "a": AgentNode(id="a", state_prompt="plain", node_type=NodeType.CONVERSATION),
             },
             entry_node_id="a",
             source_type="custom",
         )
 
-        expanded = expand_graph_snippets(graph)
-        assert expanded.nodes["a"].state_prompt == "plain text"
-        assert expanded.snippets == {}
-        assert expanded is not graph
+        assert extract_graph_variables(graph) == []
