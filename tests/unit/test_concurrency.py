@@ -87,13 +87,12 @@ class TestRunBounded:
         cancelled = []
 
         async def worker(item):
-            if item == 0:
-                return item
             try:
-                await asyncio.sleep(10)
+                await asyncio.sleep(0 if item == 0 else 10)
             except asyncio.CancelledError:
                 cancelled.append(item)
                 raise
+            return item
 
         stream = run_bounded([0, 1, 2], worker, 3)
         assert await anext(stream) == (0, 0)
