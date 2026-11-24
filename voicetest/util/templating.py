@@ -7,6 +7,7 @@ Handles two layers of text expansion:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import copy
 import re
 from typing import TYPE_CHECKING
@@ -64,51 +65,51 @@ def extract_snippet_refs(text: str) -> list[str]:
     return list(dict.fromkeys(raw_names))
 
 
-def expand_graph_snippets(graph: AgentGraph) -> AgentGraph:
-    """Return a deep copy of the graph with all {%ref%} resolved in prompts."""
-    expanded = copy.deepcopy(graph)
-    snippets = expanded.snippets
-
-    general_prompt = expanded.source_metadata.get("general_prompt")
-    if general_prompt and isinstance(general_prompt, str):
-        expanded.source_metadata["general_prompt"] = expand_snippets(general_prompt, snippets)
-
-    for node in expanded.nodes.values():
-        if node.state_prompt:
-            node.state_prompt = expand_snippets(node.state_prompt, snippets)
-
-    expanded.snippets = {}
-    return expanded
-
-
-def render_graph(graph: AgentGraph, variables: dict[str, Any]) -> AgentGraph:
-    """Return a deep copy of the graph with snippets and variables resolved in model-facing text."""
-    rendered = copy.deepcopy(graph)
-    snippets = rendered.snippets
-
-    def render(text: str) -> str:
-        return substitute_variables(expand_snippets(text, snippets), variables)
-
-    general_prompt = rendered.source_metadata.get("general_prompt")
+def _rewrite_text(graph: AgentGraph, fn: Callable[[str], str]) -> None:
+    """Apply fn in place to every model-facing text field of the graph."""
+    general_prompt = graph.source_metadata.get("general_prompt")
     if isinstance(general_prompt, str):
-        rendered.source_metadata["general_prompt"] = render(general_prompt)
+        graph.source_metadata["general_prompt"] = fn(general_prompt)
 
-    for node in rendered.nodes.values():
-        node.state_prompt = render(node.state_prompt)
+    for node in graph.nodes.values():
+        node.state_prompt = fn(node.state_prompt)
         for transition in node.transitions:
-            transition.condition.value = render(transition.condition.value)
+            transition.condition.value = fn(transition.condition.value)
             if transition.description:
-                transition.description = render(transition.description)
+                transition.description = fn(transition.description)
         for var in node.variables_to_extract:
-            var.description = render(var.description)
-            var.choices = [render(choice) for choice in var.choices]
+            var.description = fn(var.description)
+            var.choices = [fn(choice) for choice in var.choices]
         for tool in node.tools:
-            tool.description = render(tool.description)
+            tool.description = fn(tool.description)
         if node.global_node_setting:
             setting = node.global_node_setting
-            setting.condition = render(setting.condition)
+            setting.condition = fn(setting.condition)
             for go_back in setting.go_back_conditions:
-                go_back.condition.value = render(go_back.condition.value)
+                go_back.condition.value = fn(go_back.condition.value)
 
+
+def render_graph(graph: AgentGraph, variables: dict[str, Any] | None = None) -> AgentGraph:
+    """Return a deep copy of the graph with snippets and variables resolved in model-facing text.
+
+    Without variables, only snippets are resolved and {{var}} placeholders are kept."""
+    rendered = copy.deepcopy(graph)
+    snippets = rendered.snippets
+    _rewrite_text(
+        rendered,
+        lambda text: substitute_variables(expand_snippets(text, snippets), variables or {}),
+    )
     rendered.snippets = {}
     return rendered
+
+
+def extract_graph_variables(graph: AgentGraph) -> list[str]:
+    """Extract unique {{var}} names from the graph's model-facing text and its snippets."""
+    texts: list[str] = []
+
+    def collect(text: str) -> str:
+        texts.append(text)
+        return text
+
+    _rewrite_text(render_graph(graph), collect)
+    return extract_variables("\n".join(texts))
