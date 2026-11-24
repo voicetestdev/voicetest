@@ -54,7 +54,8 @@ class ConversationEngine:
         self._template_graph = graph
         self.model = model
         self.options = options or RunOptions()
-        self._dynamic_variables = dynamic_variables or {}
+        self._initial_variables = dict(dynamic_variables or {})
+        self._dynamic_variables = dict(self._initial_variables)
         self._render()
 
         self._no_cache = self.options.no_cache if self.options else False
@@ -69,7 +70,6 @@ class ConversationEngine:
 
     @property
     def graph(self) -> AgentGraph:
-        """The agent graph as the model sees it, with snippets and current variables resolved."""
         return self._graph
 
     def _render(self) -> None:
@@ -533,3 +533,5 @@ class ConversationEngine:
         self._tools_called = []
         self._end_call_invoked = False
         self._originator_stack = []
+        self._dynamic_variables = dict(self._initial_variables)
+        self._render()

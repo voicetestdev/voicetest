@@ -179,7 +179,6 @@ RENDERED_FIELDS = {
     "TransitionCondition.value",
     "VariableExtraction.description",
     "VariableExtraction.choices",
-    "ToolDefinition.description",
     "GlobalNodeSetting.condition",
 }
 
@@ -196,6 +195,7 @@ UNRENDERED_FIELDS = {
     "VariableExtraction.name",
     "VariableExtraction.type",
     "ToolDefinition.name",
+    "ToolDefinition.description",
     "ToolDefinition.type",
     "ToolDefinition.url",
     "ToolDefinition.tool_id",
@@ -227,8 +227,6 @@ def _text_fields(model: type[BaseModel], seen: set[type] | None = None) -> set[s
 
 
 class TestRenderGraph:
-    """Tests for render_graph function."""
-
     @staticmethod
     def _templated_graph() -> AgentGraph:
         text = "{{color}} {%snip%}"
@@ -238,7 +236,7 @@ class TestRenderGraph:
                     id="a",
                     state_prompt=text,
                     node_type=NodeType.EXTRACT,
-                    tools=[ToolDefinition(name="t", description=text)],
+                    tools=[ToolDefinition(name="t", description="plain")],
                     transitions=[
                         Transition(
                             target_node_id="g",
@@ -324,8 +322,6 @@ class TestRenderGraph:
 
 
 class TestExtractGraphVariables:
-    """Tests for extract_graph_variables function."""
-
     def test_finds_variables_in_all_model_facing_text(self):
         graph = AgentGraph(
             nodes={

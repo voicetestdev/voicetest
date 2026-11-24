@@ -1160,6 +1160,64 @@ class TestExtractNodeHandling:
         assert result.transitioned_to == "no_match"
 
     @pytest.mark.asyncio
+    async def test_extraction_does_not_mutate_caller_variables(self, extract_graph):
+        mock_result = AsyncMock()
+        mock_result.dob_month = "January"
+        mock_result.dob_year = "1990"
+        caller_variables = {"name": "Ada"}
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
+            engine = ConversationEngine(
+                extract_graph, model="openai/gpt-4o-mini", dynamic_variables=caller_variables
+            )
+            await engine.add_user_message("My birthday is January 15, 1990")
+            await engine._process_node()
+
+        assert caller_variables == {"name": "Ada"}
+        assert engine._dynamic_variables["dob_month"] == "January"
+
+    @pytest.mark.asyncio
+    async def test_reset_restores_initial_variables_and_rerenders(self):
+        graph = AgentGraph(
+            nodes={
+                "extract": AgentNode(
+                    id="extract",
+                    state_prompt="",
+                    variables_to_extract=[VariableExtraction(name="color", description="Color")],
+                    transitions=[
+                        Transition(
+                            target_node_id="confirm",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    node_type=NodeType.EXTRACT,
+                ),
+                "confirm": AgentNode(
+                    id="confirm",
+                    state_prompt="Chose {{color}} for {{name}}.",
+                    node_type=NodeType.CONVERSATION,
+                ),
+            },
+            entry_node_id="extract",
+            source_type="retell",
+        )
+        mock_result = AsyncMock()
+        mock_result.color = "blue"
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result):
+            engine = ConversationEngine(
+                graph, model="openai/gpt-4o-mini", dynamic_variables={"name": "Ada"}
+            )
+            await engine.add_user_message("Blue")
+            await engine._process_node()
+        assert engine.graph.nodes["confirm"].state_prompt == "Chose blue for Ada."
+
+        engine.reset()
+
+        assert engine._dynamic_variables == {"name": "Ada"}
+        assert engine.graph.nodes["confirm"].state_prompt == "Chose {{color}} for Ada."
+
+    @pytest.mark.asyncio
     async def test_extract_node_produces_empty_response(self, extract_graph):
         """Extract node produces empty response like logic nodes."""
         mock_result = AsyncMock()
@@ -1191,7 +1249,6 @@ class TestExtractNodeHandling:
 
     @pytest.mark.asyncio
     async def test_extract_node_expands_dynamic_variables_in_field_description(self):
-        """Dynamic variables in extraction field descriptions are substituted."""
         graph = AgentGraph(
             nodes={
                 "extract": AgentNode(
@@ -1233,7 +1290,6 @@ class TestExtractNodeHandling:
 
     @pytest.mark.asyncio
     async def test_extraction_rerenders_graph_with_extracted_variables(self):
-        """Prompts downstream of an extract node see the newly extracted values."""
         graph = AgentGraph(
             nodes={
                 "extract": AgentNode(
@@ -1281,8 +1337,6 @@ class TestExtractNodeHandling:
 
 
 class TestTransitionTextRendering:
-    """Dynamic variables are substituted in transition text the model evaluates."""
-
     @pytest.mark.asyncio
     async def test_transition_and_global_conditions_are_rendered(self):
         graph = AgentGraph(

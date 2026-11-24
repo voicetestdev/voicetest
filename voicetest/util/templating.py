@@ -66,7 +66,6 @@ def extract_snippet_refs(text: str) -> list[str]:
 
 
 def _rewrite_text(graph: AgentGraph, fn: Callable[[str], str]) -> None:
-    """Apply fn in place to every model-facing text field of the graph."""
     general_prompt = graph.source_metadata.get("general_prompt")
     if isinstance(general_prompt, str):
         graph.source_metadata["general_prompt"] = fn(general_prompt)
@@ -80,8 +79,6 @@ def _rewrite_text(graph: AgentGraph, fn: Callable[[str], str]) -> None:
         for var in node.variables_to_extract:
             var.description = fn(var.description)
             var.choices = [fn(choice) for choice in var.choices]
-        for tool in node.tools:
-            tool.description = fn(tool.description)
         if node.global_node_setting:
             setting = node.global_node_setting
             setting.condition = fn(setting.condition)
@@ -90,9 +87,6 @@ def _rewrite_text(graph: AgentGraph, fn: Callable[[str], str]) -> None:
 
 
 def render_graph(graph: AgentGraph, variables: dict[str, Any] | None = None) -> AgentGraph:
-    """Return a deep copy of the graph with snippets and variables resolved in model-facing text.
-
-    Without variables, only snippets are resolved and {{var}} placeholders are kept."""
     rendered = copy.deepcopy(graph)
     snippets = rendered.snippets
     _rewrite_text(
@@ -104,7 +98,6 @@ def render_graph(graph: AgentGraph, variables: dict[str, Any] | None = None) -> 
 
 
 def extract_graph_variables(graph: AgentGraph) -> list[str]:
-    """Extract unique {{var}} names from the graph's model-facing text and its snippets."""
     texts: list[str] = []
 
     def collect(text: str) -> str:
