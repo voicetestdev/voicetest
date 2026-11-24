@@ -26,7 +26,7 @@ class TestConversationEngine:
     def test_create_engine(self, simple_graph):
         engine = ConversationEngine(simple_graph, model="openai/gpt-4o-mini")
 
-        assert engine.graph is simple_graph
+        assert engine.graph == simple_graph
         assert engine.model == "openai/gpt-4o-mini"
         assert engine.current_node == "greeting"
 
@@ -1188,6 +1188,163 @@ class TestExtractNodeHandling:
         assert "match" in engine.nodes_visited
         assert len(result.tool_calls) == 1
         assert result.tool_calls[0].name == "route_to_match"
+
+    @pytest.mark.asyncio
+    async def test_extract_node_expands_dynamic_variables_in_field_description(self):
+        """Dynamic variables in extraction field descriptions are substituted."""
+        graph = AgentGraph(
+            nodes={
+                "extract": AgentNode(
+                    id="extract",
+                    state_prompt="",
+                    variables_to_extract=[
+                        VariableExtraction(
+                            name="selected_color",
+                            description=(
+                                "If the caller accepts the suggested color, "
+                                "return the value from {{available_color}}."
+                            ),
+                            type="string",
+                        ),
+                    ],
+                    transitions=[],
+                    node_type=NodeType.EXTRACT,
+                ),
+            },
+            entry_node_id="extract",
+            source_type="retell",
+        )
+        mock_result = AsyncMock()
+        mock_result.selected_color = "blue"
+
+        with patch("voicetest.engine.conversation.call_llm", return_value=mock_result) as mock_llm:
+            engine = ConversationEngine(
+                graph,
+                model="openai/gpt-4o-mini",
+                dynamic_variables={"available_color": "blue"},
+            )
+            await engine.add_user_message("Yes, use it.")
+            await engine._process_node()
+
+        sig = mock_llm.call_args.args[1]
+        desc = sig.output_fields["selected_color"].json_schema_extra["desc"]
+        assert "{{available_color}}" not in desc
+        assert "return the value from blue." in desc
+
+    @pytest.mark.asyncio
+    async def test_extraction_rerenders_graph_with_extracted_variables(self):
+        """Prompts downstream of an extract node see the newly extracted values."""
+        graph = AgentGraph(
+            nodes={
+                "extract": AgentNode(
+                    id="extract",
+                    state_prompt="",
+                    variables_to_extract=[
+                        VariableExtraction(name="color", description="The chosen color"),
+                    ],
+                    transitions=[
+                        Transition(
+                            target_node_id="confirm",
+                            condition=TransitionCondition(type="always", value="Else"),
+                        ),
+                    ],
+                    node_type=NodeType.EXTRACT,
+                ),
+                "confirm": AgentNode(
+                    id="confirm",
+                    state_prompt="Confirm the caller chose {{color}}.",
+                    node_type=NodeType.CONVERSATION,
+                ),
+            },
+            entry_node_id="extract",
+            source_type="retell",
+        )
+        signatures = []
+
+        async def mock_call_llm(model, signature, **kwargs):
+            signatures.append(signature)
+
+            class MockResult:
+                color = "blue"
+                response = "You chose blue."
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            engine = ConversationEngine(graph, model="openai/gpt-4o-mini")
+            await engine.add_user_message("Blue, please.")
+            await engine.advance()
+
+        assert signatures[-1].__doc__ == "Confirm the caller chose blue."
+        assert engine.graph.nodes["confirm"].state_prompt == "Confirm the caller chose blue."
+        assert graph.nodes["confirm"].state_prompt == "Confirm the caller chose {{color}}."
+
+
+class TestTransitionTextRendering:
+    """Dynamic variables are substituted in transition text the model evaluates."""
+
+    @pytest.mark.asyncio
+    async def test_transition_and_global_conditions_are_rendered(self):
+        graph = AgentGraph(
+            nodes={
+                "main": AgentNode(
+                    id="main",
+                    state_prompt="Help the caller.",
+                    transitions=[
+                        Transition(
+                            target_node_id="sales",
+                            condition=TransitionCondition(
+                                type="llm_prompt",
+                                value="Caller asks about {{product}}",
+                            ),
+                            description="Route {{product}} questions",
+                        ),
+                    ],
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "sales": AgentNode(
+                    id="sales",
+                    state_prompt="Sell.",
+                    node_type=NodeType.CONVERSATION,
+                ),
+                "support": AgentNode(
+                    id="support",
+                    state_prompt="Support.",
+                    node_type=NodeType.CONVERSATION,
+                    global_node_setting=GlobalNodeSetting(
+                        condition="Caller reports a broken {{product}}",
+                    ),
+                ),
+            },
+            entry_node_id="main",
+            source_type="retell",
+        )
+        captured_transitions = []
+
+        async def mock_call_llm(model, signature, **kwargs):
+            if "available_transitions" in kwargs:
+                captured_transitions.extend(kwargs["available_transitions"])
+
+            class MockResult:
+                objectives_complete = False
+                transition_to = "none"
+                response = "Sure."
+
+            return MockResult()
+
+        with patch("voicetest.engine.conversation.call_llm", side_effect=mock_call_llm):
+            engine = ConversationEngine(
+                graph,
+                model="openai/gpt-4o-mini",
+                dynamic_variables={"product": "kettle"},
+            )
+            await engine.add_user_message("Hi")
+            await engine.advance()
+
+        by_target = {t.target: t for t in captured_transitions}
+        assert by_target["sales"].condition == "Caller asks about kettle"
+        assert by_target["sales"].description == "Route kettle questions"
+        assert by_target["support"].condition == "Caller reports a broken kettle"
 
 
 class TestAlwaysEdgeOnConversationNodes:

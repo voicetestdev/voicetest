@@ -79,3 +79,36 @@ def expand_graph_snippets(graph: AgentGraph) -> AgentGraph:
 
     expanded.snippets = {}
     return expanded
+
+
+def render_graph(graph: AgentGraph, variables: dict[str, Any]) -> AgentGraph:
+    """Return a deep copy of the graph with snippets and variables resolved in model-facing text."""
+    rendered = copy.deepcopy(graph)
+    snippets = rendered.snippets
+
+    def render(text: str) -> str:
+        return substitute_variables(expand_snippets(text, snippets), variables)
+
+    general_prompt = rendered.source_metadata.get("general_prompt")
+    if isinstance(general_prompt, str):
+        rendered.source_metadata["general_prompt"] = render(general_prompt)
+
+    for node in rendered.nodes.values():
+        node.state_prompt = render(node.state_prompt)
+        for transition in node.transitions:
+            transition.condition.value = render(transition.condition.value)
+            if transition.description:
+                transition.description = render(transition.description)
+        for var in node.variables_to_extract:
+            var.description = render(var.description)
+            var.choices = [render(choice) for choice in var.choices]
+        for tool in node.tools:
+            tool.description = render(tool.description)
+        if node.global_node_setting:
+            setting = node.global_node_setting
+            setting.condition = render(setting.condition)
+            for go_back in setting.go_back_conditions:
+                go_back.condition.value = render(go_back.condition.value)
+
+    rendered.snippets = {}
+    return rendered
