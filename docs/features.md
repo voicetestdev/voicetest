@@ -213,6 +213,20 @@ s3_region = "us-east-1"
 
 Disable caching for a run with `no_cache = true` in run options or `--no-cache` on the CLI.
 
+## Parallel test execution
+
+Tests in a run execute one at a time by default. Set `concurrency` in the run options to run up to 16 at once:
+
+```bash
+curl -X POST http://localhost:8000/api/agents/<agent-id>/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"options": {"concurrency": 4}}'
+```
+
+The response's `concurrency` is the number actually used: never more than the run has tests. `POST /api/runs/{id}/replay` accepts the same `options`. Results keep their test order however they finish.
+
+Parallel runs are bounded by your provider's rate limits, which are usually set per organization or project rather than per API key. Throttled calls retry with backoff, and if a provider reports its quota exhausted, queued tests are cancelled while the ones already running record their own error. Local models (MLX, or a local STT for audio evaluation) share one machine, so parallel tests mostly queue on the hardware.
+
 ## Transcript import & replay
 
 Voicetest can ingest real production call transcripts as Runs, alongside the simulated runs the harness generates. Imported transcripts share the same storage and UI surfaces as simulated runs, and can be **replayed** against the agent's current graph to detect behavioral drift.

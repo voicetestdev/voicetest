@@ -441,6 +441,12 @@ class StartRunRequest(BaseModel):
     options: RunOptions | None = None
 
 
+class ReplayRunRequest(BaseModel):
+    """Request to replay a run."""
+
+    options: RunOptions | None = None
+
+
 class LinkTestFileRequest(BaseModel):
     """Request to link a test file to an agent."""
 
@@ -1291,7 +1297,9 @@ async def delete_run(run_id: str, http_request: Request) -> dict:
 
 
 @router.post("/runs/{source_run_id}/replay")
-async def replay_run(source_run_id: str, http_request: Request) -> dict:
+async def replay_run(
+    source_run_id: str, http_request: Request, request: ReplayRunRequest | None = None
+) -> dict:
     """Replay a source Run against the agent's current graph.
 
     Loads the source Run, drives a fresh conversation per source Result using
@@ -1304,10 +1312,13 @@ async def replay_run(source_run_id: str, http_request: Request) -> dict:
 
     _agent, graph = _load_agent_graph(http_request, source["agent_id"])
 
+    options = request.options if request else None
     try:
-        return await run_svc.replay_run(source_run_id, graph)
+        run = await run_svc.replay_run(source_run_id, graph, options)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
+    requested = options.concurrency if options else 1
+    return {**run, "concurrency": min(requested, len(run["results"]))}
 
 
 @router.post("/results/{result_id}/audio-eval")
@@ -1666,6 +1677,7 @@ async def start_run(
         "agent_id": agent_id,
         "started_at": run["started_at"],
         "test_count": len(test_records),
+        "concurrency": min(options.concurrency, len(test_records)),
     }
 
 

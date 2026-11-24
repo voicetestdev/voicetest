@@ -1,6 +1,5 @@
 """Centralized LLM call handling."""
 
-import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
 import json
@@ -140,21 +139,17 @@ async def _call_llm_sync(
     lm = _create_lm(model, cache_salt=cache_salt, no_cache=no_cache)
     adapter = getattr(lm, "preferred_adapter", BAMLAdapter())
 
-    def run_predictor():
+    async def run_predictor():
         with dspy.context(lm=lm, adapter=adapter):
             predictor = predictor_class(signature_class)
             try:
-                return predictor(**kwargs)
+                return await predictor.acall(**kwargs)
             except AdapterParseError:
                 try_evict_last_call(lm)
                 raise
 
-    async def call_in_thread():
-        return await asyncio.to_thread(run_predictor)
-
-    # Retry at async level so we use asyncio.sleep() instead of blocking time.sleep()
     result = await with_retry(
-        call_in_thread,
+        run_predictor,
         on_error=on_error,
         max_attempts_by_exception=_MAX_ATTEMPTS_BY_EXCEPTION,
     )
@@ -184,7 +179,7 @@ async def _call_llm_streaming(
         streaming_predictor = streamify(
             predictor,
             stream_listeners=stream_listeners,
-            is_async_program=False,
+            is_async_program=True,
         )
 
         result = None

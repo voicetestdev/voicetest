@@ -29,6 +29,7 @@ from voicetest.settings import resolve_model
 from voicetest.simulator.user_sim import SimulatorResponse
 from voicetest.simulator.user_sim import UserSimulator
 from voicetest.util.audio import AudioRoundTrip
+from voicetest.util.concurrency import run_bounded
 from voicetest.util.retry import OnErrorCallback
 from voicetest.util.templating import substitute_variables
 
@@ -391,10 +392,16 @@ class TestExecutionService:
         started_at = datetime.now()
 
         options = resolve_run_options(options, self._settings)
-        results = []
-        for test_case in test_cases:
-            result = await self.run_test(graph, test_case, options, _mock_mode=_mock_mode)
-            results.append(result)
+
+        async def run_one(test_case: TestCase) -> TestResult:
+            return await self.run_test(graph, test_case, options, _mock_mode=_mock_mode)
+
+        results = [
+            result
+            async for _, result in run_bounded(
+                test_cases, run_one, options.concurrency, ordered=True
+            )
+        ]
 
         return TestRun(
             run_id=run_id,

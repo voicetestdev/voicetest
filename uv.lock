@@ -1342,8 +1342,8 @@ name = "h2"
 version = "4.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "hpack" },
-    { name = "hyperframe" },
+    { name = "hpack", marker = "python_full_version < '3.15'" },
+    { name = "hyperframe", marker = "python_full_version < '3.15'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e7/85/7c366e69d84c17bb778fe41419e1fbcce3033d5b7ce29bbffff0a98b859f/h2-4.4.1.tar.gz", hash = "sha256:4e866ffb1a869ae14dd9b5e6beb5c24a13da0495ad72b65925ded182521c1516", size = 2157281 }
 wheels = [
@@ -1426,7 +1426,7 @@ wheels = [
 
 [package.optional-dependencies]
 http2 = [
-    { name = "h2" },
+    { name = "h2", marker = "python_full_version < '3.15'" },
 ]
 
 [[package]]
@@ -1507,7 +1507,7 @@ name = "importlib-metadata"
 version = "8.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp" },
+    { name = "zipp", marker = "python_full_version < '3.15'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e7/72/c600ae4f68c28fc19f9c31b9403053e5dbb8cace2e6842c7b7c3e4d42fe9/importlib_metadata-8.9.0.tar.gz", hash = "sha256:58850626cef4bd2df100378b0f2aea9724a7b92f10770d547725b047078f99ee", size = 56140 }
 wheels = [
@@ -1722,27 +1722,27 @@ name = "litellm"
 version = "1.110.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "aiohttp" },
-    { name = "anyio" },
-    { name = "boto3" },
-    { name = "certifi" },
-    { name = "click" },
+    { name = "aiohttp", marker = "python_full_version < '3.15'" },
+    { name = "anyio", marker = "python_full_version < '3.15'" },
+    { name = "boto3", marker = "python_full_version < '3.15'" },
+    { name = "certifi", marker = "python_full_version < '3.15'" },
+    { name = "click", marker = "python_full_version < '3.15'" },
     { name = "fastuuid", marker = "python_full_version < '3.15'" },
-    { name = "filelock" },
-    { name = "httpx", extra = ["http2"] },
-    { name = "huggingface-hub" },
-    { name = "importlib-metadata" },
-    { name = "jinja2" },
-    { name = "jsonschema" },
-    { name = "openai" },
-    { name = "packaging" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "tiktoken" },
-    { name = "tokenizers" },
-    { name = "typing-extensions" },
+    { name = "filelock", marker = "python_full_version < '3.15'" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.15'" },
+    { name = "huggingface-hub", marker = "python_full_version < '3.15'" },
+    { name = "importlib-metadata", marker = "python_full_version < '3.15'" },
+    { name = "jinja2", marker = "python_full_version < '3.15'" },
+    { name = "jsonschema", marker = "python_full_version < '3.15'" },
+    { name = "openai", marker = "python_full_version < '3.15'" },
+    { name = "packaging", marker = "python_full_version < '3.15'" },
+    { name = "pydantic", marker = "python_full_version < '3.15'" },
+    { name = "pydantic-settings", marker = "python_full_version < '3.15'" },
+    { name = "python-dotenv", marker = "python_full_version < '3.15'" },
+    { name = "pyyaml", marker = "python_full_version < '3.15'" },
+    { name = "tiktoken", marker = "python_full_version < '3.15'" },
+    { name = "tokenizers", marker = "python_full_version < '3.15'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.15'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/31/f4/613cbb97aa1482653ccfad1f79ff18c0c3bec7180008193854023d179213/litellm-1.110.2.tar.gz", hash = "sha256:a483c8d3078c1bd27a9fe9c831ac2ce09d41b728a7ea6e9a3ce48db276edeef5", size = 25954106 }
 wheels = [
@@ -3534,10 +3534,10 @@ name = "pydantic-settings"
 version = "2.16.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "typing-extensions" },
-    { name = "typing-inspection" },
+    { name = "pydantic", marker = "python_full_version < '3.15'" },
+    { name = "python-dotenv", marker = "python_full_version < '3.15'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.15'" },
+    { name = "typing-inspection", marker = "python_full_version < '3.15'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/59/28/227c843eedd29bd78e132e5aafa420d83154b10465c312f9c21ff2eaf77d/pydantic_settings-2.16.3.tar.gz", hash = "sha256:10e36f616623ebb586c05ca3d3cd22927146869db413d4f14c20c514442a1337", size = 311716 }
 wheels = [
@@ -4619,8 +4619,8 @@ name = "tiktoken"
 version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "regex" },
-    { name = "requests" },
+    { name = "regex", marker = "python_full_version < '3.15'" },
+    { name = "requests", marker = "python_full_version < '3.15'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/66/62/167a842aa0429d45f5e797354fd4343a96f6043d67d0513c675c7b8d36e6/tiktoken-0.14.0.tar.gz", hash = "sha256:231dec90efcdccf1b565a1416107736f1e09b1a08fe736ef9d6363e626d03874", size = 38898 }
 wheels = [
@@ -4927,7 +4927,7 @@ wheels = [
 
 [[package]]
 name = "voicetest"
-version = "0.55"
+version = "0.56"
 source = { editable = "." }
 dependencies = [
     { name = "bland" },

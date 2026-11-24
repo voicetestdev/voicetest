@@ -6,6 +6,16 @@ description: What shipped in each voicetest release. User-facing changes, in rev
 
 User-facing changes by release. For the full commit log, see the [GitHub releases](https://github.com/voicetestdev/voicetest/releases).
 
+## v0.56 — Live and parallel runs
+
+- **The Runs tab updates live.** Runs started from the API, the CLI or another tab appear without a reload, along with their status changes and elapsed times.
+- **The back button steps through the app.** Each view, run and result you open adds a browser history entry, so Back returns to where you were. Starting a run adds a single entry. Links to a deleted agent or run fall back to the import page or the runs list.
+- Run dates no longer show as "now" in time zones behind UTC.
+- REST: WebSocket `/api/agents/{id}/runs/ws` pushes `run_updated` and `run_deleted` events.
+- **Run tests in parallel.** Set `options.concurrency` (1–16) when starting a run or a replay through the API. See [Features: Parallel test execution](features.md#parallel-test-execution).
+- LLM calls are now async rather than holding a thread each, so parallel tests aren't limited by the machine's thread pool.
+- **One-time cache reset.** Async calls use different cache keys, so completions cached by earlier versions are fetched from the provider again once after upgrading. This includes shared S3 caches. Claude Code (`claudecode/...`) caches are unaffected.
+
 ## v0.54 — Full run history
 
 - **All runs are reachable.** The Runs tab badge shows the agent's total run count instead of stopping at 50, and **Show older runs** at the bottom of the list loads the next 50 in place.
