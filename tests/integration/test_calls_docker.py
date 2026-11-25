@@ -12,6 +12,8 @@ import time
 
 import pytest
 
+from voicetest.settings import AudioSettings
+
 
 def docker_compose_running() -> bool:
     """Check if docker compose services are running."""
@@ -80,10 +82,10 @@ class TestAgentWorkerInDocker:
             "invalid-token",  # Will fail to connect but should start
             "--backend",
             "local",
-            "--whisper-url",
-            "http://whisper:8000/v1",
-            "--kokoro-url",
-            "http://kokoro:8880/v1",
+            "--audio-settings",
+            AudioSettings(
+                stt_url="http://whisper:8000/v1", tts_url="http://kokoro:8880/v1"
+            ).model_dump_json(),
         ]
 
         process = subprocess.Popen(
@@ -170,10 +172,10 @@ print(token.to_jwt())
             token,
             "--backend",
             "local",
-            "--whisper-url",
-            "http://whisper:8000/v1",
-            "--kokoro-url",
-            "http://kokoro:8880/v1",
+            "--audio-settings",
+            AudioSettings(
+                stt_url="http://whisper:8000/v1", tts_url="http://kokoro:8880/v1"
+            ).model_dump_json(),
         ]
 
         process = subprocess.Popen(

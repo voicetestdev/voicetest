@@ -110,17 +110,20 @@ streaming = false
 [audio]
 tts_url = "http://localhost:8002/v1"
 stt_url = "http://localhost:8001/v1"
+tts_model = "kokoro"
+stt_model = "Systran/faster-whisper-base.en"
+voice = "af_heart"
 
 [cache]
 cache_backend = "disk"
 ```
 
-| Section    | Keys                                                   | Notes                                                              |
-| ---------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
-| `[models]` | `agent`, `simulator`, `judge`                          | LiteLLM strings; required for any non-local model                  |
-| `[run]`    | `max_turns`, `audio_eval`, `streaming`, etc.           | Defaults for new runs; per-run overrides win                       |
-| `[audio]`  | `tts_url`, `stt_url`                                   | Set when audio eval is enabled                                     |
-| `[cache]`  | `cache_backend`, `s3_bucket`, `s3_prefix`, `s3_region` | See [Features: LLM response cache](features.md#llm-response-cache) |
+| Section    | Keys                                                    | Notes                                                              |
+| ---------- | ------------------------------------------------------- | ------------------------------------------------------------------ |
+| `[models]` | `agent`, `simulator`, `judge`                           | LiteLLM strings; required for any non-local model                  |
+| `[run]`    | `max_turns`, `audio_eval`, `streaming`, etc.            | Defaults for new runs; per-run overrides win                       |
+| `[audio]`  | `tts_url`, `stt_url`, `tts_model`, `stt_model`, `voice` | Used by audio eval and live calls (local backend)                  |
+| `[cache]`  | `cache_backend`, `s3_bucket`, `s3_prefix`, `s3_region`  | See [Features: LLM response cache](features.md#llm-response-cache) |
 
 `voicetest settings` prints the active configuration; `voicetest settings --set <key>=<value>` updates it.
 
@@ -139,6 +142,7 @@ cache_backend = "disk"
 | `BLAND_API_KEY`                          | Bland platform integration                                           |
 | `TELNYX_API_KEY`                         | Telnyx platform integration                                          |
 | `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` | LiveKit platform integration                                         |
+| `KOKORO_URL` / `WHISPER_URL`             | Default `[audio]` `tts_url` / `stt_url` when not set in settings     |
 
 ## Using Claude Code as your LLM backend
 

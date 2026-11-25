@@ -17,7 +17,6 @@ import asyncio
 from collections.abc import Callable
 import contextlib
 import json
-import os
 import sys
 import traceback
 
@@ -31,6 +30,7 @@ from voicetest.livecall.livekit_adapter import VoicetestLLM
 from voicetest.livecall.observer_mount import observe_participant
 from voicetest.livecall.participant import CascadeParticipant
 from voicetest.livecall.worker_io import EmittingObserverTranscript
+from voicetest.livecall.worker_io import add_voice_args
 from voicetest.livecall.worker_io import build_stt
 from voicetest.livecall.worker_io import build_tts
 from voicetest.livecall.worker_io import output_error
@@ -74,22 +74,7 @@ def main() -> None:
     parser.add_argument("--room", required=True, help="LiveKit room name")
     parser.add_argument("--url", required=True, help="LiveKit server URL")
     parser.add_argument("--token", required=True, help="LiveKit access token")
-    parser.add_argument(
-        "--backend",
-        choices=["openai", "local", "mlx"],
-        default=os.environ.get("VOICETEST_BACKEND", "openai"),
-        help="Voice backend: 'openai' (OpenAI API), 'local' (Docker whisper+kokoro), 'mlx' (macOS)",
-    )
-    parser.add_argument(
-        "--whisper-url",
-        default=os.environ.get("WHISPER_URL", "http://localhost:8001/v1"),
-        help="Whisper STT API URL (for local backend)",
-    )
-    parser.add_argument(
-        "--kokoro-url",
-        default=os.environ.get("KOKORO_URL", "http://localhost:8002/v1"),
-        help="Kokoro TTS API URL (for local backend)",
-    )
+    add_voice_args(parser)
     parser.add_argument(
         "--agent-model",
         default=None,

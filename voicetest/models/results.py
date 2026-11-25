@@ -24,6 +24,10 @@ class AudioMetadata(BaseModel):
     latency_ms: int | None = None
     audio_ref: str | None = None
 
+    def with_heard_segment(self, segment: str) -> "AudioMetadata":
+        heard = f"{self.heard} {segment}".strip() if self.heard else segment
+        return self.model_copy(update={"heard": heard})
+
 
 class Message(BaseModel):
     """Single message in a conversation transcript."""

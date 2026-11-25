@@ -7,6 +7,7 @@ import httpx
 
 from voicetest.models.results import AudioMetadata
 from voicetest.models.results import Message
+from voicetest.settings import AudioSettings
 from voicetest.settings import Settings
 
 
@@ -16,19 +17,13 @@ logger = logging.getLogger(__name__)
 class AudioRoundTrip:
     """TTS→STT round-trip using OpenAI-compatible APIs."""
 
-    def __init__(
-        self,
-        tts_base_url: str = "http://localhost:8002/v1",
-        stt_base_url: str = "http://localhost:8001/v1",
-        tts_model: str = "kokoro",
-        stt_model: str = "Systran/faster-whisper-small",
-        voice: str = "af_heart",
-    ):
-        self.tts_base_url = tts_base_url.rstrip("/")
-        self.stt_base_url = stt_base_url.rstrip("/")
-        self.tts_model = tts_model
-        self.stt_model = stt_model
-        self.voice = voice
+    def __init__(self, audio: AudioSettings | None = None):
+        audio = audio or AudioSettings()
+        self.tts_base_url = audio.tts_url.rstrip("/")
+        self.stt_base_url = audio.stt_url.rstrip("/")
+        self.tts_model = audio.tts_model
+        self.stt_model = audio.stt_model
+        self.voice = audio.voice
         self.client = httpx.AsyncClient(timeout=60.0)
 
     @classmethod
@@ -36,10 +31,7 @@ class AudioRoundTrip:
         """Create an AudioRoundTrip from application settings."""
         if settings is None:
             settings = Settings()
-        return cls(
-            tts_base_url=settings.audio.tts_url,
-            stt_base_url=settings.audio.stt_url,
-        )
+        return cls(settings.audio)
 
     async def round_trip(self, text: str) -> str:
         """Synthesize text to audio, transcribe audio back to text."""
