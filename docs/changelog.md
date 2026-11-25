@@ -6,6 +6,13 @@ description: What shipped in each voicetest release. User-facing changes, in rev
 
 User-facing changes by release. For the full commit log, see the [GitHub releases](https://github.com/voicetestdev/voicetest/releases).
 
+## v0.58 — One audio configuration
+
+- **Live calls use your `[audio]` settings.** The STT and TTS URLs in settings now apply to live calls as well as audio eval. Previously live calls read only the `WHISPER_URL` and `KOKORO_URL` environment variables. See [Configuration](configuration.md).
+- New `[audio]` keys: `stt_model`, `tts_model` and `voice`. When `tts_url` and `stt_url` aren't set, they default from `KOKORO_URL` and `WHISPER_URL`, so those variables now apply to audio eval too.
+- **Audio eval transcribes with `Systran/faster-whisper-base.en`**, matching live calls and the bundled whisper service. It previously used `faster-whisper-small`. Set `stt_model` to keep the old model.
+- The live-call workers take their audio configuration as `--audio-settings` JSON, replacing `--whisper-url` and `--kokoro-url`.
+
 ## v0.56 — Live and parallel runs
 
 - **The Runs tab updates live.** Runs started from the API, the CLI or another tab appear without a reload, along with their status changes and elapsed times.
