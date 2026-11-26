@@ -25,15 +25,18 @@ class TestAudioRoundTrip:
 
     def test_custom_urls(self):
         rt = AudioRoundTrip(
-            tts_base_url="http://tts:9000/v1",
-            stt_base_url="http://stt:9001/v1",
+            AudioSettings(tts_url="http://tts:9000/v1", stt_url="http://stt:9001/v1")
         )
         assert rt.tts_base_url == "http://tts:9000/v1"
         assert rt.stt_base_url == "http://stt:9001/v1"
 
     def test_trailing_slash_stripped(self):
-        rt = AudioRoundTrip(tts_base_url="http://tts:9000/v1/")
+        rt = AudioRoundTrip(AudioSettings(tts_url="http://tts:9000/v1/"))
         assert rt.tts_base_url == "http://tts:9000/v1"
+
+    def test_models_and_voice_come_from_settings(self):
+        rt = AudioRoundTrip(AudioSettings(tts_model="t", stt_model="s", voice="v"))
+        assert (rt.tts_model, rt.stt_model, rt.voice) == ("t", "s", "v")
 
     def test_from_settings_defaults(self):
         rt = AudioRoundTrip.from_settings()
@@ -178,11 +181,25 @@ class TestRunOptions:
 class TestAudioSettings:
     """Tests for AudioSettings in Settings."""
 
-    def test_default_audio_settings(self):
+    def test_default_audio_settings(self, monkeypatch):
+        monkeypatch.delenv("KOKORO_URL", raising=False)
+        monkeypatch.delenv("WHISPER_URL", raising=False)
         settings = Settings()
         assert settings.audio.tts_url == "http://localhost:8002/v1"
         assert settings.audio.stt_url == "http://localhost:8001/v1"
+        assert settings.audio.stt_model == "Systran/faster-whisper-base.en"
         assert settings.run.audio_eval is False
+
+    def test_service_urls_default_from_environment(self, monkeypatch):
+        monkeypatch.setenv("KOKORO_URL", "http://kokoro:8880/v1")
+        monkeypatch.setenv("WHISPER_URL", "http://whisper:8000/v1")
+        audio = AudioSettings()
+        assert audio.tts_url == "http://kokoro:8880/v1"
+        assert audio.stt_url == "http://whisper:8000/v1"
+
+    def test_explicit_urls_override_environment(self, monkeypatch):
+        monkeypatch.setenv("KOKORO_URL", "http://kokoro:8880/v1")
+        assert AudioSettings(tts_url="http://custom/v1").tts_url == "http://custom/v1"
 
     def test_audio_eval_in_run_settings(self):
         settings = Settings(run={"audio_eval": True})

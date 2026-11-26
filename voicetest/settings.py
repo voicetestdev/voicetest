@@ -38,10 +38,17 @@ class CacheSettings(BaseModel):
 
 
 class AudioSettings(BaseModel):
-    """TTS/STT service configuration for audio evaluation."""
+    """TTS/STT service configuration for audio evaluation and live calls."""
 
-    tts_url: str = Field(default="http://localhost:8002/v1")
-    stt_url: str = Field(default="http://localhost:8001/v1")
+    tts_url: str = Field(
+        default_factory=lambda: os.environ.get("KOKORO_URL", "http://localhost:8002/v1")
+    )
+    stt_url: str = Field(
+        default_factory=lambda: os.environ.get("WHISPER_URL", "http://localhost:8001/v1")
+    )
+    tts_model: str = Field(default="kokoro")
+    stt_model: str = Field(default="Systran/faster-whisper-base.en")
+    voice: str = Field(default="af_heart")
 
 
 class RunSettings(BaseModel):

@@ -7,17 +7,16 @@ live calls behave identically.
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Callable
-import sys
-
 from livekit.agents import llm as livekit_llm
 from livekit.agents.llm.llm import APIConnectOptions
 
 from voicetest.engine.conversation import ConversationEngine
+from voicetest.livecall.delegating_llm import DelegatingLLM
+from voicetest.livecall.delegating_llm import DelegatingLLMStream
+from voicetest.livecall.delegating_llm import chat_texts
 
 
-class VoicetestLLM(livekit_llm.LLM):
+class VoicetestLLM(DelegatingLLM):
     """LiveKit LLM that delegates to ConversationEngine.
 
     This LLM plugin wraps the ConversationEngine to provide identical
@@ -27,32 +26,17 @@ class VoicetestLLM(livekit_llm.LLM):
         """Initialize with a ConversationEngine."""
         super().__init__()
         self._engine = engine
-        self._on_response: Callable[[str], None] | None = None
 
-    def set_on_response(self, callback: Callable[[str], None]) -> None:
-        """Set callback for immediate transcript output when LLM responds."""
-        self._on_response = callback
-
-    def chat(
-        self,
-        *,
-        chat_ctx: livekit_llm.ChatContext,
-        tools: list[livekit_llm.FunctionTool | livekit_llm.RawFunctionTool] | None = None,
-        conn_options: APIConnectOptions | None = None,
-        parallel_tool_calls: bool | None = None,
-        tool_choice: livekit_llm.ToolChoice | None = None,
-        extra_kwargs: dict | None = None,
+    def _stream(
+        self, chat_ctx: livekit_llm.ChatContext, conn_options: APIConnectOptions
     ) -> VoicetestLLMStream:
-        """Process a chat turn using the ConversationEngine."""
-        stream = VoicetestLLMStream(
-            self, self._engine, chat_ctx, conn_options or APIConnectOptions()
-        )
-        stream._on_response = self._on_response
-        return stream
+        return VoicetestLLMStream(self, self._engine, chat_ctx, conn_options)
 
 
-class VoicetestLLMStream(livekit_llm.LLMStream):
+class VoicetestLLMStream(DelegatingLLMStream):
     """Stream adapter for ConversationEngine responses."""
+
+    log_prefix = "voicetest-llm"
 
     def __init__(
         self,
@@ -62,79 +46,13 @@ class VoicetestLLMStream(livekit_llm.LLMStream):
         conn_options: APIConnectOptions,
     ):
         """Initialize the stream."""
-        super().__init__(
-            llm=llm,
-            chat_ctx=chat_ctx,
-            tools=[],
-            conn_options=conn_options,
-        )
+        super().__init__(llm, chat_ctx, conn_options)
         self._engine = engine
-        self._chat_ctx = chat_ctx
-        self._on_response: Callable[[str], None] | None = None
 
-    def _extract_user_message(self) -> str:
-        """Extract the latest user message from the chat context."""
-        for msg in reversed(self._chat_ctx.items):
-            if isinstance(msg, livekit_llm.ChatMessage) and msg.role == "user":
-                text = msg.text_content
-                if text:
-                    return text
-        return ""
-
-    async def _run(self) -> None:
-        """Run the stream, processing the turn through the engine."""
-        user_message = self._extract_user_message()
-
-        if not user_message:
-            return
-
-        # Add user message to engine transcript
-        await self._engine.add_user_message(user_message)
-
-        # Process turn through engine without streaming. This uses the non-streaming
-        # call_llm path which properly offloads blocking LLM calls (e.g. ClaudeCodeLM
-        # subprocess) to a thread via asyncio.to_thread.
-        # Shield from cancellation so LiveKit's speech interruption doesn't abort the
-        # LLM call mid-flight. The LLM subprocess can't be cheaply cancelled anyway.
-        try:
-            result = await asyncio.shield(self._engine.advance())
-        except asyncio.CancelledError:
-            print(
-                "[voicetest-llm] _run cancelled during advance",
-                file=sys.stderr,
-                flush=True,
-            )
-            return
-        except Exception as e:
-            print(
-                f"[voicetest-llm] advance error: {type(e).__name__}: {e}",
-                file=sys.stderr,
-                flush=True,
-            )
-            raise
-
-        response_text = result.response
-
-        # Immediately output transcript so the frontend shows it right away,
-        # without waiting for TTS to finish generating and playing audio.
-        # Wrapped in try/except because the stdout pipe to the parent process
-        # may be broken if the call ended before the LLM response arrived.
-        if response_text and self._on_response:
-            try:
-                self._on_response(response_text)
-            except BrokenPipeError:
-                print(
-                    "[voicetest-llm] on_response: stdout pipe broken, skipping",
-                    file=sys.stderr,
-                    flush=True,
-                )
-
-        if response_text:
-            chunk = livekit_llm.ChatChunk(
-                id="chunk",
-                delta=livekit_llm.ChoiceDelta(
-                    role="assistant",
-                    content=response_text,
-                ),
-            )
-            self._event_ch.send_nowait(chunk)
+    async def _respond(self) -> str | None:
+        user_messages = [text for role, text in chat_texts(self._chat_ctx) if role == "user"]
+        if not user_messages:
+            return None
+        await self._engine.add_user_message(user_messages[-1])
+        result = await self._engine.advance()
+        return result.response

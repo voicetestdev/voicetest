@@ -18,7 +18,9 @@ from uuid import uuid4
 from livekit import api as livekit_api
 
 from voicetest.models.agent import AgentGraph
+from voicetest.models.results import Message
 from voicetest.services.settings import SettingsService
+from voicetest.settings import AudioSettings
 from voicetest.settings import resolve_model
 from voicetest.web.broadcast import SessionRegistry
 
@@ -35,13 +37,10 @@ OnCallerDone = Callable[[str], Awaitable[str | None]]
 
 
 def _append_heard(message: dict, heard: str) -> None:
-    """Concatenate an observed 'heard' segment onto a transcript message dict.
-
-    Writes the same metadata['audio']['heard'] shape that Message.set_audio /
-    Message.audio() use, preserving any other audio fields already present."""
-    audio = message.setdefault("metadata", {}).setdefault("audio", {})
-    prev = audio.get("heard")
-    audio["heard"] = f"{prev} {heard}".strip() if prev else heard
+    """Concatenate an observed 'heard' segment onto a transcript message dict."""
+    parsed = Message.model_validate(message)
+    parsed.set_audio(parsed.audio().with_heard_segment(heard))
+    message["metadata"] = parsed.metadata
 
 
 def merge_observed_heard(
@@ -101,8 +100,6 @@ class LiveKitConfig:
     api_key: str = "devkey"
     api_secret: str = "secret"
     voice_backend: str = "openai"  # 'openai', 'local', or 'mlx'
-    whisper_url: str = "http://localhost:8001/v1"
-    kokoro_url: str = "http://localhost:8002/v1"
 
     @classmethod
     def from_env(cls) -> "LiveKitConfig":
@@ -114,8 +111,6 @@ class LiveKitConfig:
             api_key=os.environ.get("LIVEKIT_API_KEY", "devkey"),
             api_secret=os.environ.get("LIVEKIT_API_SECRET", "secret"),
             voice_backend=os.environ.get("VOICETEST_BACKEND", "openai"),
-            whisper_url=os.environ.get("WHISPER_URL", "http://localhost:8001/v1"),
-            kokoro_url=os.environ.get("KOKORO_URL", "http://localhost:8002/v1"),
         )
 
 
@@ -174,6 +169,11 @@ class CallManager:
         )
         return token.to_jwt()
 
+    def _audio_settings(self) -> AudioSettings:
+        if self._settings is None:
+            return AudioSettings()
+        return self._settings.get_settings().audio
+
     def _worker_cmd(
         self, module: str, room_name: str, token: str, observer_token: str
     ) -> list[str]:
@@ -192,10 +192,8 @@ class CallManager:
             token,
             "--backend",
             self.config.voice_backend,
-            "--whisper-url",
-            self.config.whisper_url,
-            "--kokoro-url",
-            self.config.kokoro_url,
+            "--audio-settings",
+            self._audio_settings().model_dump_json(),
             "--observer-token",
             observer_token,
         ]

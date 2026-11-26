@@ -20,7 +20,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tests.integration.livekit_helpers import KOKORO_URL
 from voicetest.models.agent import AgentGraph
 from voicetest.settings import Settings
 from voicetest.web.calls import CallManager
@@ -28,7 +27,6 @@ from voicetest.web.calls import LiveKitConfig
 
 
 LIVEKIT_URL = "ws://localhost:7880"
-WHISPER_URL = "http://localhost:8001/v1"
 MODEL = "ollama_chat/qwen2.5:0.5b"
 PERSONA = "## Goal\nAsk the assistant what time the store opens, then say thanks."
 
@@ -59,8 +57,6 @@ def _config() -> LiveKitConfig:
         api_key="devkey",
         api_secret="secret",
         voice_backend="local",
-        whisper_url=WHISPER_URL,
-        kokoro_url=KOKORO_URL,
     )
 
 

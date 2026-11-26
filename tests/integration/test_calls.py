@@ -17,6 +17,7 @@ from livekit import api as livekit_api
 import pytest
 
 from voicetest.models.agent import AgentGraph
+from voicetest.settings import AudioSettings
 from voicetest.settings import Settings
 from voicetest.web.calls import CallManager
 from voicetest.web.calls import LiveKitConfig
@@ -63,10 +64,10 @@ class TestAgentWorkerSubprocess:
             "invalid-token",
             "--backend",
             "local",
-            "--whisper-url",
-            "http://localhost:8001/v1",
-            "--kokoro-url",
-            "http://localhost:8002/v1",
+            "--audio-settings",
+            AudioSettings(
+                stt_url="http://localhost:8001/v1", tts_url="http://localhost:8002/v1"
+            ).model_dump_json(),
         ]
 
         process = subprocess.Popen(
@@ -181,10 +182,10 @@ class TestAgentWorkerWithLiveKit:
             token_jwt,
             "--backend",
             "local",
-            "--whisper-url",
-            "http://localhost:8001/v1",
-            "--kokoro-url",
-            "http://localhost:8002/v1",
+            "--audio-settings",
+            AudioSettings(
+                stt_url="http://localhost:8001/v1", tts_url="http://localhost:8002/v1"
+            ).model_dump_json(),
         ]
 
         process = subprocess.Popen(
@@ -261,8 +262,6 @@ class TestCallManager:
             api_key="devkey",
             api_secret="secret",
             voice_backend="local",
-            whisper_url="http://localhost:8001/v1",
-            kokoro_url="http://localhost:8002/v1",
         )
         return CallManager(_EmptySettings(), config)
 

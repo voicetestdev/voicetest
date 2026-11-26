@@ -8,13 +8,16 @@ other's module.
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import sys
 
 from livekit.agents import stt as lk_stt
 from livekit.plugins import openai
 
 from voicetest.livecall.observer import ObserverTranscript
+from voicetest.settings import AudioSettings
 
 
 try:
@@ -78,13 +81,28 @@ class EmittingObserverTranscript(ObserverTranscript):
         return message
 
 
+def add_voice_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--backend",
+        choices=["openai", "local", "mlx"],
+        default=os.environ.get("VOICETEST_BACKEND", "openai"),
+        help="Voice backend: 'openai' (OpenAI API), 'local' (Docker whisper+kokoro), 'mlx' (macOS)",
+    )
+    parser.add_argument(
+        "--audio-settings",
+        type=AudioSettings.model_validate_json,
+        default=AudioSettings(),
+        help="AudioSettings JSON: STT/TTS URLs, models and voice (for local and mlx backends)",
+    )
+
+
 def build_stt(args) -> lk_stt.STT:
     """Build the STT component for the selected backend."""
     if args.backend == "local":
         return openai.STT(
-            base_url=args.whisper_url,
+            base_url=args.audio_settings.stt_url,
             api_key="not-needed",
-            model="Systran/faster-whisper-base.en",
+            model=args.audio_settings.stt_model,
         )
     if args.backend == "mlx":
         if not MLX_AVAILABLE:
@@ -105,14 +123,14 @@ def build_tts(args):
     """Build the TTS component for the selected backend."""
     if args.backend == "local":
         return openai.TTS(
-            base_url=args.kokoro_url,
+            base_url=args.audio_settings.tts_url,
             api_key="not-needed",
-            model="kokoro",
-            voice="af_heart",
+            model=args.audio_settings.tts_model,
+            voice=args.audio_settings.voice,
         )
     if args.backend == "mlx":
         if not MLX_AVAILABLE:
             output_error("MLX backend requires mlx-audio: uv sync --extra macos")
             sys.exit(1)
-        return MlxKokoroTTS()
+        return MlxKokoroTTS(voice=args.audio_settings.voice)
     return openai.TTS()

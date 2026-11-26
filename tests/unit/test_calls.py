@@ -8,6 +8,8 @@ from unittest.mock import patch
 import pytest
 
 from voicetest.models.agent import AgentGraph
+from voicetest.settings import AudioSettings
+from voicetest.settings import Settings
 from voicetest.web.calls import ActiveCall
 from voicetest.web.calls import CallManager
 from voicetest.web.calls import LiveKitConfig
@@ -287,3 +289,14 @@ class TestCallerCommand:
         assert cmd[cmd.index("--model") + 1] == "model-x"
         assert cmd[cmd.index("--max-turns") + 1] == "12"
         assert cmd[cmd.index("--backend") + 1] == "local"
+
+    def test_worker_cmd_passes_audio_settings_from_settings(self):
+        audio = AudioSettings(stt_url="http://stt/v1", stt_model="m", voice="v")
+        settings_svc = MagicMock()
+        settings_svc.get_settings.return_value = Settings(audio=audio)
+        cm = CallManager(settings_service=settings_svc, config=LiveKitConfig())
+
+        cmd = cm._caller_cmd("room1", "utok", "otok", "persona", "model-x")
+
+        passed = AudioSettings.model_validate_json(cmd[cmd.index("--audio-settings") + 1])
+        assert passed == audio
