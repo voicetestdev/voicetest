@@ -16,6 +16,9 @@
     cancelPending,
     retryStatus,
     startRun,
+    runConcurrency,
+    concurrencyFor,
+    concurrencyByRunId,
     currentView,
     selectedResultId,
     clearCurrentRun,
@@ -38,6 +41,7 @@
   import { nextExpectedRole, displayRole, resolveStartSpeaker } from "../lib/types";
   import { setFaviconState, resetFavicon } from "../lib/favicon";
   import { onDestroy } from "svelte";
+  import DropdownMenu from "./DropdownMenu.svelte";
 
   let audioEvalLoading = $state<string | null>(null);
 
@@ -336,8 +340,6 @@
   let statusFilter = $state<"pass" | "fail" | null>(null);
   let deleting = $state(false);
   let replaying = $state(false);
-  let rerunOpen = $state(false);
-  let rerunDropdownEl = $state<HTMLElement>();
   let detailContainer = $state<HTMLElement>();
   let prevMessageCount = 0;
 
@@ -470,12 +472,6 @@
     replaying = false;
   }
 
-  function handleClickOutside(event: MouseEvent) {
-    if (rerunOpen && rerunDropdownEl && !rerunDropdownEl.contains(event.target as Node)) {
-      rerunOpen = false;
-    }
-  }
-
   const rerunnableResults = $derived(
     ($currentRunWithResults?.results ?? []).filter((r) => r.test_case_id)
   );
@@ -502,9 +498,9 @@
   async function rerunTests(testIds: string[], noCache = false) {
     const agentId = $currentAgentId;
     if (!agentId || testIds.length === 0) return;
-    rerunOpen = false;
     currentView.set("runs");
-    await startRun(agentId, testIds, noCache ? { no_cache: true } : undefined);
+    const concurrency = concurrencyFor(agentId, $runConcurrency);
+    await startRun(agentId, testIds, noCache ? { no_cache: true, concurrency } : { concurrency });
   }
 
   function rerunAll() {
@@ -553,7 +549,6 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<svelte:window onclick={handleClickOutside} />
 
 <div class="runs-view">
   {#if !$currentRunWithResults && $runHistory.length === 0}
@@ -574,6 +569,9 @@
           <span class="status-badge running">
             <span class="mini-spinner"></span>
             Running
+            {#if ($concurrencyByRunId[$currentRunWithResults.id] ?? 1) > 1}
+              · {$concurrencyByRunId[$currentRunWithResults.id]} at a time
+            {/if}
           </span>
         {:else}
           {@const summary = getRunSummary($currentRunWithResults.results)}
@@ -598,17 +596,14 @@
           </span>
         {/if}
         {#if $currentRunWithResults.completed_at && rerunnableResults.length > 0}
-          <div class="rerun-dropdown" bind:this={rerunDropdownEl}>
-            <button
-              class="rerun-btn"
-              onclick={() => (rerunOpen = !rerunOpen)}
-              title="Re-run tests"
-            >
-              Re-run
-              <span class="caret"></span>
-            </button>
-            {#if rerunOpen}
-              <ul class="rerun-menu">
+          <div class="rerun-dropdown">
+            <DropdownMenu minWidth="220px">
+              {#snippet trigger(toggle)}
+                <button class="rerun-btn" onclick={toggle} title="Re-run tests">
+                  Re-run
+                  <span class="caret"></span>
+                </button>
+              {/snippet}
                 <li>
                   <button onclick={rerunAll}>
                     Re-run all tests ({rerunnableResults.length})
@@ -652,8 +647,7 @@
                     </button>
                   </li>
                 {/if}
-              </ul>
-            {/if}
+            </DropdownMenu>
           </div>
         {/if}
         {#if $currentRunWithResults.completed_at}
@@ -1418,44 +1412,6 @@
     border-left: 4px solid transparent;
     border-right: 4px solid transparent;
     border-top: 4px solid currentColor;
-  }
-
-  .rerun-menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 100;
-    min-width: 220px;
-    list-style: none;
-    margin: 0;
-    padding: 0.25rem 0;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  }
-
-  .rerun-menu li button {
-    display: block;
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    background: transparent !important;
-    border: none !important;
-    color: var(--text-primary);
-    font-size: 0.8rem;
-    text-align: left;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-
-  .rerun-menu li button:hover {
-    background: var(--bg-hover) !important;
-  }
-
-  .rerun-menu .menu-separator {
-    height: 1px;
-    margin: 0.25rem 0;
-    background: var(--border-color);
   }
 
   .delete-run-btn {

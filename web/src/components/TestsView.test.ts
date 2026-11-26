@@ -27,12 +27,14 @@ vi.mock("../lib/api", () => ({
   },
 }));
 
+const startRunMock = vi.hoisted(() => vi.fn(() => Promise.resolve("run-123")));
+
 // Mock WebSocket-related store functions
 vi.mock("../lib/stores", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/stores")>();
   return {
     ...actual,
-    startRun: () => Promise.resolve("run-123"),
+    startRun: startRunMock,
     connectRunWebSocket: () => {},
     disconnectRunWebSocket: () => {},
     initStores: () => Promise.resolve(undefined),
@@ -49,6 +51,8 @@ import {
   runHistory,
   isRunning,
   settings,
+  testSort,
+  runConcurrency,
 } from "../lib/stores";
 import TestsView from "./TestsView.svelte";
 import App from "../App.svelte";
@@ -168,6 +172,69 @@ describe("TestsView - Run Selected", () => {
     // Now should be enabled
     runSelectedBtn = screen.getByRole("button", { name: /Run Selected/i });
     expect(runSelectedBtn.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("runs a single test from its row", async () => {
+    render(TestsView);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Run" }));
+
+    await waitFor(() => {
+      expect(startRunMock).toHaveBeenCalledWith("agent-1", ["test-1"], { concurrency: 1 });
+    });
+  });
+
+  it("runs with the agent's saved concurrency and remembers a new choice", async () => {
+    runConcurrency.set({ "agent-1": 4, "other-agent": 8 });
+    render(TestsView);
+
+    const picker = screen.getByLabelText("Parallel") as HTMLSelectElement;
+    expect(picker.value).toBe("4");
+
+    await fireEvent.change(picker, { target: { value: "8" } });
+    expect(get(runConcurrency)).toEqual({ "agent-1": 8, "other-agent": 8 });
+
+    await fireEvent.click(screen.getByRole("button", { name: /Run All/i }));
+    await waitFor(() => {
+      expect(startRunMock).toHaveBeenCalledWith("agent-1", undefined, { concurrency: 8 });
+    });
+    runConcurrency.set({});
+  });
+
+  it("shows secondary row actions in a menu that closes after a choice", async () => {
+    render(TestsView);
+
+    expect(screen.queryByRole("button", { name: "Run as call" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "More actions for Test Case 1" }));
+
+    expect(screen.getByRole("button", { name: "Run as call" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeDefined();
+    HTMLDialogElement.prototype.showModal = vi.fn();
+    await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect(screen.queryByRole("button", { name: "Run as call" })).toBeNull();
+  });
+
+  it("clamps the prompt with the full text available on hover", () => {
+    render(TestsView);
+
+    const prompt = screen.getByText("Hello, book an appointment");
+    expect(prompt.getAttribute("title")).toBe("Hello, book an appointment");
+  });
+
+  it("saves the chosen sort column and direction", async () => {
+    render(TestsView);
+
+    await fireEvent.click(screen.getByRole("columnheader", { name: /Name/i }));
+    expect(get(testSort)).toEqual({ column: "name", direction: "asc" });
+    await fireEvent.click(screen.getByRole("columnheader", { name: /Name/i }));
+    expect(get(testSort)).toEqual({ column: "name", direction: "desc" });
+
+    expect(window.localStorage.setItem).toHaveBeenLastCalledWith(
+      "testSort",
+      JSON.stringify({ column: "name", direction: "desc" }),
+    );
+    testSort.set({ column: "index", direction: "asc" });
   });
 });
 

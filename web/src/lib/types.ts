@@ -283,6 +283,7 @@ export interface RunOptions {
   simulator_model: string;
   judge_model: string;
   no_cache?: boolean;
+  concurrency?: number;
 }
 
 export interface Settings {
@@ -418,6 +419,7 @@ export interface StartRunResponse {
   agent_id: string;
   started_at: string;
   test_count: number;
+  concurrency: number;
 }
 
 export interface LoadDemoResponse {

@@ -86,6 +86,68 @@ if (typeof window !== "undefined") {
   expandedRuns.subscribe((v) => localStorage.setItem("expandedRuns", String(v)));
 }
 
+export type TestSortColumn = "index" | "id" | "name" | "type" | "prompt";
+export type TestSort = { column: TestSortColumn; direction: "asc" | "desc" };
+const TEST_SORT_COLUMNS: TestSortColumn[] = ["index", "id", "name", "type", "prompt"];
+const DEFAULT_TEST_SORT: TestSort = { column: "index", direction: "asc" };
+
+function loadTestSort(): TestSort {
+  if (typeof window === "undefined") return DEFAULT_TEST_SORT;
+  try {
+    const parsed = JSON.parse(localStorage.getItem("testSort") ?? "null");
+    if (
+      TEST_SORT_COLUMNS.includes(parsed?.column) &&
+      (parsed.direction === "asc" || parsed.direction === "desc")
+    ) {
+      return { column: parsed.column, direction: parsed.direction };
+    }
+  } catch {
+    return DEFAULT_TEST_SORT;
+  }
+  return DEFAULT_TEST_SORT;
+}
+export const testSort = writable<TestSort>(loadTestSort());
+if (typeof window !== "undefined") {
+  testSort.subscribe((v) => {
+    try {
+      localStorage.setItem("testSort", JSON.stringify(v));
+    } catch {
+      return;
+    }
+  });
+}
+
+export const CONCURRENCY_LEVELS = [1, 2, 4, 8, 16];
+
+function loadRunConcurrency(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem("runConcurrency") ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter(([, v]) => CONCURRENCY_LEVELS.includes(v as number)),
+    ) as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+export const runConcurrency = writable<Record<string, number>>(loadRunConcurrency());
+if (typeof window !== "undefined") {
+  runConcurrency.subscribe((v) => {
+    try {
+      localStorage.setItem("runConcurrency", JSON.stringify(v));
+    } catch {
+      return;
+    }
+  });
+}
+
+export function concurrencyFor(agentId: string | null, prefs: Record<string, number>): number {
+  return (agentId && prefs[agentId]) || 1;
+}
+
+export const concurrencyByRunId = writable<Record<string, number>>({});
+
 export type NavView = "config" | "tests" | "runs" | "metrics" | "optimize" | "settings" | "import";
 export const currentView = writable<NavView>("import");
 
@@ -641,6 +703,10 @@ export async function startRun(agentId: string, testIds?: string[], options?: Pa
   try {
     response = await api.startRun(agentId, testIds, options);
     currentRunId.set(response.id);
+    const used = response.concurrency;
+    if (used) {
+      concurrencyByRunId.update((m) => ({ ...m, [response.id]: used }));
+    }
   } finally {
     hashHolds--;
     updateHash();

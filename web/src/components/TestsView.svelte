@@ -6,6 +6,10 @@
     agents,
     testCases,
     testCaseRecords,
+    testSort,
+    runConcurrency,
+    concurrencyFor,
+    CONCURRENCY_LEVELS,
     currentAgentId,
     currentAgent,
     agentGraph,
@@ -14,7 +18,9 @@
     startRun,
     refreshAgent,
   } from "../lib/stores";
+  import type { TestSortColumn } from "../lib/stores";
   import type { TestCase, TestCaseRecord } from "../lib/types";
+  import DropdownMenu from "./DropdownMenu.svelte";
   import ListPanel from "./ListPanel.svelte";
   import Modal from "./Modal.svelte";
 
@@ -59,10 +65,16 @@
   let importProgress = $state<{ current: number; total: number } | null>(null);
 
   // Sorting state
-  type SortColumn = "index" | "id" | "name" | "type" | "prompt";
-  type SortDirection = "asc" | "desc";
-  let sortColumn = $state<SortColumn>("index");
-  let sortDirection = $state<SortDirection>("asc");
+  let concurrency = $derived(concurrencyFor($currentAgentId, $runConcurrency));
+
+  function setConcurrency(level: number) {
+    const agentId = $currentAgentId;
+    if (!agentId) return;
+    runConcurrency.update((prefs) => ({ ...prefs, [agentId]: level }));
+  }
+
+  let sortColumn = $derived($testSort.column);
+  let sortDirection = $derived($testSort.direction);
 
   let sortedRecords = $derived.by(() => {
     const records = [...$testCaseRecords];
@@ -101,12 +113,11 @@
     return records;
   });
 
-  function handleSort(column: SortColumn) {
+  function handleSort(column: TestSortColumn) {
     if (sortColumn === column) {
-      sortDirection = sortDirection === "asc" ? "desc" : "asc";
+      testSort.set({ column, direction: sortDirection === "asc" ? "desc" : "asc" });
     } else {
-      sortColumn = column;
-      sortDirection = "asc";
+      testSort.set({ column, direction: "asc" });
     }
   }
 
@@ -399,11 +410,6 @@
     }
   }
 
-  function truncatePrompt(prompt: string, maxLength: number = 150): string {
-    if (prompt.length <= maxLength) return prompt;
-    return prompt.substring(0, maxLength) + "...";
-  }
-
   async function runAllTests() {
     if (!$currentAgentId || $testCases.length === 0) return;
 
@@ -411,20 +417,24 @@
     currentView.set("runs");
 
     try {
-      await startRun($currentAgentId);
+      await startRun($currentAgentId, undefined, { concurrency });
     } catch (e) {
       runError = errorMessage(e);
     }
   }
 
   async function runSelectedTests() {
-    if (!$currentAgentId || selectedTestIds.length === 0) return;
+    await runTests(selectedTestIds);
+  }
+
+  async function runTests(testIds: string[]) {
+    if (!$currentAgentId || testIds.length === 0) return;
 
     currentView.set("runs");
     runError = "";
 
     try {
-      await startRun($currentAgentId, selectedTestIds);
+      await startRun($currentAgentId, testIds, { concurrency });
     } catch (e) {
       runError = errorMessage(e);
     }
@@ -522,6 +532,18 @@
     <h2>Tests for {$currentAgent?.name}</h2>
     {#if $currentAgentId}
       <div class="header-actions">
+        <label class="concurrency-picker" title="How many tests run at once">
+          Parallel
+          <select
+            value={concurrency}
+            onchange={(e) => setConcurrency(Number(e.currentTarget.value))}
+            disabled={$isRunning}
+          >
+            {#each CONCURRENCY_LEVELS as level}
+              <option value={level}>{level}</option>
+            {/each}
+          </select>
+        </label>
         <button
           class="run-btn"
           onclick={runAllTests}
@@ -638,7 +660,9 @@
                   </td>
                   <td class="col-index">{record.source_index ?? "—"}</td>
                   <td class="col-name">
-                    {record.name}
+                    <button class="name-link" onclick={() => editTest(record)} title="Edit test">
+                      {record.name}
+                    </button>
                     {#if record.source_path}
                       <span class="badge-linked">linked</span>
                     {/if}
@@ -647,19 +671,44 @@
                     <span class="tag {record.type}">{record.type}</span>
                   </td>
                   <td class="col-prompt">
-                    <span class="prompt-preview">{truncatePrompt(record.user_prompt)}</span>
+                    <span class="prompt-preview" title={record.user_prompt}>{record.user_prompt}</span>
                   </td>
                   <td class="col-actions">
-                    <button
-                      class="small"
-                      onclick={() => runAsAudioCall(record)}
-                      disabled={!$agentGraph}
-                      title="Run this test as a live audio call (requires voicetest up)"
-                    >
-                      Call
-                    </button>
-                    <button class="small" onclick={() => editTest(record)}>Edit</button>
-                    <button class="small danger" onclick={() => deleteTest(record.id)}>Delete</button>
+                    <div class="row-actions">
+                      <button
+                        class="small row-run"
+                        onclick={() => runTests([record.id])}
+                        disabled={$isRunning || !$agentGraph}
+                      >
+                        Run
+                      </button>
+                      <DropdownMenu>
+                        {#snippet trigger(toggle, open)}
+                          <button
+                            class="small row-more"
+                            onclick={toggle}
+                            aria-label="More actions for {record.name}"
+                            aria-expanded={open}
+                          >
+                            ⋯
+                          </button>
+                        {/snippet}
+                        <li>
+                          <button
+                            onclick={() => runAsAudioCall(record)}
+                            disabled={!$agentGraph}
+                            title="Run this test as a live audio call (requires voicetest up)"
+                          >
+                            Run as call
+                          </button>
+                        </li>
+                        <li><button onclick={() => editTest(record)}>Edit</button></li>
+                        <li class="menu-separator"></li>
+                        <li>
+                          <button class="danger" onclick={() => deleteTest(record.id)}>Delete</button>
+                        </li>
+                      </DropdownMenu>
+                    </div>
                   </td>
                 </tr>
               {/each}
@@ -954,10 +1003,17 @@
   }
 
   .header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    margin-bottom: 1rem;
+    background: var(--bg-primary);
   }
 
   h2 {
@@ -972,7 +1028,31 @@
 
   .header-actions {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 0.5rem;
+  }
+
+  .header-actions button {
+    white-space: nowrap;
+  }
+
+  .concurrency-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: var(--text-sm);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .concurrency-picker select {
+    padding: 0.35rem 0.5rem;
+    font-size: var(--text-sm);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
   }
 
   .run-btn {
@@ -1060,11 +1140,54 @@
   }
 
   .col-actions {
-    width: 120px;
+    width: 110px;
     text-align: right;
   }
 
+  .row-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .row-run {
+    background: var(--accent);
+    color: #ffffff;
+    border-color: var(--accent);
+  }
+
+  .row-run:hover:not(:disabled) {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+  }
+
+  .row-more {
+    padding-inline: 0.5rem;
+    line-height: 1;
+  }
+
+  .name-link {
+    padding: 0;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .name-link:hover {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+
   .prompt-preview {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
     color: var(--text-secondary);
     font-size: 0.85rem;
     word-break: break-word;
