@@ -6,12 +6,24 @@ description: What shipped in each voicetest release. User-facing changes, in rev
 
 User-facing changes by release. For the full commit log, see the [GitHub releases](https://github.com/voicetestdev/voicetest/releases).
 
-## v0.58 — One audio configuration
+## v0.58 — Parallel runs in the UI
 
+- **Choose how many tests run at once from the Tests tab.** The **Parallel** selector next to **Run All** sets concurrency (1, 2, 4, 8 or 16) for Run All, Run Selected and Re-run, and is remembered per agent in your browser. While a parallel run is in progress the Runs tab shows how many tests are running at a time. See [Features: Parallel test execution](features.md#parallel-test-execution).
+- **Run a single test from its row.** Each test has its own **Run** button. Run as call, Edit and Delete moved into a **⋯** menu, and clicking a test's name opens it for editing.
+- The Tests tab header, with the run buttons, stays in view while you scroll the test list.
+- Sorting the test list by a column is remembered across page reloads.
+- Long test prompts are clamped to two lines, with the full prompt on hover.
 - **Live calls use your `[audio]` settings.** The STT and TTS URLs in settings now apply to live calls as well as audio eval. Previously live calls read only the `WHISPER_URL` and `KOKORO_URL` environment variables. See [Configuration](configuration.md).
 - New `[audio]` keys: `stt_model`, `tts_model` and `voice`. When `tts_url` and `stt_url` aren't set, they default from `KOKORO_URL` and `WHISPER_URL`, so those variables now apply to audio eval too.
 - **Audio eval transcribes with `Systran/faster-whisper-base.en`**, matching live calls and the bundled whisper service. It previously used `faster-whisper-small`. Set `stt_model` to keep the old model.
 - The live-call workers take their audio configuration as `--audio-settings` JSON, replacing `--whisper-url` and `--kokoro-url`.
+
+## v0.57 — Dynamic variables everywhere
+
+- **Dynamic variables resolve in every prompt the model sees.** `{{var}}` placeholders and `{%snippet%}` references are now filled in extraction field descriptions, transition conditions and descriptions, global node conditions and go-back conditions, not just node and general prompts.
+- Values pulled out by an extract node apply to later prompts in the same conversation, and no longer leak into other runs of the same test case.
+- **Expanded export resolves snippets in all of those fields.** Previously snippet references outside the node and general prompts were exported unresolved, with the snippet definitions removed.
+- The variable picker shown before a chat or call lists variables used anywhere in the agent, including inside extraction descriptions, transition conditions and snippets.
 
 ## v0.56 — Live and parallel runs
 

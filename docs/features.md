@@ -215,7 +215,7 @@ Disable caching for a run with `no_cache = true` in run options or `--no-cache` 
 
 ## Parallel test execution
 
-Tests in a run execute one at a time by default. Set `concurrency` in the run options to run up to 16 at once:
+Tests in a run execute one at a time by default. In the web UI, pick a level from the **Parallel** selector next to **Run All** on the Tests tab; it applies to Run All, Run Selected and Re-run, and is remembered per agent. Through the API, set `concurrency` in the run options to run up to 16 at once:
 
 ```bash
 curl -X POST http://localhost:8000/api/agents/<agent-id>/runs \
